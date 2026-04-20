@@ -135,14 +135,18 @@ export default function SettingsPage() {
     );
   }
 
-  return (
-    <div className="w-full flex flex-col gap-6 pb-8">
-      {selectedBranchId === "all" ? (
+  if (selectedBranchId === "all") {
+    return (
+      <div className="w-full pb-8">
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
           Select a single branch from the sidebar to edit its settings.
         </div>
-      ) : null}
+      </div>
+    );
+  }
 
+  return (
+    <div className="w-full flex flex-col gap-4 pb-8">
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
@@ -154,7 +158,7 @@ export default function SettingsPage() {
         </div>
         <button
           onClick={save}
-          disabled={saving || selectedBranchId === "all"}
+          disabled={saving}
           className="flex items-center gap-2 bg-brand text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition hover:bg-brand-hover disabled:opacity-50 shadow-sm shadow-orange-200"
         >
           {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
@@ -162,7 +166,7 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
         <Card icon={<Store size={16} />} title="Store Status">
           <SettingRow label="Accept Orders">
             <Toggle

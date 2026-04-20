@@ -105,6 +105,7 @@ async function deleteItem(id: string) {
 
 export default function MenuPage() {
   const { selectedBranchId, selectedBranch } = useDashboardContext();
+  const canEditSingleBranch = selectedBranchId !== "all";
   const [items, setItems] = useState<MenuItem[]>([]);
   const [importPreview, setImportPreview] = useState<MenuItem[]>([]);
   const [importWarnings, setImportWarnings] = useState<ImportWarning[]>([]);
@@ -403,12 +404,13 @@ export default function MenuPage() {
 
   return (
     <div className="space-y-6 pb-10">
-      {selectedBranchId === "all" ? (
+      {!canEditSingleBranch ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
           Select a single branch from the sidebar to edit its menu.
         </div>
       ) : null}
 
+      {canEditSingleBranch ? (
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-slate-900">Menu Editor</h1>
@@ -458,8 +460,9 @@ export default function MenuPage() {
           </button>
         </div>
       </div>
+      ) : null}
 
-      {importPreview.length > 0 && (
+      {canEditSingleBranch && importPreview.length > 0 && (
         <div className="rounded-2xl border border-orange-200 bg-orange-50 p-5">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div>
@@ -493,6 +496,7 @@ export default function MenuPage() {
         </div>
       )}
 
+      {canEditSingleBranch ? (
       <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex gap-2 text-xs font-semibold text-slate-600">
@@ -601,6 +605,7 @@ export default function MenuPage() {
           </div>
         </div>
       </div>
+      ) : null}
 
       {toast.text && (
         <div className="fixed bottom-8 right-8 z-[100] flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-3.5 shadow-xl">

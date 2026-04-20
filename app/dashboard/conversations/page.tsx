@@ -221,6 +221,14 @@ export default function ConversationsPage() {
   const selectedIdRef = useRef<string | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const endRef = useRef<HTMLDivElement>(null);
+  const messagesViewportRef = useRef<HTMLDivElement>(null);
+
+  const isViewportNearBottom = useCallback(() => {
+    const viewport = messagesViewportRef.current;
+    if (!viewport) return true;
+    const remaining = viewport.scrollHeight - viewport.scrollTop - viewport.clientHeight;
+    return remaining <= 80;
+  }, []);
 
   const loadConversations = useCallback(async (showRefreshing = false) => {
     if (showRefreshing) setRefreshing(true);
@@ -255,14 +263,15 @@ export default function ConversationsPage() {
     setConversation((await response.json()) as ConversationDetail);
   }, []);
 
-  const loadMessages = useCallback(async (conversationId: string, beforeSeq?: number) => {
+  const loadMessages = useCallback(
+    async (conversationId: string, beforeSeq?: number, options?: { forceStickToBottom?: boolean }) => {
     const isOlderRequest = typeof beforeSeq === "number";
     if (isOlderRequest) {
       setLoadingOlder(true);
       shouldStickToBottomRef.current = false;
     } else {
       setLoadingMessages(true);
-      shouldStickToBottomRef.current = true;
+      shouldStickToBottomRef.current = options?.forceStickToBottom ?? isViewportNearBottom();
     }
 
     try {
@@ -284,7 +293,9 @@ export default function ConversationsPage() {
       setLoadingMessages(false);
       setLoadingOlder(false);
     }
-  }, []);
+    },
+    [isViewportNearBottom]
+  );
 
   const markConversationRead = useCallback(async (conversationId: string) => {
     setConversations((current) =>
@@ -318,7 +329,7 @@ export default function ConversationsPage() {
     }
 
     void loadConversation(selectedId);
-    void loadMessages(selectedId);
+    void loadMessages(selectedId, undefined, { forceStickToBottom: true });
     void markConversationRead(selectedId);
   }, [loadConversation, loadMessages, markConversationRead, selectedId]);
 
@@ -336,7 +347,7 @@ export default function ConversationsPage() {
 
   useEffect(() => {
     if (!shouldStickToBottomRef.current) return;
-    endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    endRef.current?.scrollIntoView({ block: "end" });
   }, [messages]);
 
   const filteredConversations = useMemo(() => {
@@ -635,7 +646,7 @@ export default function ConversationsPage() {
               </div>
             </header>
 
-            <div className="flex-1 overflow-y-auto bg-slate-50 px-4 py-6 sm:px-6">
+            <div ref={messagesViewportRef} className="flex-1 overflow-y-auto bg-slate-50 px-4 py-6 sm:px-6">
               {hasMoreMessages && (
                 <div className="mb-6 flex justify-center">
                   <button
@@ -720,19 +731,20 @@ export default function ConversationsPage() {
             <div className="flex-shrink-0 bg-white p-4 sm:p-6 sm:pt-4 border-t border-slate-100">
               <div className="mx-auto max-w-4xl">
                 {activeConversation.mode === "agent" ? (
-                  /* --- AI ACTIVE BANNER --- */
-                  <div className="flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-slate-200 bg-slate-50/50 py-6 text-center transition-all hover:border-slate-300">
-                    <Bot size={24} className="mb-2 text-slate-400" />
-                    <p className="text-sm font-medium text-slate-600">AI is currently handling this chat.</p>
+                  <div className="flex flex-col items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center">
+                    <p className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                      <Bot size={16} className="text-slate-400" />
+                      AI is currently handling this chat.
+                    </p>
                     <button
                       onClick={() => void handleModeChange("human")}
                       disabled={modeSaving}
-                      className="mt-3 inline-flex items-center justify-center rounded-lg bg-white px-4 py-2 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-200 transition-all hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50"
+                      className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-200 transition-all hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
                     >
                       {modeSaving ? (
-                        <Loader2 size={16} className="mr-2 animate-spin text-slate-400" />
+                        <Loader2 size={14} className="mr-1.5 animate-spin text-slate-400" />
                       ) : (
-                        <UserRound size={16} className="mr-2 text-slate-400" />
+                        <UserRound size={14} className="mr-1.5 text-slate-400" />
                       )}
                       Take over to send a message
                     </button>
@@ -750,7 +762,7 @@ export default function ConversationsPage() {
                         }
                       }}
                       rows={1}
-                      style={{ minHeight: '60px', maxHeight: '200px' }}
+                      style={{ minHeight: '52px', maxHeight: '200px' }}
                       placeholder="Type a message... (Press Enter to send)"
                       className="w-full resize-none bg-transparent px-4 py-4 text-[15px] outline-none"
                     />
