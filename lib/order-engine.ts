@@ -324,6 +324,10 @@ const GENERIC_FOOD_TOKENS = new Set([
 const ORDER_CANCELLATION_WINDOW_MS = 10 * 60 * 1000;
 const QUANTITY_PICK_PREFIX = "__qty_pick__:";
 const QUANTITY_PICKER_OPTION_COUNT = 5;
+const ORDER_NOTE_INPUT_MARKER = "__order_note_input__";
+const ORDER_NOTE_ADD_TOKEN = "order_note_add";
+const ORDER_NOTE_REMOVE_TOKEN = "order_note_remove";
+const ORDER_NOTE_CANCEL_TOKEN = "order_note_cancel";
 const SIZE_WORDS = new Map<string, string>([
   ["small", "Small"],
   ["sm", "Small"],
@@ -606,6 +610,245 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         : "Please send a text message and I will help with your order.",
       withPreferredLanguage({}, preferredLanguage),
     );
+  }
+
+  if (state.cart.length > 0) {
+    if (state.last_presented_category === ORDER_NOTE_INPUT_MARKER) {
+      const nextStep = inferInstructionContinuationStep({
+        ...state,
+        workflow_step: state.resume_workflow_step ?? state.workflow_step,
+      });
+
+      if (isOrderNoteCancelRequest(normalizedText)) {
+        return replyDecision(
+          prefersRomanUrdu
+            ? "Theek hai, note update cancel kar diya."
+            : "No problem, note update cancelled.",
+          withPreferredLanguage(
+            {
+              ...buildPersistedStatePatch(state),
+              workflow_step: nextStep,
+              resume_workflow_step: null,
+              last_presented_category: null,
+              last_presented_options: null,
+              last_presented_options_at: null,
+            },
+            preferredLanguage,
+          ),
+          undefined,
+          nextStep === "collecting_items"
+            ? buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+            : null,
+        );
+      }
+
+      if (isOrderNoteRemoveRequest(normalizedText)) {
+        return replyDecision(
+          prefersRomanUrdu ? "Theek hai, order note remove kar diya." : "Done, I removed your order note.",
+          withPreferredLanguage(
+            {
+              ...buildPersistedStatePatch({
+                ...state,
+                customer_instructions: null,
+              }),
+              workflow_step: nextStep,
+              resume_workflow_step: null,
+              last_presented_category: null,
+              last_presented_options: null,
+              last_presented_options_at: null,
+            },
+            preferredLanguage,
+          ),
+          undefined,
+          nextStep === "collecting_items"
+            ? buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+            : null,
+        );
+      }
+
+      const note = extractOrderInstructionCandidate(rawText) ?? rawText.trim().slice(0, 240);
+      if (note.trim().length < 3 || isOrderNoteAddRequest(normalizeText(note))) {
+        return replyDecision(
+          prefersRomanUrdu
+            ? "Please apni instruction clear text mein bhej dein. Misal: *less spicy*."
+            : "Please send your instruction in plain text. Example: *less spicy*.",
+          withPreferredLanguage(
+            {
+              ...buildPersistedStatePatch(state),
+              workflow_step: state.workflow_step,
+              last_presented_category: ORDER_NOTE_INPUT_MARKER,
+              last_presented_options: null,
+              last_presented_options_at: new Date().toISOString(),
+            },
+            preferredLanguage,
+          ),
+        );
+      }
+
+      const notedState: ConversationState = {
+        ...state,
+        preferred_language: preferredLanguage,
+        customer_instructions: note,
+        workflow_step: nextStep,
+        resume_workflow_step: null,
+        last_presented_category: null,
+        last_presented_options: null,
+        last_presented_options_at: null,
+      };
+
+      if (nextStep === "awaiting_confirmation") {
+        return buildSummaryReply(
+          {
+            state: notedState,
+            settings: context.settings,
+          },
+          {
+            intent: "modify_order",
+            confidence: 0.97,
+            unknownItems: [],
+            sentiment: "neutral",
+            notes: null,
+          },
+        );
+      }
+
+      if (nextStep === "awaiting_delivery_address") {
+        return replyDecision(
+          prefersRomanUrdu
+            ? `Noted: ${note}\n\nApna full delivery address bhej dein.`
+            : `Noted: ${note}\n\nPlease send your full delivery address.`,
+          withPreferredLanguage(
+            {
+              ...buildPersistedStatePatch(notedState),
+              workflow_step: "awaiting_delivery_address",
+            },
+            preferredLanguage,
+          ),
+        );
+      }
+
+      if (nextStep === "awaiting_dine_in_details") {
+        return replyDecision(
+          prefersRomanUrdu
+            ? `Noted: ${note}\n\nGuests aur time batayein.`
+            : `Noted: ${note}\n\nPlease share guest count and time.`,
+          withPreferredLanguage(
+            {
+              ...buildPersistedStatePatch(notedState),
+              workflow_step: "awaiting_dine_in_details",
+            },
+            preferredLanguage,
+          ),
+        );
+      }
+
+      return replyDecision(
+        prefersRomanUrdu
+          ? `Noted: ${note}\n\nAap aur items add kar sakte hain.`
+          : `Noted: ${note}\n\nYou can keep adding items.`,
+        withPreferredLanguage(
+          {
+            ...buildPersistedStatePatch(notedState),
+            workflow_step: "collecting_items",
+          },
+          preferredLanguage,
+        ),
+        undefined,
+        buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+      );
+    }
+
+    if (isOrderNoteRemoveRequest(normalizedText)) {
+      return replyDecision(
+        prefersRomanUrdu ? "Theek hai, order note remove kar diya." : "Done, I removed your order note.",
+        withPreferredLanguage(
+          {
+            ...buildPersistedStatePatch({
+              ...state,
+              customer_instructions: null,
+            }),
+            workflow_step: inferInstructionContinuationStep(state),
+          },
+          preferredLanguage,
+        ),
+        undefined,
+        buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+      );
+    }
+
+    if (isOrderNoteAddRequest(normalizedText)) {
+      return replyDecision(
+        prefersRomanUrdu
+          ? state.customer_instructions
+            ? `Current note: ${state.customer_instructions}\n\nNayi instruction bhej dein, main replace kar doon.`
+            : "Theek hai, order note bhej dein. Misal: *less spicy*."
+          : state.customer_instructions
+            ? `Current note: ${state.customer_instructions}\n\nSend your new instruction and I will replace it.`
+            : "Sure, send your order note. Example: *less spicy*.",
+        withPreferredLanguage(
+          {
+            ...buildPersistedStatePatch(state),
+            workflow_step: state.workflow_step,
+            resume_workflow_step: state.workflow_step,
+            last_presented_category: ORDER_NOTE_INPUT_MARKER,
+            last_presented_options: null,
+            last_presented_options_at: new Date().toISOString(),
+          },
+          preferredLanguage,
+        ),
+      );
+    }
+
+    const availableMenuItems = getAvailableMenuItems(context.menuItems);
+    if (isLikelyNaturalInstructionMessage(rawText, normalizedText, availableMenuItems)) {
+      const note = extractOrderInstructionCandidate(rawText);
+      if (note) {
+        const nextStep = inferInstructionContinuationStep(state);
+        const notedState: ConversationState = {
+          ...state,
+          preferred_language: preferredLanguage,
+          customer_instructions: note,
+          workflow_step: nextStep,
+          resume_workflow_step: null,
+          last_presented_category: null,
+          last_presented_options: null,
+          last_presented_options_at: null,
+        };
+
+        if (nextStep === "awaiting_confirmation") {
+          return buildSummaryReply(
+            {
+              state: notedState,
+              settings: context.settings,
+            },
+            {
+              intent: "modify_order",
+              confidence: 0.96,
+              unknownItems: [],
+              sentiment: "neutral",
+              notes: null,
+            },
+          );
+        }
+
+        return replyDecision(
+          prefersRomanUrdu
+            ? `Noted: ${note}\n\nAap aur items add kar sakte hain.`
+            : `Noted: ${note}\n\nYou can keep adding items.`,
+          withPreferredLanguage(
+            {
+              ...buildPersistedStatePatch(notedState),
+              workflow_step: nextStep,
+            },
+            preferredLanguage,
+          ),
+          undefined,
+          nextStep === "collecting_items"
+            ? buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+            : null,
+        );
+      }
+    }
   }
 
   // ULTRA-FAST PATTERN-BASED EARLY EXIT FOR SIMPLE GREETINGS - No AI call, no DB queries
@@ -1919,14 +2162,79 @@ function parseOrderTypeShortcut(normalizedText: string): OrderType | null {
   return null;
 }
 
+function isOrderNoteAddRequest(normalizedText: string): boolean {
+  return (
+    normalizedText === ORDER_NOTE_ADD_TOKEN ||
+    normalizedText === "order note add" ||
+    /^(?:add|set|edit|update)\s+(?:note|instruction|instructions)$/.test(normalizedText) ||
+    /^(?:order\s+note|special\s+instruction|special\s+instructions)$/.test(normalizedText) ||
+    /^(?:i\s+want\s+to\s+send|i\s+want\s+to\s+add|send)\s+(?:note|instructions?)$/.test(normalizedText)
+  );
+}
+
+function isOrderNoteRemoveRequest(normalizedText: string): boolean {
+  return (
+    normalizedText === ORDER_NOTE_REMOVE_TOKEN ||
+    normalizedText === "order note remove" ||
+    /^(?:remove|clear|delete)\s+(?:note|instruction|instructions)$/.test(normalizedText)
+  );
+}
+
+function isOrderNoteCancelRequest(normalizedText: string): boolean {
+  return (
+    normalizedText === ORDER_NOTE_CANCEL_TOKEN ||
+    normalizedText === "order note cancel" ||
+    /^(?:cancel|skip|back|nevermind|never\s+mind)$/.test(normalizedText)
+  );
+}
+
+function inferInstructionContinuationStep(state: ConversationState): WorkflowStep {
+  if (state.order_type == null) return "collecting_items";
+  if (state.order_type === "delivery") {
+    return state.address ? "awaiting_confirmation" : "awaiting_delivery_address";
+  }
+  return state.guests && state.reservation_time ? "awaiting_confirmation" : "awaiting_dine_in_details";
+}
+
+function isLikelyNaturalInstructionMessage(
+  rawText: string,
+  normalizedText: string,
+  menuItems: MenuCatalogItem[],
+): boolean {
+  if (!extractOrderInstructionCandidate(rawText)) return false;
+  if (isOrderNoteAddRequest(normalizedText) || isOrderNoteRemoveRequest(normalizedText)) return false;
+  if (isLikelySelectionCommand(normalizedText) || isUuidLike(rawText.trim())) return false;
+  if (parseOrderTypeShortcut(normalizedText) != null) return false;
+  if (extractAnyQuantity(normalizedText) != null) return false;
+  if (asksOpeningHours(normalizedText) || asksContactDetails(normalizedText) || asksBranchAddress(normalizedText)) {
+    return false;
+  }
+  if (/\b(menu|category|show|list)\b/.test(normalizedText)) return false;
+
+  const exactMenuMatch = menuItems.some((item) => normalizeText(item.name) === normalizedText);
+  return !exactMenuMatch;
+}
+
 function extractOrderInstructionCandidate(rawText: string): string | null {
   const trimmed = rawText.trim();
   if (!trimmed) return null;
+  const normalized = normalizeText(trimmed);
+  if (!normalized) return null;
 
   const explicit = trimmed.match(/(?:special\s+instructions?|instructions?|order\s+note|note)\s*[:\-]?\s*(.+)$/i);
   if (explicit?.[1]) {
     const value = explicit[1].trim();
-    return value.length >= 3 ? value.slice(0, 240) : null;
+    if (!isOrderNoteAddRequest(normalizeText(value))) {
+      return value.length >= 3 ? value.slice(0, 240) : null;
+    }
+  }
+
+  if (
+    /\b(less spicy|mild|extra spicy|medium spicy|no onions?|without onions?|no chilli|without chilli|less oil|less salt|extra sauce|sauce on side|gravy on side|separate pack(?:ing)?|no cutlery|with cutlery|well done|crispy)\b/.test(
+      normalized,
+    )
+  ) {
+    return trimmed.slice(0, 240);
   }
 
   const polite = trimmed.match(/(?:please|pls)\s+(.+)/i);
@@ -2670,6 +2978,18 @@ function buildOrderTypeInteractiveList(
     id: "order_type_dine_in",
     title: romanUrdu ? "Dine-in" : "Dine-in",
     description: romanUrdu ? "Restaurant mein khaana hai" : "I will eat at restaurant",
+  });
+
+  rows.push({
+    id: ORDER_NOTE_ADD_TOKEN,
+    title: romanUrdu ? "Add / Edit Note" : "Add / Edit Note",
+    description: romanUrdu ? "Special instruction likhein" : "Add special instruction",
+  });
+
+  rows.push({
+    id: ORDER_NOTE_REMOVE_TOKEN,
+    title: romanUrdu ? "Remove Note" : "Remove Note",
+    description: romanUrdu ? "Existing note clear karein" : "Clear current note",
   });
 
   if (rows.length === 0) {
@@ -3977,7 +4297,7 @@ function isControlPayloadToken(value: string): boolean {
   if (!trimmed) return false;
   if (isUuidLike(trimmed)) return true;
 
-  return /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|dine[_\s-]?in)|upsell[_\s-]?(?:yes|no)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
+  return /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|upsell[_\s-]?(?:yes|no)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
     trimmed,
   );
 }
@@ -3992,7 +4312,7 @@ function parseSelectionWithQty(
   // These are control payloads from interactive lists/flows, not item picks.
   // Let dedicated handlers route them instead of turning them into option numbers.
   if (
-    /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|dine[_\s-]?in)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
+    /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
       trimmed,
     )
   ) {
