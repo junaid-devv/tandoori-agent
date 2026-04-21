@@ -399,8 +399,8 @@ export function handleLogisticsAndFallbackFlow(params: {
 
       return helpers.replyDecision(
         prefersRomanUrdu
-          ? `Theek hai, ${upsellItem.name} add kar diya. Aap aur items add kar sakte hain. Jab ready hon to *checkout* likhein ya *Delivery* / *Dine-in* bhej dein.`
-          : `Great, I added ${upsellItem.name}. You can keep adding items. When ready, type *checkout* or send *Delivery* / *Dine-in*.`,
+          ? `Theek hai, ${upsellItem.name} add kar diya. Aap aur items add kar sakte hain.`
+          : `Great, I added ${upsellItem.name}. You can keep adding items.`,
         helpers.withPreferredLanguage(
           {
             cart: nextCart,
@@ -422,8 +422,8 @@ export function handleLogisticsAndFallbackFlow(params: {
 
       return helpers.replyDecision(
         prefersRomanUrdu
-          ? "Theek hai, upsell skip kar diya. Aap aur items add kar sakte hain. Jab ready hon to *checkout* likhein ya *Delivery* / *Dine-in* bhej dein."
-          : "No problem, skipped. You can keep adding items. When ready, type *checkout* or send *Delivery* / *Dine-in*.",
+          ? "Theek hai, upsell skip kar diya. Aap aur items add kar sakte hain."
+          : "No problem, skipped. You can keep adding items.",
         helpers.withPreferredLanguage(
           {
             workflow_step: "collecting_items",
@@ -478,8 +478,8 @@ export function handleLogisticsAndFallbackFlow(params: {
           !context.isOpenNow
             ? helpers.buildClosedReply(context.settings, prefersRomanUrdu, true)
             : prefersRomanUrdu
-              ? "Aap aur items add kar sakte hain. Ready hon to *Delivery* / *Dine-in* bhej dein."
-              : "You can keep adding items. When ready, send *Delivery* / *Dine-in*.",
+              ? "Aap aur items add kar sakte hain."
+              : "You can keep adding items.",
         ].join("\n\n"),
         helpers.withPreferredLanguage(
           {
@@ -506,8 +506,8 @@ export function handleLogisticsAndFallbackFlow(params: {
           !context.isOpenNow
             ? helpers.buildClosedReply(context.settings, prefersRomanUrdu, true)
             : prefersRomanUrdu
-              ? "Aap aur items add kar sakte hain. Ready hon to *Delivery* / *Dine-in* bhej dein."
-              : "You can keep adding items. When ready, send *Delivery* / *Dine-in*.",
+              ? "Aap aur items add kar sakte hain."
+              : "You can keep adding items.",
         ].join("\n\n"),
         helpers.withPreferredLanguage(
           {
@@ -693,8 +693,8 @@ export function handleLogisticsAndFallbackFlow(params: {
 
     return helpers.replyDecision(
       prefersRomanUrdu
-        ? "Aap aur items add kar sakte hain. Jab ready hon to *checkout* likhein ya *Delivery* / *Dine-in* bhej dein."
-        : "You can keep adding items. When ready, type *checkout* or send *Delivery* / *Dine-in*.",
+        ? "Aap aur items add kar sakte hain."
+        : "You can keep adding items.",
       helpers.withPreferredLanguage({ workflow_step: "collecting_items" }, preferredLanguage),
       trace,
       helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),

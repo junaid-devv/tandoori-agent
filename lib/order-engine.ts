@@ -2701,9 +2701,9 @@ function buildQuickOrderTypeInteractiveList(
   return {
     ...base,
     body: romanUrdu
-      ? "Ready hon to order type choose karein."
-      : "When you're ready, choose your order type.",
-    buttonText: romanUrdu ? "Checkout Type" : "Checkout Type",
+      ? "Checkout options"
+      : "Checkout options",
+    buttonText: romanUrdu ? "Checkout" : "Checkout",
   };
 }
 
@@ -2981,8 +2981,8 @@ function buildLogisticsOrSummaryReply(
     if (hasCartMutation) {
       parts.push(
         romanUrdu
-          ? "Aap aur items add kar sakte hain. Jab ready hon to *checkout* likhein ya *Delivery* / *Dine-in* bhej dein."
-          : "You can keep adding items. When you're ready, type *checkout* or send *Delivery* / *Dine-in*.",
+          ? "Aap aur items add kar sakte hain."
+          : "You can keep adding items.",
       );
       return replyDecision(
         parts.join("\n\n"),
@@ -3002,8 +3002,8 @@ function buildLogisticsOrSummaryReply(
     if (isAlreadyAwaitingOrderType) {
       parts.push(
         romanUrdu
-          ? "Aap aur items add kar sakte hain. Jab ready hon to *Delivery* ya *Dine-in* likh dein."
-          : "You can keep adding items. When you're ready, send *Delivery* or *Dine-in*.",
+          ? "Aap aur items add kar sakte hain."
+          : "You can keep adding items.",
       );
       return replyDecision(
         parts.join("\n\n"),
