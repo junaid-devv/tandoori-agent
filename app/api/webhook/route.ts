@@ -96,6 +96,11 @@ function isSelectNewBranchRequest(content: string): boolean {
   );
 }
 
+function isBranchAddressLookupRequest(content: string): boolean {
+  const normalized = content.trim().toLowerCase().replace(/\s+/g, " ");
+  return /\b(address|location|where|kahan|kidhar|branch address|map)\b/.test(normalized);
+}
+
 function buildSavedBranchChoiceInteractiveList(branch: BranchSummary, prefersRomanUrdu: boolean) {
   return {
     body: prefersRomanUrdu
@@ -620,6 +625,29 @@ async function processWebhook(body: unknown) {
             forceNode: "cart_builder",
           }),
         );
+        continue;
+      }
+
+      if (activeBranch && isBranchAddressLookupRequest(content)) {
+        const addressReply = activeBranch.address?.trim()
+          ? prefersRomanUrdu
+            ? `${activeBranch.name} ka address: ${activeBranch.address}`
+            : `${activeBranch.name} address: ${activeBranch.address}`
+          : prefersRomanUrdu
+            ? `Maazrat, ${activeBranch.name} ka address abhi update nahi hai.`
+            : `Sorry, ${activeBranch.name} address is not configured yet.`;
+
+        await sendAndPersistAssistantMessage({
+          conversationId: conversation.id,
+          phone: message.from,
+          content: addressReply,
+          interactiveList: null,
+          flowMessage: null,
+        });
+
+        await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
+          preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
+        });
         continue;
       }
 
@@ -1734,6 +1762,7 @@ function shouldPromptSavedBranchChoiceOnEntry(state: ConversationState, content:
   if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) return false;
   if (!Array.isArray(state.cart) || state.cart.length > 0) return false;
   if (isSelectNewBranchRequest(content) || isContinueWithSavedBranchRequest(content)) return false;
+  if (isBranchAddressLookupRequest(content)) return false;
 
   if (state.workflow_step === "idle") {
     return true;
