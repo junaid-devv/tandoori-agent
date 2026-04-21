@@ -136,6 +136,17 @@ type LogisticsHelpers = SharedHelpers & {
       rows: Array<{ id: string; title: string; description?: string }>;
     }
     | null;
+  buildQuickOrderTypeInteractiveList: (
+    romanUrdu: boolean,
+    deliveryEnabled: boolean,
+  ) =>
+    | {
+      body: string;
+      buttonText: string;
+      sectionTitle?: string;
+      rows: Array<{ id: string; title: string; description?: string }>;
+    }
+    | null;
   buildUpsellInteractiveList: (
     romanUrdu: boolean,
     itemName?: string,
@@ -162,6 +173,16 @@ type LogisticsHelpers = SharedHelpers & {
   buildPersistedStatePatch: (state: ConversationState) => Partial<ConversationState>;
   clampQty: (qty: number) => number;
 };
+
+function isCheckoutRequest(normalizedText: string, interpretation: OrderTurnInterpretation): boolean {
+  if (interpretation.order_type != null) return true;
+  if (interpretation.wants_confirmation === true) return true;
+  if (interpretation.intent === "confirm_order") return true;
+
+  return /\b(checkout|place order|finalize|done|thats all|that's all|no more|ready to order|confirm)\b/.test(
+    normalizedText,
+  );
+}
 
 export function handleAwaitingConfirmationFlow(params: {
   context: TurnContext;
@@ -377,23 +398,20 @@ export function handleLogisticsAndFallbackFlow(params: {
       const nextCart = helpers.mergeCartItems(state.cart, [upsellItem]);
 
       return helpers.replyDecision(
-        [
-          prefersRomanUrdu
-            ? `Theek hai, ${upsellItem.name} add kar diya.`
-            : `Great, I added ${upsellItem.name}.`,
-          helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu),
-        ].join("\n\n"),
+        prefersRomanUrdu
+          ? `Theek hai, ${upsellItem.name} add kar diya. Aap aur items add kar sakte hain. Jab ready hon to *checkout* likhein ya *Delivery* / *Dine-in* bhej dein.`
+          : `Great, I added ${upsellItem.name}. You can keep adding items. When ready, type *checkout* or send *Delivery* / *Dine-in*.`,
         helpers.withPreferredLanguage(
           {
             cart: nextCart,
-            workflow_step: "awaiting_order_type",
+            workflow_step: "collecting_items",
             upsell_item_name: null,
             upsell_item_price: null,
           },
           preferredLanguage,
         ),
         trace,
-        helpers.buildOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+        helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
       );
     }
 
@@ -404,11 +422,11 @@ export function handleLogisticsAndFallbackFlow(params: {
 
       return helpers.replyDecision(
         prefersRomanUrdu
-          ? `Theek hai, upsell skip kar diya. ${helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu)}`
-          : `No problem, skipped. ${helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu)}`,
+          ? "Theek hai, upsell skip kar diya. Aap aur items add kar sakte hain. Jab ready hon to *checkout* likhein ya *Delivery* / *Dine-in* bhej dein."
+          : "No problem, skipped. You can keep adding items. When ready, type *checkout* or send *Delivery* / *Dine-in*.",
         helpers.withPreferredLanguage(
           {
-            workflow_step: "awaiting_order_type",
+            workflow_step: "collecting_items",
             upsell_item_name: null,
             upsell_item_price: null,
             declined_upsells: declined,
@@ -416,7 +434,7 @@ export function handleLogisticsAndFallbackFlow(params: {
           preferredLanguage,
         ),
         trace,
-        helpers.buildOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+        helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
       );
     }
 
@@ -459,16 +477,21 @@ export function handleLogisticsAndFallbackFlow(params: {
             : `Done, quantity updated: ${generalQtyOverride.name} x${generalQtyOverride.qty}.`,
           !context.isOpenNow
             ? helpers.buildClosedReply(context.settings, prefersRomanUrdu, true)
-            : helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu),
+            : prefersRomanUrdu
+              ? "Aap aur items add kar sakte hain. Ready hon to *Delivery* / *Dine-in* bhej dein."
+              : "You can keep adding items. When ready, send *Delivery* / *Dine-in*.",
         ].join("\n\n"),
         helpers.withPreferredLanguage(
           {
             cart: updatedCart,
-            workflow_step: context.isOpenNow ? "awaiting_order_type" : "collecting_items",
+            workflow_step: "collecting_items",
           },
           preferredLanguage,
         ),
         trace,
+        context.isOpenNow
+          ? helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+          : null,
       );
     }
 
@@ -482,16 +505,21 @@ export function handleLogisticsAndFallbackFlow(params: {
             : `Done, quantity updated: ${updatedCart[updatedCart.length - 1].name} x${lastItemOverrideQty}.`,
           !context.isOpenNow
             ? helpers.buildClosedReply(context.settings, prefersRomanUrdu, true)
-            : helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu),
+            : prefersRomanUrdu
+              ? "Aap aur items add kar sakte hain. Ready hon to *Delivery* / *Dine-in* bhej dein."
+              : "You can keep adding items. When ready, send *Delivery* / *Dine-in*.",
         ].join("\n\n"),
         helpers.withPreferredLanguage(
           {
             cart: updatedCart,
-            workflow_step: context.isOpenNow ? "awaiting_order_type" : "collecting_items",
+            workflow_step: "collecting_items",
           },
           preferredLanguage,
         ),
         trace,
+        context.isOpenNow
+          ? helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+          : null,
       );
     }
 
@@ -639,12 +667,12 @@ export function handleLogisticsAndFallbackFlow(params: {
               customer_instructions: instructionCandidate,
               preferred_language: preferredLanguage,
             }),
-            workflow_step: "awaiting_order_type",
+            workflow_step: "collecting_items",
           },
           preferredLanguage,
         ),
         trace,
-        helpers.buildOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+        helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
       );
     }
 
@@ -652,13 +680,24 @@ export function handleLogisticsAndFallbackFlow(params: {
       return helpers.handleOrderTypeSelection(context, state, preferredLanguage, interpretation.order_type, trace);
     }
 
+    if (isCheckoutRequest(normalizedText, interpretation)) {
+      return helpers.replyDecision(
+        prefersRomanUrdu
+          ? `${helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu)}`
+          : `${helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu)}`,
+        helpers.withPreferredLanguage({ workflow_step: "awaiting_order_type" }, preferredLanguage),
+        trace,
+        helpers.buildOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+      );
+    }
+
     return helpers.replyDecision(
       prefersRomanUrdu
-        ? `${helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu)} Agar quantity ya item remove karna ho to bhi likh dein.`
-        : `${helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu)} You can also ask to remove items or change quantity.`,
-      helpers.withPreferredLanguage({ workflow_step: "awaiting_order_type" }, preferredLanguage),
+        ? "Aap aur items add kar sakte hain. Jab ready hon to *checkout* likhein ya *Delivery* / *Dine-in* bhej dein."
+        : "You can keep adding items. When ready, type *checkout* or send *Delivery* / *Dine-in*.",
+      helpers.withPreferredLanguage({ workflow_step: "collecting_items" }, preferredLanguage),
       trace,
-      helpers.buildOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+      helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
     );
   }
 

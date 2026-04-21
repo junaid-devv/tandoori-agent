@@ -428,7 +428,7 @@ function isQuantityPickerState(state: ConversationState): boolean {
     typeof state.last_presented_category === "string" &&
     state.last_presented_category.startsWith(QUANTITY_PICK_PREFIX) &&
     Array.isArray(state.last_presented_options) &&
-    state.last_presented_options.length === 1
+    state.last_presented_options.length > 0
   );
 }
 
@@ -440,7 +440,7 @@ function getPendingQuantityPickerItem(state: ConversationState): MenuCatalogItem
 
   const expectedId = state.last_presented_category!.slice(QUANTITY_PICK_PREFIX.length);
   if (!expectedId || expectedId === selected.id) return selected;
-  return null;
+  return selected;
 }
 
 function shouldPromptForQuantityPicker(item: MenuCatalogItem): boolean {
@@ -783,6 +783,10 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
 
   const pendingQtyItem = getPendingQuantityPickerItem(state);
   if (pendingQtyItem) {
+    const qtyQueue = Array.isArray(state.last_presented_options) && state.last_presented_options.length > 0
+      ? state.last_presented_options
+      : [pendingQtyItem];
+
     if (!isPresentedOptionsFresh(state)) {
       return replyDecision(
         prefersRomanUrdu
@@ -810,7 +814,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           {
             workflow_step: "collecting_items",
             last_presented_category: `${QUANTITY_PICK_PREFIX}${pendingQtyItem.id}`,
-            last_presented_options: [pendingQtyItem],
+            last_presented_options: qtyQueue,
             last_presented_options_at: new Date().toISOString(),
           },
           preferredLanguage,
@@ -830,10 +834,45 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         addons: [],
         item_instructions: null,
       };
+      const updatedCart = mergeCartItems(state.cart, [selectedItem]);
+      const remainingQueue = qtyQueue.slice(1);
+
+      if (remainingQueue.length > 0) {
+        const nextPending = remainingQueue[0];
+        const nextPrompt = buildQuantityPickerReply(nextPending, prefersRomanUrdu);
+        const addedText = prefersRomanUrdu
+          ? `Added: ${selectedItem.name} x${selectedItem.qty}.`
+          : `Added: ${selectedItem.name} x${selectedItem.qty}.`;
+        return replyDecision(
+          `${addedText}\n\n${nextPrompt.text}`,
+          withPreferredLanguage(
+            {
+              ...buildPersistedStatePatch({
+                ...state,
+                cart: updatedCart,
+                workflow_step: "collecting_items",
+              }),
+              workflow_step: "collecting_items",
+              last_presented_category: `${QUANTITY_PICK_PREFIX}${nextPending.id}`,
+              last_presented_options: remainingQueue,
+              last_presented_options_at: new Date().toISOString(),
+            },
+            preferredLanguage,
+          ),
+          {
+            intent: "set_item_quantity",
+            confidence: 0.99,
+            unknownItems: [],
+            sentiment: "neutral",
+            notes: null,
+          },
+          nextPrompt.interactiveList,
+        );
+      }
 
       const nextState: ConversationState = {
         ...state,
-        cart: mergeCartItems(state.cart, [selectedItem]),
+        cart: updatedCart,
         workflow_step: "collecting_items",
         preferred_language: preferredLanguage,
         last_presented_category: null,
@@ -863,6 +902,35 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
       );
     }
 
+    if (isUuidLike(rawText.trim())) {
+      const availableMenuItems = getAvailableMenuItems(context.menuItems);
+      const additionalSelection = findPresentedOptionByDirectValue(rawText, availableMenuItems);
+      if (
+        additionalSelection &&
+        shouldPromptForQuantityPicker(additionalSelection) &&
+        !qtyQueue.some((item) => item.id === additionalSelection.id)
+      ) {
+        const nextQueue = [...qtyQueue, additionalSelection];
+        const quantityPrompt = buildQuantityPickerReply(pendingQtyItem, prefersRomanUrdu);
+        return replyDecision(
+          prefersRomanUrdu
+            ? `Theek hai, *${additionalSelection.name}* bhi add kar liya. Pehle *${pendingQtyItem.name}* ki quantity bata dein.`
+            : `Noted, I also added *${additionalSelection.name}* to queue. First share quantity for *${pendingQtyItem.name}*.`,
+          withPreferredLanguage(
+            {
+              workflow_step: "collecting_items",
+              last_presented_category: `${QUANTITY_PICK_PREFIX}${pendingQtyItem.id}`,
+              last_presented_options: nextQueue,
+              last_presented_options_at: new Date().toISOString(),
+            },
+            preferredLanguage,
+          ),
+          undefined,
+          quantityPrompt.interactiveList,
+        );
+      }
+    }
+
     if (isQuantityPickerControlInput(rawText)) {
       const quantityPrompt = buildQuantityPickerReply(pendingQtyItem, prefersRomanUrdu);
       return replyDecision(
@@ -873,7 +941,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           {
             workflow_step: "collecting_items",
             last_presented_category: `${QUANTITY_PICK_PREFIX}${pendingQtyItem.id}`,
-            last_presented_options: [pendingQtyItem],
+            last_presented_options: qtyQueue,
             last_presented_options_at: new Date().toISOString(),
           },
           preferredLanguage,
@@ -1771,6 +1839,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
       mergeCartItems,
       buildOrderTypePrompt,
       buildOrderTypeInteractiveList,
+      buildQuickOrderTypeInteractiveList,
       buildUpsellInteractiveList,
       handleOrderTypeSelection,
       inferGeneralQtyOverride,
@@ -2904,6 +2973,31 @@ function buildLogisticsOrSummaryReply(
   }
 
   if (params.state.order_type == null) {
+    const hasCartMutation =
+      params.matchedAdds.matched.length > 0 ||
+      params.removedItemsText.trim().length > 0 ||
+      params.matchedAdds.unknown.length > 0;
+
+    if (hasCartMutation) {
+      parts.push(
+        romanUrdu
+          ? "Aap aur items add kar sakte hain. Jab ready hon to *checkout* likhein ya *Delivery* / *Dine-in* bhej dein."
+          : "You can keep adding items. When you're ready, type *checkout* or send *Delivery* / *Dine-in*.",
+      );
+      return replyDecision(
+        parts.join("\n\n"),
+        withPreferredLanguage(
+          {
+            ...buildPersistedStatePatch(params.state),
+            workflow_step: "collecting_items",
+          },
+          params.state.preferred_language,
+        ),
+        trace,
+        buildQuickOrderTypeInteractiveList(romanUrdu, params.settings.delivery_enabled),
+      );
+    }
+
     const isAlreadyAwaitingOrderType = params.state.workflow_step === "awaiting_order_type";
     if (isAlreadyAwaitingOrderType) {
       parts.push(
