@@ -508,59 +508,17 @@ async function processWebhook(body: unknown) {
 
       if (incomingContent && activeBranch && !isSelectNewBranchRequest(incomingContent)) {
         const persistedMessage = await persistUserMessage(conversation.id, incomingContent, message.id, createdAt);
-        const savedBranchChoice = buildSavedBranchChoiceInteractiveList(
-          activeBranch,
-          nextLanguage === "roman_urdu",
-        );
-
-        await sendAndPersistAssistantMessage({
-          conversationId: conversation.id,
-          phone: message.from,
-          content: savedBranchChoice.body,
-          interactiveList: savedBranchChoice,
-          flowMessage: null,
-        });
-
-        await markMessageProcessed(
+        await promptSavedBranchChoice({
+          conversation,
           state,
-          message.id,
+          phone: message.from,
+          whatsappMessageId: message.id,
           createdAt,
-          persistedMessage.message?.ingest_seq ?? null,
-          {
-            workflow_step: "idle",
-            preferred_language: nextLanguage,
-            last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
-            last_presented_options: null,
-            last_presented_options_at: new Date().toISOString(),
-          },
-        );
-
-        const resumeSession = await getOrCreateUserSession(conversation.id, {
-          active_node: "branch_selection",
-          status: "active",
-          is_bot_active: true,
+          ingestSeq: persistedMessage.message?.ingest_seq ?? null,
+          content: incomingContent,
+          activeBranch,
+          preferredLanguage: nextLanguage,
         });
-        await updateUserSession(
-          conversation.id,
-          buildSessionUpdate({
-            session: resumeSession,
-            stateBefore: state,
-            stateAfter: parseConversationState({
-              ...state,
-              conversation_id: conversation.id,
-              workflow_step: "idle",
-              preferred_language: nextLanguage,
-              last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
-              last_presented_options: null,
-              last_presented_options_at: new Date().toISOString(),
-            }),
-            mode: "agent",
-            intent: null,
-            lastUserMessage: incomingContent,
-            lastAssistantReply: savedBranchChoice.body,
-            forceNode: "branch_selection",
-          }),
-        );
         continue;
       }
     }
@@ -592,6 +550,25 @@ async function processWebhook(body: unknown) {
 
     const content = incomingContent;
     const persistedMessage = await persistUserMessage(conversation.id, content, message.id, createdAt);
+    const nextLanguage = inferLanguagePreference(content, state.preferred_language);
+
+    if (
+      activeBranch &&
+      shouldPromptSavedBranchChoiceOnEntry(state, content)
+    ) {
+      await promptSavedBranchChoice({
+        conversation,
+        state,
+        phone: message.from,
+        whatsappMessageId: message.id,
+        createdAt,
+        ingestSeq: persistedMessage.message?.ingest_seq ?? null,
+        content,
+        activeBranch,
+        preferredLanguage: nextLanguage,
+      });
+      continue;
+    }
 
     if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) {
       if (isContinueWithSavedBranchRequest(content) && activeBranch) {
@@ -1751,6 +1728,90 @@ function getBranchSelectionPromptForCity(
     ...branches.map((branch, index) => `${index + 1}. ${branch.name}${branch.address ? ` - ${branch.address}` : ""}`),
     closing,
   ].join("\n");
+}
+
+function shouldPromptSavedBranchChoiceOnEntry(state: ConversationState, content: string): boolean {
+  if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) return false;
+  if (!Array.isArray(state.cart) || state.cart.length > 0) return false;
+  if (isSelectNewBranchRequest(content) || isContinueWithSavedBranchRequest(content)) return false;
+
+  if (state.workflow_step === "idle") {
+    return true;
+  }
+
+  if (state.workflow_step !== "collecting_items") {
+    return false;
+  }
+
+  const incomingType = detectMessageType(content.toLowerCase().trim());
+  return incomingType === "greeting" || incomingType === "acknowledgment";
+}
+
+async function promptSavedBranchChoice(params: {
+  conversation: ConversationRow;
+  state: ConversationState;
+  phone: string;
+  whatsappMessageId: string;
+  createdAt: string;
+  ingestSeq: number | null;
+  content: string;
+  activeBranch: BranchSummary;
+  preferredLanguage: ConversationState["preferred_language"];
+}) {
+  const {
+    conversation,
+    state,
+    phone,
+    whatsappMessageId,
+    createdAt,
+    ingestSeq,
+    content,
+    activeBranch,
+    preferredLanguage,
+  } = params;
+  const prefersRomanUrdu = preferredLanguage === "roman_urdu";
+  const savedBranchChoice = buildSavedBranchChoiceInteractiveList(activeBranch, prefersRomanUrdu);
+  const promptSentAt = new Date().toISOString();
+  const statePatch: Partial<ConversationState> = {
+    workflow_step: "idle",
+    preferred_language: preferredLanguage,
+    last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
+    last_presented_options: null,
+    last_presented_options_at: promptSentAt,
+  };
+
+  await sendAndPersistAssistantMessage({
+    conversationId: conversation.id,
+    phone,
+    content: savedBranchChoice.body,
+    interactiveList: savedBranchChoice,
+    flowMessage: null,
+  });
+
+  await markMessageProcessed(state, whatsappMessageId, createdAt, ingestSeq, statePatch);
+
+  const resumeSession = await getOrCreateUserSession(conversation.id, {
+    active_node: "branch_selection",
+    status: "active",
+    is_bot_active: true,
+  });
+  await updateUserSession(
+    conversation.id,
+    buildSessionUpdate({
+      session: resumeSession,
+      stateBefore: state,
+      stateAfter: parseConversationState({
+        ...state,
+        ...statePatch,
+        conversation_id: conversation.id,
+      }),
+      mode: "agent",
+      intent: null,
+      lastUserMessage: content,
+      lastAssistantReply: savedBranchChoice.body,
+      forceNode: "branch_selection",
+    }),
+  );
 }
 
 function shouldStartFreshOrderAfterInactivity(state: ConversationState, incomingCreatedAt: string): boolean {
