@@ -323,56 +323,6 @@ const GENERIC_FOOD_TOKENS = new Set([
 
 const ORDER_CANCELLATION_WINDOW_MS = 10 * 60 * 1000;
 const QUANTITY_PICK_PREFIX = "__qty_pick__:";
-const QUANTITY_PICKER_CATEGORY_HINTS = [
-  "dessert",
-  "beverage",
-  "drink",
-  "cold beverage",
-  "rice",
-  "biryani",
-  "noodle",
-  "ice cream",
-  "icecream",
-  "soup",
-  "salad",
-  "fries",
-  "starter",
-  "appetizer",
-  "sandwich",
-  "burger",
-  "roll",
-];
-const QUANTITY_PICKER_NAME_HINTS = [
-  "ice cream",
-  "icecream",
-  "kulfi",
-  "biryani",
-  "pulao",
-  "rice",
-  "chowmein",
-  "fried rice",
-  "coffee",
-  "cola",
-  "juice",
-  "water",
-  "soup",
-  "fries",
-  "burger",
-  "sandwich",
-  "roll",
-  "shake",
-];
-const QUANTITY_SKIP_NAME_HINTS = [
-  "karahi",
-  "handi",
-  "tikka",
-  "boti",
-  "chargha",
-  "roast",
-  "bbq",
-  "full",
-  "half",
-];
 const QUANTITY_PICKER_OPTION_COUNT = 5;
 const SIZE_WORDS = new Map<string, string>([
   ["small", "Small"],
@@ -495,20 +445,9 @@ function getPendingQuantityPickerItem(state: ConversationState): MenuCatalogItem
 
 function shouldPromptForQuantityPicker(item: MenuCatalogItem): boolean {
   const normalizedName = normalizeText(item.name);
-  const normalizedCategory = normalizeText(item.category ?? "");
 
   if (!normalizedName) return false;
-
-  if (QUANTITY_SKIP_NAME_HINTS.some((hint) => normalizedName.includes(normalizeText(hint)))) {
-    return false;
-  }
-
-  if (QUANTITY_PICKER_NAME_HINTS.some((hint) => normalizedName.includes(normalizeText(hint)))) {
-    return true;
-  }
-
-  if (!normalizedCategory) return false;
-  return QUANTITY_PICKER_CATEGORY_HINTS.some((hint) => normalizedCategory.includes(normalizeText(hint)));
+  return true;
 }
 
 function buildQuantityPickerInteractiveList(item: MenuCatalogItem, romanUrdu: boolean): {
@@ -648,6 +587,17 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     state.cart.length === 0 &&
     isConversationStartStep &&
     context.menuItems.length > 0;
+  const canRecoverStaleItemSelection = (
+    [
+      "idle",
+      "collecting_items",
+      "awaiting_upsell_reply",
+      "awaiting_order_type",
+      "awaiting_delivery_address",
+      "awaiting_dine_in_details",
+      "awaiting_confirmation",
+    ] as WorkflowStep[]
+  ).includes(state.workflow_step);
 
   if (normalizedText.length === 0) {
     return replyDecision(
@@ -1400,6 +1350,59 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     !isPresentedOptionsFresh(state) &&
     isLikelySelectionCommand(normalizedText)
   ) {
+    // Accept old interactive UUID taps if the item still exists in live menu.
+    // This prevents "expired option" friction when users tap a slightly older list.
+    if (canRecoverStaleItemSelection && isUuidLike(rawText.trim())) {
+      const staleDirectSelection = findPresentedOptionByDirectValue(rawText, menuItems);
+      if (staleDirectSelection) {
+        if (shouldPromptForQuantityPicker(staleDirectSelection)) {
+          const quantityPrompt = buildQuantityPickerReply(staleDirectSelection, prefersRomanUrdu);
+          return replyDecision(
+            quantityPrompt.text,
+            withPreferredLanguage(
+              {
+                workflow_step: "collecting_items",
+                last_presented_category: `${QUANTITY_PICK_PREFIX}${staleDirectSelection.id}`,
+                last_presented_options: [staleDirectSelection],
+                last_presented_options_at: new Date().toISOString(),
+              },
+              preferredLanguage,
+            ),
+            trace,
+            quantityPrompt.interactiveList,
+          );
+        }
+
+        const selectedItem: DraftCartItem = {
+          name: staleDirectSelection.name,
+          qty: 1,
+          price: staleDirectSelection.price,
+          category: staleDirectSelection.category,
+          size: null,
+          addons: [],
+          item_instructions: null,
+        };
+        return buildLogisticsOrSummaryReply(
+          {
+            state: {
+              ...state,
+              cart: mergeCartItems(state.cart, [selectedItem]),
+              workflow_step: state.workflow_step,
+              preferred_language: preferredLanguage,
+              last_presented_category: null,
+              last_presented_options: null,
+              last_presented_options_at: null,
+            },
+            settings: context.settings,
+            matchedAdds: { matched: [selectedItem], unknown: [], ambiguous: [] },
+            removedItemsText: "",
+            menuItems: context.menuItems,
+          },
+          trace,
+        );
+      }
+    }
+
     return replyDecision(
       prefersRomanUrdu
         ? "Pichli options expire ho chuki hain. *menu* likhein, main fresh list bhej deta hoon."
@@ -1442,6 +1445,57 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
   // Interactive row IDs are UUIDs. If one arrives after the visible list
   // context changed, guide the user back instead of falling into AI fallback.
   if (isUuidLike(rawText.trim()) && (!state.last_presented_options || state.last_presented_options.length === 0)) {
+    const staleDirectSelection = canRecoverStaleItemSelection
+      ? findPresentedOptionByDirectValue(rawText, menuItems)
+      : null;
+    if (staleDirectSelection) {
+      if (shouldPromptForQuantityPicker(staleDirectSelection)) {
+        const quantityPrompt = buildQuantityPickerReply(staleDirectSelection, prefersRomanUrdu);
+        return replyDecision(
+          quantityPrompt.text,
+          withPreferredLanguage(
+            {
+              workflow_step: "collecting_items",
+              last_presented_category: `${QUANTITY_PICK_PREFIX}${staleDirectSelection.id}`,
+              last_presented_options: [staleDirectSelection],
+              last_presented_options_at: new Date().toISOString(),
+            },
+            preferredLanguage,
+          ),
+          trace,
+          quantityPrompt.interactiveList,
+        );
+      }
+
+      const selectedItem: DraftCartItem = {
+        name: staleDirectSelection.name,
+        qty: 1,
+        price: staleDirectSelection.price,
+        category: staleDirectSelection.category,
+        size: null,
+        addons: [],
+        item_instructions: null,
+      };
+      return buildLogisticsOrSummaryReply(
+        {
+          state: {
+            ...state,
+            cart: mergeCartItems(state.cart, [selectedItem]),
+            workflow_step: state.workflow_step,
+            preferred_language: preferredLanguage,
+            last_presented_category: null,
+            last_presented_options: null,
+            last_presented_options_at: null,
+          },
+          settings: context.settings,
+          matchedAdds: { matched: [selectedItem], unknown: [], ambiguous: [] },
+          removedItemsText: "",
+          menuItems: context.menuItems,
+        },
+        trace,
+      );
+    }
+
     if (state.last_presented_category === "__category_list__") {
       const categoryReply = buildCategoryListReply(menuItems, prefersRomanUrdu, 1);
       return replyDecision(
