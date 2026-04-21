@@ -643,20 +643,37 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
       }
 
       if (isOrderNoteRemoveRequest(normalizedText)) {
+        const updatedState: ConversationState = {
+          ...state,
+          preferred_language: preferredLanguage,
+          customer_instructions: null,
+          workflow_step: nextStep,
+          resume_workflow_step: null,
+          last_presented_category: null,
+          last_presented_options: null,
+          last_presented_options_at: null,
+        };
+
+        if (nextStep === "awaiting_confirmation") {
+          return buildSummaryReply(
+            {
+              state: updatedState,
+              settings: context.settings,
+            },
+            {
+              intent: "modify_order",
+              confidence: 0.97,
+              unknownItems: [],
+              sentiment: "neutral",
+              notes: null,
+            },
+          );
+        }
+
         return replyDecision(
           prefersRomanUrdu ? "Theek hai, order note remove kar diya." : "Done, I removed your order note.",
           withPreferredLanguage(
-            {
-              ...buildPersistedStatePatch({
-                ...state,
-                customer_instructions: null,
-              }),
-              workflow_step: nextStep,
-              resume_workflow_step: null,
-              last_presented_category: null,
-              last_presented_options: null,
-              last_presented_options_at: null,
-            },
+            buildPersistedStatePatch(updatedState),
             preferredLanguage,
           ),
           undefined,
@@ -759,16 +776,34 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     }
 
     if (isOrderNoteRemoveRequest(normalizedText)) {
+      const nextStep = inferInstructionContinuationStep(state);
+      const updatedState: ConversationState = {
+        ...state,
+        preferred_language: preferredLanguage,
+        customer_instructions: null,
+        workflow_step: nextStep,
+      };
+
+      if (nextStep === "awaiting_confirmation") {
+        return buildSummaryReply(
+          {
+            state: updatedState,
+            settings: context.settings,
+          },
+          {
+            intent: "modify_order",
+            confidence: 0.97,
+            unknownItems: [],
+            sentiment: "neutral",
+            notes: null,
+          },
+        );
+      }
+
       return replyDecision(
         prefersRomanUrdu ? "Theek hai, order note remove kar diya." : "Done, I removed your order note.",
         withPreferredLanguage(
-          {
-            ...buildPersistedStatePatch({
-              ...state,
-              customer_instructions: null,
-            }),
-            workflow_step: inferInstructionContinuationStep(state),
-          },
+          buildPersistedStatePatch(updatedState),
           preferredLanguage,
         ),
         undefined,
