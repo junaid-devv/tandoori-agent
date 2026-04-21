@@ -71,6 +71,50 @@ function shouldResumeBotFromHumanMessage(content: string): boolean {
     normalized.includes("bot can handle")
   );
 }
+
+const SAVED_BRANCH_CHOICE_MARKER = "__saved_branch_choice__";
+
+function isContinueWithSavedBranchRequest(content: string): boolean {
+  const normalized = content.trim().toLowerCase().replace(/\s+/g, " ");
+  return (
+    normalized === "branch_continue_saved" ||
+    normalized === "branch continue saved" ||
+    /\bcontinue\b/.test(normalized) ||
+    /\b(same|current|previous)\s+branch\b/.test(normalized) ||
+    /\b(use|keep)\s+(same|current|previous)\s+branch\b/.test(normalized)
+  );
+}
+
+function isSelectNewBranchRequest(content: string): boolean {
+  const normalized = content.trim().toLowerCase().replace(/\s+/g, " ");
+  return (
+    normalized === "branch_change_saved" ||
+    normalized === "branch change saved" ||
+    /\b(change|switch|new)\s+branch\b/.test(normalized) ||
+    /\bselect\s+new\s+branch\b/.test(normalized) ||
+    isBranchChangeRequest(content)
+  );
+}
+
+function buildSavedBranchChoiceInteractiveList(branch: BranchSummary, prefersRomanUrdu: boolean) {
+  return {
+    body: prefersRomanUrdu
+      ? `Aap ki last selected branch *${branch.name}* hai. Continue karna hai ya branch change karni hai?`
+      : `Your previously selected branch is *${branch.name}*. Continue or choose a new branch?`,
+    buttonText: prefersRomanUrdu ? "Branch Option" : "Branch Option",
+    sectionTitle: prefersRomanUrdu ? "Branch" : "Branch",
+    rows: [
+      {
+        id: "branch_continue_saved",
+        title: prefersRomanUrdu ? "Continue Same Branch" : "Continue Same Branch",
+      },
+      {
+        id: "branch_change_saved",
+        title: prefersRomanUrdu ? "Select New Branch" : "Select New Branch",
+      },
+    ],
+  };
+}
 function shouldRunSemanticLookup(content: string): boolean {
   const normalized = content.toLowerCase().trim();
   if (normalized.length < 4) return false;
@@ -461,6 +505,64 @@ async function processWebhook(body: unknown) {
         previousState: state,
       });
       state = await getOrCreateConversationState(conversation.id);
+
+      if (incomingContent && activeBranch && !isSelectNewBranchRequest(incomingContent)) {
+        const persistedMessage = await persistUserMessage(conversation.id, incomingContent, message.id, createdAt);
+        const savedBranchChoice = buildSavedBranchChoiceInteractiveList(
+          activeBranch,
+          nextLanguage === "roman_urdu",
+        );
+
+        await sendAndPersistAssistantMessage({
+          conversationId: conversation.id,
+          phone: message.from,
+          content: savedBranchChoice.body,
+          interactiveList: savedBranchChoice,
+          flowMessage: null,
+        });
+
+        await markMessageProcessed(
+          state,
+          message.id,
+          createdAt,
+          persistedMessage.message?.ingest_seq ?? null,
+          {
+            workflow_step: "idle",
+            preferred_language: nextLanguage,
+            last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
+            last_presented_options: null,
+            last_presented_options_at: new Date().toISOString(),
+          },
+        );
+
+        const resumeSession = await getOrCreateUserSession(conversation.id, {
+          active_node: "branch_selection",
+          status: "active",
+          is_bot_active: true,
+        });
+        await updateUserSession(
+          conversation.id,
+          buildSessionUpdate({
+            session: resumeSession,
+            stateBefore: state,
+            stateAfter: parseConversationState({
+              ...state,
+              conversation_id: conversation.id,
+              workflow_step: "idle",
+              preferred_language: nextLanguage,
+              last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
+              last_presented_options: null,
+              last_presented_options_at: new Date().toISOString(),
+            }),
+            mode: "agent",
+            intent: null,
+            lastUserMessage: incomingContent,
+            lastAssistantReply: savedBranchChoice.body,
+            forceNode: "branch_selection",
+          }),
+        );
+        continue;
+      }
     }
 
     if (!incomingContent) {
@@ -491,7 +593,87 @@ async function processWebhook(body: unknown) {
     const content = incomingContent;
     const persistedMessage = await persistUserMessage(conversation.id, content, message.id, createdAt);
 
-    if (isBranchChangeRequest(content)) {
+    if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) {
+      if (isContinueWithSavedBranchRequest(content) && activeBranch) {
+        const selectedMenuItems = await getMenuCatalog(activeBranch.id);
+        const categoryInteractiveList = buildInteractiveCategoryList(selectedMenuItems, prefersRomanUrdu, 1);
+        const continueReply = prefersRomanUrdu
+          ? `Theek hai, *${activeBranch.name}* continue karte hain. Ab category select karein ya item name bhej dein.`
+          : `Great, continuing with *${activeBranch.name}*. Now choose a category or send any item name.`;
+
+        await sendAndPersistAssistantMessage({
+          conversationId: conversation.id,
+          phone: message.from,
+          content: continueReply,
+          interactiveList: categoryInteractiveList,
+          flowMessage: null,
+        });
+
+        await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
+          workflow_step: "collecting_items",
+          preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
+          last_presented_category: "__category_list__",
+          last_presented_options: null,
+          last_presented_options_at: null,
+        });
+
+        const continueSession = await getOrCreateUserSession(conversation.id, {
+          active_node: "cart_builder",
+          status: "active",
+          is_bot_active: true,
+        });
+        await updateUserSession(
+          conversation.id,
+          buildSessionUpdate({
+            session: continueSession,
+            stateBefore: state,
+            stateAfter: parseConversationState({
+              ...state,
+              conversation_id: conversation.id,
+              workflow_step: "collecting_items",
+              preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
+              last_presented_category: "__category_list__",
+              last_presented_options: null,
+              last_presented_options_at: null,
+            }),
+            mode: "agent",
+            intent: null,
+            lastUserMessage: content,
+            lastAssistantReply: continueReply,
+            forceNode: "cart_builder",
+          }),
+        );
+        continue;
+      }
+
+      if (!isSelectNewBranchRequest(content)) {
+        const branchChoicePrompt = activeBranch
+          ? buildSavedBranchChoiceInteractiveList(activeBranch, prefersRomanUrdu)
+          : null;
+        const fallbackPrompt = prefersRomanUrdu
+          ? "Continue same branch ya select new branch choose karein."
+          : "Please choose: continue with the same branch or select a new branch.";
+
+        await sendAndPersistAssistantMessage({
+          conversationId: conversation.id,
+          phone: message.from,
+          content: branchChoicePrompt?.body ?? fallbackPrompt,
+          interactiveList: branchChoicePrompt,
+          flowMessage: null,
+        });
+
+        await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
+          workflow_step: "idle",
+          preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
+          last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
+          last_presented_options: null,
+          last_presented_options_at: new Date().toISOString(),
+        });
+        continue;
+      }
+    }
+
+    if (isSelectNewBranchRequest(content)) {
       const prefersRomanUrduForFlow = state.preferred_language === "roman_urdu";
       const availableCities = cityGroups.map((group) => group.city);
       const cityInteractiveList = buildInteractiveListForCities(availableCities, prefersRomanUrduForFlow);

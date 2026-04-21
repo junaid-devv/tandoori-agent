@@ -2617,6 +2617,27 @@ function buildOrderTypeInteractiveList(
   };
 }
 
+function buildQuickOrderTypeInteractiveList(
+  romanUrdu: boolean,
+  deliveryEnabled: boolean,
+): {
+  body: string;
+  buttonText: string;
+  sectionTitle?: string;
+  rows: Array<{ id: string; title: string; description?: string }>;
+} | null {
+  const base = buildOrderTypeInteractiveList(romanUrdu, deliveryEnabled);
+  if (!base) return null;
+
+  return {
+    ...base,
+    body: romanUrdu
+      ? "Ready hon to order type choose karein."
+      : "When you're ready, choose your order type.",
+    buttonText: romanUrdu ? "Checkout Type" : "Checkout Type",
+  };
+}
+
 function pickUpsellSuggestion(menuItems: MenuCatalogItem[], state: ConversationState): MenuCatalogItem | null {
   const existingNames = new Set(state.cart.map((item) => normalizeText(item.name)));
   const declined = new Set(state.declined_upsells.map((item) => normalizeText(item)));
@@ -2883,6 +2904,27 @@ function buildLogisticsOrSummaryReply(
   }
 
   if (params.state.order_type == null) {
+    const isAlreadyAwaitingOrderType = params.state.workflow_step === "awaiting_order_type";
+    if (isAlreadyAwaitingOrderType) {
+      parts.push(
+        romanUrdu
+          ? "Aap aur items add kar sakte hain. Jab ready hon to *Delivery* ya *Dine-in* likh dein."
+          : "You can keep adding items. When you're ready, send *Delivery* or *Dine-in*.",
+      );
+      return replyDecision(
+        parts.join("\n\n"),
+        withPreferredLanguage(
+          {
+            ...buildPersistedStatePatch(params.state),
+            workflow_step: "awaiting_order_type",
+          },
+          params.state.preferred_language,
+        ),
+        trace,
+        buildQuickOrderTypeInteractiveList(romanUrdu, params.settings.delivery_enabled),
+      );
+    }
+
     parts.push(
       romanUrdu
         ? `${buildOrderTypePrompt(params.settings.delivery_enabled, romanUrdu)} Agar quantity ya item remove karna ho to bhi likh dein.`
