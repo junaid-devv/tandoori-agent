@@ -575,7 +575,13 @@ function isValidFlowSignature(rawBody: string, signatureHeader: string | null): 
 }
 
 function normalizePrivateKey(raw: string): string {
-  return raw.replace(/\\n/g, "\n").trim();
+  // Vercel env vars often store PEM values as a single line with escaped newlines.
+  // Some copy/pastes produce `\\r\\n` or `\\r` sequences. Normalize all of them.
+  return raw
+    .replace(/\\r\\n/g, "\n")
+    .replace(/\\n/g, "\n")
+    .replace(/\\r/g, "\n")
+    .trim();
 }
 
 function normalizeCategoryValue(value: string | null | undefined): string {
