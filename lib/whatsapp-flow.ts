@@ -10,7 +10,7 @@ import type {
 import type { RestaurantSettings } from "./settings";
 import type { WhatsAppInteractiveFlowPayload } from "./whatsapp";
 
-export type WhatsAppFlowContext = "branch" | "menu" | "checkout" | "upsell";
+export type WhatsAppFlowContext = "branch" | "menu" | "items" | "checkout" | "upsell";
 
 type FlowPayloadInput = {
   context: WhatsAppFlowContext;
@@ -32,6 +32,7 @@ type FlowPayloadInput = {
   address?: string | null;
   guests?: number | null;
   reservationTime?: string | null;
+  selectedCategory?: string | null;
   settings?: RestaurantSettings;
   suggestedUpsell?: { name: string; price: number } | null;
 };
@@ -39,6 +40,7 @@ type FlowPayloadInput = {
 const DEFAULT_CTA_BY_CONTEXT: Record<WhatsAppFlowContext, string> = {
   branch: "Select Branch",
   menu: "Browse Menu",
+  items: "Select Items",
   checkout: "Checkout",
   upsell: "Choose Option",
 };
@@ -46,14 +48,15 @@ const DEFAULT_CTA_BY_CONTEXT: Record<WhatsAppFlowContext, string> = {
 const FLOW_CONTEXT_PREFIX: Record<WhatsAppFlowContext, string> = {
   branch: "BRANCH",
   menu: "MENU",
+  items: "ITEMS",
   checkout: "CHECKOUT",
   upsell: "UPSELL",
 };
 
 const FLOW_DATA_MENU_LIMIT = 40;
-const FLOW_DATA_BRANCH_LIMIT = 10;
+const FLOW_DATA_BRANCH_LIMIT = 50;
 const FLOW_DATA_CART_LIMIT = 30;
-const FLOW_RESPONSE_MAX_ITEM_REQUESTS = 12;
+const FLOW_RESPONSE_MAX_ITEM_REQUESTS = 30;
 
 type FlowResolvedConfig = {
   flowId?: string;
@@ -112,13 +115,23 @@ export function extractFlowResponseCommand(responseJsonRaw: string): string | nu
     chunks.push(selectedBranch);
   }
 
+  const selectedCategory = pickString(payload, [
+    "selected_category",
+    "category",
+    "menu_category",
+    "selected_menu_category",
+  ]);
+  if (selectedCategory) {
+    chunks.push(selectedCategory);
+  }
+
   const requestedItems = pickItemRequests(payload);
   for (const item of requestedItems) {
     if (!item.label) continue;
     if (item.qty <= 1) {
-      chunks.push(item.label);
+      chunks.push(`add ${item.label}`);
     } else {
-      chunks.push(`${item.qty} ${item.label}`);
+      chunks.push(`add ${item.qty} ${item.label}`);
     }
   }
 
@@ -196,7 +209,12 @@ function buildFlowToken(context: WhatsAppFlowContext, conversationId?: string): 
 }
 
 function buildFlowData(input: FlowPayloadInput): Record<string, unknown> {
-  const menuItems = (input.menuItems ?? []).slice(0, FLOW_DATA_MENU_LIMIT).map((item) => ({
+  const selectedCategory = (input.selectedCategory ?? "").trim();
+  const rawMenuItems = input.menuItems ?? [];
+  const filteredMenuItems = selectedCategory
+    ? rawMenuItems.filter((item) => normalizeCategoryValue(item.category) === normalizeCategoryValue(selectedCategory))
+    : rawMenuItems;
+  const menuItems = filteredMenuItems.slice(0, FLOW_DATA_MENU_LIMIT).map((item) => ({
     id: item.id,
     name: item.name,
     price: Number(item.price),
@@ -204,6 +222,14 @@ function buildFlowData(input: FlowPayloadInput): Record<string, unknown> {
     is_available: item.is_available,
   }));
   const categories = [...new Set(menuItems.map((item) => item.category || "General"))];
+  const menuItemOptions = menuItems.map((item) => ({
+    id: item.name,
+    title: `${item.name} (Rs. ${item.price})`,
+  }));
+  const categoryOptions = categories.map((category) => ({
+    id: category,
+    title: category,
+  }));
   const cartItems = (input.cart ?? []).slice(0, FLOW_DATA_CART_LIMIT).map((item) => ({
     name: item.name,
     qty: item.qty,
@@ -238,9 +264,13 @@ function buildFlowData(input: FlowPayloadInput): Record<string, unknown> {
       slug: branch.slug,
       name: branch.name,
       address: branch.address,
+      city: branch.city,
     })),
     menu_items: menuItems,
     menu_categories: categories,
+    menu_item_options: menuItemOptions,
+    category_options: categoryOptions,
+    selected_category: selectedCategory || null,
     cart_items: cartItems,
     cart_subtotal: cartSubtotal,
     delivery_fee: deliveryFee,
@@ -313,38 +343,96 @@ function pickBoolean(source: Record<string, unknown>, keys: string[]): boolean {
 }
 
 function pickItemRequests(source: Record<string, unknown>): Array<{ label: string; qty: number }> {
-  const candidateKeys = ["selected_items", "items", "order_items"];
+  const candidateKeys = [
+    "selected_items",
+    "items",
+    "order_items",
+    "selected_menu_items",
+    "menu_items_selected",
+  ];
   for (const key of candidateKeys) {
     const value = source[key];
-    if (!Array.isArray(value)) continue;
-    if (value.length === 0) continue;
-    if (value.length > FLOW_RESPONSE_MAX_ITEM_REQUESTS) continue;
+    if (Array.isArray(value)) {
+      if (value.length === 0) continue;
+      if (value.length > FLOW_RESPONSE_MAX_ITEM_REQUESTS) continue;
 
-    const parsed = value
-      .map((entry) => {
-        if (!isRecord(entry)) return null;
-        const name = typeof entry.name === "string" ? entry.name.trim() : "";
-        const id = typeof entry.id === "string" ? entry.id.trim() : "";
-        const qty =
-          typeof entry.qty === "number"
-            ? entry.qty
-            : typeof entry.quantity === "number"
-              ? entry.quantity
-              : typeof entry.count === "number"
-                ? entry.count
-                : 1;
-        return {
-          label: name || id,
-          qty: Math.max(1, Math.floor(qty)),
-        };
-      })
-      .filter((entry): entry is { label: string; qty: number } => Boolean(entry?.label))
-      .slice(0, FLOW_RESPONSE_MAX_ITEM_REQUESTS);
+      const parsed = value
+        .map(parseRequestedItem)
+        .filter((entry): entry is { label: string; qty: number } => Boolean(entry?.label))
+        .slice(0, FLOW_RESPONSE_MAX_ITEM_REQUESTS);
 
-    if (parsed.length > 0) return parsed;
+      if (parsed.length > 0) return parsed;
+      continue;
+    }
+
+    if (isRecord(value)) {
+      const parsedFromMap = parseRequestedItemsFromQtyMap(value);
+      if (parsedFromMap.length > 0) {
+        return parsedFromMap.slice(0, FLOW_RESPONSE_MAX_ITEM_REQUESTS);
+      }
+    }
   }
 
   return [];
+}
+
+function parseRequestedItem(entry: unknown): { label: string; qty: number } | null {
+  if (!isRecord(entry)) return null;
+
+  const name =
+    typeof entry.name === "string"
+      ? entry.name.trim()
+      : typeof entry.item_name === "string"
+        ? entry.item_name.trim()
+        : typeof entry.label === "string"
+          ? entry.label.trim()
+          : typeof entry.title === "string"
+            ? entry.title.trim()
+            : "";
+  const id =
+    typeof entry.id === "string"
+      ? entry.id.trim()
+      : typeof entry.item_id === "string"
+        ? entry.item_id.trim()
+        : typeof entry.menu_item_id === "string"
+          ? entry.menu_item_id.trim()
+          : "";
+
+  const qtyValue =
+    typeof entry.qty === "number" || typeof entry.qty === "string"
+      ? entry.qty
+      : typeof entry.quantity === "number" || typeof entry.quantity === "string"
+        ? entry.quantity
+        : typeof entry.count === "number" || typeof entry.count === "string"
+          ? entry.count
+          : 1;
+  const qty =
+    typeof qtyValue === "number"
+      ? Math.max(1, Math.floor(qtyValue))
+      : Math.max(1, Number.parseInt(qtyValue, 10) || 1);
+
+  const label = name || id;
+  if (!label) return null;
+  return { label, qty };
+}
+
+function parseRequestedItemsFromQtyMap(source: Record<string, unknown>): Array<{ label: string; qty: number }> {
+  return Object.entries(source)
+    .map(([label, qtyRaw]) => {
+      if (!label.trim()) return null;
+      const qty =
+        typeof qtyRaw === "number"
+          ? Math.max(1, Math.floor(qtyRaw))
+          : typeof qtyRaw === "string"
+            ? Math.max(1, Number.parseInt(qtyRaw, 10) || 1)
+            : null;
+      if (qty == null) return null;
+      return {
+        label: label.trim(),
+        qty,
+      };
+    })
+    .filter((entry): entry is { label: string; qty: number } => Boolean(entry));
 }
 
 function summarizePrimitiveFields(source: Record<string, unknown>): string {
@@ -361,6 +449,13 @@ function summarizePrimitiveFields(source: Record<string, unknown>): string {
     .slice(0, 10)
     .map(([key, value]) => `${key} ${String(value)}`);
   return lines.join("; ");
+}
+
+function normalizeCategoryValue(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function normalizeOrderType(value: string | null): OrderType | null {

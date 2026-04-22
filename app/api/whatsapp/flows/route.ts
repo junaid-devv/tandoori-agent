@@ -3,6 +3,7 @@ import {
   createCipheriv,
   createDecipheriv,
   createHmac,
+  createHash,
   createPrivateKey,
   privateDecrypt,
   timingSafeEqual,
@@ -64,13 +65,18 @@ export async function POST(req: NextRequest) {
     return new Response("Bad Request", { status: 400 });
   }
 
-  const privateKey = normalizePrivateKey(
-    process.env.WHATSAPP_FLOW_PRIVATE_KEY || process.env.WHATSAPP_PRIVATE_KEY || "",
-  );
+  const rawPrivateKeyEnv =
+    process.env.WHATSAPP_FLOW_PRIVATE_KEY || process.env.WHATSAPP_PRIVATE_KEY || "";
+  const privateKey = normalizePrivateKey(rawPrivateKeyEnv);
   if (!privateKey) {
     console.error("[whatsapp-flows] Missing WHATSAPP_FLOW_PRIVATE_KEY.");
     return new Response("Missing Flow private key", { status: 500 });
   }
+
+  // Helpful for diagnosing 421 decrypt errors on Vercel without ever printing the key itself.
+  // If this fingerprint changes between deploys, Vercel is using a different key than expected.
+  console.info("[whatsapp-flows] Private key fingerprint (sha256):", sha256Hex(privateKey));
+  console.info("[whatsapp-flows] Private key length:", privateKey.length, "env length:", rawPrivateKeyEnv.length);
 
   let decrypted: DecryptedFlowRequest;
   try {
@@ -216,8 +222,17 @@ async function buildFlowResponsePayload(request: FlowDataExchangeRequest): Promi
     (normalizedAction === "INIT"
       ? process.env.WHATSAPP_FLOW_ENTRY_SCREEN || "FIRST_ENTRY_SCREEN"
       : resolveFallbackScreen(request));
-
-  const menuItemsForFlow = menuItems.slice(0, 50).map((item) => ({
+  const selectedCategory =
+    pickString(request.data, ["selected_category", "category", "menu_category"]) ||
+    (typeof state?.last_presented_category === "string" &&
+    state.last_presented_category !== "__category_list__" &&
+    !state.last_presented_category.startsWith("__")
+      ? state.last_presented_category
+      : null);
+  const filteredMenuItems = selectedCategory
+    ? menuItems.filter((item) => normalizeCategoryValue(item.category) === normalizeCategoryValue(selectedCategory))
+    : menuItems;
+  const menuItemsForFlow = filteredMenuItems.slice(0, 50).map((item) => ({
     id: item.id,
     name: item.name,
     price: Number(item.price),
@@ -225,6 +240,14 @@ async function buildFlowResponsePayload(request: FlowDataExchangeRequest): Promi
     is_available: item.is_available,
   }));
   const categories = [...new Set(menuItemsForFlow.map((item) => item.category || "General"))];
+  const menuItemOptions = menuItemsForFlow.map((item) => ({
+    id: item.name,
+    title: `${item.name} (Rs. ${item.price})`,
+  }));
+  const categoryOptions = categories.map((category) => ({
+    id: category,
+    title: category,
+  }));
 
   return {
     screen: nextScreen,
@@ -244,6 +267,9 @@ async function buildFlowResponsePayload(request: FlowDataExchangeRequest): Promi
       reservation_time: state?.reservation_time ?? null,
       menu_items: menuItemsForFlow,
       menu_categories: categories,
+      menu_item_options: menuItemOptions,
+      category_options: categoryOptions,
+      selected_category: selectedCategory,
       delivery_enabled: settings?.delivery_enabled ?? null,
       delivery_fee: settings ? Number(settings.delivery_fee) : null,
       min_delivery_amount: settings ? Number(settings.min_delivery_amount) : null,
@@ -272,6 +298,7 @@ function buildCompletionParams(input: {
       input.state?.reservation_time ??
       pickString(input.request.data, ["reservation_time", "dine_in_time", "time_slot"]) ??
       null,
+    selected_category: pickString(input.request.data, ["selected_category", "category", "menu_category"]) ?? null,
     items: pickCompletionItems(input.request.data),
     flow_response_source: "endpoint",
   };
@@ -300,40 +327,87 @@ type FlowCompletionItem = {
 function pickCompletionItems(data: Record<string, unknown> | undefined): FlowCompletionItem[] {
   if (!data) return [];
 
-  const candidates = ["selected_items", "items", "order_items"];
+  const candidates = ["selected_items", "items", "order_items", "selected_menu_items", "menu_items_selected"];
   for (const key of candidates) {
     const value = data[key];
-    if (!Array.isArray(value) || value.length === 0) continue;
+    if (Array.isArray(value) && value.length > 0) {
+      const sanitized = value
+        .map((entry) => sanitizeCompletionItem(entry))
+        .filter((entry): entry is FlowCompletionItem => Boolean(entry))
+        .slice(0, 30);
 
-    const sanitized = value
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") return null;
-        const cast = entry as Record<string, unknown>;
-        const name = typeof cast.name === "string" ? cast.name.trim() : null;
-        const id = typeof cast.id === "string" ? cast.id.trim() : null;
-        const qtyRaw =
-          typeof cast.qty === "number"
-            ? cast.qty
-            : typeof cast.quantity === "number"
-              ? cast.quantity
-              : typeof cast.count === "number"
-                ? cast.count
-                : 1;
-        const qty = Number.isFinite(qtyRaw) ? Math.max(1, Math.floor(qtyRaw)) : 1;
-        if (!name && !id) return null;
-        return {
-          ...(id ? { id } : {}),
-          ...(name ? { name } : {}),
-          qty,
-        };
-      })
-      .filter((entry): entry is FlowCompletionItem => Boolean(entry))
-      .slice(0, 12);
+      if (sanitized.length > 0) return sanitized;
+      continue;
+    }
 
-    if (sanitized.length > 0) return sanitized;
+    if (value && typeof value === "object") {
+      const fromMap = Object.entries(value as Record<string, unknown>)
+        .map(([label, qtyRaw]) => {
+          if (!label.trim()) return null;
+          const qty =
+            typeof qtyRaw === "number"
+              ? Math.max(1, Math.floor(qtyRaw))
+              : typeof qtyRaw === "string"
+                ? Math.max(1, Number.parseInt(qtyRaw, 10) || 1)
+                : null;
+          if (qty == null) return null;
+          return {
+            name: label.trim(),
+            qty,
+          };
+        })
+        .filter((entry): entry is { name: string; qty: number } => Boolean(entry))
+        .slice(0, 30);
+
+      if (fromMap.length > 0) return fromMap;
+    }
   }
 
   return [];
+}
+
+function sanitizeCompletionItem(entry: unknown): FlowCompletionItem | null {
+  if (!entry || typeof entry !== "object") return null;
+  const cast = entry as Record<string, unknown>;
+  const name =
+    typeof cast.name === "string"
+      ? cast.name.trim()
+      : typeof cast.item_name === "string"
+        ? cast.item_name.trim()
+        : typeof cast.label === "string"
+          ? cast.label.trim()
+          : typeof cast.title === "string"
+            ? cast.title.trim()
+            : null;
+  const id =
+    typeof cast.id === "string"
+      ? cast.id.trim()
+      : typeof cast.item_id === "string"
+        ? cast.item_id.trim()
+        : typeof cast.menu_item_id === "string"
+          ? cast.menu_item_id.trim()
+          : null;
+  const qtyRaw =
+    typeof cast.qty === "number" || typeof cast.qty === "string"
+      ? cast.qty
+      : typeof cast.quantity === "number" || typeof cast.quantity === "string"
+        ? cast.quantity
+        : typeof cast.count === "number" || typeof cast.count === "string"
+          ? cast.count
+          : 1;
+  const qty =
+    typeof qtyRaw === "number"
+      ? Number.isFinite(qtyRaw)
+        ? Math.max(1, Math.floor(qtyRaw))
+        : 1
+      : Math.max(1, Number.parseInt(qtyRaw, 10) || 1);
+
+  if (!name && !id) return null;
+  return {
+    ...(id ? { id } : {}),
+    ...(name ? { name } : {}),
+    qty,
+  };
 }
 
 function isErrorNotificationRequest(request: FlowDataExchangeRequest): boolean {
@@ -502,4 +576,15 @@ function isValidFlowSignature(rawBody: string, signatureHeader: string | null): 
 
 function normalizePrivateKey(raw: string): string {
   return raw.replace(/\\n/g, "\n").trim();
+}
+
+function normalizeCategoryValue(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function sha256Hex(value: string): string {
+  return createHash("sha256").update(value, "utf8").digest("hex");
 }

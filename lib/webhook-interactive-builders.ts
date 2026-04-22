@@ -97,6 +97,7 @@ export function buildFlowMessageForAgentReply(input: {
   address?: ConversationState["address"];
   guests?: ConversationState["guests"];
   reservationTime?: ConversationState["reservation_time"];
+  selectedCategory?: string | null;
   settings?: RestaurantSettings;
   suggestedUpsell?: { name: string; price: number } | null;
   body: string;
@@ -119,6 +120,7 @@ export function buildFlowMessageForAgentReply(input: {
     address: input.address,
     guests: input.guests,
     reservationTime: input.reservationTime,
+    selectedCategory: input.selectedCategory,
     settings: input.settings,
     suggestedUpsell: input.suggestedUpsell,
   });

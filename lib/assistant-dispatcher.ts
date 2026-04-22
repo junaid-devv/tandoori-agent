@@ -1,4 +1,9 @@
-import { OutboundMessageError, sendAndPersistOutboundFlowMessage, sendAndPersistOutboundInteractiveMessage, sendAndPersistOutboundMessage } from "./messages";
+import {
+  OutboundMessageError,
+  sendAndPersistOutboundFlowMessage,
+  sendAndPersistOutboundInteractiveMessage,
+  sendAndPersistOutboundMessage,
+} from "./messages";
 import type { WhatsAppInteractiveFlowPayload, WhatsAppInteractiveListPayload } from "./whatsapp";
 
 export async function sendAndPersistAssistantMessage({
@@ -33,39 +38,30 @@ export async function sendAndPersistAssistantMessage({
     }
   }
 
-  if (interactiveList && interactiveList.rows.length > 0) {
-    const interactivePayload: WhatsAppInteractiveListPayload = {
-      ...interactiveList,
-      body: buildInteractiveVisibleBody(content, interactiveList.body),
-    };
+  if (interactiveList) {
+    const interactiveVisibleBody = buildInteractiveVisibleBody(content, interactiveList.body);
     try {
       await sendAndPersistOutboundInteractiveMessage({
         conversationId,
         phone,
-        content,
+        content: interactiveVisibleBody,
         senderKind: "ai",
-        interactive: interactivePayload,
+        interactive: interactiveList,
       });
       return;
     } catch (error) {
-      if (error instanceof OutboundMessageError && !error.messageSent) {
-        await sendAndPersistOutboundMessage({
-          conversationId,
-          phone,
-          content: `${content}\n\n${buildInteractiveFallbackText(interactivePayload)}`,
-          senderKind: "ai",
-        });
-        return;
+      if (!(error instanceof OutboundMessageError && !error.messageSent)) {
+        throw error;
       }
-
-      throw error;
     }
   }
 
   await sendAndPersistOutboundMessage({
     conversationId,
     phone,
-    content,
+    content: interactiveList?.body
+      ? buildInteractiveVisibleBody(content, interactiveList.body)
+      : content,
     senderKind: "ai",
   });
 }
@@ -92,16 +88,4 @@ function normalizeForDedup(value: string): string {
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function buildInteractiveFallbackText(payload: {
-  body: string;
-  rows: Array<{ title: string; description?: string }>;
-}) {
-  const options = payload.rows
-    .slice(0, 10)
-    .map((row, index) => `${index + 1}. ${row.title}${row.description ? ` - ${row.description}` : ""}`)
-    .join("\n");
-
-  return [payload.body, options].filter(Boolean).join("\n");
 }
