@@ -70,6 +70,13 @@ type FlowResolvedConfig = {
 export function buildWhatsAppFlowPayload(input: FlowPayloadInput): WhatsAppInteractiveFlowPayload | null {
   const config = resolveFlowConfig(input.context);
   if (!config.flowId && !config.flowName) {
+    console.info(
+      "[whatsapp-flow] No flow configured for context:",
+      input.context,
+      "Expected env:",
+      `WHATSAPP_FLOW_${FLOW_CONTEXT_PREFIX[input.context]}_ID` ,
+      "or WHATSAPP_FLOW_ID",
+    );
     return null;
   }
 

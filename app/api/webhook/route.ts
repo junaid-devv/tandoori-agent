@@ -1360,6 +1360,13 @@ async function drainConversationQueue(conversation: ConversationRow) {
                     : null,
                 body: reply,
               });
+        const replyInteractiveList = decision.kind === "reply" ? decision.interactiveList ?? null : null;
+        console.info(
+          "[webhook] outbound ux:",
+          flowMessage ? "flow" : replyInteractiveList ? "interactive-list" : "text",
+          "workflow:",
+          nextStateSnapshot.workflow_step,
+        );
         await sendAndPersistAssistantMessage({
           conversationId: conversation.id,
           phone: conversation.phone,
