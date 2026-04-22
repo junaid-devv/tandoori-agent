@@ -578,6 +578,10 @@ function normalizePrivateKey(raw: string): string {
   // Vercel env vars often store PEM values as a single line with escaped newlines.
   // Some copy/pastes produce `\\r\\n` or `\\r` sequences. Normalize all of them.
   return raw
+    // Handle double-escaped sequences first (e.g. "\\\\n" -> "\n").
+    .replace(/\\\\r\\\\n/g, "\n")
+    .replace(/\\\\n/g, "\n")
+    .replace(/\\\\r/g, "\n")
     .replace(/\\r\\n/g, "\n")
     .replace(/\\n/g, "\n")
     .replace(/\\r/g, "\n")
