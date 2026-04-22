@@ -29,11 +29,14 @@ import { getRestaurantSettings, isWithinOperatingHours } from "@/lib/settings";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildSessionUpdate, getDefaultUserSession, getOrCreateUserSession, updateUserSession } from "@/lib/user-session";
 import {
-  buildInteractiveListForBranches,
+  buildBranchSelectionFlowMessage,
   buildFlowMessageForAgentReply,
+  buildInteractiveListForBranches,
+  buildInteractiveListForPresentedOptions,
 } from "@/lib/webhook-interactive-builders";
 import {
   buildCityBranchGroups,
+  buildInteractiveCategoryList,
   buildInteractiveListForCities,
   findCitySelection,
   getCitySelectionPrompt,
@@ -42,7 +45,6 @@ import {
 } from "@/lib/webhook-city-helpers";
 import {
   extractFlowResponseCommand,
-  type WhatsAppFlowContext,
 } from "@/lib/whatsapp-flow";
 import {
   claimWebhookEvent,
@@ -51,6 +53,7 @@ import {
   recordWebhookEvent,
 } from "@/lib/webhook-events";
 import {
+  sendWhatsAppInteractiveFlow,
   sendWhatsAppInteractiveList,
   sendWhatsAppMessage,
 } from "@/lib/whatsapp";
@@ -98,35 +101,30 @@ function isBranchAddressLookupRequest(content: string): boolean {
   return /\b(address|location|where|kahan|kidhar|branch address|map)\b/.test(normalized);
 }
 
+function buildSavedBranchChoiceInteractiveList(branch: BranchSummary, prefersRomanUrdu: boolean) {
+  return {
+    body: prefersRomanUrdu
+      ? `Aap ki last selected branch *${branch.name}* hai. Continue karna hai ya branch change karni hai?`
+      : `Your previously selected branch is *${branch.name}*. Continue or choose a new branch?`,
+    buttonText: prefersRomanUrdu ? "Branch Option" : "Branch Option",
+    sectionTitle: prefersRomanUrdu ? "Branch" : "Branch",
+    rows: [
+      {
+        id: "branch_continue_saved",
+        title: prefersRomanUrdu ? "Continue Same Branch" : "Continue Same Branch",
+      },
+      {
+        id: "branch_change_saved",
+        title: prefersRomanUrdu ? "Select New Branch" : "Select New Branch",
+      },
+    ],
+  };
+}
 function shouldRunSemanticLookup(content: string): boolean {
   const normalized = content.toLowerCase().trim();
   if (normalized.length < 4) return false;
   if (/^(ok|okay|yes|no|han|haan|nahi|menu|\d{1,2})$/.test(normalized)) return false;
   return /\p{L}/u.test(normalized);
-}
-
-function resolveCollectingItemsFlowContext(state: ConversationState): {
-  context: Extract<WhatsAppFlowContext, "menu" | "items">;
-  selectedCategory?: string;
-} {
-  const category = typeof state.last_presented_category === "string" ? state.last_presented_category.trim() : "";
-  const hasItemOptions = Array.isArray(state.last_presented_options) && state.last_presented_options.length > 0;
-  const hasChosenCategory =
-    category.length > 0 &&
-    category !== "__category_list__" &&
-    category !== SAVED_BRANCH_CHOICE_MARKER &&
-    !category.startsWith("__");
-
-  if (hasChosenCategory && hasItemOptions) {
-    return {
-      context: "items",
-      selectedCategory: category,
-    };
-  }
-
-  return {
-    context: "menu",
-  };
 }
 type IncomingWhatsAppMessage = {
   id: string;
@@ -337,27 +335,14 @@ async function processWebhook(body: unknown) {
             ? `Theek hai, *${selectedBranch.name}* select ho gayi. Address: ${selectedBranch.address}\n\nAb category select karein ya item name bhej dein.`
             : `Great, you've selected *${selectedBranch.name}*. Address: ${selectedBranch.address}\n\nNow choose a category or send any item name.`;
           const selectedMenuItems = await getMenuCatalog(selectedBranch.id);
-          const menuFlowMessage = buildFlowMessageForAgentReply({
-            context: "menu",
-            conversationId: selectedConversation.id,
-            prefersRomanUrdu,
-            workflowStep: "collecting_items",
-            branch: {
-              id: selectedBranch.id,
-              slug: selectedBranch.slug,
-              name: selectedBranch.name,
-              address: selectedBranch.address,
-            },
-            menuItems: selectedMenuItems,
-            body: assistantReply,
-          });
+          const categoryInteractiveList = buildInteractiveCategoryList(selectedMenuItems, prefersRomanUrdu, 1);
 
           await sendAndPersistAssistantMessage({
             conversationId: selectedConversation.id,
             phone: message.from,
             content: assistantReply,
-            interactiveList: null,
-            flowMessage: menuFlowMessage,
+            interactiveList: categoryInteractiveList,
+            flowMessage: null,
           });
 
           await markMessageProcessed(
@@ -440,27 +425,14 @@ async function processWebhook(body: unknown) {
         ? `Theek hai, *${selectedBranch.name}* select ho gayi. Address: ${selectedBranch.address}\n\nAb category select karein ya item name bhej dein.`
         : `Great, you've selected *${selectedBranch.name}*. Address: ${selectedBranch.address}\n\nNow choose a category or send any item name.`;
       const selectedMenuItems = await getMenuCatalog(selectedBranch.id);
-      const menuFlowMessage = buildFlowMessageForAgentReply({
-        context: "menu",
-        conversationId: selectedConversation.id,
-        prefersRomanUrdu,
-        workflowStep: "collecting_items",
-        branch: {
-          id: selectedBranch.id,
-          slug: selectedBranch.slug,
-          name: selectedBranch.name,
-          address: selectedBranch.address,
-        },
-        menuItems: selectedMenuItems,
-        body: assistantReply,
-      });
+      const categoryInteractiveList = buildInteractiveCategoryList(selectedMenuItems, prefersRomanUrdu, 1);
 
       await sendAndPersistAssistantMessage({
         conversationId: selectedConversation.id,
         phone: message.from,
         content: assistantReply,
-        interactiveList: null,
-        flowMessage: menuFlowMessage,
+        interactiveList: categoryInteractiveList,
+        flowMessage: null,
       });
 
       await markMessageProcessed(
@@ -562,18 +534,13 @@ async function processWebhook(body: unknown) {
           state.preferred_language === "roman_urdu"
             ? "Please text message bhej dein, main menu aur order mein help kar deta hoon."
             : "Please send a text message and I'll help you with the menu or your order.";
-        const collectingFlow = resolveCollectingItemsFlowContext(state);
-        const nonTextFlow =
-          state.workflow_step === "idle" || state.workflow_step === "collecting_items"
-            ? buildFlowMessageForAgentReply({
-                context: state.workflow_step === "collecting_items" ? collectingFlow.context : "menu",
-                conversationId: conversation.id,
-                prefersRomanUrdu: state.preferred_language === "roman_urdu",
-                workflowStep: state.workflow_step,
-                selectedCategory: state.workflow_step === "collecting_items" ? collectingFlow.selectedCategory : null,
-                body: nonTextReply,
-              })
-            : null;
+        const nonTextFlow = buildFlowMessageForAgentReply({
+          context: "menu",
+          conversationId: conversation.id,
+          prefersRomanUrdu: state.preferred_language === "roman_urdu",
+          workflowStep: state.workflow_step,
+          body: nonTextReply,
+        });
         await sendAndPersistAssistantMessage({
           conversationId: conversation.id,
           phone: message.from,
@@ -611,30 +578,17 @@ async function processWebhook(body: unknown) {
     if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) {
       if (isContinueWithSavedBranchRequest(content) && activeBranch) {
         const selectedMenuItems = await getMenuCatalog(activeBranch.id);
+        const categoryInteractiveList = buildInteractiveCategoryList(selectedMenuItems, prefersRomanUrdu, 1);
         const continueReply = prefersRomanUrdu
           ? `Theek hai, *${activeBranch.name}* continue karte hain. Ab category select karein ya item name bhej dein.`
           : `Great, continuing with *${activeBranch.name}*. Now choose a category or send any item name.`;
-        const menuFlowMessage = buildFlowMessageForAgentReply({
-          context: "menu",
-          conversationId: conversation.id,
-          prefersRomanUrdu,
-          workflowStep: "collecting_items",
-          branch: {
-            id: activeBranch.id,
-            slug: activeBranch.slug,
-            name: activeBranch.name,
-            address: activeBranch.address,
-          },
-          menuItems: selectedMenuItems,
-          body: continueReply,
-        });
 
         await sendAndPersistAssistantMessage({
           conversationId: conversation.id,
           phone: message.from,
           content: continueReply,
-          interactiveList: null,
-          flowMessage: menuFlowMessage,
+          interactiveList: categoryInteractiveList,
+          flowMessage: null,
         });
 
         await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
@@ -697,74 +651,19 @@ async function processWebhook(body: unknown) {
         continue;
       }
 
-      const selectedBranchFromChoice = findBranchSelection(content, branches);
-      if (selectedBranchFromChoice) {
-        await setActiveBranch(contact.id, selectedBranchFromChoice.id);
-        contact.active_branch_id = selectedBranchFromChoice.id;
-
-        const selectedConversation = await upsertConversation(contact, selectedBranchFromChoice.id, contactName);
-        const selectedState = await getOrCreateConversationState(selectedConversation.id);
-        const selectedMenuItems = await getMenuCatalog(selectedBranchFromChoice.id);
-        const branchPickedReply = prefersRomanUrdu
-          ? `Theek hai, *${selectedBranchFromChoice.name}* select ho gayi. Ab flow mein items aur quantity select karein ya item name bhej dein.`
-          : `Great, *${selectedBranchFromChoice.name}* is selected. Use the flow to choose items with quantities, or type item names.`;
-        const selectedBranchMenuFlow = buildFlowMessageForAgentReply({
-          context: "menu",
-          conversationId: selectedConversation.id,
-          prefersRomanUrdu,
-          workflowStep: "collecting_items",
-          branch: {
-            id: selectedBranchFromChoice.id,
-            slug: selectedBranchFromChoice.slug,
-            name: selectedBranchFromChoice.name,
-            address: selectedBranchFromChoice.address,
-          },
-          menuItems: selectedMenuItems,
-          body: branchPickedReply,
-        });
-
-        const selectedIngestSeq =
-          selectedConversation.id === conversation.id
-            ? persistedMessage.message?.ingest_seq ?? null
-            : null;
-        if (selectedConversation.id !== conversation.id) {
-          await persistUserMessage(
-            selectedConversation.id,
-            content,
-            message.id,
-            createdAt,
-          );
-        }
-
-        await sendAndPersistAssistantMessage({
-          conversationId: selectedConversation.id,
-          phone: message.from,
-          content: branchPickedReply,
-          interactiveList: null,
-          flowMessage: selectedBranchMenuFlow,
-        });
-
-        await markMessageProcessed(selectedState, message.id, createdAt, selectedIngestSeq, {
-          workflow_step: "collecting_items",
-          preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
-          last_presented_category: "__category_list__",
-          last_presented_options: null,
-          last_presented_options_at: null,
-        });
-        continue;
-      }
-
       if (!isSelectNewBranchRequest(content)) {
+        const branchChoicePrompt = activeBranch
+          ? buildSavedBranchChoiceInteractiveList(activeBranch, prefersRomanUrdu)
+          : null;
         const fallbackPrompt = prefersRomanUrdu
-          ? "Please list se choose karein: same branch continue karni hai ya new branch select karni hai."
-          : "Please choose from the list: continue with same branch or select a new branch.";
-        const savedBranchChoiceList = buildSavedBranchChoiceInteractiveList(prefersRomanUrdu, activeBranch?.name);
+          ? "Continue same branch ya select new branch choose karein."
+          : "Please choose: continue with the same branch or select a new branch.";
 
         await sendAndPersistAssistantMessage({
           conversationId: conversation.id,
           phone: message.from,
-          content: fallbackPrompt,
-          interactiveList: savedBranchChoiceList,
+          content: branchChoicePrompt?.body ?? fallbackPrompt,
+          interactiveList: branchChoicePrompt,
           flowMessage: null,
         });
 
@@ -782,25 +681,28 @@ async function processWebhook(body: unknown) {
     if (isSelectNewBranchRequest(content)) {
       const prefersRomanUrduForFlow = state.preferred_language === "roman_urdu";
       const availableCities = cityGroups.map((group) => group.city);
-      const cityPrompt =
-        availableCities.length > 1
-          ? prefersRomanUrduForFlow
-            ? "Please list se apni city select karein."
-            : "Please choose your city from the list."
-          : getCitySelectionPrompt(availableCities, prefersRomanUrduForFlow);
       const cityInteractiveList = buildInteractiveListForCities(availableCities, prefersRomanUrduForFlow);
+      const cityPrompt = getCitySelectionPrompt(availableCities, prefersRomanUrduForFlow);
       await updateConversationState(state, {
         ...getDefaultConversationState(conversation.id),
         workflow_step: "awaiting_branch_selection",
         preferred_language: inferLanguagePreference(content, state.preferred_language),
       });
       await setActiveBranch(contact.id, null);
+      const branchFlow = buildFlowMessageForAgentReply({
+        context: "branch",
+        conversationId: conversation.id,
+        prefersRomanUrdu: prefersRomanUrduForFlow,
+        workflowStep: "awaiting_branch_selection",
+        branches,
+        body: cityInteractiveList ? cityInteractiveList.body : cityPrompt,
+      });
       await sendAndPersistAssistantMessage({
         conversationId: conversation.id,
         phone: message.from,
-        content: cityPrompt,
+        content: cityInteractiveList ? cityInteractiveList.body : cityPrompt,
         interactiveList: cityInteractiveList,
-        flowMessage: null,
+        flowMessage: branchFlow,
       });
       await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null);
       const session = await getOrCreateUserSession(conversation.id);
@@ -1321,16 +1223,25 @@ async function drainConversationQueue(conversation: ConversationRow) {
           );
         }
 
-        const collectingFlow =
-          nextStateSnapshot.workflow_step === "collecting_items"
-            ? resolveCollectingItemsFlowContext(nextStateSnapshot)
-            : null;
+        const optionsFromState = Array.isArray(updatedState.last_presented_options)
+          ? updatedState.last_presented_options
+          : null;
+        const canAttachPresentedOptions =
+          nextStateSnapshot.workflow_step === "idle" ||
+          nextStateSnapshot.workflow_step === "collecting_items";
+        const interactiveList =
+          ("interactiveList" in decision ? decision.interactiveList : null) ??
+          (canAttachPresentedOptions && optionsFromState && optionsFromState.length > 0
+            ? buildInteractiveListForPresentedOptions(
+              optionsFromState,
+              (updatedState.preferred_language ?? state.preferred_language) === "roman_urdu",
+            )
+            : null);
 
         const flowMessage =
-          decision.kind === "place_order" || nextStateSnapshot.workflow_step !== "collecting_items"
+          decision.kind === "place_order"
             ? null
             : buildFlowMessageForAgentReply({
-                context: collectingFlow?.context ?? "menu",
                 conversationId: conversation.id,
                 prefersRomanUrdu: (updatedState.preferred_language ?? state.preferred_language) === "roman_urdu",
                 workflowStep: nextStateSnapshot.workflow_step,
@@ -1347,7 +1258,6 @@ async function drainConversationQueue(conversation: ConversationRow) {
                 address: nextStateSnapshot.address,
                 guests: nextStateSnapshot.guests,
                 reservationTime: nextStateSnapshot.reservation_time,
-                selectedCategory: collectingFlow?.selectedCategory ?? null,
                 settings,
                 suggestedUpsell:
                   typeof nextStateSnapshot.upsell_item_name === "string" &&
@@ -1360,18 +1270,12 @@ async function drainConversationQueue(conversation: ConversationRow) {
                     : null,
                 body: reply,
               });
-        const replyInteractiveList = decision.kind === "reply" ? decision.interactiveList ?? null : null;
-        console.info(
-          "[webhook] outbound ux:",
-          flowMessage ? "flow" : replyInteractiveList ? "interactive-list" : "text",
-          "workflow:",
-          nextStateSnapshot.workflow_step,
-        );
+
         await sendAndPersistAssistantMessage({
           conversationId: conversation.id,
           phone: conversation.phone,
           content: reply,
-          interactiveList: flowMessage ? null : decision.kind === "reply" ? decision.interactiveList ?? null : null,
+          interactiveList,
           flowMessage,
         });
         await updateConversationState(state, {
@@ -1783,13 +1687,23 @@ async function sendBranchSelectionMessage(
   prefersRomanUrdu: boolean,
   selectedCity?: string,
 ) {
-  const branchList = buildInteractiveListForBranches(branches, prefersRomanUrdu, selectedCity);
-  if (branchList) {
+  const interactiveList = buildInteractiveListForBranches(branches, prefersRomanUrdu, selectedCity);
+  if (interactiveList) {
     try {
-      await sendWhatsAppInteractiveList(phone, branchList);
+      await sendWhatsAppInteractiveList(phone, interactiveList);
       return;
     } catch (error) {
-      console.warn("[webhook] Branch list send failed, falling back to text:", error);
+      console.warn("[webhook] Interactive branch list failed, falling back to text:", error);
+    }
+  }
+
+  const flowMessage = buildBranchSelectionFlowMessage(phone, branches, prefersRomanUrdu);
+  if (flowMessage) {
+    try {
+      await sendWhatsAppInteractiveFlow(phone, flowMessage);
+      return;
+    } catch (error) {
+      console.warn("[webhook] Flow branch selector failed, falling back to text:", error);
     }
   }
 
@@ -1802,13 +1716,13 @@ async function sendCitySelectionMessage(
   prefersRomanUrdu: boolean,
 ) {
   const cities = cityGroups.map((group) => group.city);
-  const cityList = buildInteractiveListForCities(cities, prefersRomanUrdu);
-  if (cityList) {
+  const interactiveList = buildInteractiveListForCities(cities, prefersRomanUrdu);
+  if (interactiveList) {
     try {
-      await sendWhatsAppInteractiveList(phone, cityList);
+      await sendWhatsAppInteractiveList(phone, interactiveList);
       return;
     } catch (error) {
-      console.warn("[webhook] City list send failed, falling back to text:", error);
+      console.warn("[webhook] Interactive city list failed, falling back to text:", error);
     }
   }
 
@@ -1842,40 +1756,6 @@ function getBranchSelectionPromptForCity(
     ...branches.map((branch, index) => `${index + 1}. ${branch.name}${branch.address ? ` - ${branch.address}` : ""}`),
     closing,
   ].join("\n");
-}
-
-function buildSavedBranchChoiceInteractiveList(
-  prefersRomanUrdu: boolean,
-  activeBranchName?: string,
-): {
-  body: string;
-  buttonText: string;
-  sectionTitle?: string;
-  rows: Array<{ id: string; title: string; description?: string }>;
-} {
-  const body = prefersRomanUrdu
-    ? activeBranchName
-      ? `Aap ki previous branch ${activeBranchName} hai. Kya isi ko continue karna hai ya new branch choose karni hai?`
-      : "Kya isi branch ko continue karna hai ya new branch choose karni hai?"
-    : activeBranchName
-      ? `Your previous branch is ${activeBranchName}. Continue with it or select a new branch?`
-      : "Continue with your current branch or select a new branch?";
-
-  return {
-    body,
-    buttonText: prefersRomanUrdu ? "Select Option" : "Select Option",
-    sectionTitle: prefersRomanUrdu ? "Branch Choice" : "Branch Choice",
-    rows: [
-      {
-        id: "branch_continue_saved",
-        title: prefersRomanUrdu ? "Continue Same Branch" : "Continue Same Branch",
-      },
-      {
-        id: "branch_change_saved",
-        title: prefersRomanUrdu ? "Select New Branch" : "Select New Branch",
-      },
-    ],
-  };
 }
 
 function shouldPromptSavedBranchChoiceOnEntry(state: ConversationState, content: string): boolean {
@@ -1919,10 +1799,7 @@ async function promptSavedBranchChoice(params: {
     preferredLanguage,
   } = params;
   const prefersRomanUrdu = preferredLanguage === "roman_urdu";
-  const savedBranchChoiceBody = prefersRomanUrdu
-    ? `Aap ki last selected branch *${activeBranch.name}* hai. List se choose karein: isi branch pe continue karein ya new branch select karein.`
-    : `Your previous branch is *${activeBranch.name}*. Choose from the list: continue with this branch or select a new branch.`;
-  const savedBranchChoiceList = buildSavedBranchChoiceInteractiveList(prefersRomanUrdu, activeBranch.name);
+  const savedBranchChoice = buildSavedBranchChoiceInteractiveList(activeBranch, prefersRomanUrdu);
   const promptSentAt = new Date().toISOString();
   const statePatch: Partial<ConversationState> = {
     workflow_step: "idle",
@@ -1935,8 +1812,8 @@ async function promptSavedBranchChoice(params: {
   await sendAndPersistAssistantMessage({
     conversationId: conversation.id,
     phone,
-    content: savedBranchChoiceBody,
-    interactiveList: savedBranchChoiceList,
+    content: savedBranchChoice.body,
+    interactiveList: savedBranchChoice,
     flowMessage: null,
   });
 
@@ -1960,7 +1837,7 @@ async function promptSavedBranchChoice(params: {
       mode: "agent",
       intent: null,
       lastUserMessage: content,
-      lastAssistantReply: savedBranchChoiceBody,
+      lastAssistantReply: savedBranchChoice.body,
       forceNode: "branch_selection",
     }),
   );

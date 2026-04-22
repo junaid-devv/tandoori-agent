@@ -1,9 +1,4 @@
-import {
-  OutboundMessageError,
-  sendAndPersistOutboundFlowMessage,
-  sendAndPersistOutboundInteractiveMessage,
-  sendAndPersistOutboundMessage,
-} from "./messages";
+import { OutboundMessageError, sendAndPersistOutboundFlowMessage, sendAndPersistOutboundInteractiveMessage, sendAndPersistOutboundMessage } from "./messages";
 import type { WhatsAppInteractiveFlowPayload, WhatsAppInteractiveListPayload } from "./whatsapp";
 
 export async function sendAndPersistAssistantMessage({
@@ -32,39 +27,45 @@ export async function sendAndPersistAssistantMessage({
       });
       return;
     } catch (error) {
-      // Flow sends can fail due to eligibility, draft/publish restrictions, or invalid action params.
-      // We intentionally fall back to interactive lists or plain text, but we still want the error in logs.
-      console.error("[dispatcher] Flow send failed; falling back.", error);
       if (!(error instanceof OutboundMessageError && !error.messageSent)) {
         throw error;
       }
     }
   }
 
-  if (interactiveList) {
-    const interactiveVisibleBody = buildInteractiveVisibleBody(content, interactiveList.body);
+  if (interactiveList && interactiveList.rows.length > 0) {
+    const interactivePayload: WhatsAppInteractiveListPayload = {
+      ...interactiveList,
+      body: buildInteractiveVisibleBody(content, interactiveList.body),
+    };
     try {
       await sendAndPersistOutboundInteractiveMessage({
         conversationId,
         phone,
-        content: interactiveVisibleBody,
+        content,
         senderKind: "ai",
-        interactive: interactiveList,
+        interactive: interactivePayload,
       });
       return;
     } catch (error) {
-      if (!(error instanceof OutboundMessageError && !error.messageSent)) {
-        throw error;
+      if (error instanceof OutboundMessageError && !error.messageSent) {
+        await sendAndPersistOutboundMessage({
+          conversationId,
+          phone,
+          content: `${content}\n\n${buildInteractiveFallbackText(interactivePayload)}`,
+          senderKind: "ai",
+        });
+        return;
       }
+
+      throw error;
     }
   }
 
   await sendAndPersistOutboundMessage({
     conversationId,
     phone,
-    content: interactiveList?.body
-      ? buildInteractiveVisibleBody(content, interactiveList.body)
-      : content,
+    content,
     senderKind: "ai",
   });
 }
@@ -91,4 +92,16 @@ function normalizeForDedup(value: string): string {
     .replace(/[^a-z0-9\s]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function buildInteractiveFallbackText(payload: {
+  body: string;
+  rows: Array<{ title: string; description?: string }>;
+}) {
+  const options = payload.rows
+    .slice(0, 10)
+    .map((row, index) => `${index + 1}. ${row.title}${row.description ? ` - ${row.description}` : ""}`)
+    .join("\n");
+
+  return [payload.body, options].filter(Boolean).join("\n");
 }

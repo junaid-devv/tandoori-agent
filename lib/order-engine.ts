@@ -438,17 +438,20 @@ function isQuantityPickerState(state: ConversationState): boolean {
 
 function getPendingQuantityPickerItem(state: ConversationState): MenuCatalogItem | null {
   if (!isQuantityPickerState(state)) return null;
-  // Quantity picker list UX is deprecated in favor of flow-based multi-item+qty selection.
-  // Keep reading old state safely, but do not force users through picker steps anymore.
-  return null;
+
+  const selected = state.last_presented_options?.[0] ?? null;
+  if (!selected) return null;
+
+  const expectedId = state.last_presented_category!.slice(QUANTITY_PICK_PREFIX.length);
+  if (!expectedId || expectedId === selected.id) return selected;
+  return selected;
 }
 
 function shouldPromptForQuantityPicker(item: MenuCatalogItem): boolean {
   const normalizedName = normalizeText(item.name);
 
   if (!normalizedName) return false;
-  // Flow captures item quantities inline, so avoid legacy per-item quantity prompts.
-  return false;
+  return true;
 }
 
 function buildQuantityPickerInteractiveList(item: MenuCatalogItem, romanUrdu: boolean): {
