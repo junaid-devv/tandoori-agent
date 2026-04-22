@@ -32,6 +32,9 @@ export async function sendAndPersistAssistantMessage({
       });
       return;
     } catch (error) {
+      // Flow sends can fail due to eligibility, draft/publish restrictions, or invalid action params.
+      // We intentionally fall back to interactive lists or plain text, but we still want the error in logs.
+      console.error("[dispatcher] Flow send failed; falling back.", error);
       if (!(error instanceof OutboundMessageError && !error.messageSent)) {
         throw error;
       }
