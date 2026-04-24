@@ -1634,7 +1634,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     }
   }
 
-  if (state.last_presented_category === "__category_list__") {
+  if (state.last_presented_category === "__category_list__" && !likelyDirectOrderMessage) {
     const listRequestedPage = parseCategoryMorePage(rawText);
     if (listRequestedPage) {
       const categoryReply = buildCategoryListReply(menuItems, prefersRomanUrdu, listRequestedPage);

@@ -91,6 +91,12 @@ mustInclude(
 
 mustInclude(
   source,
+  "if (state.last_presented_category === \"__category_list__\" && !likelyDirectOrderMessage) {",
+  "Missing category-list-context guard for direct-order messages.",
+);
+
+mustInclude(
+  source,
   "function isLikelyDirectOrderRequest(",
   "Missing direct-order classifier helper.",
 );
