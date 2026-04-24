@@ -1436,6 +1436,39 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     );
   }
 
+  if (state.workflow_step === "awaiting_delivery_address") {
+    const inferredAddress = interpretation.address ?? parseAddress(rawText);
+    if (!inferredAddress) {
+      const wantsCartMutation =
+        interpretation.intent === "add_items" ||
+        interpretation.intent === "remove_items" ||
+        interpretation.intent === "modify_order" ||
+        interpretation.add_items.length > 0 ||
+        interpretation.remove_items.length > 0 ||
+        hasDirectOrderVerb(normalizedText) ||
+        extractAnyQuantity(normalizedText) != null;
+      const explicitMenuBrowse =
+        interpretation.asks_menu ||
+        interpretation.intent === "browse_menu" ||
+        isLikelyMenuRequest(normalizedText);
+
+      if (!wantsCartMutation && !explicitMenuBrowse) {
+        return replyDecision(
+          prefersRomanUrdu
+            ? "Please apna poora delivery address bhej dein (house/street/sector ke sath)."
+            : "Please send your full delivery address (with house/street/sector details).",
+          withPreferredLanguage(
+            {
+              workflow_step: "awaiting_delivery_address",
+            },
+            preferredLanguage,
+          ),
+          trace,
+        );
+      }
+    }
+  }
+
   const deterministicDirectHints = resolveRequestedItems([], [], menuItems, rawText, context.semanticMatches);
   const forceDirectOrderResolution =
     hasDirectOrderVerb(normalizedText) &&

@@ -55,6 +55,24 @@ mustInclude(
 
 mustInclude(
   source,
+  "if (state.workflow_step === \"awaiting_delivery_address\") {",
+  "Missing awaiting-delivery-address guard block.",
+);
+
+mustInclude(
+  source,
+  "if (!wantsCartMutation && !explicitMenuBrowse) {",
+  "Missing address-step protection against accidental menu lookup.",
+);
+
+mustInclude(
+  source,
+  "workflow_step: \"awaiting_delivery_address\",",
+  "Missing explicit state persistence for delivery-address guard reply.",
+);
+
+mustInclude(
+  source,
   "const directLookupQuery =\n    !likelyDirectOrderMessage &&",
   "Missing direct-order guard before standalone lookup query.",
 );
