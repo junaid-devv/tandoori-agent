@@ -2190,6 +2190,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           .filter(Boolean)
           .join("\n"),
         menuItems: context.menuItems,
+        skipUpsell: forceDirectOrderResolution,
       },
       trace,
     );
@@ -3411,6 +3412,7 @@ function buildLogisticsOrSummaryReply(
     matchedAdds: MatchedItemsResult;
     removedItemsText: string;
     menuItems?: MenuCatalogItem[];
+    skipUpsell?: boolean;
   },
   trace?: TurnTrace,
 ): TurnDecision {
@@ -3429,6 +3431,7 @@ function buildLogisticsOrSummaryReply(
     params.state.order_type == null &&
     params.matchedAdds.matched.length > 0 &&
     params.state.cart.length >= 1 &&
+    !params.skipUpsell &&
     !params.state.upsell_offered &&
     Array.isArray(params.menuItems)
   ) {

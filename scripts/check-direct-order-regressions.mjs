@@ -187,6 +187,24 @@ mustInclude(
 
 mustInclude(
   source,
+  "skipUpsell?: boolean;",
+  "Missing optional skipUpsell flag in logistics/summary builder params.",
+);
+
+mustInclude(
+  source,
+  "!params.skipUpsell &&",
+  "Missing upsell short-circuit for direct mixed-text order path.",
+);
+
+mustInclude(
+  source,
+  "skipUpsell: forceDirectOrderResolution,",
+  "Missing direct-order skipUpsell wiring at cart-mutation reply path.",
+);
+
+mustInclude(
+  source,
   "function mergeMatchedItemsResults(left: MatchedItemsResult, right: MatchedItemsResult): MatchedItemsResult {",
   "Missing matched-item results merge helper.",
 );
