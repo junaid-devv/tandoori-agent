@@ -511,7 +511,12 @@ async function processWebhook(body: unknown) {
       });
       state = await getOrCreateConversationState(conversation.id);
 
-      if (incomingContent && activeBranch && !isSelectNewBranchRequest(incomingContent)) {
+      if (
+        incomingContent &&
+        activeBranch &&
+        !isSelectNewBranchRequest(incomingContent) &&
+        shouldPromptSavedBranchChoiceOnEntry(state, incomingContent)
+      ) {
         const persistedMessage = await persistUserMessage(conversation.id, incomingContent, message.id, createdAt);
         await promptSavedBranchChoice({
           conversation,
@@ -651,30 +656,43 @@ async function processWebhook(body: unknown) {
         continue;
       }
 
+      const shouldRepromptSavedBranchChoice = isGreetingOrAcknowledgmentMessage(content);
+
       if (!isSelectNewBranchRequest(content)) {
-        const branchChoicePrompt = activeBranch
-          ? buildSavedBranchChoiceInteractiveList(activeBranch, prefersRomanUrdu)
-          : null;
-        const fallbackPrompt = prefersRomanUrdu
-          ? "Continue same branch ya select new branch choose karein."
-          : "Please choose: continue with the same branch or select a new branch.";
+        if (!shouldRepromptSavedBranchChoice) {
+          state = parseConversationState({
+            ...state,
+            last_presented_category: null,
+            last_presented_options: null,
+            last_presented_options_at: null,
+          });
+        }
 
-        await sendAndPersistAssistantMessage({
-          conversationId: conversation.id,
-          phone: message.from,
-          content: branchChoicePrompt?.body ?? fallbackPrompt,
-          interactiveList: branchChoicePrompt,
-          flowMessage: null,
-        });
+        if (shouldRepromptSavedBranchChoice) {
+          const branchChoicePrompt = activeBranch
+            ? buildSavedBranchChoiceInteractiveList(activeBranch, prefersRomanUrdu)
+            : null;
+          const fallbackPrompt = prefersRomanUrdu
+            ? "Continue same branch ya select new branch choose karein."
+            : "Please choose: continue with the same branch or select a new branch.";
 
-        await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
-          workflow_step: "idle",
-          preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
-          last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
-          last_presented_options: null,
-          last_presented_options_at: new Date().toISOString(),
-        });
-        continue;
+          await sendAndPersistAssistantMessage({
+            conversationId: conversation.id,
+            phone: message.from,
+            content: branchChoicePrompt?.body ?? fallbackPrompt,
+            interactiveList: branchChoicePrompt,
+            flowMessage: null,
+          });
+
+          await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
+            workflow_step: "idle",
+            preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
+            last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
+            last_presented_options: null,
+            last_presented_options_at: new Date().toISOString(),
+          });
+          continue;
+        }
       }
     }
 
@@ -1758,22 +1776,28 @@ function getBranchSelectionPromptForCity(
   ].join("\n");
 }
 
+function isGreetingOrAcknowledgmentMessage(content: string): boolean {
+  const incomingType = detectMessageType(content.toLowerCase().trim());
+  return incomingType === "greeting" || incomingType === "acknowledgment";
+}
+
 function shouldPromptSavedBranchChoiceOnEntry(state: ConversationState, content: string): boolean {
   if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) return false;
   if (!Array.isArray(state.cart) || state.cart.length > 0) return false;
   if (isSelectNewBranchRequest(content) || isContinueWithSavedBranchRequest(content)) return false;
   if (isBranchAddressLookupRequest(content)) return false;
 
+  const isEntryMessage = isGreetingOrAcknowledgmentMessage(content);
+
   if (state.workflow_step === "idle") {
-    return true;
+    return isEntryMessage;
   }
 
   if (state.workflow_step !== "collecting_items") {
     return false;
   }
 
-  const incomingType = detectMessageType(content.toLowerCase().trim());
-  return incomingType === "greeting" || incomingType === "acknowledgment";
+  return isEntryMessage;
 }
 
 async function promptSavedBranchChoice(params: {
