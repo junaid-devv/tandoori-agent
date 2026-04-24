@@ -3929,7 +3929,21 @@ function resolveRequestedItems(
 }
 
 function mergeMatchedItemsResults(left: MatchedItemsResult, right: MatchedItemsResult): MatchedItemsResult {
-  const matched = mergeCartItems(left.matched, right.matched);
+  const matched = left.matched.map((item) => ({ ...item }));
+  for (const candidate of right.matched) {
+    const index = matched.findIndex((item) => isSameDraftItem(item, candidate));
+    if (index >= 0) {
+      // Same turn, same semantic item from two parsers (LLM + deterministic):
+      // overwrite quantity instead of summing to avoid artificial doubles.
+      matched[index] = {
+        ...matched[index],
+        ...candidate,
+        qty: candidate.qty,
+      };
+      continue;
+    }
+    matched.push({ ...candidate });
+  }
   const unknown = [...new Set([...left.unknown, ...right.unknown])].slice(0, 5);
   const ambiguousByQuery = new Map<string, { query: string; options: MenuCatalogItem[] }>();
 

@@ -211,6 +211,18 @@ mustInclude(
 
 mustInclude(
   source,
+  "const matched = left.matched.map((item) => ({ ...item }));",
+  "Missing non-summing matched-item merge initialization.",
+);
+
+mustInclude(
+  source,
+  "qty: candidate.qty,",
+  "Missing quantity override in cross-parser matched-item merge.",
+);
+
+mustInclude(
+  source,
   "unknown: [...new Set(unknown)].slice(0, 5),\n    ambiguous,",
   "Missing explicit preservation of ambiguous entries in resolved result.",
 );
