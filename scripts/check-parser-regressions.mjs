@@ -33,8 +33,8 @@ if (!fs.existsSync(textUtilsTarget)) {
   process.exit();
 }
 
-const source = fs.readFileSync(engineTarget, "utf8");
-const textUtilsSource = fs.readFileSync(textUtilsTarget, "utf8");
+const source = fs.readFileSync(engineTarget, "utf8").replace(/\r\n/g, "\n");
+const textUtilsSource = fs.readFileSync(textUtilsTarget, "utf8").replace(/\r\n/g, "\n");
 
 // 1) Ice-cream alias normalization should stay in place.
 mustInclude(

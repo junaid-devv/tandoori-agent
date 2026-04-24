@@ -14,6 +14,7 @@ import {
   getGreetingReply,
   isSimpleAcknowledgmentPattern,
   isSimpleGreetingPattern,
+  parseNumericToken,
   parseAddress,
   parseGuestCount,
   parseReservationTime,
@@ -1435,7 +1436,10 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     );
   }
 
+  const likelyDirectOrderMessage = isLikelyDirectOrderRequest(rawText, normalizedText, interpretation, menuItems);
+
   const directLookupQuery =
+    !likelyDirectOrderMessage &&
     interpretation.add_items.length === 0 &&
     interpretation.remove_items.length === 0 &&
     interpretation.intent !== "set_order_type" &&
@@ -1480,9 +1484,12 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
   }
 
   if (
-    interpretation.asks_menu ||
-    interpretation.intent === "browse_menu" ||
-    isLikelyMenuRequest(normalizedText)
+    !likelyDirectOrderMessage &&
+    (
+      interpretation.asks_menu ||
+      interpretation.intent === "browse_menu" ||
+      isLikelyMenuRequest(normalizedText)
+    )
   ) {
     const queryHints = buildMenuQueryHints(rawText, normalizedText);
     if (queryHints.length > 0) {
@@ -1643,7 +1650,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     }
   }
 
-  if (interpretation.intent === "category_question" || interpretation.category_query) {
+  if (!likelyDirectOrderMessage && (interpretation.intent === "category_question" || interpretation.category_query)) {
     const category = findCategoryRequest(interpretation.category_query ?? normalizedText, menuItems);
     if (category) {
       const categoryReply = buildCategoryItemsReply(category, menuItems, prefersRomanUrdu);
@@ -1910,6 +1917,54 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     const qtyTargets = new Set(qtyUpdates.map((entry) => normalizeText(entry.name)));
     matchedAdds.matched = matchedAdds.matched.filter((entry) => !qtyTargets.has(normalizeText(entry.name)));
     matchedAdds.ambiguous = [];
+  }
+
+  if (
+    matchedAdds.ambiguous.length > 0 &&
+    (matchedAdds.matched.length > 0 || removeRequests.length > 0 || qtyUpdates.length > 0)
+  ) {
+    const mutated = mutateCart(state.cart, matchedAdds.matched, removeRequests);
+    const cartWithQtyUpdates = applyCartQtyUpdates(mutated.cart, qtyUpdates);
+    const nextStateBase: ConversationState = {
+      ...state,
+      cart: cartWithQtyUpdates,
+      workflow_step: "collecting_items",
+      preferred_language: preferredLanguage,
+      last_presented_options: null,
+      last_presented_options_at: null,
+    };
+    const nextState = applyCheckoutSignalsToState({
+      state: nextStateBase,
+      interpretation,
+      rawText,
+      settings: context.settings,
+    });
+    const firstAmbiguous = matchedAdds.ambiguous[0];
+    const parts = [
+      buildAddedItemsMessage(matchedAdds.matched),
+      buildRemovedItemsMessage(mutated.removed),
+      buildQtyUpdatedItemsMessage(qtyUpdates),
+      buildAmbiguousItemReply(firstAmbiguous.query, firstAmbiguous.options, prefersRomanUrdu),
+      matchedAdds.ambiguous.length > 1
+        ? prefersRomanUrdu
+          ? "Pehle is item ko select karein, phir baqi confirm karwa doon ga."
+          : "Please confirm this item first, then I will complete the rest."
+        : "",
+    ].filter(Boolean);
+
+    return replyDecision(
+      parts.join("\n\n"),
+      withPreferredLanguage(
+        {
+          ...buildPersistedStatePatch(nextState),
+          workflow_step: "collecting_items",
+          last_presented_options: firstAmbiguous.options,
+          last_presented_options_at: new Date().toISOString(),
+        },
+        preferredLanguage,
+      ),
+      trace,
+    );
   }
 
   if (state.workflow_step === "awaiting_confirmation") {
@@ -2548,6 +2603,38 @@ function isLikelyMenuRequest(text: string): boolean {
   if (/^category\s+more\s+\d{1,2}$/.test(text)) return false;
 
   return /(menu|show.*menu|what.*have|list.*items?|kya.*hai|dikhao|category|categories|price|rates?)/.test(text);
+}
+
+function hasDirectOrderVerb(normalizedText: string): boolean {
+  return /\b(add|order|place|send|bhej|chahiye|chahye|chaheye|kar do|kr do|kar dain|kr dain|de do|de dain|de dein|deliver)\b/.test(
+    normalizedText,
+  );
+}
+
+function isLikelyDirectOrderRequest(
+  rawText: string,
+  normalizedText: string,
+  interpretation: OrderTurnInterpretation,
+  menuItems: MenuCatalogItem[],
+): boolean {
+  if (interpretation.intent === "add_items" || interpretation.intent === "modify_order") return true;
+  if (interpretation.add_items.length > 0) return true;
+  if (interpretation.remove_items.length > 0) return true;
+
+  const hasOrderVerb = hasDirectOrderVerb(normalizedText);
+  const hasQtySignal = extractAnyQuantity(normalizedText) != null;
+  const hasOrderTypeShortcut = parseOrderTypeShortcut(normalizedText) != null;
+  if (hasOrderTypeShortcut && (hasOrderVerb || hasQtySignal)) return true;
+
+  const delimitedInline = findInlineItemsFromDelimitedClauses(rawText, menuItems);
+  if (delimitedInline.hasDelimitedInput && (delimitedInline.requests.length > 0 || delimitedInline.ambiguous.length > 0)) {
+    return true;
+  }
+
+  const inlineItems = findInlineItems(rawText, menuItems);
+  if (inlineItems.length > 0 && (hasOrderVerb || hasQtySignal || hasOrderTypeShortcut)) return true;
+
+  return false;
 }
 
 function extractStandaloneMenuLookupQuery(rawText: string, normalizedText: string): string | null {
@@ -3679,12 +3766,23 @@ function resolveRequestedItems(
   const customization = parseItemCustomizationFromText(rawText);
 
   const shouldSkipInlineAddExtraction = isLikelyRemovalOrEditMessage(rawText);
+  const inlineParsed = shouldSkipInlineAddExtraction
+    ? { requests: [], ambiguous: [], unknown: [], hasDelimitedInput: false }
+    : findInlineItemsFromDelimitedClauses(rawText, menuItems);
+  if (inlineParsed.ambiguous.length > 0) {
+    ambiguous.push(...inlineParsed.ambiguous);
+  }
+  if (inlineParsed.unknown.length > 0) {
+    unknown.push(...inlineParsed.unknown);
+  }
   const requests =
     requested.length > 0
       ? requested
       : shouldSkipInlineAddExtraction
         ? []
-        : findInlineItems(rawText, menuItems);
+        : inlineParsed.hasDelimitedInput
+          ? inlineParsed.requests
+          : findInlineItems(rawText, menuItems);
 
   for (const request of requests) {
     if (requested.length > 0 && !isGroundedItemRequest(rawText, request.name, semanticMatches)) {
@@ -3835,6 +3933,104 @@ function findDisambiguationCandidatesFromRaw(
   return rankedByRaw.slice(0, 3).map((entry) => entry.item);
 }
 
+function findInlineItemsFromDelimitedClauses(
+  rawText: string,
+  menuItems: MenuCatalogItem[],
+): {
+  requests: Array<{ name: string; qty: number }>;
+  ambiguous: Array<{ query: string; options: MenuCatalogItem[] }>;
+  unknown: string[];
+  hasDelimitedInput: boolean;
+} {
+  const normalized = normalizeText(rawText);
+  if (!normalized) {
+    return { requests: [], ambiguous: [], unknown: [], hasDelimitedInput: false };
+  }
+  if (!/\b(and|aur|or)\b|,|&|\+/.test(normalized)) {
+    return { requests: [], ambiguous: [], unknown: [], hasDelimitedInput: false };
+  }
+  if (!hasDirectOrderVerb(normalized) && extractAnyQuantity(normalized) == null) {
+    return { requests: [], ambiguous: [], unknown: [], hasDelimitedInput: true };
+  }
+
+  const segments = rawText
+    .split(/\s*(?:,|&|\+|\b(?:and|aur|or)\b)\s*/i)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)
+    .map((segment) =>
+      segment.replace(
+        /\b(?:deliver(?:y)?|home delivery|order(?:\s+kar(?:na|do|dain))?|please|pls|kr dain|kar dain|kr do|kar do)\b.*$/i,
+        "",
+      ).trim(),
+    )
+    .filter((segment) => segment.length > 0);
+
+  if (segments.length < 2) {
+    return { requests: [], ambiguous: [], unknown: [], hasDelimitedInput: false };
+  }
+
+  const extracted: Array<{ name: string; qty: number }> = [];
+  const ambiguous: Array<{ query: string; options: MenuCatalogItem[] }> = [];
+  const unknown: string[] = [];
+  for (const segment of segments) {
+    const clauseQtyHint = extractClauseQuantityHint(segment);
+    const segmentMatches = findInlineItems(segment, menuItems);
+    if (segmentMatches.length > 0) {
+      extracted.push({
+        ...segmentMatches[0],
+        qty: clauseQtyHint ?? segmentMatches[0].qty,
+      });
+      continue;
+    }
+
+    const suggestions = findLikelyMenuSuggestions(segment, menuItems, 3);
+    if (suggestions.length >= 2) {
+      ambiguous.push({ query: segment, options: suggestions });
+      continue;
+    }
+    unknown.push(segment);
+  }
+
+  const byName = new Map<string, { name: string; qty: number }>();
+  for (const match of extracted) {
+    const key = normalizeText(match.name);
+    const existing = byName.get(key);
+    if (existing) {
+      existing.qty = clampQty(existing.qty + match.qty);
+    } else {
+      byName.set(key, { ...match });
+    }
+  }
+
+  return {
+    requests: [...byName.values()],
+    ambiguous,
+    unknown,
+    hasDelimitedInput: true,
+  };
+}
+
+function extractClauseQuantityHint(rawClause: string): number | null {
+  const normalized = normalizeText(rawClause);
+  if (!normalized) return null;
+
+  const tokens = normalized.split(/\s+/).filter(Boolean);
+  if (tokens.length === 0) return null;
+
+  const firstNumeric = parseNumericToken(tokens[0]);
+  if (firstNumeric != null) return clampQty(firstNumeric);
+
+  const prefixed = normalized.match(
+    /^(?:qty|quantity|x)\s*(\d{1,2}|aik|ek|do|teen|char|chaar|panj|paanch|cheh|chay|saat|aath|ath|das)\b/i,
+  );
+  if (prefixed?.[1]) {
+    const parsed = parseNumericToken(prefixed[1].toLowerCase());
+    if (parsed != null) return clampQty(parsed);
+  }
+
+  return null;
+}
+
 function findInlineItems(rawText: string, menuItems: MenuCatalogItem[]): Array<{ name: string; qty: number }> {
   const normalized = normalizeText(rawText);
   if (!normalized) return [];
@@ -3857,10 +4053,18 @@ function findInlineItems(rawText: string, menuItems: MenuCatalogItem[]): Array<{
         itemCompact.length >= 6 && normalizedCompact.includes(itemCompact)
           ? 0.9
           : 0;
+      const itemTokens = normalizedName
+        .split(/\s+/)
+        .filter((token) => token.length >= 3 && !MENU_LOOKUP_FILLER_WORDS.has(token));
+      const unorderedTokenScore =
+        itemTokens.length >= 2 && itemTokens.every((token) => normalized.includes(token))
+          ? 0.9
+          : 0;
       const score = Math.max(
         exactScore,
         phraseScore,
         compactScore,
+        unorderedTokenScore,
         itemSimilarityScore(normalized, normalizedComposite),
         tokenOverlapScore(normalized, normalizedComposite),
       );
