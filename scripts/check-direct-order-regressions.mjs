@@ -31,8 +31,26 @@ const source = fs.readFileSync(engineTarget, "utf8").replace(/\r\n/g, "\n");
 
 mustInclude(
   source,
-  "const likelyDirectOrderMessage = isLikelyDirectOrderRequest(rawText, normalizedText, interpretation, menuItems);",
+  "const likelyDirectOrderMessage =\n    forceDirectOrderResolution || isLikelyDirectOrderRequest(rawText, normalizedText, interpretation, menuItems);",
   "Missing direct-order message gate assignment.",
+);
+
+mustInclude(
+  source,
+  "const deterministicDirectHints = resolveRequestedItems([], [], menuItems, rawText, context.semanticMatches);",
+  "Missing deterministic direct-order fallback hints extraction.",
+);
+
+mustInclude(
+  source,
+  "const forceDirectOrderResolution =\n    hasDirectOrderVerb(normalizedText) &&\n    (deterministicDirectHints.matched.length > 0 || deterministicDirectHints.ambiguous.length > 0);",
+  "Missing hard direct-order resolution bypass condition.",
+);
+
+mustInclude(
+  source,
+  "trace.notes = trace.notes ? `${trace.notes} | forced_direct_order` : \"forced_direct_order\";",
+  "Missing forced direct-order trace note for diagnostics.",
 );
 
 mustInclude(
@@ -135,6 +153,18 @@ mustInclude(
   source,
   ": inlineParsed.hasDelimitedInput\n          ? inlineParsed.requests\n          : findInlineItems(rawText, menuItems);",
   "Missing delimited-request priority in item resolution.",
+);
+
+mustInclude(
+  source,
+  "if (forceDirectOrderResolution) {\n    matchedAdds = mergeMatchedItemsResults(matchedAdds, deterministicDirectHints);\n  }",
+  "Missing merge of deterministic hints into final matched adds.",
+);
+
+mustInclude(
+  source,
+  "function mergeMatchedItemsResults(left: MatchedItemsResult, right: MatchedItemsResult): MatchedItemsResult {",
+  "Missing matched-item results merge helper.",
 );
 
 mustInclude(

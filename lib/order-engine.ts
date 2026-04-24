@@ -1436,7 +1436,15 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     );
   }
 
-  const likelyDirectOrderMessage = isLikelyDirectOrderRequest(rawText, normalizedText, interpretation, menuItems);
+  const deterministicDirectHints = resolveRequestedItems([], [], menuItems, rawText, context.semanticMatches);
+  const forceDirectOrderResolution =
+    hasDirectOrderVerb(normalizedText) &&
+    (deterministicDirectHints.matched.length > 0 || deterministicDirectHints.ambiguous.length > 0);
+  const likelyDirectOrderMessage =
+    forceDirectOrderResolution || isLikelyDirectOrderRequest(rawText, normalizedText, interpretation, menuItems);
+  if (forceDirectOrderResolution) {
+    trace.notes = trace.notes ? `${trace.notes} | forced_direct_order` : "forced_direct_order";
+  }
 
   const directLookupQuery =
     !likelyDirectOrderMessage &&
@@ -1903,13 +1911,16 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     }
   }
 
-  const matchedAdds = resolveRequestedItems(
+  let matchedAdds = resolveRequestedItems(
     interpretation.add_items,
     interpretation.unknown_items,
     menuItems,
     rawText,
     context.semanticMatches,
   );
+  if (forceDirectOrderResolution) {
+    matchedAdds = mergeMatchedItemsResults(matchedAdds, deterministicDirectHints);
+  }
   matchedAdds.unknown = matchedAdds.unknown.filter((entry) => !isControlPayloadToken(entry));
   const removeRequests = resolveRemovalRequests(interpretation, state.cart, rawText);
   const qtyUpdates = resolveQuantityUpdates(rawText, state.cart);
@@ -3878,6 +3889,25 @@ function resolveRequestedItems(
     matched: mergeCartItems([], matched),
     unknown: [...new Set(unknown)].slice(0, 5),
     ambiguous,
+  };
+}
+
+function mergeMatchedItemsResults(left: MatchedItemsResult, right: MatchedItemsResult): MatchedItemsResult {
+  const matched = mergeCartItems(left.matched, right.matched);
+  const unknown = [...new Set([...left.unknown, ...right.unknown])].slice(0, 5);
+  const ambiguousByQuery = new Map<string, { query: string; options: MenuCatalogItem[] }>();
+
+  for (const entry of [...left.ambiguous, ...right.ambiguous]) {
+    const key = normalizeText(entry.query);
+    if (!ambiguousByQuery.has(key)) {
+      ambiguousByQuery.set(key, entry);
+    }
+  }
+
+  return {
+    matched,
+    unknown,
+    ambiguous: [...ambiguousByQuery.values()],
   };
 }
 
