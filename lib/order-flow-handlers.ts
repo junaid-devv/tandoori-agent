@@ -147,6 +147,18 @@ type LogisticsHelpers = SharedHelpers & {
       rows: Array<{ id: string; title: string; description?: string }>;
     }
     | null;
+  buildQuantityPickerReply: (
+    item: MenuCatalogItem,
+    romanUrdu: boolean,
+  ) => {
+    text: string;
+    interactiveList: {
+      body: string;
+      buttonText: string;
+      sectionTitle?: string;
+      rows: Array<{ id: string; title: string; description?: string }>;
+    };
+  };
   buildUpsellInteractiveList: (
     romanUrdu: boolean,
     itemName?: string,
@@ -386,6 +398,29 @@ export function handleLogisticsAndFallbackFlow(params: {
       const sourceItem = context.menuItems.find(
         (item) => normalizeText(item.name) === normalizeText(state.upsell_item_name ?? ""),
       );
+      const shouldPromptUpsellQty = /\b(naan|roti|paratha|kulcha|sheermal|taftan)\b/.test(
+        normalizeText(state.upsell_item_name),
+      );
+      if (sourceItem && shouldPromptUpsellQty) {
+        const quantityPrompt = helpers.buildQuantityPickerReply(sourceItem, prefersRomanUrdu);
+        return helpers.replyDecision(
+          quantityPrompt.text,
+          helpers.withPreferredLanguage(
+            {
+              workflow_step: "collecting_items",
+              upsell_item_name: null,
+              upsell_item_price: null,
+              last_presented_category: `__qty_pick__:${sourceItem.id}`,
+              last_presented_options: [sourceItem],
+              last_presented_options_at: new Date().toISOString(),
+            },
+            preferredLanguage,
+          ),
+          trace,
+          quantityPrompt.interactiveList,
+        );
+      }
+
       const upsellItem: DraftCartItem = {
         name: state.upsell_item_name,
         qty: 1,
