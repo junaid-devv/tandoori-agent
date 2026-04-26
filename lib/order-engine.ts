@@ -3204,15 +3204,19 @@ function pickUpsellSuggestion(menuItems: MenuCatalogItem[], state: ConversationS
     const isWater = /\b(water|mineral water)\b/.test(combined);
     const isDessert = /\b(dessert|sweet|ice cream|icecream|kulfi|cake|brownie)\b/.test(combined);
     const isStarter = /\b(starter|fries|side|salad|soup|appetizer|roll)\b/.test(combined);
+    const isBread = /\b(naan|roti|paratha|kulcha|sheermal|taftan)\b/.test(combined);
     const isMain =
       /\b(karahi|handi|biryani|bbq|tikka|boti|chargha|qorma|nihari|chicken|mutton|beef)\b/.test(combined);
+    const isKarahiLike = /\b(karahi|handi)\b/.test(combined);
 
     return {
       isBeverage,
       isWater,
       isDessert,
       isStarter,
+      isBread,
       isMain,
+      isKarahiLike,
     };
   };
 
@@ -3221,18 +3225,22 @@ function pickUpsellSuggestion(menuItems: MenuCatalogItem[], state: ConversationS
       const tags = classifyTags(item.name, item.category);
       return {
         hasMain: acc.hasMain || tags.isMain,
+        hasKarahiLike: acc.hasKarahiLike || tags.isKarahiLike,
+        hasBread: acc.hasBread || tags.isBread,
         hasBeverage: acc.hasBeverage || tags.isBeverage,
         hasDessert: acc.hasDessert || tags.isDessert,
       };
     },
-    { hasMain: false, hasBeverage: false, hasDessert: false },
+    { hasMain: false, hasKarahiLike: false, hasBread: false, hasBeverage: false, hasDessert: false },
   );
 
-  const preferenceOrder = cartProfile.hasMain
-    ? ["beverage_non_water", "dessert", "starter", "beverage_water", "other"]
+  const preferenceOrder = cartProfile.hasKarahiLike && !cartProfile.hasBread
+    ? ["bread", "beverage_non_water", "dessert", "starter", "beverage_water", "other"]
+    : cartProfile.hasMain
+    ? ["beverage_non_water", "dessert", "starter", "beverage_water", "other", "bread"]
     : cartProfile.hasBeverage && !cartProfile.hasMain
       ? ["starter", "dessert", "beverage_non_water", "beverage_water", "other"]
-      : ["beverage_non_water", "dessert", "starter", "beverage_water", "other"];
+    : ["beverage_non_water", "dessert", "starter", "beverage_water", "other"];
 
   const candidates = menuItems.filter((item) => {
     if (!item.is_available) return false;
@@ -3264,6 +3272,8 @@ function pickUpsellSuggestion(menuItems: MenuCatalogItem[], state: ConversationS
           : "beverage_non_water"
         : tags.isDessert
           ? "dessert"
+          : tags.isBread
+            ? "bread"
           : tags.isStarter
             ? "starter"
             : "other";
@@ -4785,5 +4795,4 @@ function applyLastItemQtyOverride(cart: DraftCartItem[], qty: number): DraftCart
   updated[lastIndex].qty = qty;
   return updated;
 }
-
 
