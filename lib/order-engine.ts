@@ -2218,7 +2218,6 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
       buildOrderTypePrompt,
       buildOrderTypeInteractiveList,
       buildQuickOrderTypeInteractiveList,
-      buildQuantityPickerReply,
       buildUpsellInteractiveList,
       handleOrderTypeSelection,
       inferGeneralQtyOverride,
