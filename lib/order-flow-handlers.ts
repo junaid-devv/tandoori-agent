@@ -174,6 +174,45 @@ type LogisticsHelpers = SharedHelpers & {
   clampQty: (qty: number) => number;
 };
 
+const QUANTITY_PICK_PREFIX = "__qty_pick__:";
+const QUANTITY_PICKER_OPTION_COUNT = 5;
+
+function buildUpsellQuantityPickerReply(item: MenuCatalogItem, romanUrdu: boolean): {
+  text: string;
+  interactiveList: {
+    body: string;
+    buttonText: string;
+    sectionTitle?: string;
+    rows: Array<{ id: string; title: string; description?: string }>;
+  };
+} {
+  const rows = Array.from({ length: QUANTITY_PICKER_OPTION_COUNT }, (_, index) => {
+    const qty = index + 1;
+    return {
+      id: `${QUANTITY_PICK_PREFIX}${qty}`,
+      title: `${qty}`,
+      description: `Rs. ${item.price * qty}`,
+    };
+  });
+  rows.push({
+    id: `${QUANTITY_PICK_PREFIX}custom`,
+    title: "Custom quantity",
+    description: romanUrdu ? "Khud number type karein" : "Type any number",
+  });
+
+  return {
+    text: romanUrdu
+      ? `*${item.name}* select ho gaya. Kitni quantity chahiye?`
+      : `*${item.name}* selected. How many would you like?`,
+    interactiveList: {
+      body: romanUrdu ? `${item.name} ki quantity select karein.` : `Select quantity for ${item.name}.`,
+      buttonText: romanUrdu ? "Quantity" : "Quantity",
+      sectionTitle: romanUrdu ? "Quantity" : "Quantity",
+      rows,
+    },
+  };
+}
+
 function isCheckoutRequest(normalizedText: string, interpretation: OrderTurnInterpretation): boolean {
   if (interpretation.order_type != null) return true;
   if (interpretation.wants_confirmation === true) return true;
@@ -386,6 +425,29 @@ export function handleLogisticsAndFallbackFlow(params: {
       const sourceItem = context.menuItems.find(
         (item) => normalizeText(item.name) === normalizeText(state.upsell_item_name ?? ""),
       );
+      const shouldPromptUpsellQty = /\b(naan|nan|roti|chapati|paratha|kulcha|sheermal|taftan)\b/.test(
+        normalizeText(state.upsell_item_name),
+      );
+      if (sourceItem && shouldPromptUpsellQty) {
+        const quantityPrompt = buildUpsellQuantityPickerReply(sourceItem, prefersRomanUrdu);
+        return helpers.replyDecision(
+          quantityPrompt.text,
+          helpers.withPreferredLanguage(
+            {
+              workflow_step: "collecting_items",
+              upsell_item_name: null,
+              upsell_item_price: null,
+              last_presented_category: `${QUANTITY_PICK_PREFIX}${sourceItem.id}`,
+              last_presented_options: [sourceItem],
+              last_presented_options_at: new Date().toISOString(),
+            },
+            preferredLanguage,
+          ),
+          trace,
+          quantityPrompt.interactiveList,
+        );
+      }
+
       const upsellItem: DraftCartItem = {
         name: state.upsell_item_name,
         qty: 1,
