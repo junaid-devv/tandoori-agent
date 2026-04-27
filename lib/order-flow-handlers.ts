@@ -405,7 +405,7 @@ export function handleLogisticsAndFallbackFlow(params: {
         id: `upsell_${normalizeText(state.upsell_item_name).replace(/\s+/g, "_") || "item"}`,
         name: state.upsell_item_name,
         price: state.upsell_item_price,
-        category: sourceItem?.category ?? null,
+        category: null,
         is_available: true,
       };
 
