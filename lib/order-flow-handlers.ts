@@ -425,7 +425,7 @@ export function handleLogisticsAndFallbackFlow(params: {
       const sourceItem = context.menuItems.find(
         (item) => normalizeText(item.name) === normalizeText(state.upsell_item_name ?? ""),
       );
-      const shouldPromptUpsellQty = /\b(naan|roti|paratha|kulcha|sheermal|taftan)\b/.test(
+      const shouldPromptUpsellQty = /\b(naan|nan|roti|chapati|paratha|kulcha|sheermal|taftan)\b/.test(
         normalizeText(state.upsell_item_name),
       );
       if (sourceItem && shouldPromptUpsellQty) {

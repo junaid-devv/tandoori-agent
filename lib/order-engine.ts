@@ -3204,7 +3204,7 @@ function pickUpsellSuggestion(menuItems: MenuCatalogItem[], state: ConversationS
     const isWater = /\b(water|mineral water)\b/.test(combined);
     const isDessert = /\b(dessert|sweet|ice cream|icecream|kulfi|cake|brownie)\b/.test(combined);
     const isStarter = /\b(starter|fries|side|salad|soup|appetizer|roll)\b/.test(combined);
-    const isBread = /\b(naan|roti|paratha|kulcha|sheermal|taftan)\b/.test(combined);
+    const isBread = /\b(naan|nan|roti|chapati|paratha|kulcha|sheermal|taftan)\b/.test(combined);
     const isMain =
       /\b(karahi|handi|biryani|bbq|tikka|boti|chargha|qorma|nihari|chicken|mutton|beef)\b/.test(combined);
     const isKarahiLike = /\b(karahi|handi)\b/.test(combined);
