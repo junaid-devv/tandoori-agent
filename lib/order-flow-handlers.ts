@@ -123,6 +123,20 @@ type AwaitingConfirmationHelpers = SharedHelpers & {
 type LogisticsHelpers = SharedHelpers & {
   isUpsellYes: (normalizedText: string) => boolean;
   isUpsellNo: (normalizedText: string) => boolean;
+  shouldPromptForQuantityPicker: (item: MenuCatalogItem) => boolean;
+  buildQuantityPickerReply: (
+    item: MenuCatalogItem,
+    romanUrdu: boolean,
+  ) => {
+    text: string;
+    interactiveList: {
+      body: string;
+      buttonText: string;
+      sectionTitle?: string;
+      rows: Array<{ id: string; title: string; description?: string }>;
+    };
+  };
+  buildQuantityPickerCategoryKey: (itemId: string) => string;
   mergeCartItems: (current: DraftCartItem[], additions: DraftCartItem[]) => DraftCartItem[];
   buildOrderTypePrompt: (deliveryEnabled: boolean, romanUrdu: boolean) => string;
   buildOrderTypeInteractiveList: (
@@ -386,6 +400,36 @@ export function handleLogisticsAndFallbackFlow(params: {
       const sourceItem = context.menuItems.find(
         (item) => normalizeText(item.name) === normalizeText(state.upsell_item_name ?? ""),
       );
+
+      const upsellMenuItem: MenuCatalogItem = sourceItem ?? {
+        id: `upsell_${normalizeText(state.upsell_item_name).replace(/\s+/g, "_") || "item"}`,
+        name: state.upsell_item_name,
+        price: state.upsell_item_price,
+        category: sourceItem?.category ?? null,
+        is_available: true,
+      };
+
+      if (helpers.shouldPromptForQuantityPicker(upsellMenuItem)) {
+        const quantityPrompt = helpers.buildQuantityPickerReply(upsellMenuItem, prefersRomanUrdu);
+
+        return helpers.replyDecision(
+          quantityPrompt.text,
+          helpers.withPreferredLanguage(
+            {
+              workflow_step: "collecting_items",
+              upsell_item_name: null,
+              upsell_item_price: null,
+              last_presented_category: helpers.buildQuantityPickerCategoryKey(upsellMenuItem.id),
+              last_presented_options: [upsellMenuItem],
+              last_presented_options_at: new Date().toISOString(),
+            },
+            preferredLanguage,
+          ),
+          trace,
+          quantityPrompt.interactiveList,
+        );
+      }
+
       const upsellItem: DraftCartItem = {
         name: state.upsell_item_name,
         qty: 1,
