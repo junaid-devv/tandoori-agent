@@ -213,7 +213,7 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  console.log("[webhook] POST request received. Version: No-LangGraph");
+  console.log("[webhook] POST request received. Version: Legacy-V1-Reset");
   let rawBody = "";
   let body: unknown;
   const signature = req.headers.get("x-hub-signature-256");

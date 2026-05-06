@@ -493,9 +493,12 @@ export async function getCustomerSupportReply(
   }
 
   try {
+    const targetModel = googleClient ? "gemini-2.0-flash" : "meta-llama/llama-3.1-8b-instruct:free";
+    const targetClient = googleClient || openRouterClient;
+
     const completion = await withTimeout(
-      openRouterClient.chat.completions.create({
-        model: "openrouter/auto",
+      targetClient.chat.completions.create({
+        model: targetModel,
         max_tokens: 400,
         messages,
       }),
