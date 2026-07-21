@@ -1,4 +1,10 @@
-import { OutboundMessageError, sendAndPersistOutboundFlowMessage, sendAndPersistOutboundInteractiveMessage, sendAndPersistOutboundMessage } from "./messages";
+import {
+  deleteUnsentOutboundMessage,
+  OutboundMessageError,
+  sendAndPersistOutboundFlowMessage,
+  sendAndPersistOutboundInteractiveMessage,
+  sendAndPersistOutboundMessage,
+} from "./messages";
 import type { WhatsAppInteractiveFlowPayload, WhatsAppInteractiveListPayload } from "./whatsapp";
 
 export async function sendAndPersistAssistantMessage({
@@ -27,7 +33,9 @@ export async function sendAndPersistAssistantMessage({
       });
       return;
     } catch (error) {
-      if (!(error instanceof OutboundMessageError && !error.messageSent)) {
+      if (error instanceof OutboundMessageError && !error.messageSent) {
+        await deleteUnsentOutboundMessage(error.persistedMessageId);
+      } else {
         throw error;
       }
     }
@@ -49,6 +57,7 @@ export async function sendAndPersistAssistantMessage({
       return;
     } catch (error) {
       if (error instanceof OutboundMessageError && !error.messageSent) {
+        await deleteUnsentOutboundMessage(error.persistedMessageId);
         await sendAndPersistOutboundMessage({
           conversationId,
           phone,
