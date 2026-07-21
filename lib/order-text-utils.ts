@@ -22,8 +22,68 @@ const MENU_TOKEN_STOP_WORDS = new Set([
   "quantity",
 ]);
 
+const URDU_ORDER_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/[۰٠]/g, "0"],
+  [/[۱١]/g, "1"],
+  [/[۲٢]/g, "2"],
+  [/[۳٣]/g, "3"],
+  [/[۴٤]/g, "4"],
+  [/[۵٥]/g, "5"],
+  [/[۶٦]/g, "6"],
+  [/[۷٧]/g, "7"],
+  [/[۸٨]/g, "8"],
+  [/[۹٩]/g, "9"],
+  [/(?:ایک|اک|اِک)/g, " ek "],
+  [/(?:دو)/g, " do "],
+  [/(?:تین)/g, " teen "],
+  [/(?:چار)/g, " char "],
+  [/(?:پانچ)/g, " paanch "],
+  [/(?:چھ|چھے)/g, " chay "],
+  [/(?:سات)/g, " saat "],
+  [/(?:آٹھ|اٹھ)/g, " aath "],
+  [/(?:دس)/g, " das "],
+  [/(?:فل|فُل|فول)/g, " full "],
+  [/(?:ہاف|نصف)/g, " half "],
+  [/(?:چکن|مرغی)/g, " chicken "],
+  [/(?:مٹن|بکرا|بکرے)/g, " mutton "],
+  [/(?:بیف|گائے)/g, " beef "],
+  [/(?:بریانی)/g, " biryani "],
+  [/(?:کڑاہی|کڑائی|کرائی|کراہی)/g, " karahi "],
+  [/(?:ہانڈی)/g, " handi "],
+  [/(?:تکہ|ٹکہ)/g, " tikka "],
+  [/(?:بوٹی)/g, " boti "],
+  [/(?:کباب|کبب)/g, " kabab "],
+  [/(?:رول)/g, " roll "],
+  [/(?:برگر)/g, " burger "],
+  [/(?:پیزا)/g, " pizza "],
+  [/(?:فرائز|چپس)/g, " fries "],
+  [/(?:نان)/g, " naan "],
+  [/(?:روٹی)/g, " roti "],
+  [/(?:رائتہ|رائتا)/g, " raita "],
+  [/(?:سلاد)/g, " salad "],
+  [/(?:کولڈ\s*ڈرنک|ڈرنک|بوتل)/g, " drink "],
+  [/(?:ڈیلیور|ڈلیور|ڈلیوری|ڈیلیوری)/g, " delivery "],
+  [/(?:بھیج|بھیجیں|بھیجو|بھیجنا)/g, " bhej "],
+  [/(?:چاہیے|چائیے|چاہئے)/g, " chahiye "],
+  [/(?:کردو|کر\s*دو|کر\s*دیں|کر\s*دے|کردیں|کردے)/g, " kar do "],
+  [/(?:دے\s*دو|دے\s*دیں|دیدو|دیدیں)/g, " de do "],
+  [/(?:پک\s*اپ|پکاپ)/g, " pickup "],
+  [/(?:ڈائن\s*ان|دائن\s*ان)/g, " dine in "],
+  [/(?:مصالحہ|مرچ|تیز)/g, " spicy "],
+  [/(?:کم)/g, " less "],
+  [/(?:زیادہ)/g, " extra "],
+];
+
+function expandUrduOrderTokens(value: string): string {
+  let expanded = value;
+  for (const [pattern, replacement] of URDU_ORDER_TOKEN_REPLACEMENTS) {
+    expanded = expanded.replace(pattern, replacement);
+  }
+  return expanded;
+}
+
 export function normalizeText(value: string): string {
-  const withAliasExpansion = value
+  const withAliasExpansion = expandUrduOrderTokens(value)
     .toLowerCase()
     .replace(/\bice[\s-]?cream\b/g, "ice cream");
   return withAliasExpansion
