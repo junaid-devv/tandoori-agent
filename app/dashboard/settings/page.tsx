@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Bot, Clock, Phone, RefreshCw, Save, Store, Truck } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { toast } from "sonner";
+import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 type SettingsState = {
   is_accepting_orders: boolean;
@@ -52,7 +53,6 @@ function toMeridiemLabel(value: string): string {
 
 export default function SettingsPage() {
   const { selectedBranchId, selectedBranch } = useDashboardContext();
-  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<SettingsState>({
     is_accepting_orders: true,
@@ -69,6 +69,23 @@ export default function SettingsPage() {
     phone_dine_in: "",
     ai_personality: "",
   });
+
+  const settingsUrl = useMemo(() =>
+    selectedBranchId === "all"
+      ? null
+      : `/api/settings?branch_id=${encodeURIComponent(selectedBranchId)}`,
+    [selectedBranchId],
+  );
+
+  const { data: cachedSettings, isLoading: loading } = useDataCache<Partial<SettingsState>>(settingsUrl);
+
+  // Merge cached data into local editable state
+  useEffect(() => {
+    if (cachedSettings) {
+      setSettings((current) => ({ ...current, ...cachedSettings }));
+    }
+  }, [cachedSettings]);
+
   const selectedCityOption = CITY_OPTIONS.includes(settings.city as (typeof CITY_OPTIONS)[number])
     ? settings.city
     : "__custom__";
@@ -78,37 +95,6 @@ export default function SettingsPage() {
     ? settings.ai_personality
     : "__custom__";
 
-  useEffect(() => {
-    let cancelled = false;
-
-    async function loadSettings() {
-      try {
-        if (selectedBranchId === "all") {
-          setLoading(false);
-          return;
-        }
-
-        const response = await fetch(`/api/settings?branch_id=${encodeURIComponent(selectedBranchId)}`);
-        const data = (await response.json()) as Partial<SettingsState>;
-        if (!cancelled) {
-          setSettings((current) => ({ ...current, ...data }));
-        }
-      } catch {
-        if (!cancelled) {
-          toast.error("Failed to load settings");
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
-      }
-    }
-
-    void loadSettings();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedBranchId]);
 
   async function save() {
     if (selectedBranchId === "all") return;
@@ -124,7 +110,8 @@ export default function SettingsPage() {
       if (!response.ok) {
         throw new Error("Save failed");
       }
-
+      // Bust cache so next visit reloads fresh settings
+      invalidateCache("/api/settings");
       toast.success("Settings saved");
     } catch {
       toast.error("Failed to save settings");

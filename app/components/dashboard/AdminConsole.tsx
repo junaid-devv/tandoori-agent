@@ -5,6 +5,7 @@ import { clsx } from "clsx";
 import { Loader2, LogOut, Trash2, GitBranch, Users, ShieldAlert, Plus, ChevronRight, CheckCircle2, XCircle, Building2, Eye, Save, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
 import { useDashboardContext } from "./DashboardProvider";
+import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 type Tab = "branches" | "staff" | "safety";
 
@@ -75,7 +76,7 @@ export default function AdminConsole() {
   const [tab, setTab] = useState<Tab>("branches");
   const [branches, setBranches] = useState<BranchSummary[]>([]);
   const [staff, setStaff] = useState<StaffSummary[]>([]);
-  const [loading, setLoading] = useState(true);
+
   const [creatingBranch, setCreatingBranch] = useState(false);
   const [creatingStaff, setCreatingStaff] = useState(false);
   const [savingBranchId, setSavingBranchId] = useState<string | null>(null);
@@ -99,26 +100,27 @@ export default function AdminConsole() {
     );
   }, [branches]);
 
-  async function loadData() {
-    setLoading(true);
-    try {
-      const [branchRes, staffRes] = await Promise.all([fetch("/api/admin/branches"), fetch("/api/admin/staff")]);
-      const [nextBranches, nextStaff] = await Promise.all([
-        readJson<BranchSummary[]>(branchRes),
-        readJson<StaffSummary[]>(staffRes),
-      ]);
-      setBranches(nextBranches);
-      setStaff(nextStaff);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to load admin data.");
-    } finally {
-      setLoading(false);
-    }
+  // Stale-while-revalidate for admin data
+  const { data: cachedBranches, isLoading: branchesLoading, revalidate: revalidateBranches } =
+    useDataCache<BranchSummary[]>("/api/admin/branches");
+  const { data: cachedStaff, isLoading: staffLoading, revalidate: revalidateStaff } =
+    useDataCache<StaffSummary[]>("/api/admin/staff");
+
+  const loading = branchesLoading || staffLoading;
+
+  useEffect(() => { if (cachedBranches) setBranches(cachedBranches); }, [cachedBranches]);
+  useEffect(() => { if (cachedStaff) setStaff(cachedStaff); }, [cachedStaff]);
+
+  function invalidateAdminCache() {
+    invalidateCache("/api/admin/branches");
+    invalidateCache("/api/admin/staff");
   }
 
-  useEffect(() => {
-    void loadData();
-  }, []);
+  function reloadData() {
+    invalidateAdminCache();
+    revalidateBranches();
+    revalidateStaff();
+  }
 
   if (session.role !== "admin") return null;
 
@@ -257,7 +259,7 @@ export default function AdminConsole() {
                     );
                     setBranchDraft(EMPTY_BRANCH);
                     toast.success("Branch created successfully.");
-                    await loadData();
+                    reloadData();
                   } catch (error) {
                     toast.error(error instanceof Error ? error.message : "Failed to create branch.");
                   } finally {
@@ -367,7 +369,7 @@ export default function AdminConsole() {
                             try {
                               await readJson(await fetch(`/api/admin/branches/${branch.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: branch.name, slug: branch.slug, city: branch.city, address: branch.address, is_active: branch.is_active }) }));
                               toast.success("Branch saved.");
-                              await loadData();
+                              reloadData();
                             } catch (error) {
                               toast.error(error instanceof Error ? error.message : "Failed to save branch.");
                             } finally {
@@ -387,7 +389,7 @@ export default function AdminConsole() {
                             try {
                               await readJson(await fetch(`/api/admin/branches/${branch.id}`, { method: "DELETE" }));
                               toast.success("Branch deleted.");
-                              await loadData();
+                              reloadData();
                             } catch (error) {
                               toast.error(error instanceof Error ? error.message : "Failed to delete branch.");
                             } finally {
@@ -466,7 +468,7 @@ export default function AdminConsole() {
                       await readJson(await fetch("/api/admin/staff", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ full_name: staffDraft.full_name, email: staffDraft.email, password: staffDraft.password, role: staffDraft.role, default_branch_id: staffDraft.role === "branch_staff" ? staffDraft.branch_id : null, branch_ids: staffDraft.role === "branch_staff" && staffDraft.branch_id ? [staffDraft.branch_id] : [] }) }));
                       setStaffDraft(EMPTY_STAFF);
                       toast.success("Staff account created.");
-                      await loadData();
+                      reloadData();
                     } catch (error) {
                       toast.error(error instanceof Error ? error.message : "Failed to create staff.");
                     } finally {
@@ -599,7 +601,7 @@ export default function AdminConsole() {
                               await readJson(await fetch(`/api/admin/staff/${member.user_id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ full_name: member.full_name ?? "", role: member.role, default_branch_id: member.role === "branch_staff" ? member.default_branch_id ?? assignedBranchId : null, branch_ids: member.role === "branch_staff" && assignedBranchId ? [assignedBranchId] : [], password: (passwordDrafts[member.user_id] || "").trim() || null }) }));
                               setPasswordDrafts((c) => ({ ...c, [member.user_id]: "" }));
                               toast.success("Staff updated.");
-                              await loadData();
+                              reloadData();
                             } catch (error) {
                               toast.error(error instanceof Error ? error.message : "Failed to update staff.");
                             } finally {
@@ -619,7 +621,7 @@ export default function AdminConsole() {
                             try {
                               await readJson(await fetch(`/api/admin/staff/${member.user_id}`, { method: "DELETE" }));
                               toast.success("Staff account deleted.");
-                              await loadData();
+                              reloadData();
                             } catch (error) {
                               toast.error(error instanceof Error ? error.message : "Failed to delete staff.");
                             } finally {
@@ -682,7 +684,7 @@ export default function AdminConsole() {
                           }),
                         );
                         toast.success("All operational data cleared.");
-                        await loadData();
+                        reloadData();
                       } catch (error) {
                         toast.error(error instanceof Error ? error.message : "Failed to clear data.");
                       } finally {
@@ -724,7 +726,7 @@ export default function AdminConsole() {
                             }),
                           );
                           toast.success("Branch data cleared.");
-                          await loadData();
+                          reloadData();
                         } catch (error) {
                           toast.error(error instanceof Error ? error.message : "Failed to clear data.");
                         } finally {

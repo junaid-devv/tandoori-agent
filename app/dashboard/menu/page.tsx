@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AlertCircle, CheckCircle2, Loader2, Plus, Search, Trash2, UploadCloud } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 const WEEKDAYS = [
   { key: "mon", label: "M" },
@@ -134,7 +135,6 @@ export default function MenuPage() {
   const [items, setItems] = useState<MenuItem[]>([]);
   const [importPreview, setImportPreview] = useState<MenuItem[]>([]);
   const [importWarnings, setImportWarnings] = useState<ImportWarning[]>([]);
-  const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
   const [jsonUploading, setJsonUploading] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
@@ -150,28 +150,29 @@ export default function MenuPage() {
     toastTimer.current = setTimeout(() => setToast({ text: "", type: null }), 3500);
   }, []);
 
-  const loadMenu = useCallback(async () => {
-    if (selectedBranchId === "all") {
-      setItems([]);
-      setLoading(false);
-      return;
-    }
+  const menuUrl = useMemo(() =>
+    selectedBranchId === "all"
+      ? null
+      : `/api/menu?branch_id=${encodeURIComponent(selectedBranchId)}`,
+    [selectedBranchId],
+  );
 
-    setLoading(true);
-    try {
-      const response = await fetch(`/api/menu?branch_id=${encodeURIComponent(selectedBranchId)}`);
-      if (!response.ok) throw new Error("Failed to load menu");
-      setItems(await response.json());
-    } catch {
-      showToast("Failed to load menu.", "error");
-    } finally {
-      setLoading(false);
-    }
-  }, [selectedBranchId, showToast]);
+  const { data: cachedMenu, isLoading: loading, revalidate: revalidateMenu } = useDataCache<MenuItem[]>(menuUrl);
 
+  // Sync cached menu into local editable state
   useEffect(() => {
-    void loadMenu();
-  }, [loadMenu]);
+    if (cachedMenu) {
+      setItems(cachedMenu);
+    } else if (selectedBranchId === "all") {
+      setItems([]);
+    }
+  }, [cachedMenu, selectedBranchId]);
+
+  // Refresh helper used after mutations
+  const loadMenu = useCallback(() => {
+    invalidateCache("/api/menu");
+    revalidateMenu();
+  }, [revalidateMenu]);
 
   const categories = useMemo(
     () => Array.from(new Set(items.map((item) => item.category || ""))).filter(Boolean).sort(),
