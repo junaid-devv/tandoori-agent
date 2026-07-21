@@ -1,10 +1,11 @@
 "use client";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { MessageSquare, ShoppingBag, TrendingUp, Zap, Settings, Activity, ArrowUpRight, AlertTriangle, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
   received: { label: "New", bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
@@ -57,51 +58,58 @@ const ALERT_KIND_LABELS: Record<string, string> = {
 
 export default function DashboardPage() {
   const { selectedBranchId, selectedBranch } = useDashboardContext();
-  const [stats, setStats] = useState({
-    active: 0, today: 0, revenue: 0, chats: 0,
-    breakdown: {} as Record<string, number>
-  });
-  const [recentOrders, setRecentOrders] = useState<DashboardOrder[]>([]);
-  const [alerts, setAlerts] = useState<StaffAlert[]>([]);
-  const [loading, setLoading] = useState(true);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
+  const [localAlerts, setLocalAlerts] = useState<StaffAlert[] | null>(null);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const branchQuery = selectedBranchId === "all" ? "" : `?branch_id=${encodeURIComponent(selectedBranchId)}`;
-      const alertQuery = selectedBranchId === "all" ? "?status=open&limit=8" : `?status=open&limit=8&branch_id=${encodeURIComponent(selectedBranchId)}`;
-      const [res, alertRes] = await Promise.all([
-        fetch(`/api/dashboard/summary${branchQuery}`, {
-          headers: { "ngrok-skip-browser-warning": "69420" },
-        }),
-        fetch(`/api/staff-alerts${alertQuery}`, {
-          headers: { "ngrok-skip-browser-warning": "69420" },
-        }),
-      ]);
-      if (!res.ok) throw new Error("Failed to load dashboard summary");
-      if (!alertRes.ok) throw new Error("Failed to load staff alerts");
+  const summaryUrl = useMemo(() =>
+    selectedBranchId === "all"
+      ? "/api/dashboard/summary"
+      : `/api/dashboard/summary?branch_id=${encodeURIComponent(selectedBranchId)}`,
+    [selectedBranchId],
+  );
 
-      const summary = (await res.json()) as DashboardSummaryResponse;
-      const nextAlerts = (await alertRes.json()) as StaffAlert[];
-      setStats({
-        active: summary.active,
-        today: summary.today,
-        revenue: summary.revenue,
-        chats: summary.chats,
-        breakdown: summary.breakdown,
-      });
-      setRecentOrders(summary.recentOrders ?? []);
-      setAlerts(nextAlerts);
+  const alertsUrl = useMemo(() =>
+    selectedBranchId === "all"
+      ? "/api/staff-alerts?status=open&limit=8"
+      : `/api/staff-alerts?status=open&limit=8&branch_id=${encodeURIComponent(selectedBranchId)}`,
+    [selectedBranchId],
+  );
+
+  const {
+    data: summary,
+    isLoading: summaryLoading,
+    revalidate: revalidateSummary,
+  } = useDataCache<DashboardSummaryResponse>(summaryUrl);
+
+  const {
+    data: fetchedAlerts,
+    isLoading: alertsLoading,
+    revalidate: revalidateAlerts,
+  } = useDataCache<StaffAlert[]>(alertsUrl);
+
+  // Merge fetched alerts into local state (so optimistic resolve works)
+  useEffect(() => {
+    if (fetchedAlerts) {
+      setLocalAlerts(fetchedAlerts);
       setLastUpdatedAt(new Date().toISOString());
-    } catch (e) {
-      console.error("Data fetch failed", e);
-    } finally {
-      setLoading(false);
     }
-  }, [selectedBranchId]);
+  }, [fetchedAlerts]);
+
+  const loading = summaryLoading || alertsLoading;
+  const stats = summary
+    ? { active: summary.active, today: summary.today, revenue: summary.revenue, chats: summary.chats, breakdown: summary.breakdown }
+    : { active: 0, today: 0, revenue: 0, chats: 0, breakdown: {} as Record<string, number> };
+  const recentOrders = summary?.recentOrders ?? [];
+  const alerts = localAlerts ?? fetchedAlerts ?? [];
+
+  const revalidate = useCallback(() => {
+    revalidateSummary();
+    revalidateAlerts();
+  }, [revalidateSummary, revalidateAlerts]);
 
   const resolveAlert = useCallback(async (alertId: string) => {
-    setAlerts((current) => current.filter((alert) => alert.id !== alertId));
+    // Optimistic remove
+    setLocalAlerts((current) => (current ?? []).filter((a) => a.id !== alertId));
 
     try {
       const response = await fetch(`/api/staff-alerts/${alertId}`, {
@@ -109,28 +117,24 @@ export default function DashboardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "resolved" }),
       });
-      if (!response.ok) {
-        throw new Error("Failed to resolve staff alert");
-      }
+      if (!response.ok) throw new Error("Failed to resolve staff alert");
+      // Bust the alerts cache so next load is fresh
+      invalidateCache("/api/staff-alerts");
     } catch (error) {
       console.error("Alert resolve failed", error);
-      void fetchData();
+      // Roll back optimistic update
+      revalidateAlerts();
     }
-  }, [fetchData]);
+  }, [revalidateAlerts]);
 
-  useEffect(() => {
-    void fetchData();
-  }, [fetchData]);
-
+  // Periodic auto-refresh (12 s) — silent, no skeleton
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      void fetchData();
+      revalidate();
     }, 12000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [fetchData]);
+    return () => window.clearInterval(interval);
+  }, [revalidate]);
 
   return (
     <div className="space-y-8 animate-fade-in">

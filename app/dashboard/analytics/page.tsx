@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { BarChart3, Loader2, RefreshCw, ShoppingBag, Users, Utensils } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 type AnalyticsPayload = {
   generatedAt: string;
@@ -35,36 +36,38 @@ function label(value: string) {
 
 export default function AnalyticsPage() {
   const { selectedBranchId, selectedBranch } = useDashboardContext();
-  const [data, setData] = useState<AnalyticsPayload | null>(null);
-  const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const loadAnalytics = useCallback(async (showRefreshing = false) => {
-    if (showRefreshing) setRefreshing(true);
-    else setLoading(true);
-    setError(null);
+  const analyticsUrl = useMemo(() =>
+    selectedBranchId === "all"
+      ? "/api/dashboard/analytics"
+      : `/api/dashboard/analytics?branch_id=${encodeURIComponent(selectedBranchId)}`,
+    [selectedBranchId],
+  );
 
-    try {
-      const branchQuery = selectedBranchId === "all" ? "" : `?branch_id=${encodeURIComponent(selectedBranchId)}`;
-      const response = await fetch(`/api/dashboard/analytics${branchQuery}`, {
-        cache: "no-store",
-        headers: { "ngrok-skip-browser-warning": "69420" },
-      });
-      const body = await response.json();
-      if (!response.ok) throw new Error(body.error || "Failed to load analytics");
-      setData(body as AnalyticsPayload);
-    } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Failed to load analytics");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [selectedBranchId]);
+  const {
+    data,
+    isLoading: loading,
+    error: fetchError,
+    revalidate,
+  } = useDataCache<AnalyticsPayload>(analyticsUrl);
 
   useEffect(() => {
-    void loadAnalytics();
-  }, [loadAnalytics]);
+    if (fetchError) setError(fetchError.message);
+    else setError(null);
+  }, [fetchError]);
+
+  const loadAnalytics = useCallback((showRefreshing = false) => {
+    if (showRefreshing) {
+      setRefreshing(true);
+      // Bust cache so refresh button always fetches fresh
+      invalidateCache("/api/dashboard/analytics");
+      setTimeout(() => setRefreshing(false), 600);
+    }
+    setError(null);
+    revalidate();
+  }, [revalidate]);
 
   const maxHourCount = useMemo(
     () => Math.max(1, ...(data?.hourlyDemand.map((item) => item.count) ?? [1])),

@@ -6,6 +6,7 @@ import { clsx } from "clsx";
 import { format, formatDistanceToNow } from "date-fns";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { toast } from "sonner";
+import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 type OrderStatus = "received" | "preparing" | "out_for_delivery" | "delivered" | "cancelled";
 type FilterTab = "all" | "active" | "delivered" | "cancelled";
@@ -93,44 +94,38 @@ function getCancellationMinutesRemaining(order: Order): number {
 
 export default function OrdersPage() {
   const { selectedBranchId, selectedBranch } = useDashboardContext();
-  const [orders, setOrders] = useState<Order[]>([]);
-  const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<FilterTab>("active");
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [assignees, setAssignees] = useState<Record<string, string>>({});
 
-  const loadOrders = useCallback(async () => {
-    setLoading(true);
-    try {
-      const branchQuery = selectedBranchId === "all" ? "" : `&branch_id=${encodeURIComponent(selectedBranchId)}`;
-      const response = await fetch(`/api/orders?limit=100${branchQuery}`, { headers: { "ngrok-skip-browser-warning": "69420" } });
-      if (!response.ok) throw new Error("Failed to load orders");
-      const data = (await response.json()) as Order[];
-      setOrders(data);
-      setAssignees(Object.fromEntries(data.map((order) => [order.id, order.assigned_to ?? ""])));
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to load orders.");
-    } finally {
-      setLoading(false);
-    }
+  const ordersUrl = useMemo(() => {
+    const branchQuery = selectedBranchId === "all" ? "" : `&branch_id=${encodeURIComponent(selectedBranchId)}`;
+    return `/api/orders?limit=100${branchQuery}`;
   }, [selectedBranchId]);
 
-  useEffect(() => {
-    void loadOrders();
-  }, [loadOrders]);
+  const {
+    data: orders,
+    isLoading: loading,
+    revalidate,
+  } = useDataCache<Order[]>(ordersUrl);
 
+  // Sync assignees state from fetched orders
+  useEffect(() => {
+    if (orders) {
+      setAssignees(Object.fromEntries(orders.map((order) => [order.id, order.assigned_to ?? ""])));
+    }
+  }, [orders]);
+
+  // Periodic auto-refresh — silent, no skeleton
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      void loadOrders();
+      revalidate();
     }, 12000);
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [loadOrders]);
+    return () => window.clearInterval(interval);
+  }, [revalidate]);
 
   const updateOrder = async (orderId: string, payload: { status?: OrderStatus; assigned_to?: string | null }) => {
     setSavingId(orderId);
@@ -144,7 +139,9 @@ export default function OrdersPage() {
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Order update failed");
       toast.success("Order updated.");
-      await loadOrders();
+      // Bust cache so next render fetches fresh data
+      invalidateCache("/api/orders");
+      revalidate();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Order update failed.");
     } finally {
@@ -171,7 +168,7 @@ export default function OrdersPage() {
   };
 
   const filteredOrders = useMemo(() => {
-    return orders.filter((order) => {
+    return (orders ?? []).filter((order) => {
       const matchesTab =
         activeTab === "all" ||
         (activeTab === "active" && ACTIVE_STATUSES.includes(order.status)) ||
@@ -192,10 +189,10 @@ export default function OrdersPage() {
   }, [orders, activeTab, searchTerm]);
 
   const counts = {
-    all: orders.length,
-    active: orders.filter((order) => ACTIVE_STATUSES.includes(order.status)).length,
-    delivered: orders.filter((order) => order.status === "delivered").length,
-    cancelled: orders.filter((order) => order.status === "cancelled").length,
+    all: (orders ?? []).length,
+    active: (orders ?? []).filter((order) => ACTIVE_STATUSES.includes(order.status)).length,
+    delivered: (orders ?? []).filter((order) => order.status === "delivered").length,
+    cancelled: (orders ?? []).filter((order) => order.status === "cancelled").length,
   };
 
   return (
@@ -209,7 +206,7 @@ export default function OrdersPage() {
               : "Showing combined orders across all branches."}
           </p>
         </div>
-        <button onClick={() => void loadOrders()} disabled={loading} className="flex h-10 items-center justify-center rounded-xl bg-brand px-5 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition-colors hover:bg-brand-hover disabled:opacity-50">
+        <button onClick={() => revalidate()} disabled={loading} className="flex h-10 items-center justify-center rounded-xl bg-brand px-5 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition-colors hover:bg-brand-hover disabled:opacity-50">
           <RefreshCw size={14} className={clsx("mr-2", loading && "animate-spin")} />
           Refresh
         </button>

@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 // --- Types & Helpers ---
 type ConversationMode = "agent" | "human";
@@ -250,11 +251,11 @@ export default function ConversationsPage() {
   const searchParams = useSearchParams();
   const requestedConversationId = useMemo(() => searchParams.get("conversation_id"), [searchParams]);
   // --- State & Logic ---
+  // Local copy of conversations — allows optimistic mutations (e.g. mark-read)
   const [conversations, setConversations] = useState<ConversationPreview[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [conversation, setConversation] = useState<ConversationDetail | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [loadingList, setLoadingList] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -281,33 +282,38 @@ export default function ConversationsPage() {
     return remaining <= 80;
   }, []);
 
-  const loadConversations = useCallback(async (showRefreshing = false) => {
-    if (showRefreshing) setRefreshing(true);
-    else setLoadingList(true);
+  // ── Conversations list — stale-while-revalidate ──
+  const conversationsUrl = useMemo(() => {
+    const branchQuery = selectedBranchId === "all" ? "" : `&branch_id=${encodeURIComponent(selectedBranchId)}`;
+    return `/api/conversations?limit=100${branchQuery}`;
+  }, [selectedBranchId]);
 
-    try {
-      const branchQuery = selectedBranchId === "all" ? "" : `&branch_id=${encodeURIComponent(selectedBranchId)}`;
-      const response = await fetch(`/api/conversations?limit=100${branchQuery}`, {
-        cache: "no-store",
-        headers: { "ngrok-skip-browser-warning": "69420" },
-      });
-      if (!response.ok) throw new Error("Failed to load conversations");
-      const data = (await response.json()) as ConversationPreview[];
-      setConversations(data);
+  const {
+    data: cachedConversations,
+    isLoading: loadingList,
+    revalidate: revalidateList,
+  } = useDataCache<ConversationPreview[]>(conversationsUrl);
+
+  // Sync cached data into local state (preserves local optimistic mutations between refreshes)
+  useEffect(() => {
+    if (cachedConversations) {
+      setConversations(cachedConversations);
       setSelectedId((current) => {
-        if (requestedConversationId && data.some((item) => item.id === requestedConversationId)) {
+        if (requestedConversationId && cachedConversations.some((item) => item.id === requestedConversationId)) {
           return requestedConversationId;
         }
-        return data.some((item) => item.id === current) ? current : data[0]?.id ?? null;
+        return cachedConversations.some((item) => item.id === current) ? current : cachedConversations[0]?.id ?? null;
       });
-    } catch (error) {
-      console.error(error);
-      toast.error("Failed to load conversations.");
-    } finally {
-      setLoadingList(false);
-      setRefreshing(false);
     }
-  }, [requestedConversationId, selectedBranchId]);
+  }, [cachedConversations, requestedConversationId]);
+
+  // Manual refresh (e.g., refresh button) — invalidate cache and revalidate
+  const loadConversations = useCallback(async (showRefreshing = false) => {
+    if (showRefreshing) setRefreshing(true);
+    invalidateCache("/api/conversations?limit=100");
+    revalidateList();
+    if (showRefreshing) setTimeout(() => setRefreshing(false), 500);
+  }, [revalidateList]);
 
   const loadConversation = useCallback(async (conversationId: string) => {
     const response = await fetch(`/api/conversations/${conversationId}`, {
@@ -392,14 +398,18 @@ export default function ConversationsPage() {
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
-      void loadConversations(true);
+      // Silent list refresh via cache revalidation
+      invalidateCache("/api/conversations?limit=100");
+      revalidateList();
+      setRefreshing(true);
+      setTimeout(() => setRefreshing(false), 600);
       if (selectedIdRef.current) void loadConversation(selectedIdRef.current);
       if (selectedIdRef.current) void loadMessages(selectedIdRef.current);
     }, 12000);
     return () => {
       window.clearInterval(interval);
     };
-  }, [loadConversation, loadConversations, loadMessages]);
+  }, [loadConversation, loadMessages, revalidateList]);
 
   useEffect(() => {
     if (!shouldStickToBottomRef.current) return;
