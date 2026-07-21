@@ -116,7 +116,7 @@ export function parseAddress(raw: string): string | null {
     return null;
   }
   if (
-    /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|dine[_\s-]?in)|upsell[_\s-]?(?:yes|no)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
+    /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|pickup|dine[_\s-]?in)|upsell[_\s-]?(?:yes|no)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
       compact,
     )
   ) {

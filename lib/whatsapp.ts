@@ -123,6 +123,43 @@ export async function sendWhatsAppMessage(to: string, body: string): Promise<Wha
   throw lastError ?? new Error("WhatsApp send failed.");
 }
 
+export async function getWhatsAppMediaUrl(mediaId: string): Promise<string> {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!token) {
+    throw new Error("WhatsApp credentials are missing.");
+  }
+
+  const response = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${encodeURIComponent(mediaId)}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  const data = (await response.json()) as { url?: string; error?: { message?: string } };
+  if (!response.ok || !data.url) {
+    throw new Error(data.error?.message || `WhatsApp media lookup failed with status ${response.status}`);
+  }
+  return data.url;
+}
+
+export async function downloadWhatsAppMedia(mediaUrl: string): Promise<ArrayBuffer> {
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+  if (!token) {
+    throw new Error("WhatsApp credentials are missing.");
+  }
+
+  const response = await fetchWithTimeout(mediaUrl, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`WhatsApp media download failed with status ${response.status}`);
+  }
+  return response.arrayBuffer();
+}
+
 export async function sendWhatsAppInteractiveList(
   to: string,
   payload: WhatsAppInteractiveListPayload,

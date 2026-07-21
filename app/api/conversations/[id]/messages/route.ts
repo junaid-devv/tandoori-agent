@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-utils";
 import { requireApiSession } from "@/lib/branch-request";
 import { canAccessConversation } from "@/lib/record-access";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -25,7 +26,7 @@ export async function GET(
 
   let query = supabaseAdmin
     .from("messages")
-    .select("id, ingest_seq, conversation_id, role, sender_kind, content, whatsapp_msg_id, created_at, delivery_status, delivery_error")
+    .select("id, ingest_seq, conversation_id, role, sender_kind, content, whatsapp_msg_id, created_at, delivery_status, delivery_error, delivery_status_updated_at")
     .eq("conversation_id", accessibleConversation.id)
     .order("ingest_seq", { ascending: false })
     .limit(limit + 1);
@@ -37,7 +38,7 @@ export async function GET(
   const { data, error } = await query;
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to load messages.", context: "conversation messages GET" });
   }
 
   const rows = data ?? [];

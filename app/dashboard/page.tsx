@@ -1,6 +1,6 @@
 "use client";
 import { useCallback, useEffect, useState } from "react";
-import { MessageSquare, ShoppingBag, TrendingUp, Zap, Settings, Activity, ArrowUpRight } from "lucide-react";
+import { MessageSquare, ShoppingBag, TrendingUp, Zap, Settings, Activity, ArrowUpRight, AlertTriangle, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { clsx } from "clsx";
@@ -18,7 +18,7 @@ type DashboardOrder = {
   id: string;
   order_number: number;
   status: string;
-  type: "delivery" | "dine-in";
+  type: "delivery" | "pickup" | "dine-in";
   subtotal: number;
   created_at: string;
   branches?: { name?: string | null } | null;
@@ -34,6 +34,27 @@ type DashboardSummaryResponse = {
   recentOrders: DashboardOrder[];
 };
 
+type StaffAlert = {
+  id: string;
+  conversation_id: string;
+  branch_id: string;
+  kind: "human_handoff" | "tool_validation" | "webhook_processing" | "delivery_notification" | "customer_cancellation" | string;
+  severity: "low" | "medium" | "high" | string;
+  status: "open" | "acknowledged" | "resolved" | string;
+  message: string;
+  created_at: string;
+  conversations?: { phone?: string | null; name?: string | null } | null;
+  branches?: { name?: string | null; slug?: string | null } | null;
+};
+
+const ALERT_KIND_LABELS: Record<string, string> = {
+  human_handoff: "Human Handoff",
+  tool_validation: "AI Review",
+  webhook_processing: "Webhook Failure",
+  delivery_notification: "Delivery Notice",
+  customer_cancellation: "Cancellation",
+};
+
 export default function DashboardPage() {
   const { selectedBranchId, selectedBranch } = useDashboardContext();
   const [stats, setStats] = useState({
@@ -41,18 +62,27 @@ export default function DashboardPage() {
     breakdown: {} as Record<string, number>
   });
   const [recentOrders, setRecentOrders] = useState<DashboardOrder[]>([]);
+  const [alerts, setAlerts] = useState<StaffAlert[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
 
   const fetchData = useCallback(async () => {
     try {
       const branchQuery = selectedBranchId === "all" ? "" : `?branch_id=${encodeURIComponent(selectedBranchId)}`;
-      const res = await fetch(`/api/dashboard/summary${branchQuery}`, {
-        headers: { "ngrok-skip-browser-warning": "69420" },
-      });
+      const alertQuery = selectedBranchId === "all" ? "?status=open&limit=8" : `?status=open&limit=8&branch_id=${encodeURIComponent(selectedBranchId)}`;
+      const [res, alertRes] = await Promise.all([
+        fetch(`/api/dashboard/summary${branchQuery}`, {
+          headers: { "ngrok-skip-browser-warning": "69420" },
+        }),
+        fetch(`/api/staff-alerts${alertQuery}`, {
+          headers: { "ngrok-skip-browser-warning": "69420" },
+        }),
+      ]);
       if (!res.ok) throw new Error("Failed to load dashboard summary");
+      if (!alertRes.ok) throw new Error("Failed to load staff alerts");
 
       const summary = (await res.json()) as DashboardSummaryResponse;
+      const nextAlerts = (await alertRes.json()) as StaffAlert[];
       setStats({
         active: summary.active,
         today: summary.today,
@@ -61,6 +91,7 @@ export default function DashboardPage() {
         breakdown: summary.breakdown,
       });
       setRecentOrders(summary.recentOrders ?? []);
+      setAlerts(nextAlerts);
       setLastUpdatedAt(new Date().toISOString());
     } catch (e) {
       console.error("Data fetch failed", e);
@@ -68,6 +99,24 @@ export default function DashboardPage() {
       setLoading(false);
     }
   }, [selectedBranchId]);
+
+  const resolveAlert = useCallback(async (alertId: string) => {
+    setAlerts((current) => current.filter((alert) => alert.id !== alertId));
+
+    try {
+      const response = await fetch(`/api/staff-alerts/${alertId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "resolved" }),
+      });
+      if (!response.ok) {
+        throw new Error("Failed to resolve staff alert");
+      }
+    } catch (error) {
+      console.error("Alert resolve failed", error);
+      void fetchData();
+    }
+  }, [fetchData]);
 
   useEffect(() => {
     void fetchData();
@@ -215,6 +264,68 @@ export default function DashboardPage() {
 
         {/* Right Sidebar Area */}
         <div className="space-y-6">
+          <div className="ui-card overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-5">
+              <div>
+                <h3 className="font-semibold text-slate-900">Staff Alerts</h3>
+                <p className="mt-0.5 text-xs text-slate-500">{alerts.length} open item{alerts.length === 1 ? "" : "s"}</p>
+              </div>
+              <AlertTriangle size={18} className={alerts.length > 0 ? "text-amber-500" : "text-slate-300"} />
+            </div>
+
+            <div className="divide-y divide-slate-100">
+              {loading ? (
+                Array(3).fill(0).map((_, index) => (
+                  <div key={index} className="space-y-2 px-6 py-4">
+                    <div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
+                    <div className="h-4 w-full animate-pulse rounded bg-slate-100" />
+                  </div>
+                ))
+              ) : alerts.length === 0 ? (
+                <div className="px-6 py-8 text-center text-sm text-slate-500">
+                  No open staff alerts.
+                </div>
+              ) : (
+                alerts.map((alert) => {
+                  const label = ALERT_KIND_LABELS[alert.kind] ?? alert.kind.replaceAll("_", " ");
+                  const customer = alert.conversations?.name || alert.conversations?.phone || "Customer";
+
+                  return (
+                    <div key={alert.id} className="px-6 py-4">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <span className={clsx(
+                          "rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider",
+                          alert.severity === "high" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700",
+                        )}>
+                          {label}
+                        </span>
+                        <span className="text-[11px] text-slate-400">
+                          {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
+                        </span>
+                      </div>
+                      <p className="text-sm font-medium leading-snug text-slate-900">{alert.message}</p>
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <Link
+                          href={`/dashboard/conversations?conversation_id=${encodeURIComponent(alert.conversation_id)}`}
+                          className="truncate text-xs font-semibold text-brand hover:text-orange-600"
+                        >
+                          Open chat: {customer}
+                        </Link>
+                        <button
+                          onClick={() => void resolveAlert(alert.id)}
+                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                        >
+                          <CheckCircle2 size={12} />
+                          Resolve
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
           {/* Fulfillment Pipeline */}
           <div className="ui-card p-6">
             <h3 className="font-semibold text-slate-900 mb-6">Fulfillment Pipeline</h3>

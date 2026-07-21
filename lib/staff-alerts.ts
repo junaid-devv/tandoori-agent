@@ -4,7 +4,8 @@ export type StaffAlertKind =
   | "human_handoff"
   | "tool_validation"
   | "webhook_processing"
-  | "delivery_notification";
+  | "delivery_notification"
+  | "customer_cancellation";
 
 export type StaffAlertStatus = "open" | "acknowledged" | "resolved";
 

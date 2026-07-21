@@ -24,7 +24,7 @@ interface Order {
   id: string;
   branch_id: string;
   order_number: number;
-  type: "delivery" | "dine-in";
+  type: "delivery" | "pickup" | "dine-in";
   status: OrderStatus;
   subtotal: number;
   delivery_fee: number;
@@ -34,6 +34,7 @@ interface Order {
   address: string | null;
   guests: number | null;
   reservation_time: string | null;
+  pickup_time: string | null;
   assigned_to: string | null;
   status_notified_at: string | null;
   status_notification_status: "sent" | "failed" | "skipped" | null;
@@ -361,6 +362,7 @@ export default function OrdersPage() {
                             <div className="flex justify-between gap-4"><span>Type</span><span className="font-semibold capitalize text-slate-900">{order.type.replace("-", " ")}</span></div>
                             {order.guests != null && <div className="flex justify-between gap-4"><span>Guests</span><span className="font-semibold text-slate-900">{order.guests}</span></div>}
                             {order.reservation_time && <div className="flex justify-between gap-4"><span>Reservation</span><span className="font-semibold text-slate-900">{format(new Date(order.reservation_time), "dd MMM, hh:mm a")}</span></div>}
+                            {order.pickup_time && <div className="flex justify-between gap-4"><span>Pickup</span><span className="font-semibold text-slate-900">{format(new Date(order.pickup_time), "dd MMM, hh:mm a")}</span></div>}
                             {order.address && <div className="flex justify-between gap-4"><span>Address</span><span className="text-right font-semibold text-slate-900">{order.address}</span></div>}
                             {order.customer_instructions && <div className="flex justify-between gap-4"><span>Instructions</span><span className="text-right font-semibold text-slate-900">{order.customer_instructions}</span></div>}
                             {order.cancelled_at && <div className="flex justify-between gap-4"><span>Cancelled At</span><span className="font-semibold text-slate-900">{format(new Date(order.cancelled_at), "dd MMM yyyy, hh:mm a")}</span></div>}

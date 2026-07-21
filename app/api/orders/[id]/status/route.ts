@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse, readLimitedJsonBody, requireTrimmedString } from "@/lib/api-utils";
 import { requireApiSession } from "@/lib/branch-request";
 import { canAccessOrder } from "@/lib/record-access";
 import { sendAndPersistOutboundMessage } from "@/lib/messages";
+import { createStaffAlert, resolveStaffAlerts } from "@/lib/staff-alerts";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const VALID_STATUSES = [
@@ -16,8 +18,10 @@ const CANCELLATION_WINDOW_MS = 10 * 60 * 1000;
 type OrderStatus = (typeof VALID_STATUSES)[number];
 type StatusPatchBody = { status?: OrderStatus; assigned_to?: string | null };
 type OrderWithConversation = {
+  branch_id: string;
+  order_number: number;
   status: OrderStatus;
-  type: "delivery" | "dine-in";
+  type: "delivery" | "pickup" | "dine-in";
   created_at: string;
   conversation_id: string;
   assigned_to?: string | null;
@@ -42,8 +46,34 @@ const STATUS_MESSAGES: Record<Exclude<OrderStatus, "received">, string> = {
 };
 
 function normalizeAssignee(value: string | null | undefined) {
-  const normalized = value?.trim() ?? "";
-  return normalized.length > 0 ? normalized : null;
+  if (value == null) return null;
+  const normalized = value.trim();
+  if (!normalized) return null;
+  return requireTrimmedString(normalized, "Assignee", 120);
+}
+
+const STATUS_BODY_LIMIT_BYTES = 2 * 1024;
+
+function getNotificationFailureMessage(orderNumber: number, status: OrderStatus, reason: string) {
+  return `Customer notification failed for order #${orderNumber} after status changed to ${status.replaceAll("_", " ")}: ${reason}`;
+}
+
+async function createDeliveryNotificationAlert(input: {
+  conversationId: string;
+  branchId: string;
+  orderNumber: number;
+  status: OrderStatus;
+  reason: string;
+}) {
+  await createStaffAlert({
+    conversationId: input.conversationId,
+    branchId: input.branchId,
+    kind: "delivery_notification",
+    severity: "high",
+    message: getNotificationFailureMessage(input.orderNumber, input.status, input.reason),
+  }).catch((alertError) => {
+    console.error("Failed to create delivery notification staff alert", alertError);
+  });
 }
 
 // PATCH /api/orders/[id]/status
@@ -62,7 +92,12 @@ export async function PATCH(
     return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
-  const body = (await req.json()) as StatusPatchBody;
+  let body: StatusPatchBody;
+  try {
+    body = await readLimitedJsonBody<StatusPatchBody>(req, STATUS_BODY_LIMIT_BYTES);
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: "Invalid order update request.", context: "order status PATCH" });
+  }
   const { status } = body;
   const assignedTo = normalizeAssignee(body.assigned_to);
 
@@ -76,12 +111,12 @@ export async function PATCH(
 
   const { data: existingOrder, error: existingError } = await supabaseAdmin
     .from("orders")
-    .select(`status, type, created_at, conversation_id, assigned_to, cancellation_requested_at, cancelled_at, conversations (phone, name)`)
+    .select(`branch_id, order_number, status, type, created_at, conversation_id, assigned_to, cancellation_requested_at, cancelled_at, conversations (phone, name)`)
     .eq("id", accessibleOrder.id)
     .single();
 
   if (existingError || !existingOrder) {
-    return NextResponse.json({ error: existingError?.message ?? "Order not found" }, { status: 404 });
+    return NextResponse.json({ error: "Order not found" }, { status: 404 });
   }
 
   const typedExistingOrder = existingOrder as OrderWithConversation;
@@ -121,7 +156,7 @@ export async function PATCH(
     .single();
 
   if (error || !order) {
-    return NextResponse.json({ error: error?.message ?? "Not found" }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to update order.", context: "order status PATCH" });
   }
 
   const typedOrder = order as OrderWithConversation;
@@ -147,23 +182,43 @@ export async function PATCH(
             status_notification_error: null,
           })
           .eq("id", accessibleOrder.id);
+
+        await resolveStaffAlerts(conversationId, "delivery_notification").catch((alertError) => {
+          console.error("Failed to resolve delivery notification staff alerts", alertError);
+        });
       } catch (notifyError) {
+        const reason = notifyError instanceof Error ? notifyError.message : "Unknown notification error";
         await supabaseAdmin
           .from("orders")
           .update({
             status_notification_status: "failed",
-            status_notification_error: notifyError instanceof Error ? notifyError.message : "Unknown notification error",
+            status_notification_error: reason,
           })
           .eq("id", accessibleOrder.id);
+        await createDeliveryNotificationAlert({
+          conversationId,
+          branchId: typedOrder.branch_id,
+          orderNumber: typedOrder.order_number,
+          status,
+          reason,
+        });
       }
     } else {
+      const reason = "Customer phone was unavailable for notification.";
       await supabaseAdmin
         .from("orders")
         .update({
           status_notification_status: "skipped",
-          status_notification_error: "Customer phone was unavailable for notification.",
+          status_notification_error: reason,
         })
         .eq("id", accessibleOrder.id);
+      await createDeliveryNotificationAlert({
+        conversationId,
+        branchId: typedOrder.branch_id,
+        orderNumber: typedOrder.order_number,
+        status,
+        reason,
+      });
     }
   }
 

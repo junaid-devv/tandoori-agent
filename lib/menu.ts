@@ -1,4 +1,10 @@
 import { getCached, invalidateCache, setCached } from "./cache";
+import {
+  isMenuScheduleAvailable,
+  normalizeAvailabilityDays,
+  normalizeAvailabilityTime,
+  type WeekdayKey,
+} from "./menu-availability";
 import { syncMenuEmbeddingsForBranch } from "./semantic-menu";
 import { supabaseAdmin } from "./supabase-admin";
 
@@ -9,6 +15,9 @@ export type MenuItem = {
   category?: string | null;
   description?: string | null;
   is_available?: boolean;
+  available_days?: WeekdayKey[] | null;
+  available_start_time?: string | null;
+  available_end_time?: string | null;
 };
 
 export type MenuValidationIssue = {
@@ -25,6 +34,9 @@ export type SanitizedMenuItem = {
   description: string | null;
   is_available: boolean;
   sort_order: number;
+  available_days: WeekdayKey[];
+  available_start_time: string | null;
+  available_end_time: string | null;
 };
 
 export type MenuCatalogItem = {
@@ -33,6 +45,10 @@ export type MenuCatalogItem = {
   price: number;
   category: string | null;
   is_available: boolean;
+  base_is_available?: boolean;
+  available_days?: WeekdayKey[];
+  available_start_time?: string | null;
+  available_end_time?: string | null;
 };
 
 const MENU_CACHE_TTL_MS = 15 * 60 * 1000;
@@ -107,6 +123,9 @@ export function sanitizeMenuItems(items: MenuItem[]) {
       description: item.description ? normalizeWhitespace(item.description) : null,
       is_available: item.is_available ?? true,
       sort_order: sanitized.length,
+      available_days: normalizeAvailabilityDays(item.available_days),
+      available_start_time: normalizeAvailabilityTime(item.available_start_time),
+      available_end_time: normalizeAvailabilityTime(item.available_end_time),
     });
   });
 
@@ -144,7 +163,7 @@ export async function getMenuCatalog(branchId: string): Promise<MenuCatalogItem[
 
   const { data, error } = await supabaseAdmin
     .from("menu_items")
-    .select("id, name, price, category, is_available")
+    .select("id, name, price, category, is_available, available_days, available_start_time, available_end_time")
     .eq("branch_id", branchId)
     .order("category", { ascending: true })
     .order("name", { ascending: true });
@@ -159,7 +178,17 @@ export async function getMenuCatalog(branchId: string): Promise<MenuCatalogItem[
     name: item.name,
     price: Number(item.price),
     category: item.category ?? null,
-    is_available: item.is_available ?? true,
+    is_available: isMenuScheduleAvailable({
+      isAvailable: item.is_available ?? true,
+      availableDays: item.available_days,
+      availableStartTime: item.available_start_time,
+      availableEndTime: item.available_end_time,
+      timeZone: process.env.RESTAURANT_TIMEZONE,
+    }),
+    base_is_available: item.is_available ?? true,
+    available_days: normalizeAvailabilityDays(item.available_days),
+    available_start_time: normalizeAvailabilityTime(item.available_start_time),
+    available_end_time: normalizeAvailabilityTime(item.available_end_time),
   }));
 
   setCached(cacheKey, items, MENU_CACHE_TTL_MS);
@@ -220,7 +249,11 @@ export async function applyMenuCatalog(branchId: string, items: MenuItem[], repl
       name: item.name,
       price: item.price,
       category: item.category,
+      description: item.description,
       is_available: item.is_available,
+      available_days: item.available_days,
+      available_start_time: item.available_start_time,
+      available_end_time: item.available_end_time,
     };
 
     if (existing) {

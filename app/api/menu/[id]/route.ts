@@ -1,10 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { requireApiSession } from "@/lib/branch-request";
 import { invalidateMenuCache, normalizeMenuCategory } from "@/lib/menu";
+import { normalizeAvailabilityDays, normalizeAvailabilityTime } from "@/lib/menu-availability";
 import { canAccessMenuItem } from "@/lib/record-access";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type Params = { params: Promise<{ id: string }> };
+const MENU_ITEM_BODY_LIMIT_BYTES = 8 * 1024;
 
 /** PATCH /api/menu/[id] — update any field of a single menu item */
 export async function PATCH(req: NextRequest, { params }: Params) {
@@ -19,9 +22,23 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Menu item not found" }, { status: 404 });
   }
 
-  const body = await req.json();
+  let body: Record<string, unknown>;
+  try {
+    body = await readLimitedJsonBody<Record<string, unknown>>(req, MENU_ITEM_BODY_LIMIT_BYTES);
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: "Invalid menu item update request.", context: "menu item PATCH" });
+  }
 
-  const allowed = ["name", "price", "category", "is_available"] as const;
+  const allowed = [
+    "name",
+    "price",
+    "category",
+    "description",
+    "is_available",
+    "available_days",
+    "available_start_time",
+    "available_end_time",
+  ] as const;
   const updates: Record<string, unknown> = {};
   for (const key of allowed) {
     if (key in body) updates[key] = body[key];
@@ -47,6 +64,24 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     updates.category = normalizeMenuCategory(String(updates.category ?? "")) ?? null;
   }
 
+  if ("description" in updates) {
+    updates.description = typeof updates.description === "string" && updates.description.trim()
+      ? updates.description.trim().slice(0, 500)
+      : null;
+  }
+
+  if ("available_days" in updates) {
+    updates.available_days = normalizeAvailabilityDays(updates.available_days);
+  }
+
+  if ("available_start_time" in updates) {
+    updates.available_start_time = normalizeAvailabilityTime(updates.available_start_time);
+  }
+
+  if ("available_end_time" in updates) {
+    updates.available_end_time = normalizeAvailabilityTime(updates.available_end_time);
+  }
+
   if (Object.keys(updates).length === 0)
     return NextResponse.json({ error: "No valid fields" }, { status: 400 });
 
@@ -55,7 +90,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
     .update(updates)
     .eq("id", accessibleItem.id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return apiErrorResponse(error, { fallback: "Failed to update menu item.", context: "menu item PATCH" });
 
   invalidateMenuCache(accessibleItem.branch_id);
 
@@ -80,7 +115,7 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     .delete()
     .eq("id", accessibleItem.id);
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  if (error) return apiErrorResponse(error, { fallback: "Failed to delete menu item.", context: "menu item DELETE" });
 
   invalidateMenuCache(accessibleItem.branch_id);
 

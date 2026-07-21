@@ -11,6 +11,7 @@ import {
 import { NextRequest } from "next/server";
 import { getMenuCatalog } from "@/lib/menu";
 import { parseConversationState, type ConversationState } from "@/lib/order-engine";
+import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { getRestaurantSettings } from "@/lib/settings";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -46,6 +47,20 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  const rateLimit = await checkRateLimit({
+    scope: "whatsapp_flow",
+    identifier: getClientIp(req),
+    limit: Number(process.env.WHATSAPP_FLOW_RATE_LIMIT_EVENTS) || 300,
+    windowSeconds: Number(process.env.WHATSAPP_FLOW_RATE_LIMIT_WINDOW_SECONDS) || 60,
+    blockSeconds: Number(process.env.WHATSAPP_FLOW_RATE_LIMIT_BLOCK_SECONDS) || 60,
+  });
+  if (!rateLimit.allowed) {
+    return new Response("Too Many Requests", {
+      status: 429,
+      headers: buildRateLimitHeaders(rateLimit),
+    });
+  }
+
   const rawBody = await req.text();
   const signature = req.headers.get("x-hub-signature-256");
 
@@ -242,11 +257,15 @@ async function buildFlowResponsePayload(request: FlowDataExchangeRequest): Promi
       address: state?.address ?? null,
       guests: state?.guests ?? null,
       reservation_time: state?.reservation_time ?? null,
+      pickup_time: state?.pickup_time ?? null,
       menu_items: menuItemsForFlow,
       menu_categories: categories,
       delivery_enabled: settings?.delivery_enabled ?? null,
       delivery_fee: settings ? Number(settings.delivery_fee) : null,
       min_delivery_amount: settings ? Number(settings.min_delivery_amount) : null,
+      delivery_areas: settings?.delivery_areas ?? [],
+      estimated_prep_minutes: settings ? Number(settings.estimated_prep_minutes) : null,
+      estimated_delivery_minutes: settings ? Number(settings.estimated_delivery_minutes) : null,
       city: settings?.city ?? null,
       generated_at: new Date().toISOString(),
     },
@@ -272,6 +291,10 @@ function buildCompletionParams(input: {
       input.state?.reservation_time ??
       pickString(input.request.data, ["reservation_time", "dine_in_time", "time_slot"]) ??
       null,
+    pickup_time:
+      input.state?.pickup_time ??
+      pickString(input.request.data, ["pickup_time", "pickup_slot", "collection_time", "collect_time"]) ??
+      null,
     items: pickCompletionItems(input.request.data),
     flow_response_source: "endpoint",
   };
@@ -280,6 +303,7 @@ function buildCompletionParams(input: {
     params.order_type ? `Type: ${params.order_type}` : null,
     params.address ? `Address: ${params.address}` : null,
     params.guests ? `Guests: ${params.guests}` : null,
+    params.pickup_time ? `Pickup: ${params.pickup_time}` : null,
   ]
     .filter(Boolean)
     .join(" | ");
@@ -483,7 +507,12 @@ function isEncryptedFlowEnvelope(value: unknown): value is EncryptedFlowEnvelope
 function isValidFlowSignature(rawBody: string, signatureHeader: string | null): boolean {
   const appSecret = process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET;
   if (!appSecret) {
-    return true;
+    const allowUnsignedInDev =
+      process.env.NODE_ENV !== "production" && process.env.WHATSAPP_ALLOW_UNSIGNED_FLOW_ENDPOINT === "true";
+    if (!allowUnsignedInDev) {
+      console.error("[whatsapp-flows] Missing WHATSAPP_APP_SECRET or META_APP_SECRET; rejecting unsigned Flow request.");
+    }
+    return allowUnsignedInDev;
   }
 
   if (!signatureHeader?.startsWith("sha256=")) {

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import {
   MessageSquare,
   ShoppingBag,
+  BarChart3,
   LayoutDashboard,
   UtensilsCrossed,
   Settings,
@@ -21,6 +22,7 @@ const baseNavItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/conversations", label: "Conversations", icon: MessageSquare },
   { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag },
+  { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/menu", label: "Menu Editor", icon: UtensilsCrossed },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },
 ];

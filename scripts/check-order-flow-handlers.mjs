@@ -20,6 +20,7 @@ function baseState(overrides = {}) {
     address: null,
     guests: null,
     reservation_time: null,
+    pickup_time: null,
     customer_instructions: null,
     upsell_item_name: null,
     upsell_item_price: null,
@@ -101,6 +102,7 @@ function testAwaitingConfirmationPlacesOrder() {
         address: null,
         guests: null,
         reservation_time: null,
+        pickup_time: null,
         customer_instructions: null,
       },
     }),
@@ -203,9 +205,77 @@ function testLogisticsEmptyCartGuard() {
   pass("Logistics handler enforces empty-cart guard in checkout steps.");
 }
 
+function testPickupTimeCollection() {
+  const state = baseState({
+    workflow_step: "awaiting_pickup_time",
+    order_type: "pickup",
+    pickup_time: null,
+    cart: [{ name: "CHICKEN KARAHI", qty: 1, price: 1395, category: "Pakistani", size: null, addons: [], item_instructions: null }],
+  });
+  const context = {
+    messageText: "pickup at 8 pm",
+    state,
+    menuItems: [],
+    semanticMatches: [],
+    branch: { id: "b1", name: "Main", address: "City" },
+    settings: {
+      delivery_enabled: true,
+      delivery_fee: 0,
+      opening_time: "10:00",
+      closing_time: "23:00",
+      phone_delivery: "000",
+    },
+    isOpenNow: true,
+    recentOrder: null,
+    session: { invalid_step_count: 0 },
+  };
+
+  const helpers = {
+    ...createSharedHelpers(),
+    isUpsellYes: () => false,
+    isUpsellNo: () => false,
+    mergeCartItems: (cart) => cart,
+    buildOrderTypePrompt: () => "Order type prompt",
+    buildOrderTypeInteractiveList: () => null,
+    buildUpsellInteractiveList: () => ({ body: "upsell", buttonText: "Choose", rows: [] }),
+    handleOrderTypeSelection: () => makeReplyDecision("order type selected", {}),
+    inferGeneralQtyOverride: () => null,
+    applyQtyOverride: (cart) => cart,
+    buildClosedReply: () => "closed",
+    inferLastItemQtyOverride: () => null,
+    applyLastItemQtyOverride: (cart) => cart,
+    parseOrderTypeShortcut: () => null,
+    buildPersistedStatePatch: (nextState) => nextState,
+    clampQty: (qty) => qty,
+  };
+
+  const result = handleLogisticsAndFallbackFlow({
+    context,
+    interpretation: {
+      wants_confirmation: null,
+      intent: "unknown",
+      add_items: [],
+      unknown_items: [],
+      order_type: null,
+      reservation_time: null,
+    },
+    matchedAdds: { matched: [], unknown: [], ambiguous: [] },
+    preferredLanguage: "english",
+    trace: { intent: "unknown", confidence: 0.5, unknownItems: [], notes: null },
+    helpers,
+  });
+
+  assert.equal(result.kind, "reply");
+  assert.equal(result.reply, "summary");
+  assert.equal(result.statePatch.order_type, "pickup");
+  assert.ok(result.statePatch.pickup_time);
+  pass("Logistics handler collects pickup time and moves to summary.");
+}
+
 try {
   testAwaitingConfirmationPlacesOrder();
   testLogisticsEmptyCartGuard();
+  testPickupTimeCollection();
 } catch (error) {
   console.error("FAIL:", error instanceof Error ? error.message : error);
   process.exit(1);

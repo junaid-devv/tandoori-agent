@@ -8,7 +8,7 @@ import {
 } from "./whatsapp";
 
 export type MessageSenderKind = "user" | "ai" | "human" | "system";
-export type MessageDeliveryStatus = "pending" | "sent" | "failed";
+export type MessageDeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
 
 export class OutboundMessageError extends Error {
   constructor(
@@ -62,6 +62,43 @@ export async function sendAndPersistOutboundMessage({
   content,
   senderKind,
 }: OutboundMessageParams) {
+  const chunks = splitWhatsAppText(content);
+  let firstResult: { id: string; whatsappMessageId: string | null } | null = null;
+  let sentAtLeastOneChunk = false;
+
+  for (let index = 0; index < chunks.length; index += 1) {
+    const chunkContent = formatChunkForDelivery(chunks[index], index, chunks.length);
+    try {
+      const result = await sendAndPersistSingleOutboundMessage({
+        conversationId,
+        phone,
+        content: chunkContent,
+        senderKind,
+      });
+      firstResult ??= result;
+      sentAtLeastOneChunk = true;
+    } catch (error) {
+      if (sentAtLeastOneChunk && firstResult) {
+        console.error("[messages] Failed to send later WhatsApp text chunk:", error);
+        return firstResult;
+      }
+      throw error;
+    }
+  }
+
+  if (!firstResult) {
+    throw new Error("Cannot send an empty WhatsApp message.");
+  }
+
+  return firstResult;
+}
+
+async function sendAndPersistSingleOutboundMessage({
+  conversationId,
+  phone,
+  content,
+  senderKind,
+}: OutboundMessageParams) {
   const { data: inserted, error: insertError } = await supabaseAdmin
     .from("messages")
     .insert({
@@ -70,6 +107,7 @@ export async function sendAndPersistOutboundMessage({
       sender_kind: senderKind,
       content,
       delivery_status: "pending",
+      delivery_status_updated_at: new Date().toISOString(),
     })
     .select("id")
     .single();
@@ -86,6 +124,7 @@ export async function sendAndPersistOutboundMessage({
         whatsapp_msg_id: result.messageId,
         delivery_status: "sent",
         delivery_error: null,
+        delivery_status_updated_at: new Date().toISOString(),
       })
       .eq("id", inserted.id);
 
@@ -105,6 +144,7 @@ export async function sendAndPersistOutboundMessage({
       .update({
         delivery_status: error instanceof OutboundMessageError && error.messageSent ? "sent" : "failed",
         delivery_error: error instanceof OutboundMessageError && error.messageSent ? message : message,
+        delivery_status_updated_at: new Date().toISOString(),
       })
       .eq("id", inserted.id);
 
@@ -114,6 +154,39 @@ export async function sendAndPersistOutboundMessage({
 
     throw new OutboundMessageError(message, false, inserted.id);
   }
+}
+
+export function splitWhatsAppText(content: string, maxLength = 3600): string[] {
+  const normalized = content.trim();
+  if (!normalized) return [];
+  if (normalized.length <= maxLength) return [normalized];
+
+  const chunks: string[] = [];
+  let remaining = normalized;
+
+  while (remaining.length > maxLength) {
+    const slice = remaining.slice(0, maxLength);
+    const splitAt = Math.max(
+      slice.lastIndexOf("\n\n"),
+      slice.lastIndexOf("\n"),
+      slice.lastIndexOf(". "),
+      slice.lastIndexOf(" "),
+    );
+    const cut = splitAt > maxLength * 0.55 ? splitAt : maxLength;
+    chunks.push(remaining.slice(0, cut).trim());
+    remaining = remaining.slice(cut).trim();
+  }
+
+  if (remaining) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
+}
+
+function formatChunkForDelivery(content: string, index: number, total: number): string {
+  if (total <= 1) return content;
+  return `(${index + 1}/${total})\n${content}`;
 }
 
 export async function sendAndPersistOutboundInteractiveMessage({
@@ -131,6 +204,7 @@ export async function sendAndPersistOutboundInteractiveMessage({
       sender_kind: senderKind,
       content,
       delivery_status: "pending",
+      delivery_status_updated_at: new Date().toISOString(),
     })
     .select("id")
     .single();
@@ -147,6 +221,7 @@ export async function sendAndPersistOutboundInteractiveMessage({
         whatsapp_msg_id: result.messageId,
         delivery_status: "sent",
         delivery_error: null,
+        delivery_status_updated_at: new Date().toISOString(),
       })
       .eq("id", inserted.id);
 
@@ -166,6 +241,7 @@ export async function sendAndPersistOutboundInteractiveMessage({
       .update({
         delivery_status: error instanceof OutboundMessageError && error.messageSent ? "sent" : "failed",
         delivery_error: message,
+        delivery_status_updated_at: new Date().toISOString(),
       })
       .eq("id", inserted.id);
 
@@ -192,6 +268,7 @@ export async function sendAndPersistOutboundFlowMessage({
       sender_kind: senderKind,
       content,
       delivery_status: "pending",
+      delivery_status_updated_at: new Date().toISOString(),
     })
     .select("id")
     .single();
@@ -208,6 +285,7 @@ export async function sendAndPersistOutboundFlowMessage({
         whatsapp_msg_id: result.messageId,
         delivery_status: "sent",
         delivery_error: null,
+        delivery_status_updated_at: new Date().toISOString(),
       })
       .eq("id", inserted.id);
 
@@ -227,6 +305,7 @@ export async function sendAndPersistOutboundFlowMessage({
       .update({
         delivery_status: error instanceof OutboundMessageError && error.messageSent ? "sent" : "failed",
         delivery_error: message,
+        delivery_status_updated_at: new Date().toISOString(),
       })
       .eq("id", inserted.id);
 

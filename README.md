@@ -1,71 +1,80 @@
-# Tandoori Restaurant — WhatsApp AI Agent
+# Tandoori Agent
 
-Production-grade WhatsApp ordering assistant for **Tandoori Restaurant Wah (New City Phase 2)** built with Next.js, Supabase, and OpenRouter AI.
+WhatsApp Cloud API ordering assistant for restaurants, built with Next.js, Supabase, and AI-assisted menu/order understanding.
 
-## Features
+The app is designed for COD-first restaurant workflows. It does not require online payment to place an order.
 
-- 🤖 **Guided AI Assistant** — Uses AI for menu/help replies while backend code deterministically controls order state
-- 🧾 **Draft Order State Machine** — Persists cart, order type, address, dine-in details, and confirmation gates in the database
-- 💬 **Live Dashboard** — Real-time conversations + orders via Supabase Realtime
-- 🔄 **Human Takeover** — Toggle any conversation from AI agent to human mode
-- 📳 **Status Notifications** — Customers get WhatsApp messages when order status changes
-- 🛡️ **Idempotent Ordering** — Orders are tied to the source WhatsApp confirmation message to prevent duplicate placement
+## What It Supports
 
-- ðŸ§­ **WhatsApp Flows UX** â€” Rich native flow screens for branch selection, menu browse, and checkout
+- WhatsApp webhook verification and signed webhook processing
+- AI-assisted menu, ordering, and support replies
+- Deterministic backend state machine for cart, checkout, confirmation, and order placement
+- Delivery, pickup, and dine-in fulfillment
+- Delivery area checks, delivery fees, minimum delivery amount, and ETA settings
+- Atomic order placement through a Supabase RPC
+- Idempotent webhook event storage and atomic webhook claiming
+- Duplicate WhatsApp message protection
+- Human handoff and staff dashboard replies
+- WhatsApp interactive lists and optional WhatsApp Flows
+- Outbound message delivery status callbacks: `sent`, `delivered`, `read`, `failed`
+- DB-backed rate limiting for login, WhatsApp webhooks, and WhatsApp Flow endpoint
+- Privacy defaults that redact raw webhook bodies and processed webhook payloads
 
-## Tech Stack
+## Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | Next.js 14+ App Router |
-| Database | Supabase (PostgreSQL + Realtime) |
-| AI | OpenRouter → GPT-4o-mini |
+| Framework | Next.js App Router |
+| Database | Supabase Postgres + Realtime |
+| AI | OpenRouter and optional Google AI Studio |
 | Styling | Tailwind CSS |
-| Deployment | Vercel |
+| Deployment | Vercel or any Node-compatible Next.js host |
 
 ## Setup
 
-### 1. Clone & Install
-
 ```bash
 npm install
-```
-
-### 2. Environment Variables
-
-Copy `.env.example` to `.env.local` and fill in your values:
-
-```bash
 cp .env.example .env.local
 ```
 
-| Variable | Where to find it |
+Fill `.env.local` with real Supabase, WhatsApp, and AI credentials. The most important variables are:
+
+| Variable | Purpose |
 |---|---|
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → Project Settings → API |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase → Project Settings → API |
-| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Project Settings → API |
-| `OPENROUTER_API_KEY` | https://openrouter.ai/keys |
-| `WHATSAPP_PHONE_NUMBER_ID` | Meta → WhatsApp → API Setup |
-| `WHATSAPP_ACCESS_TOKEN` | Meta → WhatsApp → API Setup |
-| `WHATSAPP_VERIFY_TOKEN` | Any secret string you choose |
-| `WHATSAPP_FLOW_ID` / `WHATSAPP_FLOW_NAME` | Meta → WhatsApp Flows |
-| `WHATSAPP_FLOW_PRIVATE_KEY` | Private key matching your uploaded Flow public key |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Dashboard client key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Server-only database access |
+| `OPENROUTER_API_KEY` or `GOOGLE_AI_API_KEY` | AI interpretation/support |
+| `WHATSAPP_PHONE_NUMBER_ID` | Meta WhatsApp phone number ID |
+| `WHATSAPP_ACCESS_TOKEN` | Meta Graph API token |
+| `WHATSAPP_APP_SECRET` or `META_APP_SECRET` | Webhook and Flow signature validation |
+| `WHATSAPP_VERIFY_TOKEN` | Secret used by Meta webhook verification |
+| `RATE_LIMIT_HASH_SECRET` | HMAC secret for rate-limit identifiers |
+| `ADMIN_RESET_ENABLED` | Optional production gate for destructive dashboard reset |
 
-### 3. Database Schema
+Optional WhatsApp Flows variables are documented in [.env.example](.env.example).
 
-For a fresh database, run:
+To generate strong local values for `WHATSAPP_VERIFY_TOKEN` and `RATE_LIMIT_HASH_SECRET` without printing them:
 
-```sql
-supabase-schema.sql
+```bash
+npm run prepare:production-secrets -- --write-local
 ```
 
-For an existing database, run:
+If the script changes `WHATSAPP_VERIFY_TOKEN`, update the Meta webhook configuration to the same value before verifying the webhook.
 
-```sql
-migrations.sql
-```
+## Database
 
-### 4. Run Locally
+For a fresh database, run [supabase-schema.sql](supabase-schema.sql).
+
+For an existing database, run [migrations.sql](migrations.sql).
+
+Important RPCs created by the schema:
+
+- `place_order_from_payload(...)` for atomic, validated order creation
+- `claim_webhook_event(...)` for atomic webhook processing claims
+- `check_rate_limit(...)` for DB-backed rate limiting
+
+## Local Development
 
 ```bash
 npm run dev
@@ -73,43 +82,66 @@ npm run dev
 
 Dashboard: [http://localhost:3000/dashboard](http://localhost:3000/dashboard)
 
-### 5. Expose for WhatsApp Webhook (Local Dev)
+For local WhatsApp webhook testing:
 
 ```bash
 npx ngrok http 3000
 ```
 
-Use the ngrok HTTPS URL as your webhook in Meta:
-```
+Meta webhook URL:
+
+```text
 https://your-ngrok-id.ngrok-free.app/api/webhook
 ```
 
-If you use endpoint-powered Flows, set your Flow endpoint URL to:
-```
+WhatsApp Flow data endpoint:
+
+```text
 https://your-ngrok-id.ngrok-free.app/api/whatsapp/flows
 ```
 
-### 6. Configure Meta Webhook
+## Production Checks
 
-1. Go to **Meta for Developers → Your App → WhatsApp → Configuration**
-2. Webhook URL: `https://your-domain.com/api/webhook`
-3. Verify Token: same as `WHATSAPP_VERIFY_TOKEN` in your `.env.local`
-4. Subscribe to: **messages**
+Run these before deployment:
+
+```bash
+npm run lint
+npx tsc --noEmit
+npm run check:all-guards
+npm run build
+npm run check:production-readiness
+```
+
+`check:production-readiness` validates deployment configuration and schema coverage. It intentionally fails when required secrets are missing, too short, or still placeholders.
+
+## Production Deployment Notes
+
+- Apply `migrations.sql` before routing live WhatsApp traffic.
+- Keep `WHATSAPP_ALLOW_UNSIGNED_FLOW_ENDPOINT=false` in production.
+- Keep `WEBHOOK_STORE_RAW_BODY=false` and `WEBHOOK_RETAIN_PROCESSED_PAYLOAD=false` unless temporarily debugging an incident.
+- Keep `ADMIN_RESET_ENABLED=false` unless production admins explicitly need destructive reset controls.
+- Configure Meta webhook subscription for messages and status callbacks.
+- Make sure `WHATSAPP_VERIFY_TOKEN` exactly matches the token configured in Meta.
+- Set restaurant settings in the dashboard for each branch: open hours, delivery enabled, delivery fee, minimum delivery, delivery areas, prep ETA, delivery ETA, phone numbers, and AI tone.
+- Test at least one real delivery, pickup, dine-in, human handoff, unsupported media, status update, and duplicate webhook replay before launch.
 
 ## Architecture
 
-```
-WhatsApp Message
-  → POST /api/webhook
-  → Store message in DB
-  → Persist message
-  → Acquire per-conversation lock
-  → Load persisted draft state + menu + settings
-  → Deterministically advance workflow
-  → Use AI only for safe fallback/help replies
-  → Place order only after backend validation
-  → Store assistant reply + order state
-  → Dashboard updates in real-time via Supabase Realtime
+```text
+WhatsApp webhook
+  -> verify Meta signature
+  -> rate-limit request source
+  -> persist webhook event by body hash
+  -> claim event atomically
+  -> extract message/status callbacks
+  -> persist inbound message or update outbound delivery status
+  -> acquire per-conversation lock
+  -> load branch, settings, menu, state, session
+  -> deterministic order engine advances workflow
+  -> AI is used only for NLU/support fallback
+  -> atomic order RPC validates menu, prices, fulfillment fields
+  -> persist assistant/human replies
+  -> dashboard updates through Supabase
 ```
 
 ## API Routes
@@ -117,63 +149,22 @@ WhatsApp Message
 | Method | Route | Description |
 |---|---|---|
 | GET | `/api/webhook` | Meta webhook verification |
-| POST | `/api/webhook` | Receive incoming WhatsApp messages |
-| GET | `/api/conversations` | List all conversations |
-| GET | `/api/conversations/[id]/messages` | Messages for a conversation |
-| PATCH | `/api/conversations/[id]` | Toggle agent/human mode |
-| POST | `/api/conversations/[id]` | Send manual message (human mode) |
-| GET | `/api/orders` | All orders with items |
-| PATCH | `/api/orders/[id]/status` | Update status + notify customer |
-| POST | `/api/whatsapp/flows` | Encrypted WhatsApp Flow data exchange endpoint |
+| POST | `/api/webhook` | WhatsApp message/status webhook |
+| POST | `/api/whatsapp/flows` | Encrypted WhatsApp Flow data exchange |
+| GET | `/api/conversations` | Conversation list |
+| GET | `/api/conversations/[id]` | Conversation detail |
+| GET | `/api/conversations/[id]/messages` | Conversation messages |
+| PATCH | `/api/conversations/[id]` | Toggle AI/human mode or unread state |
+| POST | `/api/conversations/[id]` | Send a staff message |
+| GET | `/api/orders` | Orders with items |
+| PATCH | `/api/orders/[id]/status` | Update status and notify customer |
+| GET/POST | `/api/settings` | Branch restaurant settings |
 
-## WhatsApp Flows Integration
+## Current Launch Gate
 
-This app now supports:
+The codebase builds and passes local guards. Production launch is still gated on external configuration:
 
-- Sending `interactive.type = "flow"` messages with retry + fallback
-- Passing live menu/cart/checkout context via `flow_action_payload.data`
-- Parsing `interactive.nfm_reply.response_json` into order commands
-- Optional endpoint-powered flows on `/api/whatsapp/flows` (`INIT`, `BACK`, `data_exchange`, `ping`)
-
-Recommended production setup:
-
-1. Create and publish a Flow in Meta.
-2. Configure `WHATSAPP_FLOW_ID` (preferred) or `WHATSAPP_FLOW_NAME`.
-3. Upload/sign your Flow public key in Meta and set `WHATSAPP_FLOW_PRIVATE_KEY`.
-4. Point your Flow endpoint URL to `/api/whatsapp/flows`.
-5. Keep `WHATSAPP_APP_SECRET` configured so endpoint signature validation stays enabled.
-
-## Deployment (Vercel)
-
-```bash
-vercel deploy
-```
-
-Set all environment variables in **Vercel → Project → Settings → Environment Variables**, then update your Meta webhook URL to the production URL.
-## MCP Setup
-
-This repo now includes a root [`.mcp.json`](/C:/Users/PMLS/OneDrive/Desktop/tandoori-agent/.mcp.json:1) with:
-
-- `supabase` pointed at this project's Supabase MCP endpoint
-- `next-devtools` for the Next.js 16 dev-server MCP bridge
-
-For Supabase MCP to authenticate, make sure the process launching Codex has `SUPABASE_ACCESS_TOKEN` set to a Supabase personal access token for your account. The MCP config sends it as a bearer token header.
-
-Run the app locally with:
-
-```bash
-npm run dev
-```
-
-Then reload the Codex workspace or restart the session so the project MCP config is picked up.
-
-## Semantic Retrieval Env
-
-Semantic menu retrieval is configured through:
-
-- `MENU_EMBEDDING_API_KEY`
-- `MENU_EMBEDDING_BASE_URL`
-- `MENU_EMBEDDING_MODEL`
-- `RESTAURANT_TIMEZONE`
-
-These are now filled in `.env.local` for local development. Mirror them into Vercel or your production host if you want pgvector-backed matching in production.
+- Real production secrets must be set in the host.
+- Supabase migrations must be applied.
+- Meta webhook and optional Flow endpoints must be configured with matching secrets.
+- A live WhatsApp smoke test must pass against the production URL.

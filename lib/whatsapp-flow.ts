@@ -32,6 +32,7 @@ type FlowPayloadInput = {
   address?: string | null;
   guests?: number | null;
   reservationTime?: string | null;
+  pickupTime?: string | null;
   settings?: RestaurantSettings;
   suggestedUpsell?: { name: string; price: number } | null;
 };
@@ -136,11 +137,15 @@ export function extractFlowResponseCommand(responseJsonRaw: string): string | nu
 
   const guests = pickNumber(payload, ["guests", "guest_count", "party_size"]);
   const reservationTime = pickString(payload, ["reservation_time", "dine_in_time", "time_slot", "arrival_time"]);
+  const pickupTime = pickString(payload, ["pickup_time", "pickup_slot", "collection_time", "collect_time"]);
   if (guests && reservationTime) {
     chunks.push(`${guests} guests at ${reservationTime}`);
   } else {
     if (guests) chunks.push(`${guests} guests`);
     if (reservationTime) chunks.push(reservationTime);
+  }
+  if (pickupTime) {
+    chunks.push(`pickup at ${pickupTime}`);
   }
 
   if (pickBoolean(payload, ["confirm", "is_confirmed", "submit_order", "place_order"])) {
@@ -250,8 +255,12 @@ function buildFlowData(input: FlowPayloadInput): Record<string, unknown> {
     address: input.address ?? null,
     guests: input.guests ?? null,
     reservation_time: input.reservationTime ?? null,
+    pickup_time: input.pickupTime ?? null,
     city: input.settings?.city ?? null,
     min_delivery_amount: Number(input.settings?.min_delivery_amount ?? 0),
+    delivery_areas: input.settings?.delivery_areas ?? [],
+    estimated_prep_minutes: Number(input.settings?.estimated_prep_minutes ?? 30),
+    estimated_delivery_minutes: Number(input.settings?.estimated_delivery_minutes ?? 45),
     suggested_upsell: input.suggestedUpsell ?? null,
     generated_at: new Date().toISOString(),
   };
@@ -367,6 +376,16 @@ function normalizeOrderType(value: string | null): OrderType | null {
   if (!value) return null;
   const normalized = value.trim().toLowerCase();
   if (normalized === "delivery") return "delivery";
+  if (
+    normalized === "pickup" ||
+    normalized === "pick up" ||
+    normalized === "takeaway" ||
+    normalized === "take away" ||
+    normalized === "takeout" ||
+    normalized === "collection"
+  ) {
+    return "pickup";
+  }
   if (normalized === "dine-in" || normalized === "dine_in" || normalized === "dinein") {
     return "dine-in";
   }

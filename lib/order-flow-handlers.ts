@@ -33,12 +33,13 @@ type ValidationResult =
     ok: true;
     order: {
       items: DraftCartItem[];
-      type: "delivery" | "dine-in";
+      type: "delivery" | "pickup" | "dine-in";
       subtotal: number;
       delivery_fee: number;
       address: string | null;
       guests: number | null;
       reservation_time: string | null;
+      pickup_time: string | null;
       customer_instructions: string | null;
     };
   }
@@ -88,7 +89,7 @@ type SharedHelpers = {
 type AwaitingConfirmationHelpers = SharedHelpers & {
   isExplicitYes: (text: string) => boolean;
   validateDraftForPlacement: (state: ConversationState, settings: TurnContext["settings"]) => ValidationResult;
-  buildOrderPlacedReply: (settings: TurnContext["settings"], romanUrdu: boolean) => string;
+  buildOrderPlacedReply: (settings: TurnContext["settings"], orderType: OrderType, romanUrdu: boolean) => string;
   resetDraftState: () => Partial<ConversationState>;
   isExplicitNo: (text: string) => boolean;
   mutateCart: (
@@ -240,7 +241,7 @@ export function handleAwaitingConfirmationFlow(params: {
 
     return {
       kind: "place_order",
-      reply: helpers.buildOrderPlacedReply(context.settings, prefersRomanUrdu),
+      reply: helpers.buildOrderPlacedReply(context.settings, validation.order.type, prefersRomanUrdu),
       statePatch: helpers.withPreferredLanguage(
         {
           ...helpers.resetDraftState(),
@@ -371,6 +372,7 @@ export function handleLogisticsAndFallbackFlow(params: {
     (state.workflow_step === "awaiting_order_type" ||
       state.workflow_step === "awaiting_delivery_address" ||
       state.workflow_step === "awaiting_dine_in_details" ||
+      state.workflow_step === "awaiting_pickup_time" ||
       state.workflow_step === "awaiting_confirmation") &&
     state.cart.length === 0
   ) {
@@ -593,6 +595,9 @@ export function handleLogisticsAndFallbackFlow(params: {
     if (interpretation.order_type === "dine-in") {
       return helpers.handleOrderTypeSelection(context, state, preferredLanguage, "dine-in", trace);
     }
+    if (interpretation.order_type === "pickup") {
+      return helpers.handleOrderTypeSelection(context, state, preferredLanguage, "pickup", trace);
+    }
 
     const address = interpretation.address ?? parseAddress(context.messageText);
     if (!address) {
@@ -635,6 +640,9 @@ export function handleLogisticsAndFallbackFlow(params: {
   if (state.workflow_step === "awaiting_dine_in_details") {
     if (interpretation.order_type === "delivery") {
       return helpers.handleOrderTypeSelection(context, state, preferredLanguage, "delivery", trace);
+    }
+    if (interpretation.order_type === "pickup") {
+      return helpers.handleOrderTypeSelection(context, state, preferredLanguage, "pickup", trace);
     }
 
     const guests = interpretation.guests ?? parseGuestCount(normalizedText, helpers.clampQty) ?? state.guests;
@@ -691,6 +699,72 @@ export function handleLogisticsAndFallbackFlow(params: {
           guests,
           reservation_time: reservationTime,
           address: null,
+        },
+        settings: context.settings,
+      },
+      trace,
+    );
+  }
+
+  if (state.workflow_step === "awaiting_pickup_time") {
+    if (interpretation.order_type === "delivery") {
+      return helpers.handleOrderTypeSelection(context, state, preferredLanguage, "delivery", trace);
+    }
+    if (interpretation.order_type === "dine-in") {
+      return helpers.handleOrderTypeSelection(context, state, preferredLanguage, "dine-in", trace);
+    }
+
+    const pickupTime =
+      parseReservationTime(interpretation.reservation_time ?? context.messageText, {
+        opening_time: context.settings.opening_time,
+        closing_time: context.settings.closing_time,
+      }) ?? state.pickup_time;
+
+    if (!pickupTime) {
+      if (helpers.shouldDeferToContextSwitchFallback(context.messageText, normalizedText, interpretation)) {
+        return {
+          kind: "fallback",
+          statePatch: helpers.withPreferredLanguage(
+            {
+              workflow_step: "awaiting_pickup_time",
+              pickup_time: pickupTime ?? null,
+            },
+            preferredLanguage,
+          ),
+          trace,
+        };
+      }
+
+      const isRetrying = context.session.invalid_step_count > 0;
+      return helpers.replyDecision(
+        prefersRomanUrdu
+          ? isRetrying
+            ? "Pickup time samajh nahi aaya. Please clearly time bhej dein. Misal: *8 PM* ya *in 30 minutes*."
+            : "Pickup ke liye kis time aana hai? Misal: *8 PM* ya *in 30 minutes*."
+          : isRetrying
+            ? "I didn't catch the pickup time. Please send it clearly, for example: *8 PM* or *in 30 minutes*."
+            : "What time would you like to pick it up? Example: *8 PM* or *in 30 minutes*.",
+        helpers.withPreferredLanguage(
+          {
+            workflow_step: "awaiting_pickup_time",
+            pickup_time: pickupTime ?? null,
+          },
+          preferredLanguage,
+        ),
+        trace,
+      );
+    }
+
+    return helpers.buildSummaryReply(
+      {
+        state: {
+          ...state,
+          preferred_language: preferredLanguage,
+          order_type: "pickup",
+          pickup_time: pickupTime,
+          address: null,
+          guests: null,
+          reservation_time: null,
         },
         settings: context.settings,
       },

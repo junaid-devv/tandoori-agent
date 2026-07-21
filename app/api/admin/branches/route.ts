@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { createBranch, listBranchesWithStats } from "@/lib/admin";
 import { requireAdminApiSession } from "@/lib/admin-request";
 
@@ -10,6 +11,8 @@ type BranchBody = {
   is_active?: boolean;
 };
 
+const BRANCH_BODY_LIMIT_BYTES = 8 * 1024;
+
 export async function GET() {
   const auth = await requireAdminApiSession();
   if (auth.response) {
@@ -20,8 +23,7 @@ export async function GET() {
     const branches = await listBranchesWithStats();
     return NextResponse.json(branches);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load branches.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to load branches.", context: "admin branches GET" });
   }
 }
 
@@ -32,7 +34,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = (await req.json()) as BranchBody;
+    const body = await readLimitedJsonBody<BranchBody>(req, BRANCH_BODY_LIMIT_BYTES);
     const branch = await createBranch({
       name: body.name ?? "",
       slug: body.slug ?? null,
@@ -43,8 +45,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(branch);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create branch.";
-    const status = /required/i.test(message) ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    const validationMessage = error instanceof Error ? error.message : "Failed to create branch.";
+    const status = /required/i.test(validationMessage) ? 400 : 500;
+    return status === 400
+      ? NextResponse.json({ error: validationMessage }, { status })
+      : apiErrorResponse(error, { fallback: "Failed to create branch.", context: "admin branches POST" });
   }
 }

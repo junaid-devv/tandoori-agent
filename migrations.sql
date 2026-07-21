@@ -23,6 +23,34 @@ create table if not exists contacts (
   updated_at timestamptz not null default now()
 );
 
+alter table contacts add column if not exists preferred_language text not null default 'english';
+alter table contacts add column if not exists tags jsonb not null default '[]'::jsonb;
+alter table contacts add column if not exists notes text;
+alter table contacts add column if not exists total_orders integer not null default 0;
+alter table contacts add column if not exists last_order_at timestamptz;
+alter table contacts drop constraint if exists contacts_preferred_language_check;
+alter table contacts add constraint contacts_preferred_language_check check (preferred_language in ('english', 'roman_urdu')) not valid;
+alter table contacts drop constraint if exists contacts_tags_check;
+alter table contacts add constraint contacts_tags_check check (jsonb_typeof(tags) = 'array') not valid;
+alter table contacts drop constraint if exists contacts_total_orders_check;
+alter table contacts add constraint contacts_total_orders_check check (total_orders >= 0) not valid;
+
+create table if not exists customer_addresses (
+  id uuid primary key default gen_random_uuid(),
+  contact_id uuid not null references contacts(id) on delete cascade,
+  branch_id uuid not null references branches(id) on delete cascade,
+  label text not null default 'Saved address',
+  address text not null,
+  address_key text not null,
+  use_count integer not null default 1,
+  last_used_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (contact_id, branch_id, address_key)
+);
+alter table customer_addresses drop constraint if exists customer_addresses_use_count_check;
+alter table customer_addresses add constraint customer_addresses_use_count_check check (use_count > 0) not valid;
+
 insert into contacts (phone, name)
 select distinct c.phone, c.name
 from conversations c
@@ -68,10 +96,19 @@ alter table restaurant_settings add column if not exists branch_id uuid referenc
 alter table restaurant_settings add column if not exists min_delivery_amount numeric not null default 0;
 alter table restaurant_settings add column if not exists delivery_enabled boolean not null default false;
 alter table restaurant_settings add column if not exists delivery_fee numeric not null default 0;
+alter table restaurant_settings add column if not exists delivery_areas jsonb not null default '[]'::jsonb;
+alter table restaurant_settings add column if not exists estimated_prep_minutes integer not null default 30;
+alter table restaurant_settings add column if not exists estimated_delivery_minutes integer not null default 45;
 alter table restaurant_settings add column if not exists city text not null default 'Wah Cantt';
 alter table restaurant_settings add column if not exists phone_delivery text not null default '0341-1007722';
 alter table restaurant_settings add column if not exists phone_dine_in text not null default '051-4904211';
 alter table restaurant_settings add column if not exists ai_personality text not null default 'Warm & Professional';
+alter table restaurant_settings drop constraint if exists restaurant_settings_delivery_areas_array_check;
+alter table restaurant_settings add constraint restaurant_settings_delivery_areas_array_check check (jsonb_typeof(delivery_areas) = 'array') not valid;
+alter table restaurant_settings drop constraint if exists restaurant_settings_estimated_prep_minutes_check;
+alter table restaurant_settings add constraint restaurant_settings_estimated_prep_minutes_check check (estimated_prep_minutes between 5 and 240) not valid;
+alter table restaurant_settings drop constraint if exists restaurant_settings_estimated_delivery_minutes_check;
+alter table restaurant_settings add constraint restaurant_settings_estimated_delivery_minutes_check check (estimated_delivery_minutes between 5 and 240) not valid;
 
 update restaurant_settings set branch_id = branches.id
 from branches
@@ -85,6 +122,11 @@ on conflict (branch_id) do nothing;
 alter table menu_items add column if not exists branch_id uuid references branches(id) on delete cascade;
 alter table menu_items add column if not exists sort_order integer not null default 0;
 alter table menu_items add column if not exists description text;
+alter table menu_items add column if not exists available_days jsonb not null default '[]'::jsonb;
+alter table menu_items add column if not exists available_start_time text;
+alter table menu_items add column if not exists available_end_time text;
+alter table menu_items drop constraint if exists menu_items_available_days_check;
+alter table menu_items add constraint menu_items_available_days_check check (jsonb_typeof(available_days) = 'array') not valid;
 update menu_items set branch_id = branches.id
 from branches
 where menu_items.branch_id is null and branches.slug = 'default-branch';
@@ -102,13 +144,14 @@ alter table messages alter column ingest_seq set not null;
 alter table messages add column if not exists sender_kind text not null default 'user';
 alter table messages add column if not exists delivery_status text;
 alter table messages add column if not exists delivery_error text;
+alter table messages add column if not exists delivery_status_updated_at timestamptz;
 update messages
 set sender_kind = case when role = 'user' then 'user' else 'ai' end
 where sender_kind is null or sender_kind not in ('user', 'ai', 'human', 'system');
 alter table messages drop constraint if exists messages_sender_kind_check;
 alter table messages add constraint messages_sender_kind_check check (sender_kind in ('user', 'ai', 'human', 'system')) not valid;
 alter table messages drop constraint if exists messages_delivery_status_check;
-alter table messages add constraint messages_delivery_status_check check (delivery_status is null or delivery_status in ('pending', 'sent', 'failed')) not valid;
+alter table messages add constraint messages_delivery_status_check check (delivery_status is null or delivery_status in ('pending', 'sent', 'delivered', 'read', 'failed')) not valid;
 
 create table if not exists conversation_states (
   id uuid primary key default gen_random_uuid(),
@@ -125,6 +168,7 @@ create table if not exists conversation_states (
   address text,
   guests integer,
   reservation_time timestamptz,
+  pickup_time timestamptz,
   customer_instructions text,
   upsell_item_name text,
   upsell_item_price numeric,
@@ -172,16 +216,17 @@ alter table conversation_states add column if not exists last_presented_at times
 alter table conversation_states add column if not exists last_presented_options jsonb;
 alter table conversation_states add column if not exists last_presented_options_at timestamptz;
 alter table conversation_states add column if not exists customer_instructions text;
+alter table conversation_states add column if not exists pickup_time timestamptz;
 alter table conversation_states add column if not exists declined_upsells jsonb not null default '[]'::jsonb;
 alter table conversation_states drop constraint if exists conversation_states_preferred_language_check;
 alter table conversation_states add constraint conversation_states_preferred_language_check check (preferred_language in ('english', 'roman_urdu')) not valid;
 alter table conversation_states drop constraint if exists conversation_states_workflow_step_check;
 alter table conversation_states add constraint conversation_states_workflow_step_check check (
-  workflow_step in ('idle', 'awaiting_branch_selection', 'collecting_items', 'awaiting_upsell_reply', 'awaiting_order_type', 'awaiting_delivery_address', 'awaiting_dine_in_details', 'awaiting_confirmation', 'awaiting_resume_decision')
+  workflow_step in ('idle', 'awaiting_branch_selection', 'collecting_items', 'awaiting_upsell_reply', 'awaiting_order_type', 'awaiting_delivery_address', 'awaiting_dine_in_details', 'awaiting_pickup_time', 'awaiting_confirmation', 'awaiting_resume_decision')
 ) not valid;
 alter table conversation_states drop constraint if exists conversation_states_resume_workflow_step_check;
 alter table conversation_states add constraint conversation_states_resume_workflow_step_check check (
-  resume_workflow_step is null or resume_workflow_step in ('idle', 'awaiting_branch_selection', 'collecting_items', 'awaiting_upsell_reply', 'awaiting_order_type', 'awaiting_delivery_address', 'awaiting_dine_in_details', 'awaiting_confirmation')
+  resume_workflow_step is null or resume_workflow_step in ('idle', 'awaiting_branch_selection', 'collecting_items', 'awaiting_upsell_reply', 'awaiting_order_type', 'awaiting_delivery_address', 'awaiting_dine_in_details', 'awaiting_pickup_time', 'awaiting_confirmation')
 ) not valid;
 
 alter table orders add column if not exists branch_id uuid references branches(id) on delete cascade;
@@ -191,6 +236,7 @@ alter table orders add column if not exists status_notified_at timestamptz;
 alter table orders add column if not exists status_notification_status text;
 alter table orders add column if not exists status_notification_error text;
 alter table orders add column if not exists customer_instructions text;
+alter table orders add column if not exists pickup_time timestamptz;
 alter table orders add column if not exists cancellation_requested_at timestamptz;
 alter table orders add column if not exists cancelled_at timestamptz;
 alter table order_items add column if not exists created_at timestamptz not null default now();
@@ -208,14 +254,270 @@ where orders.branch_id is null and branches.slug = 'default-branch';
 create unique index if not exists idx_orders_source_user_message_id on orders(source_user_message_id) where source_user_message_id is not null;
 alter table orders drop constraint if exists orders_status_notification_status_check;
 alter table orders add constraint orders_status_notification_status_check check (status_notification_status is null or status_notification_status in ('sent', 'failed', 'skipped')) not valid;
+alter table conversation_states drop constraint if exists conversation_states_order_type_check;
+alter table conversation_states add constraint conversation_states_order_type_check check (order_type is null or order_type in ('delivery', 'pickup', 'dine-in')) not valid;
+alter table orders drop constraint if exists orders_type_check;
+alter table orders add constraint orders_type_check check (type in ('delivery', 'pickup', 'dine-in')) not valid;
 alter table orders drop constraint if exists orders_require_delivery_fields;
 alter table orders add constraint orders_require_delivery_fields check (
-  (type = 'delivery' and address is not null and guests is null and reservation_time is null)
+  (type = 'delivery' and address is not null and guests is null and reservation_time is null and pickup_time is null)
   or
-  (type = 'dine-in' and address is null and guests is not null and reservation_time is not null)
+  (type = 'pickup' and address is null and guests is null and reservation_time is null and pickup_time is not null)
+  or
+  (type = 'dine-in' and address is null and guests is not null and reservation_time is not null and pickup_time is null)
 ) not valid;
 alter table order_items drop constraint if exists order_items_addons_array_check;
 alter table order_items add constraint order_items_addons_array_check check (jsonb_typeof(addons) = 'array') not valid;
+
+create or replace function place_order_from_payload(
+  p_conversation_id uuid,
+  p_branch_id uuid,
+  p_source_user_message_id text,
+  p_type text,
+  p_items jsonb,
+  p_customer_instructions text default null,
+  p_address text default null,
+  p_guests integer default null,
+  p_reservation_time timestamptz default null,
+  p_pickup_time timestamptz default null,
+  p_delivery_fee numeric default 0
+) returns table (id uuid)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_existing_order_id uuid;
+  v_order_id uuid;
+  v_subtotal numeric := 0;
+  v_delivery_fee numeric := 0;
+  v_delivery_enabled boolean := false;
+  v_min_delivery_amount numeric := 0;
+  v_delivery_areas jsonb := '[]'::jsonb;
+  v_delivery_area_count integer := 0;
+  v_delivery_area_matches boolean := true;
+  v_item record;
+  v_menu_item record;
+  v_addons jsonb;
+begin
+  if p_source_user_message_id is null or btrim(p_source_user_message_id) = '' then
+    raise exception 'Missing source user message id for order placement.';
+  end if;
+
+  select orders.id into v_existing_order_id
+  from orders
+  where source_user_message_id = p_source_user_message_id
+  limit 1;
+
+  if v_existing_order_id is not null then
+    return query select v_existing_order_id;
+    return;
+  end if;
+
+  if p_type not in ('delivery', 'pickup', 'dine-in') then
+    raise exception 'Invalid order type: %', p_type;
+  end if;
+
+  if jsonb_typeof(p_items) <> 'array' or jsonb_array_length(p_items) = 0 then
+    raise exception 'Order requires at least one item.';
+  end if;
+
+  if p_type = 'delivery' and (p_address is null or btrim(p_address) = '') then
+    raise exception 'Delivery address is required.';
+  end if;
+
+  if p_type = 'delivery' then
+    select
+      coalesce(restaurant_settings.delivery_enabled, false),
+      greatest(coalesce(restaurant_settings.delivery_fee, 0), 0),
+      greatest(coalesce(restaurant_settings.min_delivery_amount, 0), 0),
+      coalesce(restaurant_settings.delivery_areas, '[]'::jsonb)
+    into v_delivery_enabled, v_delivery_fee, v_min_delivery_amount, v_delivery_areas
+    from restaurant_settings
+    where restaurant_settings.branch_id = p_branch_id
+    limit 1;
+
+    if not coalesce(v_delivery_enabled, false) then
+      raise exception 'Delivery is not available for this branch.';
+    end if;
+
+    select count(*)
+    into v_delivery_area_count
+    from jsonb_array_elements_text(v_delivery_areas) as area(value)
+    where btrim(area.value) <> '';
+
+    if v_delivery_area_count > 0 then
+      select exists (
+        select 1
+        from jsonb_array_elements_text(v_delivery_areas) as area(value)
+        where btrim(area.value) <> ''
+          and lower(coalesce(p_address, '')) like '%' || lower(btrim(area.value)) || '%'
+      )
+      into v_delivery_area_matches;
+
+      if not coalesce(v_delivery_area_matches, false) then
+        raise exception 'Delivery address is outside configured delivery areas.';
+      end if;
+    end if;
+  end if;
+
+  if p_type = 'pickup' and p_pickup_time is null then
+    raise exception 'Pickup time is required.';
+  end if;
+
+  if p_type = 'dine-in' and (p_guests is null or p_guests < 1 or p_reservation_time is null) then
+    raise exception 'Guest count and reservation time are required for dine-in.';
+  end if;
+
+  insert into orders (
+    branch_id,
+    conversation_id,
+    source_user_message_id,
+    type,
+    subtotal,
+    delivery_fee,
+    customer_instructions,
+    address,
+    guests,
+    reservation_time,
+    pickup_time,
+    status
+  )
+  values (
+    p_branch_id,
+    p_conversation_id,
+    p_source_user_message_id,
+    p_type,
+    0,
+    case when p_type = 'delivery' then v_delivery_fee else 0 end,
+    nullif(btrim(coalesce(p_customer_instructions, '')), ''),
+    case when p_type = 'delivery' then nullif(btrim(coalesce(p_address, '')), '') else null end,
+    case when p_type = 'dine-in' then p_guests else null end,
+    case when p_type = 'dine-in' then p_reservation_time else null end,
+    case when p_type = 'pickup' then p_pickup_time else null end,
+    'received'
+  )
+  returning orders.id, orders.delivery_fee into v_order_id, v_delivery_fee;
+
+  for v_item in
+    select *
+    from jsonb_to_recordset(p_items) as item(
+      name text,
+      qty integer,
+      size text,
+      addons jsonb,
+      item_instructions text
+    )
+  loop
+    if v_item.name is null or btrim(v_item.name) = '' then
+      raise exception 'Order item name is required.';
+    end if;
+
+    if v_item.qty is null or v_item.qty < 1 or v_item.qty > 50 then
+      raise exception 'Invalid quantity for %.', v_item.name;
+    end if;
+
+    select menu_items.name, menu_items.price
+    into v_menu_item
+    from menu_items
+    where menu_items.branch_id = p_branch_id
+      and menu_items.is_available = true
+      and (
+        coalesce(jsonb_array_length(menu_items.available_days), 0) = 0
+        or lower(to_char(now(), 'dy')) in (
+          select lower(left(day.value, 3))
+          from jsonb_array_elements_text(menu_items.available_days) as day(value)
+        )
+      )
+      and (
+        menu_items.available_start_time is null
+        or menu_items.available_end_time is null
+        or menu_items.available_start_time = menu_items.available_end_time
+        or (
+          menu_items.available_start_time < menu_items.available_end_time
+          and to_char(now(), 'HH24:MI') between menu_items.available_start_time and menu_items.available_end_time
+        )
+        or (
+          menu_items.available_start_time > menu_items.available_end_time
+          and (
+            to_char(now(), 'HH24:MI') >= menu_items.available_start_time
+            or to_char(now(), 'HH24:MI') <= menu_items.available_end_time
+          )
+        )
+      )
+      and lower(menu_items.name) = lower(v_item.name)
+    order by menu_items.sort_order asc, menu_items.created_at asc
+    limit 1;
+
+    if v_menu_item.name is null then
+      raise exception 'Menu item no longer exists: %', v_item.name;
+    end if;
+
+    v_addons := case
+      when jsonb_typeof(v_item.addons) = 'array' then v_item.addons
+      else '[]'::jsonb
+    end;
+
+    insert into order_items (
+      order_id,
+      name,
+      qty,
+      price,
+      size,
+      addons,
+      item_instructions
+    )
+    values (
+      v_order_id,
+      v_menu_item.name,
+      v_item.qty,
+      v_menu_item.price,
+      nullif(btrim(coalesce(v_item.size, '')), ''),
+      v_addons,
+      nullif(btrim(coalesce(v_item.item_instructions, '')), '')
+    );
+
+    v_subtotal := v_subtotal + (v_menu_item.price * v_item.qty);
+  end loop;
+
+  update orders
+  set subtotal = v_subtotal
+  where orders.id = v_order_id;
+
+  if p_type = 'delivery' and v_min_delivery_amount > 0 and v_subtotal < v_min_delivery_amount then
+    raise exception 'Minimum delivery order is Rs. %, current subtotal is Rs. %.', v_min_delivery_amount, v_subtotal;
+  end if;
+
+  return query select v_order_id;
+exception
+  when unique_violation then
+    select orders.id into v_existing_order_id
+    from orders
+    where source_user_message_id = p_source_user_message_id
+    limit 1;
+
+    if v_existing_order_id is not null then
+      return query select v_existing_order_id;
+      return;
+    end if;
+
+    raise;
+end;
+$$;
+
+revoke all on function place_order_from_payload(uuid, uuid, text, text, jsonb, text, text, integer, timestamptz, timestamptz, numeric) from public;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on function place_order_from_payload(uuid, uuid, text, text, jsonb, text, text, integer, timestamptz, timestamptz, numeric) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on function place_order_from_payload(uuid, uuid, text, text, jsonb, text, text, integer, timestamptz, timestamptz, numeric) from authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function place_order_from_payload(uuid, uuid, text, text, jsonb, text, text, integer, timestamptz, timestamptz, numeric) to service_role;
+  end if;
+end $$;
 
 update contacts set active_branch_id = branches.id
 from branches
@@ -237,7 +539,118 @@ create table if not exists staff_branch_access (
   primary key (user_id, branch_id)
 );
 
+create table if not exists rate_limits (
+  scope text not null,
+  identifier_hash text not null,
+  request_count integer not null default 0 check (request_count >= 0),
+  window_start timestamptz not null default now(),
+  blocked_until timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  primary key (scope, identifier_hash)
+);
+
+create or replace function check_rate_limit(
+  p_scope text,
+  p_identifier_hash text,
+  p_limit integer,
+  p_window_seconds integer,
+  p_block_seconds integer default 0
+) returns table (
+  allowed boolean,
+  remaining integer,
+  reset_at timestamptz,
+  blocked_until timestamptz
+)
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_now timestamptz := clock_timestamp();
+  v_window interval := greatest(coalesce(p_window_seconds, 1), 1) * interval '1 second';
+  v_block interval := greatest(coalesce(p_block_seconds, 0), 0) * interval '1 second';
+  v_limit integer := greatest(coalesce(p_limit, 1), 1);
+  v_row rate_limits%rowtype;
+  v_next_count integer;
+  v_blocked_until timestamptz;
+begin
+  if p_scope is null or btrim(p_scope) = '' or p_identifier_hash is null or btrim(p_identifier_hash) = '' then
+    raise exception 'Rate limit scope and identifier are required.';
+  end if;
+
+  insert into rate_limits (scope, identifier_hash, request_count, window_start)
+  values (left(btrim(p_scope), 80), btrim(p_identifier_hash), 0, v_now)
+  on conflict (scope, identifier_hash) do nothing;
+
+  select *
+  into v_row
+  from rate_limits
+  where scope = left(btrim(p_scope), 80)
+    and identifier_hash = btrim(p_identifier_hash)
+  for update;
+
+  if v_row.blocked_until is not null and v_row.blocked_until > v_now then
+    allowed := false;
+    remaining := 0;
+    reset_at := v_row.window_start + v_window;
+    blocked_until := v_row.blocked_until;
+    return next;
+    return;
+  end if;
+
+  if v_row.window_start + v_window <= v_now then
+    v_next_count := 1;
+    update rate_limits
+    set request_count = v_next_count,
+        window_start = v_now,
+        blocked_until = null,
+        updated_at = v_now
+    where scope = v_row.scope
+      and identifier_hash = v_row.identifier_hash;
+
+    allowed := true;
+    remaining := greatest(v_limit - v_next_count, 0);
+    reset_at := v_now + v_window;
+    blocked_until := null;
+    return next;
+    return;
+  end if;
+
+  v_next_count := v_row.request_count + 1;
+  v_blocked_until := case when v_next_count > v_limit and v_block > interval '0 seconds' then v_now + v_block else null end;
+
+  update rate_limits
+  set request_count = v_next_count,
+      blocked_until = v_blocked_until,
+      updated_at = v_now
+  where scope = v_row.scope
+    and identifier_hash = v_row.identifier_hash;
+
+  allowed := v_next_count <= v_limit;
+  remaining := greatest(v_limit - v_next_count, 0);
+  reset_at := v_row.window_start + v_window;
+  blocked_until := v_blocked_until;
+  return next;
+end;
+$$;
+
+revoke all on function check_rate_limit(text, text, integer, integer, integer) from public;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on function check_rate_limit(text, text, integer, integer, integer) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on function check_rate_limit(text, text, integer, integer, integer) from authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function check_rate_limit(text, text, integer, integer, integer) to service_role;
+  end if;
+end $$;
+
 create index if not exists idx_contacts_active_branch on contacts(active_branch_id);
+create index if not exists idx_customer_addresses_contact_branch on customer_addresses(contact_id, branch_id, last_used_at desc);
 create index if not exists idx_conversations_branch_updated on conversations(branch_id, updated_at desc);
 create index if not exists idx_messages_conversation_created on messages(conversation_id, created_at desc);
 create unique index if not exists idx_messages_ingest_seq on messages(ingest_seq);
@@ -253,6 +666,7 @@ create index if not exists idx_order_agent_turns_conversation_created on order_a
 create index if not exists idx_order_agent_turns_message on order_agent_turns(message_id);
 create index if not exists idx_menu_items_branch_name_lookup on menu_items(branch_id, lower(trim(name)));
 create index if not exists idx_menu_uploads_branch_created on menu_uploads(branch_id, created_at desc);
+create index if not exists idx_rate_limits_updated_at on rate_limits(updated_at);
 
 create or replace function update_updated_at_column()
 returns trigger
@@ -268,6 +682,8 @@ drop trigger if exists update_branches_updated_at on branches;
 create trigger update_branches_updated_at before update on branches for each row execute function update_updated_at_column();
 drop trigger if exists update_contacts_updated_at on contacts;
 create trigger update_contacts_updated_at before update on contacts for each row execute function update_updated_at_column();
+drop trigger if exists update_customer_addresses_updated_at on customer_addresses;
+create trigger update_customer_addresses_updated_at before update on customer_addresses for each row execute function update_updated_at_column();
 drop trigger if exists update_conversations_updated_at on conversations;
 create trigger update_conversations_updated_at before update on conversations for each row execute function update_updated_at_column();
 drop trigger if exists update_restaurant_settings_updated_at on restaurant_settings;
@@ -280,9 +696,12 @@ drop trigger if exists update_orders_updated_at on orders;
 create trigger update_orders_updated_at before update on orders for each row execute function update_updated_at_column();
 drop trigger if exists update_staff_profiles_updated_at on staff_profiles;
 create trigger update_staff_profiles_updated_at before update on staff_profiles for each row execute function update_updated_at_column();
+drop trigger if exists update_rate_limits_updated_at on rate_limits;
+create trigger update_rate_limits_updated_at before update on rate_limits for each row execute function update_updated_at_column();
 
 alter table branches enable row level security;
 alter table contacts enable row level security;
+alter table customer_addresses enable row level security;
 alter table conversations enable row level security;
 alter table messages enable row level security;
 alter table restaurant_settings enable row level security;
@@ -294,33 +713,38 @@ alter table orders enable row level security;
 alter table order_items enable row level security;
 alter table staff_profiles enable row level security;
 alter table staff_branch_access enable row level security;
+alter table rate_limits enable row level security;
 
 drop policy if exists "service_branches" on branches;
-create policy "service_branches" on branches for all using (true);
+create policy "service_branches" on branches for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_contacts" on contacts;
-create policy "service_contacts" on contacts for all using (true);
+create policy "service_contacts" on contacts for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+drop policy if exists "service_customer_addresses" on customer_addresses;
+create policy "service_customer_addresses" on customer_addresses for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_conversations" on conversations;
-create policy "service_conversations" on conversations for all using (true);
+create policy "service_conversations" on conversations for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_messages" on messages;
-create policy "service_messages" on messages for all using (true);
+create policy "service_messages" on messages for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_settings" on restaurant_settings;
-create policy "service_settings" on restaurant_settings for all using (true);
+create policy "service_settings" on restaurant_settings for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_menu_items" on menu_items;
-create policy "service_menu_items" on menu_items for all using (true);
+create policy "service_menu_items" on menu_items for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_menu_uploads" on menu_uploads;
-create policy "service_menu_uploads" on menu_uploads for all using (true);
+create policy "service_menu_uploads" on menu_uploads for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_conversation_states" on conversation_states;
-create policy "service_conversation_states" on conversation_states for all using (true);
+create policy "service_conversation_states" on conversation_states for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_order_agent_turns" on order_agent_turns;
-create policy "service_order_agent_turns" on order_agent_turns for all using (true);
+create policy "service_order_agent_turns" on order_agent_turns for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_orders" on orders;
-create policy "service_orders" on orders for all using (true);
+create policy "service_orders" on orders for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_order_items" on order_items;
-create policy "service_order_items" on order_items for all using (true);
+create policy "service_order_items" on order_items for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_staff_profiles" on staff_profiles;
-create policy "service_staff_profiles" on staff_profiles for all using (true);
+create policy "service_staff_profiles" on staff_profiles for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_staff_branch_access" on staff_branch_access;
-create policy "service_staff_branch_access" on staff_branch_access for all using (true);
+create policy "service_staff_branch_access" on staff_branch_access for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+drop policy if exists "service_rate_limits" on rate_limits;
+create policy "service_rate_limits" on rate_limits for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
 do $$
 begin
@@ -329,6 +753,9 @@ begin
   end if;
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'conversations') then
     alter publication supabase_realtime add table conversations;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'customer_addresses') then
+    alter publication supabase_realtime add table customer_addresses;
   end if;
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'conversation_states') then
     alter publication supabase_realtime add table conversation_states;
@@ -361,6 +788,9 @@ begin
     category text,
     description text,
     is_available boolean,
+    available_days jsonb,
+    available_start_time text,
+    available_end_time text,
     sort_order integer
   )
   group by lower(trim(item.name))
@@ -378,30 +808,42 @@ begin
     category text,
     description text,
     is_available boolean not null,
+    available_days jsonb not null,
+    available_start_time text,
+    available_end_time text,
     sort_order integer not null
   ) on commit drop;
 
-  insert into tmp_menu_payload (normalized_name, name, price, category, description, is_available, sort_order)
+  insert into tmp_menu_payload (normalized_name, name, price, category, description, is_available, available_days, available_start_time, available_end_time, sort_order)
   select lower(trim(item.name)), trim(item.name), item.price,
     nullif(regexp_replace(trim(coalesce(item.category, '')), '\s+', ' ', 'g'), ''),
-    nullif(trim(item.description), ''), coalesce(item.is_available, true), coalesce(item.sort_order, 0)
+    nullif(trim(item.description), ''), coalesce(item.is_available, true),
+    case when jsonb_typeof(coalesce(item.available_days, '[]'::jsonb)) = 'array' then coalesce(item.available_days, '[]'::jsonb) else '[]'::jsonb end,
+    nullif(trim(coalesce(item.available_start_time, '')), ''),
+    nullif(trim(coalesce(item.available_end_time, '')), ''),
+    coalesce(item.sort_order, 0)
   from jsonb_to_recordset(menu_payload) as item(
     name text,
     price numeric,
     category text,
     description text,
     is_available boolean,
+    available_days jsonb,
+    available_start_time text,
+    available_end_time text,
     sort_order integer
   )
   where trim(coalesce(item.name, '')) <> '';
 
   update menu_items as existing
-  set name = incoming.name, price = incoming.price, category = incoming.category, description = incoming.description, is_available = incoming.is_available, sort_order = incoming.sort_order
+  set name = incoming.name, price = incoming.price, category = incoming.category, description = incoming.description, is_available = incoming.is_available,
+      available_days = incoming.available_days, available_start_time = incoming.available_start_time, available_end_time = incoming.available_end_time,
+      sort_order = incoming.sort_order
   from tmp_menu_payload as incoming
   where existing.branch_id = branch_uuid and lower(trim(existing.name)) = incoming.normalized_name;
 
-  insert into menu_items (branch_id, name, price, category, description, is_available, sort_order)
-  select branch_uuid, incoming.name, incoming.price, incoming.category, incoming.description, incoming.is_available, incoming.sort_order
+  insert into menu_items (branch_id, name, price, category, description, is_available, available_days, available_start_time, available_end_time, sort_order)
+  select branch_uuid, incoming.name, incoming.price, incoming.category, incoming.description, incoming.is_available, incoming.available_days, incoming.available_start_time, incoming.available_end_time, incoming.sort_order
   from tmp_menu_payload as incoming
   where not exists (
     select 1 from menu_items as existing
@@ -456,6 +898,51 @@ alter table webhook_events add constraint webhook_events_status_check check (
   status in ('received', 'processing', 'processed', 'failed')
 ) not valid;
 
+create or replace function claim_webhook_event(
+  p_event_id uuid,
+  p_stale_after_seconds integer default 90
+) returns setof webhook_events
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  return query
+  update webhook_events
+  set status = 'processing',
+      attempt_count = webhook_events.attempt_count + 1,
+      processing_started_at = clock_timestamp(),
+      last_error = null,
+      updated_at = clock_timestamp()
+  where id = p_event_id
+    and (
+      status in ('received', 'failed')
+      or (
+        status = 'processing'
+        and (
+          processing_started_at is null
+          or processing_started_at < clock_timestamp() - greatest(coalesce(p_stale_after_seconds, 90), 1) * interval '1 second'
+        )
+      )
+    )
+  returning webhook_events.*;
+end;
+$$;
+
+revoke all on function claim_webhook_event(uuid, integer) from public;
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'anon') then
+    revoke all on function claim_webhook_event(uuid, integer) from anon;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'authenticated') then
+    revoke all on function claim_webhook_event(uuid, integer) from authenticated;
+  end if;
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant execute on function claim_webhook_event(uuid, integer) to service_role;
+  end if;
+end $$;
+
 create table if not exists user_sessions (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null unique references conversations(id) on delete cascade,
@@ -506,7 +993,7 @@ create table if not exists staff_alerts (
 
 alter table staff_alerts drop constraint if exists staff_alerts_kind_check;
 alter table staff_alerts add constraint staff_alerts_kind_check check (
-  kind in ('human_handoff', 'tool_validation', 'webhook_processing', 'delivery_notification')
+  kind in ('human_handoff', 'tool_validation', 'webhook_processing', 'delivery_notification', 'customer_cancellation')
 ) not valid;
 alter table staff_alerts drop constraint if exists staff_alerts_severity_check;
 alter table staff_alerts add constraint staff_alerts_severity_check check (
@@ -540,13 +1027,13 @@ alter table staff_alerts enable row level security;
 alter table menu_item_embeddings enable row level security;
 
 drop policy if exists "service_webhook_events" on webhook_events;
-create policy "service_webhook_events" on webhook_events for all using (true);
+create policy "service_webhook_events" on webhook_events for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_user_sessions" on user_sessions;
-create policy "service_user_sessions" on user_sessions for all using (true);
+create policy "service_user_sessions" on user_sessions for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_staff_alerts" on staff_alerts;
-create policy "service_staff_alerts" on staff_alerts for all using (true);
+create policy "service_staff_alerts" on staff_alerts for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_menu_item_embeddings" on menu_item_embeddings;
-create policy "service_menu_item_embeddings" on menu_item_embeddings for all using (true);
+create policy "service_menu_item_embeddings" on menu_item_embeddings for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
 drop trigger if exists update_webhook_events_updated_at on webhook_events;
 create trigger update_webhook_events_updated_at before update on webhook_events for each row execute function update_updated_at_column();
@@ -611,6 +1098,29 @@ as $$
   join menu_items as mi on mi.id = mie.menu_item_id
   where mie.branch_id = branch_uuid
     and mi.is_available = true
+    and (
+      coalesce(jsonb_array_length(mi.available_days), 0) = 0
+      or lower(to_char(now(), 'dy')) in (
+        select lower(left(day.value, 3))
+        from jsonb_array_elements_text(mi.available_days) as day(value)
+      )
+    )
+    and (
+      mi.available_start_time is null
+      or mi.available_end_time is null
+      or mi.available_start_time = mi.available_end_time
+      or (
+        mi.available_start_time < mi.available_end_time
+        and to_char(now(), 'HH24:MI') between mi.available_start_time and mi.available_end_time
+      )
+      or (
+        mi.available_start_time > mi.available_end_time
+        and (
+          to_char(now(), 'HH24:MI') >= mi.available_start_time
+          or to_char(now(), 'HH24:MI') <= mi.available_end_time
+        )
+      )
+    )
     and 1 - (mie.embedding <=> query_embedding) >= similarity_threshold
   order by mie.embedding <=> query_embedding
   limit greatest(match_count, 1);

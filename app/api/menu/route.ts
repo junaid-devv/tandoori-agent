@@ -1,19 +1,27 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { applyMenuCatalog, sanitizeMenuItems } from "@/lib/menu";
+import type { WeekdayKey } from "@/lib/menu-availability";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 type IncomingMenuItem = {
   name: string;
   price: number;
   category?: string | null;
+  description?: string | null;
   is_available?: boolean;
+  available_days?: WeekdayKey[] | null;
+  available_start_time?: string | null;
+  available_end_time?: string | null;
 };
 
 type MenuPutBody = {
   items?: IncomingMenuItem[];
   replaceAll?: boolean;
 };
+
+const MENU_BODY_LIMIT_BYTES = 256 * 1024;
 
 export async function GET(req: NextRequest) {
   const auth = await resolveRequestBranch(req, { requireBranch: true });
@@ -29,7 +37,7 @@ export async function GET(req: NextRequest) {
     .order("name", { ascending: true });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to load menu.", context: "menu route GET" });
   }
 
   return NextResponse.json(data ?? []);
@@ -42,7 +50,7 @@ export async function PUT(req: NextRequest) {
       return auth.response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = (await req.json()) as MenuPutBody | IncomingMenuItem[];
+    const body = await readLimitedJsonBody<MenuPutBody | IncomingMenuItem[]>(req, MENU_BODY_LIMIT_BYTES);
     const replaceAll = !Array.isArray(body) && body.replaceAll === true;
     const items = Array.isArray(body) ? body : body.items ?? [];
 
@@ -69,8 +77,6 @@ export async function PUT(req: NextRequest) {
       applied: sanitized.items.length,
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Menu update failed";
-    console.error("[menu route] PUT failed:", error);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Menu update failed.", context: "menu route PUT" });
   }
 }

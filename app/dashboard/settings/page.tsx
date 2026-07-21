@@ -13,6 +13,9 @@ type SettingsState = {
   delivery_enabled: boolean;
   delivery_fee: number;
   min_delivery_amount: number;
+  delivery_areas: string[];
+  estimated_prep_minutes: number;
+  estimated_delivery_minutes: number;
   city: string;
   phone_delivery: string;
   phone_dine_in: string;
@@ -58,6 +61,9 @@ export default function SettingsPage() {
     delivery_enabled: false,
     delivery_fee: 0,
     min_delivery_amount: 0,
+    delivery_areas: [],
+    estimated_prep_minutes: 30,
+    estimated_delivery_minutes: 45,
     city: "",
     phone_delivery: "",
     phone_dine_in: "",
@@ -265,6 +271,71 @@ export default function SettingsPage() {
             color="orange"
             text={`Delivery fee is Rs. ${settings.delivery_fee}. Minimum delivery is Rs. ${settings.min_delivery_amount}.`}
           />
+
+          <SettingRow label="Prep Estimate">
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={5}
+                max={240}
+                step={5}
+                value={settings.estimated_prep_minutes}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    estimated_prep_minutes: Number(event.target.value) || 30,
+                  }))
+                }
+                className="w-20 text-right text-sm font-bold text-slate-800 bg-transparent outline-none"
+              />
+              <span className="text-sm text-slate-400">min</span>
+            </div>
+          </SettingRow>
+
+          <SettingRow label="Delivery Estimate">
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={5}
+                max={240}
+                step={5}
+                value={settings.estimated_delivery_minutes}
+                onChange={(event) =>
+                  setSettings((current) => ({
+                    ...current,
+                    estimated_delivery_minutes: Number(event.target.value) || 45,
+                  }))
+                }
+                className="w-20 text-right text-sm font-bold text-slate-800 bg-transparent outline-none"
+              />
+              <span className="text-sm text-slate-400">min</span>
+            </div>
+          </SettingRow>
+
+          <div className="py-3">
+            <div className="flex items-center justify-between gap-3">
+              <span className="text-sm text-slate-600 font-medium">Delivery Areas</span>
+              <span className="text-xs text-slate-400">{settings.delivery_areas.length || "No"} areas</span>
+            </div>
+            <textarea
+              value={settings.delivery_areas.join("\n")}
+              onChange={(event) =>
+                setSettings((current) => ({
+                  ...current,
+                  delivery_areas: event.target.value
+                    .split(/\r?\n/)
+                    .map((area) => area.trim())
+                    .filter(Boolean),
+                }))
+              }
+              rows={5}
+              className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-800 outline-none focus:border-brand/30 focus:ring-2 focus:ring-brand/10"
+              placeholder="One area per line"
+            />
+            <p className="mt-2 text-xs text-slate-400">
+              Leave empty to allow any address. When areas are listed, delivery orders must match one.
+            </p>
+          </div>
         </Card>
 
         <Card icon={<Phone size={16} />} title="Contact & City">
