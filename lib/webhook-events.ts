@@ -39,6 +39,14 @@ function parseWebhookEventRecord(value: Record<string, unknown>): WebhookEventRe
   };
 }
 
+function shouldStoreRawWebhookBody(): boolean {
+  return process.env.WEBHOOK_STORE_RAW_BODY === "true";
+}
+
+function shouldRetainProcessedWebhookPayload(): boolean {
+  return process.env.WEBHOOK_RETAIN_PROCESSED_PAYLOAD === "true";
+}
+
 export function getWebhookDeliveryKey(rawBody: string): string {
   return createHash("sha256").update(rawBody).digest("hex");
 }
@@ -85,7 +93,7 @@ export async function recordWebhookEvent(input: {
     .insert({
       provider: "meta_whatsapp",
       delivery_key: deliveryKey,
-      raw_body: input.rawBody,
+      raw_body: shouldStoreRawWebhookBody() ? input.rawBody : "[redacted]",
       payload: input.payload,
       signature: input.signature,
       status: "received",
@@ -107,52 +115,37 @@ export async function recordWebhookEvent(input: {
 }
 
 export async function claimWebhookEvent(eventId: string): Promise<WebhookEventRecord | null> {
-  const { data: existing, error: lookupError } = await supabaseAdmin
-    .from("webhook_events")
-    .select("*")
-    .eq("id", eventId)
-    .maybeSingle();
+  const { data, error } = await supabaseAdmin.rpc("claim_webhook_event", {
+    p_event_id: eventId,
+    p_stale_after_seconds: 90,
+  });
 
-  if (lookupError) throw lookupError;
-  if (!existing) return null;
-
-  const parsed = parseWebhookEventRecord(existing as Record<string, unknown>);
-  if (parsed.status === "processed") return null;
-  if (parsed.status === "processing") {
-    const startedAt = parsed.processing_started_at ? new Date(parsed.processing_started_at).getTime() : 0;
-    if (Date.now() - startedAt < 90_000) {
-      return null;
-    }
+  if (error) {
+    throw error;
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("webhook_events")
-    .update({
-      status: "processing",
-      attempt_count: parsed.attempt_count + 1,
-      processing_started_at: new Date().toISOString(),
-      last_error: null,
-    })
-    .eq("id", parsed.id)
-    .select("*")
-    .single();
-
-  if (error || !data) {
-    throw error ?? new Error("Failed to claim webhook event.");
-  }
-
-  return parseWebhookEventRecord(data as Record<string, unknown>);
+  const row = Array.isArray(data) ? data[0] : data;
+  return row ? parseWebhookEventRecord(row as Record<string, unknown>) : null;
 }
 
 export async function markWebhookEventProcessed(eventId: string): Promise<void> {
+  const update: Record<string, unknown> = {
+    status: "processed",
+    processed_at: new Date().toISOString(),
+    processing_started_at: null,
+    last_error: null,
+  };
+
+  if (!shouldRetainProcessedWebhookPayload()) {
+    update.payload = {
+      redacted_after_processing: true,
+      redacted_at: new Date().toISOString(),
+    };
+  }
+
   const { error } = await supabaseAdmin
     .from("webhook_events")
-    .update({
-      status: "processed",
-      processed_at: new Date().toISOString(),
-      processing_started_at: null,
-      last_error: null,
-    })
+    .update(update)
     .eq("id", eventId);
 
   if (error) throw error;

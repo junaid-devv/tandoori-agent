@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { deleteStaffAccount, updateStaffAccount } from "@/lib/admin";
 import { requireAdminApiSession } from "@/lib/admin-request";
 
@@ -10,6 +11,8 @@ type StaffBody = {
   password?: string | null;
 };
 
+const STAFF_BODY_LIMIT_BYTES = 16 * 1024;
+
 export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/staff/[id]">) {
   const auth = await requireAdminApiSession();
   if (auth.response || !auth.session) {
@@ -18,7 +21,7 @@ export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/
 
   try {
     const { id } = await context.params;
-    const body = (await req.json()) as StaffBody;
+    const body = await readLimitedJsonBody<StaffBody>(req, STAFF_BODY_LIMIT_BYTES);
     await updateStaffAccount(id, {
       fullName: body.full_name ?? "",
       role: body.role ?? "branch_staff",
@@ -29,9 +32,11 @@ export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update staff account.";
-    const status = /required|least|must/i.test(message) ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    const validationMessage = error instanceof Error ? error.message : "Failed to update staff account.";
+    const status = /required|least|must/i.test(validationMessage) ? 400 : 500;
+    return status === 400
+      ? NextResponse.json({ error: validationMessage }, { status })
+      : apiErrorResponse(error, { fallback: "Failed to update staff account.", context: "admin staff PATCH" });
   }
 }
 
@@ -50,7 +55,6 @@ export async function DELETE(_: NextRequest, context: RouteContext<"/api/admin/s
     await deleteStaffAccount(id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete staff account.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to delete staff account.", context: "admin staff DELETE" });
   }
 }

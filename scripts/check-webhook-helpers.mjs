@@ -74,11 +74,15 @@ function testFlowBuilders() {
   const checkoutFlow = buildFlowMessageForAgentReply({
     conversationId: "conv1",
     prefersRomanUrdu: false,
-    workflowStep: "awaiting_order_type",
+    workflowStep: "awaiting_pickup_time",
+    orderType: "pickup",
+    pickupTime: "2026-07-21T15:00:00.000Z",
     body: "Please choose your order type.",
   });
   assert.ok(checkoutFlow);
   assert.equal(checkoutFlow.body, "Please choose your order type.");
+  assert.equal(checkoutFlow.actionPayload?.data?.order_type, "pickup");
+  assert.equal(checkoutFlow.actionPayload?.data?.pickup_time, "2026-07-21T15:00:00.000Z");
 
   process.env.WHATSAPP_FLOW_NAME = previousFlowName;
   pass("Flow payload builders create payloads for branch and checkout contexts.");

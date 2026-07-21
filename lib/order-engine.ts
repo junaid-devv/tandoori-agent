@@ -21,8 +21,15 @@ import {
 } from "./order-input-parsers";
 import { itemSimilarityScore, normalizeCompact, normalizeText, tokenOverlapScore, tokenizeForMenuMatching } from "./order-text-utils";
 import { type RestaurantSettings } from "./settings";
+import { createStaffAlert } from "./staff-alerts";
 import { supabaseAdmin } from "./supabase-admin";
 import type { UserSession } from "./user-session";
+import {
+  getLastReorderCandidate,
+  getLatestSavedAddress,
+  isReorderRequest,
+  isUseSavedAddressRequest,
+} from "./customer-crm";
 
 export type MessageType =
   | "greeting"
@@ -64,7 +71,7 @@ export function detectMessageType(normalizedText: string): MessageType {
 export async function getRecentOrderContext(conversationId: string): Promise<RecentOrderContext | null> {
   const { data, error } = await supabaseAdmin
     .from("orders")
-    .select("id, order_number, status, type, created_at, cancelled_at")
+    .select("id, branch_id, order_number, status, type, created_at, cancelled_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: false })
     .limit(1)
@@ -75,6 +82,7 @@ export async function getRecentOrderContext(conversationId: string): Promise<Rec
 
   return {
     id: data.id,
+    branch_id: data.branch_id,
     order_number: data.order_number,
     status: data.status,
     type: data.type,
@@ -111,10 +119,11 @@ export type WorkflowStep =
   | "awaiting_order_type"
   | "awaiting_delivery_address"
   | "awaiting_dine_in_details"
+  | "awaiting_pickup_time"
   | "awaiting_confirmation"
   | "awaiting_resume_decision";
 
-export type OrderType = "delivery" | "dine-in";
+export type OrderType = "delivery" | "pickup" | "dine-in";
 export type LanguagePreference = "english" | "roman_urdu";
 
 export interface MenuCatalogItem {
@@ -159,6 +168,7 @@ export interface ConversationState {
   address: string | null;
   guests: number | null;
   reservation_time: string | null;
+  pickup_time: string | null;
   customer_instructions: string | null;
   upsell_item_name: string | null;
   upsell_item_price: number | null;
@@ -176,6 +186,7 @@ export interface ConversationState {
 
 export interface RecentOrderContext {
   id: string;
+  branch_id: string;
   order_number: number;
   status: string;
   type: OrderType;
@@ -191,6 +202,7 @@ export interface PlaceableOrderPayload {
   address: string | null;
   guests: number | null;
   reservation_time: string | null;
+  pickup_time: string | null;
   customer_instructions: string | null;
 }
 
@@ -207,6 +219,7 @@ export interface TurnContext {
   settings: RestaurantSettings;
   isOpenNow: boolean;
   recentOrder: RecentOrderContext | null;
+  savedAddress: { address: string; label?: string | null } | null;
   session: UserSession;
 }
 
@@ -396,6 +409,7 @@ export function getDefaultConversationState(conversationId: string): Conversatio
     address: null,
     guests: null,
     reservation_time: null,
+    pickup_time: null,
     customer_instructions: null,
     upsell_item_name: null,
     upsell_item_price: null,
@@ -425,6 +439,7 @@ export function parseConversationState(raw: Partial<ConversationState> & { conve
       : null,
     last_presented_options_at: typeof raw.last_presented_options_at === "string" ? raw.last_presented_options_at : null,
     customer_instructions: typeof raw.customer_instructions === "string" ? raw.customer_instructions : null,
+    pickup_time: typeof raw.pickup_time === "string" ? raw.pickup_time : null,
   };
 }
 
@@ -570,6 +585,47 @@ export function inferLanguagePreference(
   return previous;
 }
 
+function parseExplicitLanguagePreference(normalizedText: string): LanguagePreference | null {
+  if (/\b(roman urdu|urdu mein|urdu me|hinglish|roman)\b/.test(normalizedText)) {
+    return "roman_urdu";
+  }
+  if (/\b(english|angrezi)\b/.test(normalizedText) && /\b(speak|reply|continue|baat|talk|language)\b/.test(normalizedText)) {
+    return "english";
+  }
+  return null;
+}
+
+function isChangeAddressRequest(normalizedText: string): boolean {
+  return /\b(change|update|edit|new|different)\s+(address|location)\b/.test(normalizedText) ||
+    /\b(address|location)\s+(change|update|edit|new|different)\b/.test(normalizedText) ||
+    /\b(naya|dusra|change)\s+(address|location)\b/.test(normalizedText);
+}
+
+function buildReturningCustomerHint(savedAddress: string | null, romanUrdu: boolean): string {
+  if (savedAddress) {
+    return romanUrdu
+      ? "Tip: Agar last order repeat karna ho to *repeat last order* likhein. Delivery mein saved address use karne ke liye *same address* likh sakte hain."
+      : "Tip: To repeat a previous order, type *repeat last order*. For delivery, you can type *same address* to use your saved address.";
+  }
+
+  return romanUrdu
+    ? "Tip: Agli dafa last order repeat karne ke liye *repeat last order* likh sakte hain."
+    : "Tip: Returning customers can type *repeat last order* to reorder faster.";
+}
+
+function buildAddressChangePrompt(savedAddress: string | null, settings: RestaurantSettings, romanUrdu: boolean): string {
+  const areaHint = buildDeliveryAreaHint(settings, romanUrdu);
+  if (savedAddress) {
+    return romanUrdu
+      ? `New delivery address bhej dein, ya saved address use karne ke liye *same address* likhein.\nSaved address: ${savedAddress}${areaHint}`
+      : `Send the new delivery address, or type *same address* to use your saved address.\nSaved address: ${savedAddress}${areaHint}`;
+  }
+
+  return romanUrdu
+    ? `New delivery address bhej dein.${areaHint}`
+    : `Please send the new delivery address.${areaHint}`;
+}
+
 export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
   const rawText = context.messageText.trim();
   const normalizedText = normalizeText(rawText);
@@ -600,6 +656,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
       "awaiting_order_type",
       "awaiting_delivery_address",
       "awaiting_dine_in_details",
+      "awaiting_pickup_time",
       "awaiting_confirmation",
     ] as WorkflowStep[]
   ).includes(state.workflow_step);
@@ -610,6 +667,173 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         ? "Baraye meharbani text message bhejain takay main order place karne mein aapki madad kar sakun."
         : "Please send a text message and I will help with your order.",
       withPreferredLanguage({}, preferredLanguage),
+    );
+  }
+
+  const explicitLanguage = parseExplicitLanguagePreference(normalizedText);
+  if (explicitLanguage) {
+    return replyDecision(
+      explicitLanguage === "roman_urdu"
+        ? "Theek hai, main Roman Urdu mein baat karunga. Aap *menu* likh dein ya order bhej dein."
+        : "Sure, I will continue in English. Send *menu* or your order whenever ready.",
+      withPreferredLanguage({}, explicitLanguage),
+    );
+  }
+
+  if (
+    state.workflow_step === "awaiting_confirmation" &&
+    state.order_type === "delivery" &&
+    isChangeAddressRequest(normalizedText)
+  ) {
+    return replyDecision(
+      buildAddressChangePrompt(context.savedAddress?.address ?? null, context.settings, prefersRomanUrdu),
+      withPreferredLanguage(
+        {
+          ...buildPersistedStatePatch(state),
+          workflow_step: "awaiting_delivery_address",
+          address: null,
+        },
+        preferredLanguage,
+      ),
+    );
+  }
+
+  if (isUseSavedAddressRequest(rawText) && state.workflow_step === "awaiting_delivery_address") {
+    const savedAddress = context.savedAddress ?? await getLatestSavedAddress(context.state.conversation_id);
+    if (!savedAddress?.address) {
+      return replyDecision(
+        prefersRomanUrdu
+          ? "Mujhe aap ka saved address nahi mila. Please full delivery address bhej dein."
+          : "I could not find a saved address for you. Please send your full delivery address.",
+        withPreferredLanguage({ workflow_step: "awaiting_delivery_address" }, preferredLanguage),
+      );
+    }
+
+    return buildSummaryReply(
+      {
+        state: {
+          ...state,
+          preferred_language: preferredLanguage,
+          order_type: "delivery",
+          address: savedAddress.address,
+        },
+        settings: context.settings,
+      },
+      {
+        intent: "use_saved_address",
+        confidence: 0.98,
+        unknownItems: [],
+        sentiment: "neutral",
+        notes: "customer_used_saved_address",
+      },
+    );
+  }
+
+  if (isReorderRequest(rawText) && state.cart.length === 0 && isConversationStartStep) {
+    const candidate = await getLastReorderCandidate(context.state.conversation_id);
+    if (!candidate) {
+      return replyDecision(
+        prefersRomanUrdu
+          ? "Mujhe aap ka previous order nahi mila. Naya order ke liye item ka naam bhej dein."
+          : "I could not find a previous order to repeat. Send an item name to start a new order.",
+        withPreferredLanguage({ workflow_step: "collecting_items" }, preferredLanguage),
+      );
+    }
+
+    const unavailable = candidate.items.filter(
+      (item) => !context.menuItems.some(
+        (menuItem) => menuItem.is_available && normalizeText(menuItem.name) === normalizeText(item.name),
+      ),
+    );
+    if (unavailable.length > 0) {
+      return replyDecision(
+        prefersRomanUrdu
+          ? `Aap ke last order mein se ${unavailable.map((item) => `*${item.name}*`).join(", ")} abhi available nahi. *Menu* likhein ya naya item bhej dein.`
+          : `${unavailable.map((item) => `*${item.name}*`).join(", ")} from your last order is not available right now. Type *menu* or send a new item.`,
+        withPreferredLanguage({ workflow_step: "collecting_items" }, preferredLanguage),
+      );
+    }
+
+    const savedAddress = context.savedAddress ?? await getLatestSavedAddress(context.state.conversation_id);
+    const repeatedState: ConversationState = {
+      ...state,
+      preferred_language: preferredLanguage,
+      cart: candidate.items,
+      order_type: candidate.orderType,
+      address: candidate.orderType === "delivery" ? candidate.address ?? savedAddress?.address ?? null : null,
+      guests: null,
+      reservation_time: null,
+      pickup_time: null,
+      customer_instructions: candidate.customerInstructions,
+      workflow_step: candidate.orderType === "delivery" && (candidate.address || savedAddress?.address)
+        ? "awaiting_confirmation"
+        : candidate.orderType === "pickup"
+          ? "awaiting_pickup_time"
+          : candidate.orderType === "dine-in"
+            ? "awaiting_dine_in_details"
+            : "awaiting_order_type",
+      summary_sent_at: null,
+    };
+
+    if (repeatedState.workflow_step === "awaiting_confirmation") {
+      const summary = buildSummaryReply(
+        {
+          state: repeatedState,
+          settings: context.settings,
+        },
+        {
+          intent: "reorder_previous_order",
+          confidence: 0.98,
+          unknownItems: [],
+          sentiment: "neutral",
+          notes: `reorder_from_order_${candidate.orderNumber}`,
+        },
+      );
+      if (summary.kind !== "reply") {
+        return summary;
+      }
+      return {
+        ...summary,
+        reply: [
+          prefersRomanUrdu
+            ? `Aap ka last order #${candidate.orderNumber} cart mein add kar diya hai. Neeche summary confirm kar dein.`
+            : `I added your last order #${candidate.orderNumber} to the cart. Please confirm the summary below.`,
+          summary.reply,
+        ].join("\n\n"),
+      };
+    }
+
+    if (repeatedState.workflow_step === "awaiting_pickup_time") {
+      return replyDecision(
+        prefersRomanUrdu
+          ? `Aap ka last order #${candidate.orderNumber} cart mein add kar diya. Pickup ke liye kis time aana hai?`
+          : `I added your last order #${candidate.orderNumber} to the cart. What time would you like to pick it up?`,
+        withPreferredLanguage(buildPersistedStatePatch(repeatedState), preferredLanguage),
+      );
+    }
+
+    if (repeatedState.workflow_step === "awaiting_dine_in_details") {
+      return replyDecision(
+        prefersRomanUrdu
+          ? `Aap ka last order #${candidate.orderNumber} cart mein add kar diya. Kitne guests honge aur kis time aana hai?`
+          : `I added your last order #${candidate.orderNumber} to the cart. How many guests and what time?`,
+        withPreferredLanguage(buildPersistedStatePatch(repeatedState), preferredLanguage),
+      );
+    }
+
+    return replyDecision(
+      prefersRomanUrdu
+        ? `Aap ka last order #${candidate.orderNumber} cart mein add kar diya. Delivery, pickup ya dine-in?`
+        : `I added your last order #${candidate.orderNumber} to the cart. Delivery, pickup, or dine-in?`,
+      withPreferredLanguage(
+        {
+          ...buildPersistedStatePatch(repeatedState),
+          workflow_step: "awaiting_order_type",
+        },
+        preferredLanguage,
+      ),
+      undefined,
+      buildOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
     );
   }
 
@@ -760,6 +984,21 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         );
       }
 
+      if (nextStep === "awaiting_pickup_time") {
+        return replyDecision(
+          prefersRomanUrdu
+            ? `Noted: ${note}\n\nPickup time batayein.`
+            : `Noted: ${note}\n\nPlease share pickup time.`,
+          withPreferredLanguage(
+            {
+              ...buildPersistedStatePatch(notedState),
+              workflow_step: "awaiting_pickup_time",
+            },
+            preferredLanguage,
+          ),
+        );
+      }
+
       return replyDecision(
         prefersRomanUrdu
           ? `Noted: ${note}\n\nAap aur items add kar sakte hain.`
@@ -893,7 +1132,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
       const categoryReply = buildCategoryListReply(getAvailableMenuItems(context.menuItems), prefersRomanUrdu, 1);
       const welcome = getGreetingReply(rawText, prefersRomanUrdu);
       return replyDecision(
-        `${welcome}\n\n${categoryReply.text}`,
+        [welcome, categoryReply.text, buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
+          .filter(Boolean)
+          .join("\n\n"),
         withPreferredLanguage(
           {
             workflow_step: "collecting_items",
@@ -909,7 +1150,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     }
 
     return replyDecision(
-      getGreetingReply(rawText, prefersRomanUrdu),
+      [getGreetingReply(rawText, prefersRomanUrdu), buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
+        .filter(Boolean)
+        .join("\n\n"),
       withPreferredLanguage({}, preferredLanguage),
     );
   }
@@ -930,7 +1173,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
       const categoryReply = buildCategoryListReply(getAvailableMenuItems(context.menuItems), prefersRomanUrdu, 1);
       const welcome = getGreetingReply(rawText, prefersRomanUrdu);
       return replyDecision(
-        `${welcome}\n\n${categoryReply.text}`,
+        [welcome, categoryReply.text, buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
+          .filter(Boolean)
+          .join("\n\n"),
         withPreferredLanguage(
           {
             workflow_step: "collecting_items",
@@ -946,7 +1191,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     }
 
     return replyDecision(
-      getGreetingReply(rawText, prefersRomanUrdu),
+      [getGreetingReply(rawText, prefersRomanUrdu), buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
+        .filter(Boolean)
+        .join("\n\n"),
       withPreferredLanguage({}, preferredLanguage),
     );
   }
@@ -998,7 +1245,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
 
     return {
       kind: "place_order",
-      reply: buildOrderPlacedReply(context.settings, prefersRomanUrdu),
+      reply: buildOrderPlacedReply(context.settings, validation.order.type, prefersRomanUrdu),
       statePatch: withPreferredLanguage(
         {
           ...resetDraftState(),
@@ -1051,6 +1298,36 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         },
         {
           intent: "provide_address",
+          confidence: 0.95,
+          unknownItems: [],
+          sentiment: "neutral",
+          notes: null,
+        },
+      );
+    }
+  }
+
+  if (state.workflow_step === "awaiting_pickup_time") {
+    const quickPickupTime = parseReservationTime(rawText, {
+      opening_time: context.settings.opening_time,
+      closing_time: context.settings.closing_time,
+    });
+    if (quickPickupTime) {
+      return buildSummaryReply(
+        {
+          state: {
+            ...state,
+            preferred_language: preferredLanguage,
+            order_type: "pickup",
+            pickup_time: quickPickupTime,
+            address: null,
+            guests: null,
+            reservation_time: null,
+          },
+          settings: context.settings,
+        },
+        {
+          intent: "set_order_type",
           confidence: 0.95,
           unknownItems: [],
           sentiment: "neutral",
@@ -1393,9 +1670,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
   }
 
   if (interpretation.asks_eta || interpretation.intent === "eta_question") {
-    const prompt = prefersRomanUrdu
-      ? `Delivery aam tor par confirmation ke baad 30 se 45 minutes leti hai. Helpline: ${buildHelplineValue(context.settings, state)}.`
-      : `Delivery usually takes 30 to 45 minutes after confirmation. Helpline: ${buildHelplineValue(context.settings, state)}.`;
+    const prompt = `${buildEstimatedTimeReply(context.settings, state.order_type, prefersRomanUrdu)} Helpline: ${buildHelplineValue(context.settings, state)}.`;
     return replyDecision(
       maybeAppendCheckoutPrompt(prompt, state, prefersRomanUrdu),
       withPreferredLanguage({}, preferredLanguage),
@@ -2275,6 +2550,7 @@ function expectsStructuredCheckoutInput(step: WorkflowStep): boolean {
     step === "awaiting_order_type" ||
     step === "awaiting_delivery_address" ||
     step === "awaiting_dine_in_details" ||
+    step === "awaiting_pickup_time" ||
     step === "awaiting_confirmation"
   );
 }
@@ -2289,6 +2565,12 @@ function parseOrderTypeShortcut(normalizedText: string): OrderType | null {
     !/\b(no delivery|without delivery|dont deliver|don't deliver)\b/.test(normalizedText)
   ) {
     return "delivery";
+  }
+
+  if (
+    /\b(order_type_pickup|order type pickup|type pickup|pickup|pick up|takeaway|take away|takeout|take out|collection|collect)\b/.test(normalizedText)
+  ) {
+    return "pickup";
   }
 
   if (
@@ -2330,6 +2612,9 @@ function inferInstructionContinuationStep(state: ConversationState): WorkflowSte
   if (state.order_type == null) return "collecting_items";
   if (state.order_type === "delivery") {
     return state.address ? "awaiting_confirmation" : "awaiting_delivery_address";
+  }
+  if (state.order_type === "pickup") {
+    return state.pickup_time ? "awaiting_confirmation" : "awaiting_pickup_time";
   }
   return state.guests && state.reservation_time ? "awaiting_confirmation" : "awaiting_dine_in_details";
 }
@@ -2485,6 +2770,16 @@ async function tryCancelRecentOrder(conversationId: string): Promise<{
     return { result: "already_final", orderNumber: recentOrder.order_number };
   }
 
+  await createStaffAlert({
+    conversationId,
+    branchId: recentOrder.branch_id,
+    kind: "customer_cancellation",
+    severity: "high",
+    message: `Customer cancelled order #${recentOrder.order_number} within the allowed cancellation window.`,
+  }).catch((alertError) => {
+    console.error("[order-engine] Failed to create cancellation staff alert:", alertError);
+  });
+
   return { result: "cancelled", orderNumber: recentOrder.order_number };
 }
 
@@ -2566,6 +2861,7 @@ function applyCheckoutSignalsToState(params: {
   } else if (explicitType === "dine-in") {
     next.order_type = "dine-in";
     next.address = null;
+    next.pickup_time = null;
     const guests = interpretation.guests ?? parseGuestCount(normalizedText, clampQty) ?? next.guests;
     const reservationTime =
       parseReservationTime(interpretation.reservation_time ?? rawText, {
@@ -2574,6 +2870,16 @@ function applyCheckoutSignalsToState(params: {
       }) ?? next.reservation_time;
     next.guests = guests ?? null;
     next.reservation_time = reservationTime ?? null;
+  } else if (explicitType === "pickup") {
+    next.order_type = "pickup";
+    next.address = null;
+    next.guests = null;
+    next.reservation_time = null;
+    next.pickup_time =
+      parseReservationTime(interpretation.reservation_time ?? rawText, {
+        opening_time: settings.opening_time,
+        closing_time: settings.closing_time,
+      }) ?? next.pickup_time;
   } else if (next.order_type === "delivery") {
     const address = interpretation.address ?? parseAddress(rawText);
     if (address) {
@@ -2588,6 +2894,12 @@ function applyCheckoutSignalsToState(params: {
       }) ?? next.reservation_time;
     next.guests = guests ?? null;
     next.reservation_time = reservationTime ?? null;
+  } else if (next.order_type === "pickup") {
+    next.pickup_time =
+      parseReservationTime(interpretation.reservation_time ?? rawText, {
+        opening_time: settings.opening_time,
+        closing_time: settings.closing_time,
+      }) ?? next.pickup_time;
   }
 
   if (instructionCandidate) {
@@ -2707,7 +3019,7 @@ function extractStandaloneMenuLookupQuery(rawText: string, normalizedText: strin
   if (candidate.length < 3) return null;
 
   // If the cleaned query is just logistics text, skip lookup and let regular flow handle it.
-  if (/(delivery|dine in|dinein|address|confirm|status|track|eta|open|hours)/.test(candidate)) return null;
+  if (/(delivery|pickup|pick up|takeaway|takeout|collection|dine in|dinein|address|confirm|status|track|eta|open|hours)/.test(candidate)) return null;
 
   const compactRaw = normalizeCompact(rawText);
   if (compactRaw.startsWith("categoryoption") || compactRaw.startsWith("categorymore")) return null;
@@ -2717,7 +3029,7 @@ function extractStandaloneMenuLookupQuery(rawText: string, normalizedText: strin
 function isSearchLikeDisambiguationMessage(normalizedText: string): boolean {
   if (!normalizedText || normalizedText.length < 3) return false;
   if (extractAnyQuantity(normalizedText) != null) return false;
-  if (/(delivery|dine in|dinein|confirm|yes|no|cancel|remove|qty|quantity)/.test(normalizedText)) return false;
+  if (/(delivery|pickup|pick up|takeaway|takeout|collection|dine in|dinein|confirm|yes|no|cancel|remove|qty|quantity)/.test(normalizedText)) return false;
   if (/(add|kar do|kr do|chahiye|order)/.test(normalizedText)) return false;
   return true;
 }
@@ -2736,7 +3048,7 @@ function extractItemAvailabilityQuery(normalizedText: string): string | null {
   }
 
   if (!query || query.length < 3) return null;
-  if (/(menu|category|categories|delivery|dine in|dinein)/.test(query)) return null;
+  if (/(menu|category|categories|delivery|pickup|pick up|takeaway|takeout|collection|dine in|dinein)/.test(query)) return null;
   return query;
 }
 
@@ -2789,6 +3101,38 @@ function buildHelplineValue(settings: RestaurantSettings, state: ConversationSta
   return settings.phone_delivery?.trim() || settings.phone_dine_in?.trim() || "support line";
 }
 
+function buildEstimatedTimeReply(
+  settings: RestaurantSettings,
+  orderType: OrderType | null,
+  romanUrdu: boolean,
+): string {
+  const prepMinutes = Math.round(Number(settings.estimated_prep_minutes) || 30);
+  const deliveryMinutes = Math.round(Number(settings.estimated_delivery_minutes) || 45);
+
+  if (orderType === "pickup") {
+    return romanUrdu
+      ? `Pickup prep estimate confirmation ke baad takreeban ${prepMinutes} minutes hai.`
+      : `Pickup prep estimate is about ${prepMinutes} minutes after confirmation.`;
+  }
+
+  if (orderType === "dine-in") {
+    return romanUrdu
+      ? `Dine-in orders ke liye prep estimate takreeban ${prepMinutes} minutes hai.`
+      : `Dine-in prep estimate is about ${prepMinutes} minutes.`;
+  }
+
+  return romanUrdu
+    ? `Delivery estimate confirmation ke baad takreeban ${deliveryMinutes} minutes hai. Prep time ${prepMinutes} minutes hai.`
+    : `Delivery estimate is about ${deliveryMinutes} minutes after confirmation. Prep time is about ${prepMinutes} minutes.`;
+}
+
+function buildDeliveryAreaHint(settings: RestaurantSettings, romanUrdu: boolean): string {
+  const areas = buildDeliveryAreasList(settings);
+  if (!areas) return "";
+
+  return romanUrdu ? ` Delivery areas: ${areas}.` : ` Delivery areas: ${areas}.`;
+}
+
 function buildBranchContactReply(
   settings: RestaurantSettings,
   state: ConversationState,
@@ -2831,7 +3175,8 @@ function attemptsCheckoutProgression(
   if (
     interpretation.intent === "set_order_type" ||
     interpretation.intent === "provide_address" ||
-    interpretation.intent === "provide_dine_in_details"
+    interpretation.intent === "provide_dine_in_details" ||
+    (state.workflow_step === "awaiting_pickup_time" && interpretation.reservation_time != null)
   ) {
     return true;
   }
@@ -2848,6 +3193,10 @@ function attemptsCheckoutProgression(
     state.workflow_step === "awaiting_dine_in_details" &&
     (interpretation.guests != null || interpretation.reservation_time != null)
   ) {
+    return true;
+  }
+
+  if (state.workflow_step === "awaiting_pickup_time" && interpretation.reservation_time != null) {
     return true;
   }
 
@@ -2892,6 +3241,7 @@ function resetDraftState(): Partial<ConversationState> {
     address: null,
     guests: null,
     reservation_time: null,
+    pickup_time: null,
     customer_instructions: null,
     resume_workflow_step: null,
     summary_sent_at: null,
@@ -2933,8 +3283,8 @@ function buildOrderStatusReply(order: RecentOrderContext, romanUrdu: boolean): s
 
 function buildPaymentReply(settings: RestaurantSettings, romanUrdu: boolean): string {
   return romanUrdu
-    ? `Cash on delivery available hai. Mazeed payment options ke liye call karein: ${settings.phone_delivery || "support line"}.`
-    : `Cash on delivery is available. For other payment options, call ${settings.phone_delivery || "our support line"}.`;
+    ? `Cash on delivery available hai. Online payment zaroori nahi. Payment ke masle ke liye call karein: ${settings.phone_delivery || "support line"}.`
+    : `Cash on delivery is available. No online payment is required. For payment issues, call ${settings.phone_delivery || "our support line"}.`;
 }
 
 function maybeAppendCheckoutPrompt(reply: string, state: ConversationState, romanUrdu: boolean): string {
@@ -2955,19 +3305,52 @@ function maybeAppendCheckoutPrompt(reply: string, state: ConversationState, roma
     return `${reply}\n\n${prompt}`;
   }
 
+  if (state.order_type === "pickup" && !state.pickup_time) {
+    const prompt = romanUrdu ? "Pickup time batayein." : "Please share pickup time.";
+    return `${reply}\n\n${prompt}`;
+  }
+
   return reply;
 }
 
 function buildOrderTypePrompt(deliveryEnabled: boolean, romanUrdu: boolean): string {
   if (!deliveryEnabled) {
     return romanUrdu
-      ? "Order type batayein: *Dine-in*."
-      : "Please choose order type: *Dine-in*.";
+      ? "Order type batayein: *Pickup* ya *Dine-in*."
+      : "Please choose order type: *Pickup* or *Dine-in*.";
   }
 
   return romanUrdu
-    ? "Order type batayein: *Delivery* ya *Dine-in*."
-    : "Please choose order type: *Delivery* or *Dine-in*.";
+    ? "Order type batayein: *Delivery*, *Pickup*, ya *Dine-in*."
+    : "Please choose order type: *Delivery*, *Pickup*, or *Dine-in*.";
+}
+
+function buildDeliveryAreasList(settings: RestaurantSettings): string {
+  if (!Array.isArray(settings.delivery_areas) || settings.delivery_areas.length === 0) return "";
+  const visibleAreas = settings.delivery_areas.map((area) => area.trim()).filter(Boolean).slice(0, 10);
+  if (visibleAreas.length === 0) return "";
+  const suffix = settings.delivery_areas.length > visibleAreas.length ? ", and nearby listed areas" : "";
+  return `${visibleAreas.join(", ")}${suffix}`;
+}
+
+function findMatchingDeliveryArea(address: string, settings: RestaurantSettings): string | null {
+  const normalizedAddress = normalizeText(address);
+  if (!normalizedAddress) return null;
+
+  for (const area of settings.delivery_areas ?? []) {
+    const normalizedArea = normalizeText(area);
+    if (!normalizedArea) continue;
+    if (normalizedAddress === normalizedArea || normalizedAddress.includes(normalizedArea)) {
+      return area;
+    }
+
+    const areaTokens = normalizedArea.split(" ").filter((token) => token.length >= 3);
+    if (areaTokens.length > 0 && areaTokens.every((token) => normalizedAddress.includes(token))) {
+      return area;
+    }
+  }
+
+  return null;
 }
 
 function buildAddedItemsMessage(items: DraftCartItem[]): string {
@@ -3145,6 +3528,12 @@ function buildOrderTypeInteractiveList(
   }
 
   rows.push({
+    id: "order_type_pickup",
+    title: romanUrdu ? "Pickup" : "Pickup",
+    description: romanUrdu ? "Restaurant se collect karna hai" : "I will collect from restaurant",
+  });
+
+  rows.push({
     id: "order_type_dine_in",
     title: romanUrdu ? "Dine-in" : "Dine-in",
     description: romanUrdu ? "Restaurant mein khaana hai" : "I will eat at restaurant",
@@ -3320,6 +3709,7 @@ function handleOrderTypeSelection(
           address: null,
           guests: null,
           reservation_time: null,
+          pickup_time: null,
         },
         preferredLanguage,
       ),
@@ -3331,8 +3721,8 @@ function handleOrderTypeSelection(
     if (!context.settings.delivery_enabled) {
       return replyDecision(
         romanUrdu
-          ? "Maazrat, delivery is branch mein available nahi hai. Aap dine-in select karein."
-          : "Sorry, delivery is not available for this branch. Please choose dine-in.",
+          ? "Maazrat, delivery is branch mein available nahi hai. Aap pickup ya dine-in select karein."
+          : "Sorry, delivery is not available for this branch. Please choose pickup or dine-in.",
         withPreferredLanguage({ workflow_step: "awaiting_order_type" }, preferredLanguage),
         trace,
       );
@@ -3344,6 +3734,7 @@ function handleOrderTypeSelection(
       order_type: "delivery" as OrderType,
       guests: null,
       reservation_time: null,
+      pickup_time: null,
     };
 
     if (state.address) {
@@ -3360,7 +3751,13 @@ function handleOrderTypeSelection(
     }
 
     return replyDecision(
-      romanUrdu ? "Theek hai, apna full delivery address bhej dein." : "Great, please share your full delivery address.",
+      context.savedAddress?.address
+        ? romanUrdu
+          ? `Aap ka saved address:\n${context.savedAddress.address}\n\nIs address par delivery ke liye *same address* likhein, ya new address bhej dein.${buildDeliveryAreaHint(context.settings, romanUrdu)}`
+          : `Your saved address:\n${context.savedAddress.address}\n\nReply *same address* to deliver here, or send a new address.${buildDeliveryAreaHint(context.settings, romanUrdu)}`
+        : romanUrdu
+          ? `Theek hai, apna full delivery address bhej dein.${buildDeliveryAreaHint(context.settings, romanUrdu)}`
+          : `Great, please share your full delivery address.${buildDeliveryAreaHint(context.settings, romanUrdu)}`,
       withPreferredLanguage(
         {
           ...buildPersistedStatePatch(clearedState),
@@ -3368,6 +3765,59 @@ function handleOrderTypeSelection(
           order_type: "delivery",
           guests: null,
           reservation_time: null,
+          pickup_time: null,
+          last_presented_category: null,
+          last_presented_options: null,
+          last_presented_options_at: null,
+        },
+        preferredLanguage,
+      ),
+      trace,
+    );
+  }
+
+  if (orderType === "pickup") {
+    const pickupTime =
+      parseReservationTime(state.pickup_time ?? "", {
+        opening_time: context.settings.opening_time,
+        closing_time: context.settings.closing_time,
+      }) ?? state.pickup_time;
+
+    const clearedState = {
+      ...state,
+      order_type: "pickup" as OrderType,
+      address: null,
+      guests: null,
+      reservation_time: null,
+      pickup_time: pickupTime,
+    };
+
+    if (pickupTime) {
+      return buildSummaryReply(
+        {
+          state: {
+            ...clearedState,
+            preferred_language: preferredLanguage,
+          },
+          settings: context.settings,
+        },
+        trace,
+      );
+    }
+
+    return replyDecision(
+      romanUrdu
+        ? "Theek hai, pickup selected. Kis time collect karna hai? Misal: *8 PM* ya *in 30 minutes*."
+        : "Great, pickup selected. What time would you like to collect it? Example: *8 PM* or *in 30 minutes*.",
+      withPreferredLanguage(
+        {
+          ...buildPersistedStatePatch(clearedState),
+          workflow_step: "awaiting_pickup_time",
+          order_type: "pickup",
+          address: null,
+          guests: null,
+          reservation_time: null,
+          pickup_time: null,
           last_presented_category: null,
           last_presented_options: null,
           last_presented_options_at: null,
@@ -3383,6 +3833,7 @@ function handleOrderTypeSelection(
     ...state,
     order_type: "dine-in" as OrderType,
     address: null,
+    pickup_time: null,
   };
 
   if (state.guests && state.reservation_time) {
@@ -3542,7 +3993,9 @@ function buildLogisticsOrSummaryReply(
 
   if (params.state.order_type === "delivery" && !params.state.address) {
     parts.push(
-      romanUrdu ? "Apna full delivery address bhej dein." : "Please send your full delivery address.",
+      romanUrdu
+        ? `Apna full delivery address bhej dein.${buildDeliveryAreaHint(params.settings, romanUrdu)}`
+        : `Please send your full delivery address.${buildDeliveryAreaHint(params.settings, romanUrdu)}`,
     );
     return replyDecision(
       parts.join("\n\n"),
@@ -3550,6 +4003,25 @@ function buildLogisticsOrSummaryReply(
         {
           ...buildPersistedStatePatch(params.state),
           workflow_step: "awaiting_delivery_address",
+        },
+        params.state.preferred_language,
+      ),
+      trace,
+    );
+  }
+
+  if (params.state.order_type === "pickup" && !params.state.pickup_time) {
+    parts.push(
+      romanUrdu
+        ? "Pickup ke liye kis time aana hai? Misal: *8 PM* ya *in 30 minutes*."
+        : "What time would you like to pick it up? Example: *8 PM* or *in 30 minutes*.",
+    );
+    return replyDecision(
+      parts.join("\n\n"),
+      withPreferredLanguage(
+        {
+          ...buildPersistedStatePatch(params.state),
+          workflow_step: "awaiting_pickup_time",
         },
         params.state.preferred_language,
       ),
@@ -3592,6 +4064,7 @@ function buildPersistedStatePatch(state: ConversationState): Partial<Conversatio
     address: state.address,
     guests: state.guests,
     reservation_time: state.reservation_time,
+    pickup_time: state.pickup_time,
     customer_instructions: state.customer_instructions,
     upsell_item_name: state.upsell_item_name,
     upsell_item_price: state.upsell_item_price,
@@ -3657,6 +4130,13 @@ function buildSummaryReply(
 
   if (state.order_type === "delivery" && state.address) {
     lines.push(`Address: ${state.address}`);
+    lines.push(
+      romanUrdu
+        ? "Address theek hai to *Haan* likhein. Address change karna ho to *change address* ya new address bhej dein."
+        : "If this address is correct, reply *Yes*. To change it, send *change address* or the new address.",
+    );
+  } else if (state.order_type === "pickup") {
+    lines.push(`Pickup time: ${formatReservationTime(state.pickup_time)}`);
   } else if (state.order_type === "dine-in") {
     lines.push(`Guests: ${state.guests ?? "-"}`);
     lines.push(`Time: ${formatReservationTime(state.reservation_time)}`);
@@ -3666,11 +4146,19 @@ function buildSummaryReply(
     lines.push(`Instructions: ${state.customer_instructions}`);
   }
 
-  lines.push(
-    romanUrdu
-      ? "Confirm karne ke liye *Haan* likhein. Change ke liye item add/remove message bhej dein."
-      : "Reply *Yes* to confirm. To make changes, send add/remove instructions.",
-  );
+  if (state.order_type === "delivery" && state.address) {
+    lines.push(
+      romanUrdu
+        ? "Items change karne ke liye add/remove message bhej dein."
+        : "To change items, send add/remove instructions.",
+    );
+  } else {
+    lines.push(
+      romanUrdu
+        ? "Confirm karne ke liye *Haan* likhein. Change ke liye item add/remove message bhej dein."
+        : "Reply *Yes* to confirm. To make changes, send add/remove instructions.",
+    );
+  }
 
   return replyDecision(
     lines.join("\n"),
@@ -3698,10 +4186,8 @@ function formatReservationTime(iso: string | null): string {
   });
 }
 
-function buildOrderPlacedReply(settings: RestaurantSettings, romanUrdu: boolean): string {
-  const estimated = romanUrdu
-    ? "Estimated delivery/prep time 30-45 minutes."
-    : "Estimated delivery/prep time is 30-45 minutes.";
+function buildOrderPlacedReply(settings: RestaurantSettings, orderType: OrderType, romanUrdu: boolean): string {
+  const estimated = buildEstimatedTimeReply(settings, orderType, romanUrdu);
   const contact = settings.phone_delivery?.trim() || settings.phone_dine_in?.trim() || "support line";
 
   return romanUrdu
@@ -3729,7 +4215,9 @@ function validateDraftForPlacement(
       ok: false,
       statePatch: { workflow_step: "awaiting_order_type" },
       reply: (romanUrdu) =>
-        romanUrdu ? "Order type choose karein: Delivery ya Dine-in." : "Please choose order type: Delivery or Dine-in.",
+        romanUrdu
+          ? "Order type choose karein: Delivery, Pickup ya Dine-in."
+          : "Please choose order type: Delivery, Pickup, or Dine-in.",
     };
   }
 
@@ -3746,8 +4234,8 @@ function validateDraftForPlacement(
         statePatch: { workflow_step: "awaiting_order_type", order_type: null },
         reply: (romanUrdu) =>
           romanUrdu
-            ? "Delivery available nahi hai. Dine-in select karein."
-            : "Delivery is not available right now. Please choose dine-in.",
+            ? "Delivery available nahi hai. Pickup ya dine-in select karein."
+            : "Delivery is not available right now. Please choose pickup or dine-in.",
       };
     }
 
@@ -3757,6 +4245,18 @@ function validateDraftForPlacement(
         statePatch: { workflow_step: "awaiting_delivery_address" },
         reply: (romanUrdu) =>
           romanUrdu ? "Please full delivery address bhej dein." : "Please provide your full delivery address.",
+      };
+    }
+
+    if (settings.delivery_areas.length > 0 && !findMatchingDeliveryArea(state.address, settings)) {
+      const areas = buildDeliveryAreasList(settings);
+      return {
+        ok: false,
+        statePatch: { workflow_step: "awaiting_delivery_address", address: null },
+        reply: (romanUrdu) =>
+          romanUrdu
+            ? `Maazrat, yeh address hamari delivery areas mein clear match nahi ho raha.${areas ? ` Delivery areas: ${areas}.` : ""} Please area wala full address bhej dein ya pickup choose karein.`
+            : `Sorry, that address does not clearly match our delivery areas.${areas ? ` Delivery areas: ${areas}.` : ""} Please send a full address in a listed area or choose pickup.`,
       };
     }
 
@@ -3782,6 +4282,35 @@ function validateDraftForPlacement(
         address: state.address,
         guests: null,
         reservation_time: null,
+        pickup_time: null,
+        customer_instructions: state.customer_instructions,
+      },
+    };
+  }
+
+  if (state.order_type === "pickup") {
+    if (!state.pickup_time) {
+      return {
+        ok: false,
+        statePatch: { workflow_step: "awaiting_pickup_time" },
+        reply: (romanUrdu) =>
+          romanUrdu
+            ? "Pickup ke liye time required hai. Misal: *8 PM* ya *in 30 minutes*."
+            : "Pickup time is required. Example: *8 PM* or *in 30 minutes*.",
+      };
+    }
+
+    return {
+      ok: true,
+      order: {
+        items: state.cart,
+        type: "pickup",
+        subtotal,
+        delivery_fee: 0,
+        address: null,
+        guests: null,
+        reservation_time: null,
+        pickup_time: state.pickup_time,
         customer_instructions: state.customer_instructions,
       },
     };
@@ -3808,6 +4337,7 @@ function validateDraftForPlacement(
       address: null,
       guests: state.guests,
       reservation_time: state.reservation_time,
+      pickup_time: null,
       customer_instructions: state.customer_instructions,
     },
   };
@@ -4629,7 +5159,7 @@ function isControlPayloadToken(value: string): boolean {
   if (!trimmed) return false;
   if (isUuidLike(trimmed)) return true;
 
-  return /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|upsell[_\s-]?(?:yes|no)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
+  return /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|pickup|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|upsell[_\s-]?(?:yes|no)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
     trimmed,
   );
 }
@@ -4644,7 +5174,7 @@ function parseSelectionWithQty(
   // These are control payloads from interactive lists/flows, not item picks.
   // Let dedicated handlers route them instead of turning them into option numbers.
   if (
-    /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
+    /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|pickup|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
       trimmed,
     )
   ) {

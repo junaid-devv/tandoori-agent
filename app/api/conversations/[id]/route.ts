@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse, readLimitedJsonBody, requireTrimmedString } from "@/lib/api-utils";
 import { requireApiSession } from "@/lib/branch-request";
 import { resumeBotForConversation } from "@/lib/handoff";
 import { persistSystemMessage, sendAndPersistOutboundMessage } from "@/lib/messages";
@@ -9,7 +10,17 @@ import { getOrCreateUserSession, updateUserSession } from "@/lib/user-session";
 type ConversationPatchBody = {
   mode?: "agent" | "human";
   has_unread?: boolean;
+  customer_notes?: string | null;
+  customer_tags?: string[];
 };
+
+type ManualMessageBody = {
+  message?: string;
+};
+
+const CONVERSATION_PATCH_BODY_LIMIT_BYTES = 2 * 1024;
+const MANUAL_MESSAGE_BODY_LIMIT_BYTES = 8 * 1024;
+const MANUAL_MESSAGE_MAX_CHARS = 3500;
 
 function buildModeChangeNote(mode: "agent" | "human") {
   return mode === "agent"
@@ -44,12 +55,28 @@ export async function GET(
       updated_at,
       created_at,
       branches (id, name, slug, address),
+      contacts (
+        id,
+        preferred_language,
+        tags,
+        notes,
+        total_orders,
+        last_order_at,
+        customer_addresses (
+          id,
+          label,
+          address,
+          use_count,
+          last_used_at
+        )
+      ),
       conversation_states (
         workflow_step,
         order_type,
         address,
         guests,
         reservation_time,
+        pickup_time,
         cart,
         last_error
       ),
@@ -66,7 +93,10 @@ export async function GET(
     .single();
 
   if (error || !data) {
-    return NextResponse.json({ error: error?.message ?? "Conversation not found" }, { status: 404 });
+    if (error) {
+      return apiErrorResponse(error, { fallback: "Failed to load conversation.", context: "conversation GET" });
+    }
+    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   }
 
   return NextResponse.json(data);
@@ -88,9 +118,16 @@ export async function PATCH(
     return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   }
 
-  const body = (await req.json()) as ConversationPatchBody;
+  let body: ConversationPatchBody;
+  try {
+    body = await readLimitedJsonBody<ConversationPatchBody>(req, CONVERSATION_PATCH_BODY_LIMIT_BYTES);
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: "Invalid conversation update request.", context: "conversation PATCH" });
+  }
   const { mode, has_unread } = body;
   let previousMode: "agent" | "human" | null = null;
+  const shouldUpdateCustomerProfile =
+    "customer_notes" in body || "customer_tags" in body;
 
   const updates: Record<string, boolean | "agent" | "human"> = {};
   if (mode !== undefined) {
@@ -110,19 +147,65 @@ export async function PATCH(
     updates.has_unread = has_unread;
   }
 
-  if (Object.keys(updates).length === 0) {
+  if (Object.keys(updates).length === 0 && !shouldUpdateCustomerProfile) {
     return NextResponse.json({ error: "No fields to update" }, { status: 400 });
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("conversations")
-    .update(updates)
-    .eq("id", accessibleConversation.id)
-    .select()
-    .single();
+  const { data: currentConversation, error: currentConversationError } = shouldUpdateCustomerProfile
+    ? await supabaseAdmin
+        .from("conversations")
+        .select("contact_id")
+        .eq("id", accessibleConversation.id)
+        .maybeSingle()
+    : { data: null, error: null };
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+  if (currentConversationError) {
+    return apiErrorResponse(currentConversationError, { fallback: "Failed to load customer profile.", context: "conversation PATCH contact lookup" });
+  }
+
+  if (shouldUpdateCustomerProfile && currentConversation?.contact_id) {
+    const customerUpdates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if ("customer_notes" in body) {
+      customerUpdates.notes = typeof body.customer_notes === "string" && body.customer_notes.trim()
+        ? body.customer_notes.trim().slice(0, 1000)
+        : null;
+    }
+    if ("customer_tags" in body) {
+      customerUpdates.tags = Array.isArray(body.customer_tags)
+        ? [...new Set(body.customer_tags.map((tag) => String(tag).trim().toLowerCase()).filter(Boolean))].slice(0, 12)
+        : [];
+    }
+    const { error: customerError } = await supabaseAdmin
+      .from("contacts")
+      .update(customerUpdates)
+      .eq("id", currentConversation.contact_id);
+    if (customerError) {
+      return apiErrorResponse(customerError, { fallback: "Failed to update customer profile.", context: "conversation PATCH customer" });
+    }
+  }
+
+  let data: unknown = null;
+  if (Object.keys(updates).length > 0) {
+    const result = await supabaseAdmin
+      .from("conversations")
+      .update(updates)
+      .eq("id", accessibleConversation.id)
+      .select()
+      .single();
+    data = result.data;
+    if (result.error) {
+      return apiErrorResponse(result.error, { fallback: "Failed to update conversation.", context: "conversation PATCH" });
+    }
+  } else {
+    const result = await supabaseAdmin
+      .from("conversations")
+      .select()
+      .eq("id", accessibleConversation.id)
+      .single();
+    data = result.data;
+    if (result.error) {
+      return apiErrorResponse(result.error, { fallback: "Failed to load conversation.", context: "conversation PATCH reload" });
+    }
   }
 
   if (mode !== undefined && previousMode && previousMode !== mode) {
@@ -168,11 +251,12 @@ export async function POST(
     return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
   }
 
-  const body = await req.json();
-  const { message } = body;
-
-  if (!message?.trim()) {
-    return NextResponse.json({ error: "Message required" }, { status: 400 });
+  let message: string;
+  try {
+    const body = await readLimitedJsonBody<ManualMessageBody>(req, MANUAL_MESSAGE_BODY_LIMIT_BYTES);
+    message = requireTrimmedString(body.message, "Message", MANUAL_MESSAGE_MAX_CHARS);
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: "Invalid message request.", context: "conversation POST" });
   }
 
   // Get conversation phone
@@ -201,12 +285,14 @@ export async function POST(
       .single();
 
     if (msgError || !msg) {
-      return NextResponse.json({ error: msgError?.message ?? "Message sent but could not be loaded." }, { status: 500 });
+      return apiErrorResponse(msgError, {
+        fallback: "Message sent but could not be loaded.",
+        context: "conversation POST load message",
+      });
     }
 
     return NextResponse.json(msg);
   } catch (error) {
-    const messageText = error instanceof Error ? error.message : "Failed to send message";
-    return NextResponse.json({ error: messageText }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to send message.", context: "conversation POST" });
   }
 }

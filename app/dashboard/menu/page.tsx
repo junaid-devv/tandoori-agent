@@ -5,6 +5,16 @@ import { AlertCircle, CheckCircle2, Loader2, Plus, Search, Trash2, UploadCloud }
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 
+const WEEKDAYS = [
+  { key: "mon", label: "M" },
+  { key: "tue", label: "T" },
+  { key: "wed", label: "W" },
+  { key: "thu", label: "T" },
+  { key: "fri", label: "F" },
+  { key: "sat", label: "S" },
+  { key: "sun", label: "S" },
+] as const;
+
 interface MenuItem {
   id?: string;
   name: string;
@@ -12,6 +22,9 @@ interface MenuItem {
   category: string;
   description?: string | null;
   is_available: boolean;
+  available_days?: string[] | null;
+  available_start_time?: string | null;
+  available_end_time?: string | null;
   _saving?: boolean;
   _deleting?: boolean;
 }
@@ -26,6 +39,12 @@ const normalizeCategory = (value?: string | null) =>
     .filter(Boolean)
     .map((part) => (part.toLowerCase() === "bbq" ? "BBQ" : part.charAt(0).toUpperCase() + part.slice(1).toLowerCase()))
     .join(" ");
+const normalizeDays = (value: unknown) =>
+  Array.isArray(value)
+    ? value
+        .map((day) => String(day).slice(0, 3).toLowerCase())
+        .filter((day) => WEEKDAYS.some((entry) => entry.key === day))
+    : [];
 
 function normalizeItems(items: MenuItem[]) {
   const warnings: ImportWarning[] = [];
@@ -61,6 +80,9 @@ function normalizeItems(items: MenuItem[]) {
       category: normalizeCategory(item.category),
       description,
       is_available: item.is_available ?? true,
+      available_days: normalizeDays(item.available_days),
+      available_start_time: item.available_start_time || null,
+      available_end_time: item.available_end_time || null,
     });
   });
 
@@ -80,6 +102,9 @@ function mergeImportedItems(currentItems: MenuItem[], importedItems: MenuItem[])
         category: item.category,
         description: item.description ?? null,
         is_available: item.is_available,
+        available_days: normalizeDays(item.available_days),
+        available_start_time: item.available_start_time || null,
+        available_end_time: item.available_end_time || null,
       });
     } else {
       next.unshift({ ...item });
@@ -190,7 +215,11 @@ export default function MenuPage() {
         name: item.name,
         price: item.price,
         category: item.category,
+        description: item.description ?? null,
         is_available: item.is_available,
+        available_days: normalizeDays(item.available_days),
+        available_start_time: item.available_start_time || null,
+        available_end_time: item.available_end_time || null,
       });
     } catch {
       showToast("Failed to save row.", "error");
@@ -209,6 +238,18 @@ export default function MenuPage() {
     } catch {
       mutateItem(index, { is_available: !nextValue });
       showToast("Could not update availability.", "error");
+    }
+  };
+
+  const handleSchedulePatch = async (item: MenuItem, index: number, patch: Partial<MenuItem>) => {
+    mutateItem(index, patch);
+    if (!item.id) return;
+
+    try {
+      await patchItem(item.id, patch);
+    } catch {
+      showToast("Could not update schedule.", "error");
+      await loadMenu();
     }
   };
 
@@ -292,6 +333,9 @@ export default function MenuPage() {
               price: item.price,
               category: item.category || "",
               is_available: true,
+              available_days: [],
+              available_start_time: null,
+              available_end_time: null,
             })),
           );
 
@@ -346,7 +390,7 @@ export default function MenuPage() {
       const normalized = normalizeItems(
         rawItems.map((item) => {
           if (typeof item !== "object" || item === null) {
-            return { name: "", price: NaN, category: "", description: null, is_available: true };
+            return { name: "", price: NaN, category: "", description: null, is_available: true, available_days: [] };
           }
           const obj = item as Record<string, unknown>;
           return {
@@ -356,6 +400,9 @@ export default function MenuPage() {
             description:
               obj.description === null ? null : typeof obj.description === "string" ? obj.description : null,
             is_available: typeof obj.is_available === "boolean" ? obj.is_available : true,
+            available_days: normalizeDays(obj.available_days),
+            available_start_time: typeof obj.available_start_time === "string" ? obj.available_start_time : null,
+            available_end_time: typeof obj.available_end_time === "string" ? obj.available_end_time : null,
           };
         }),
       );
@@ -374,6 +421,9 @@ export default function MenuPage() {
             category: item.category,
             description: item.description ?? null,
             is_available: item.is_available,
+            available_days: normalizeDays(item.available_days),
+            available_start_time: item.available_start_time || null,
+            available_end_time: item.available_end_time || null,
           })),
           replaceAll: replaceExisting,
         }),
@@ -449,7 +499,7 @@ export default function MenuPage() {
             />
           </label>
 
-          <button onClick={() => setItems((prev) => [{ name: "", price: 0, category: "", is_available: true }, ...prev])} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50">
+          <button onClick={() => setItems((prev) => [{ name: "", price: 0, category: "", is_available: true, available_days: [], available_start_time: null, available_end_time: null }, ...prev])} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50">
             <Plus size={16} className="mr-1.5 inline" />
             Add Row
           </button>
@@ -531,11 +581,12 @@ export default function MenuPage() {
         </div>
 
         <div className="overflow-x-auto">
-          <div className="min-w-[880px]">
-            <div className="grid grid-cols-[3fr_2fr_130px_100px_80px] gap-4 border-b border-slate-200 bg-slate-50 px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
+          <div className="min-w-[1120px]">
+            <div className="grid grid-cols-[2.5fr_1.5fr_120px_280px_90px_70px] gap-4 border-b border-slate-200 bg-slate-50 px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
               <div>Item Name</div>
               <div>Category</div>
               <div>Price (Rs.)</div>
+              <div>Schedule</div>
               <div className="text-center">Available</div>
               <div className="text-center">Delete</div>
             </div>
@@ -551,7 +602,7 @@ export default function MenuPage() {
                 filteredItems.map((item) => {
                   const index = items.findIndex((entry) => (item.id ? entry.id === item.id : entry === item));
                   return (
-                    <div key={item.id ?? `draft-${index}`} className={clsx("grid grid-cols-[3fr_2fr_130px_100px_80px] gap-4 px-6 py-2 items-center hover:bg-slate-50/70", item._deleting && "pointer-events-none opacity-40")}>
+                    <div key={item.id ?? `draft-${index}`} className={clsx("grid grid-cols-[2.5fr_1.5fr_120px_280px_90px_70px] gap-4 px-6 py-2 items-center hover:bg-slate-50/70", item._deleting && "pointer-events-none opacity-40")}>
                       <div className="flex items-center gap-2">
                         {item._saving && <Loader2 size={12} className="animate-spin text-brand" />}
                         <input
@@ -580,6 +631,50 @@ export default function MenuPage() {
                           onBlur={() => void handleBlurSave(item, index)}
                           className="w-full bg-transparent text-sm font-semibold outline-none"
                         />
+                      </div>
+
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-1">
+                          {WEEKDAYS.map((day) => {
+                            const selectedDays = normalizeDays(item.available_days);
+                            const isSelected = selectedDays.includes(day.key);
+                            return (
+                              <button
+                                key={day.key}
+                                type="button"
+                                title={day.key}
+                                onClick={() => {
+                                  const nextDays = isSelected
+                                    ? selectedDays.filter((entry) => entry !== day.key)
+                                    : [...selectedDays, day.key];
+                                  void handleSchedulePatch(item, index, { available_days: nextDays });
+                                }}
+                                className={clsx(
+                                  "h-6 w-6 rounded-md text-[11px] font-bold transition-colors",
+                                  isSelected ? "bg-brand text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200",
+                                )}
+                              >
+                                {day.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <div className="grid grid-cols-2 gap-2">
+                          <input
+                            type="time"
+                            value={item.available_start_time ?? ""}
+                            onChange={(event) => mutateItem(index, { available_start_time: event.target.value || null })}
+                            onBlur={(event) => void handleSchedulePatch(item, index, { available_start_time: event.currentTarget.value || null })}
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-orange-200 focus:ring-2 focus:ring-brand/10"
+                          />
+                          <input
+                            type="time"
+                            value={item.available_end_time ?? ""}
+                            onChange={(event) => mutateItem(index, { available_end_time: event.target.value || null })}
+                            onBlur={(event) => void handleSchedulePatch(item, index, { available_end_time: event.currentTarget.value || null })}
+                            className="rounded-lg border border-slate-200 bg-white px-2 py-1.5 text-xs outline-none focus:border-orange-200 focus:ring-2 focus:ring-brand/10"
+                          />
+                        </div>
                       </div>
 
                       <div className="flex justify-center">

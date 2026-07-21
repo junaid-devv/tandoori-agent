@@ -11,7 +11,7 @@ import {
 } from "@/lib/branches";
 import { escalateToHuman, resumeBotForConversation } from "@/lib/handoff";
 import { sendAndPersistAssistantMessage } from "@/lib/assistant-dispatcher";
-import { OutboundMessageError } from "@/lib/messages";
+import { OutboundMessageError, type MessageDeliveryStatus } from "@/lib/messages";
 import {
   decideTurn,
   getDefaultConversationState,
@@ -26,7 +26,14 @@ import {
 import { getMenuCatalog, getMenuForAI } from "@/lib/menu";
 import { getSemanticMenuMatches } from "@/lib/semantic-menu";
 import { getRestaurantSettings, isWithinOperatingHours } from "@/lib/settings";
+import { createStaffAlert } from "@/lib/staff-alerts";
+import {
+  getLatestSavedAddress,
+  saveCustomerAddressFromOrder,
+  updateCustomerOrderStats,
+} from "@/lib/customer-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/lib/rate-limit";
 import { buildSessionUpdate, getDefaultUserSession, getOrCreateUserSession, updateUserSession } from "@/lib/user-session";
 import {
   buildBranchSelectionFlowMessage,
@@ -53,6 +60,8 @@ import {
   recordWebhookEvent,
 } from "@/lib/webhook-events";
 import {
+  downloadWhatsAppMedia,
+  getWhatsAppMediaUrl,
   sendWhatsAppInteractiveFlow,
   sendWhatsAppInteractiveList,
   sendWhatsAppMessage,
@@ -132,6 +141,11 @@ type IncomingWhatsAppMessage = {
   type: string;
   timestamp: string;
   text?: { body?: string };
+  audio?: {
+    id?: string;
+    mime_type?: string;
+    voice?: boolean;
+  };
   interactive?: {
     type?: "button_reply" | "list_reply" | "nfm_reply";
     button_reply?: {
@@ -157,8 +171,22 @@ type IncomingEnvelope = {
       value?: {
         contacts?: Array<{ profile?: { name?: string } }>;
         messages?: IncomingWhatsAppMessage[];
+        statuses?: IncomingWhatsAppStatus[];
       };
     }>;
+  }>;
+};
+
+type IncomingWhatsAppStatus = {
+  id?: string;
+  recipient_id?: string;
+  status?: string;
+  timestamp?: string;
+  errors?: Array<{
+    code?: number;
+    title?: string;
+    message?: string;
+    error_data?: { details?: string };
   }>;
 };
 
@@ -217,6 +245,20 @@ export async function POST(req: NextRequest) {
   let rawBody = "";
   let body: unknown;
   const signature = req.headers.get("x-hub-signature-256");
+  const rateLimit = await checkRateLimit({
+    scope: "whatsapp_webhook",
+    identifier: getClientIp(req),
+    limit: Number(process.env.WHATSAPP_WEBHOOK_RATE_LIMIT_EVENTS) || 600,
+    windowSeconds: Number(process.env.WHATSAPP_WEBHOOK_RATE_LIMIT_WINDOW_SECONDS) || 60,
+    blockSeconds: Number(process.env.WHATSAPP_WEBHOOK_RATE_LIMIT_BLOCK_SECONDS) || 60,
+  });
+  if (!rateLimit.allowed) {
+    return new Response("Too Many Requests", {
+      status: 429,
+      headers: buildRateLimitHeaders(rateLimit),
+    });
+  }
+
   try {
     rawBody = await req.text();
     if (!isValidWhatsAppSignature(rawBody, signature)) {
@@ -264,10 +306,19 @@ async function processWebhookEventInBackground(eventId: string) {
     }
   }
 
-  await markWebhookEventFailed(eventId, lastError?.message ?? "Unknown webhook processing error");
+  const errorMessage = lastError?.message ?? "Unknown webhook processing error";
+  await markWebhookEventFailed(eventId, errorMessage);
+  await alertStaffForFailedWebhook(claimed.payload, eventId, errorMessage).catch((alertError) => {
+    console.error("[webhook] Failed to create webhook processing alert:", alertError);
+  });
 }
 
 async function processWebhook(body: unknown) {
+  const statusEvents = extractIncomingStatusEvents(body);
+  if (statusEvents.length > 0) {
+    await updateOutboundMessageStatuses(statusEvents);
+  }
+
   const events = extractIncomingMessages(body);
   if (events.length === 0) return;
 
@@ -278,7 +329,7 @@ async function processWebhook(body: unknown) {
   for (const event of events) {
     const { message, contactName } = event;
     const contact = await upsertContact(message.from, contactName);
-    const incomingContent = extractIncomingContent(message);
+    const incomingContent = await extractIncomingContent(message);
     const prefersRomanUrdu = inferLanguagePreference(incomingContent ?? "", "english") === "roman_urdu";
     const activeBranch = contact.active_branch_id
       ? branches.find((branch) => branch.id === contact.active_branch_id) ?? null
@@ -536,6 +587,37 @@ async function processWebhook(body: unknown) {
 
     if (!incomingContent) {
       if (message.type !== "reaction") {
+        if (message.type === "audio") {
+          const voiceFallback =
+            state.preferred_language === "roman_urdu"
+              ? "Voice note receive ho gaya hai, lekin is waqt automatic transcription available nahi. Staff aapki help karega. Agar AI se order continue karna hai to please text mein order bhej dein."
+              : "I received your voice note, but automatic transcription is not available right now. A staff member will help. To continue with the AI, please type your order.";
+          const persistedVoiceMessage = await persistUserMessage(
+            conversation.id,
+            "[Voice note received - transcription unavailable]",
+            message.id,
+            createdAt,
+          );
+          await escalateToHuman({
+            conversationId: conversation.id,
+            branchId: conversation.branch_id,
+            phone: conversation.phone,
+            reason: "voice_note_requires_staff",
+            prefersRomanUrdu: state.preferred_language === "roman_urdu",
+          });
+          await sendAndPersistAssistantMessage({
+            conversationId: conversation.id,
+            phone: message.from,
+            content: voiceFallback,
+            interactiveList: null,
+            flowMessage: null,
+          });
+          await markMessageProcessed(state, message.id, createdAt, persistedVoiceMessage.message?.ingest_seq ?? null, {
+            preferred_language: state.preferred_language,
+          });
+          continue;
+        }
+
         const nonTextReply =
           state.preferred_language === "roman_urdu"
             ? "Please text message bhej dein, main menu aur order mein help kar deta hoon."
@@ -562,6 +644,13 @@ async function processWebhook(body: unknown) {
     const content = incomingContent;
     const persistedMessage = await persistUserMessage(conversation.id, content, message.id, createdAt);
     const nextLanguage = inferLanguagePreference(content, state.preferred_language);
+    const { error: languageUpdateError } = await supabaseAdmin
+      .from("contacts")
+      .update({ preferred_language: nextLanguage, updated_at: new Date().toISOString() })
+      .eq("id", contact.id);
+    if (languageUpdateError) {
+      console.error("[webhook] Failed to update contact language preference:", languageUpdateError);
+    }
 
     if (
       activeBranch &&
@@ -723,7 +812,8 @@ async function processWebhook(body: unknown) {
         interactiveList: cityInteractiveList,
         flowMessage: branchFlow,
       });
-      await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null);
+      const resetState = await getOrCreateConversationState(conversation.id);
+      await markMessageProcessed(resetState, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null);
       const session = await getOrCreateUserSession(conversation.id);
       await updateUserSession(
         conversation.id,
@@ -819,6 +909,102 @@ async function processWebhook(body: unknown) {
   }
 }
 
+async function alertStaffForFailedWebhook(payload: unknown, eventId: string, errorMessage: string): Promise<void> {
+  const target = await resolveWebhookAlertTarget(payload);
+  if (!target) {
+    console.warn("[webhook] Could not resolve conversation for failed webhook alert", { eventId });
+    return;
+  }
+
+  await createStaffAlert({
+    conversationId: target.conversationId,
+    branchId: target.branchId,
+    kind: "webhook_processing",
+    severity: "high",
+    message: `WhatsApp webhook ${eventId} failed after retries: ${errorMessage.slice(0, 300)}`,
+  });
+}
+
+async function resolveWebhookAlertTarget(
+  payload: unknown,
+): Promise<{ conversationId: string; branchId: string } | null> {
+  const statusMessageId = extractFirstStatusMessageId(payload);
+  if (statusMessageId) {
+    const { data: messageRow, error: messageError } = await supabaseAdmin
+      .from("messages")
+      .select("conversation_id")
+      .eq("whatsapp_msg_id", statusMessageId)
+      .maybeSingle();
+
+    if (messageError) throw messageError;
+    if (messageRow?.conversation_id) {
+      return getConversationAlertTarget(messageRow.conversation_id);
+    }
+  }
+
+  const phone = extractFirstWebhookPhone(payload);
+  if (!phone) return null;
+
+  const { data: conversation, error } = await supabaseAdmin
+    .from("conversations")
+    .select("id, branch_id")
+    .eq("phone", phone)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!conversation) return null;
+
+  return {
+    conversationId: conversation.id,
+    branchId: conversation.branch_id,
+  };
+}
+
+async function getConversationAlertTarget(
+  conversationId: string,
+): Promise<{ conversationId: string; branchId: string } | null> {
+  const { data: conversation, error } = await supabaseAdmin
+    .from("conversations")
+    .select("id, branch_id")
+    .eq("id", conversationId)
+    .maybeSingle();
+
+  if (error) throw error;
+  if (!conversation) return null;
+
+  return {
+    conversationId: conversation.id,
+    branchId: conversation.branch_id,
+  };
+}
+
+function extractFirstWebhookPhone(payload: unknown): string | null {
+  const envelope = payload as IncomingEnvelope;
+  for (const entry of envelope.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const messageFrom = change.value?.messages?.find((message) => message.from)?.from;
+      if (messageFrom) return messageFrom;
+
+      const statusRecipient = change.value?.statuses?.find((status) => status.recipient_id)?.recipient_id;
+      if (statusRecipient) return statusRecipient;
+    }
+  }
+  return null;
+}
+
+function extractFirstStatusMessageId(payload: unknown): string | null {
+  const envelope = payload as IncomingEnvelope;
+  for (const entry of envelope.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const statusId = change.value?.statuses?.find((status) => status.id)?.id;
+      if (statusId) return statusId;
+    }
+  }
+  return null;
+}
+
 function extractIncomingMessages(body: unknown): IncomingMessageEvent[] {
   const payload = body as IncomingEnvelope;
   const events: IncomingMessageEvent[] = [];
@@ -848,10 +1034,125 @@ function extractIncomingMessages(body: unknown): IncomingMessageEvent[] {
   return events;
 }
 
-function extractIncomingContent(message: IncomingWhatsAppMessage): string | null {
+function extractIncomingStatusEvents(body: unknown): IncomingWhatsAppStatus[] {
+  const payload = body as IncomingEnvelope;
+  const statuses: IncomingWhatsAppStatus[] = [];
+
+  for (const entry of payload.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      for (const status of change.value?.statuses ?? []) {
+        if (!status.id || !status.status) {
+          continue;
+        }
+        statuses.push(status);
+      }
+    }
+  }
+
+  statuses.sort((left, right) => {
+    const timeDelta = compareMessageTimestamps(left.timestamp ?? "", right.timestamp ?? "");
+    if (timeDelta !== 0) return timeDelta;
+    return String(left.id).localeCompare(String(right.id));
+  });
+
+  return statuses;
+}
+
+async function updateOutboundMessageStatuses(statuses: IncomingWhatsAppStatus[]): Promise<void> {
+  for (const statusEvent of statuses) {
+    const whatsappMessageId = statusEvent.id?.trim();
+    const nextStatus = normalizeWhatsAppDeliveryStatus(statusEvent.status);
+    if (!whatsappMessageId || !nextStatus) {
+      continue;
+    }
+
+    const { data: existing, error: lookupError } = await supabaseAdmin
+      .from("messages")
+      .select("id, delivery_status")
+      .eq("whatsapp_msg_id", whatsappMessageId)
+      .maybeSingle();
+
+    if (lookupError) {
+      throw lookupError;
+    }
+
+    if (!existing) {
+      console.warn("[webhook] Received status for unknown outbound WhatsApp message", {
+        whatsappMessageId,
+        status: statusEvent.status,
+        recipientId: statusEvent.recipient_id ?? null,
+      });
+      continue;
+    }
+
+    const currentStatus = normalizeWhatsAppDeliveryStatus(existing.delivery_status);
+    if (currentStatus && getDeliveryStatusRank(nextStatus) < getDeliveryStatusRank(currentStatus)) {
+      continue;
+    }
+
+    const { error: updateError } = await supabaseAdmin
+      .from("messages")
+      .update({
+        delivery_status: nextStatus,
+        delivery_error: nextStatus === "failed" ? buildWhatsAppStatusError(statusEvent) : null,
+        delivery_status_updated_at: statusEvent.timestamp
+          ? toIsoTimestamp(statusEvent.timestamp)
+          : new Date().toISOString(),
+      })
+      .eq("id", existing.id);
+
+    if (updateError) {
+      throw updateError;
+    }
+  }
+}
+
+function normalizeWhatsAppDeliveryStatus(value: string | null | undefined): MessageDeliveryStatus | null {
+  switch (value) {
+    case "pending":
+    case "sent":
+    case "delivered":
+    case "read":
+    case "failed":
+      return value;
+    default:
+      return null;
+  }
+}
+
+function getDeliveryStatusRank(status: MessageDeliveryStatus): number {
+  const ranks: Record<MessageDeliveryStatus, number> = {
+    pending: 0,
+    sent: 1,
+    delivered: 2,
+    read: 3,
+    failed: 4,
+  };
+  return ranks[status];
+}
+
+function buildWhatsAppStatusError(statusEvent: IncomingWhatsAppStatus): string | null {
+  const errors = statusEvent.errors ?? [];
+  if (errors.length === 0) return "WhatsApp reported delivery failure.";
+
+  return errors
+    .map((error) => {
+      const code = error.code != null ? `#${error.code}` : null;
+      const text = error.message || error.title || error.error_data?.details || "WhatsApp delivery failure";
+      return [code, text].filter(Boolean).join(" ");
+    })
+    .join("; ")
+    .slice(0, 500);
+}
+
+async function extractIncomingContent(message: IncomingWhatsAppMessage): Promise<string | null> {
   if (message.type === "text") {
     const text = message.text?.body?.trim() ?? "";
     return text || null;
+  }
+
+  if (message.type === "audio" && message.audio?.id) {
+    return transcribeWhatsAppAudioMessage(message.audio.id, message.audio.mime_type);
   }
 
   if (message.type === "interactive") {
@@ -874,6 +1175,44 @@ function extractIncomingContent(message: IncomingWhatsAppMessage): string | null
   }
 
   return null;
+}
+
+async function transcribeWhatsAppAudioMessage(mediaId: string, mimeType?: string): Promise<string | null> {
+  if (!process.env.GROQ_API_KEY) {
+    return null;
+  }
+
+  try {
+    const mediaUrl = await getWhatsAppMediaUrl(mediaId);
+    const media = await downloadWhatsAppMedia(mediaUrl);
+    const formData = new FormData();
+    const extension = mimeType?.includes("mpeg")
+      ? "mp3"
+      : mimeType?.includes("wav")
+        ? "wav"
+        : "ogg";
+    formData.append("file", new Blob([media], { type: mimeType || "audio/ogg" }), `voice-note.${extension}`);
+    formData.append("model", process.env.GROQ_AUDIO_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo");
+
+    const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+      },
+      body: formData,
+    });
+
+    const data = (await response.json()) as { text?: string; error?: { message?: string } };
+    if (!response.ok) {
+      throw new Error(data.error?.message || `Groq transcription failed with status ${response.status}`);
+    }
+
+    const text = data.text?.trim();
+    return text ? `[Voice note] ${text}` : null;
+  } catch (error) {
+    console.error("[webhook] Failed to transcribe WhatsApp voice note:", error);
+    return null;
+  }
 }
 
 async function upsertContact(phone: string, name: string): Promise<ContactRow> {
@@ -1116,6 +1455,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
         menuItems,
         semanticMatches,
         session,
+        savedAddress,
       ] = await Promise.all([
         needsFullProcessing ? Promise.resolve(cachedMenuItems ?? []) : Promise.resolve([]),
         needsFullProcessing && shouldRunSemanticLookup(nextMessage.content)
@@ -1128,6 +1468,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
               is_bot_active: conversation.mode !== "human",
             })
           : Promise.resolve(getDefaultUserSession(conversation.id)),
+        getLatestSavedAddress(conversation.id),
       ]);
 
       const decision = await decideTurn({
@@ -1143,6 +1484,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
         settings,
         isOpenNow,
         recentOrder: null,
+        savedAddress,
         session,
       });
 
@@ -1240,6 +1582,17 @@ async function drainConversationQueue(conversation: ConversationRow) {
             decision.order,
             settings,
           );
+          await Promise.all([
+            saveCustomerAddressFromOrder({
+              conversationId: conversation.id,
+              branchId: conversation.branch_id,
+              address: decision.order.type === "delivery" ? decision.order.address : null,
+            }),
+            updateCustomerOrderStats({
+              conversationId: conversation.id,
+              preferredLanguage: (updatedState.preferred_language ?? state.preferred_language) === "roman_urdu" ? "roman_urdu" : "english",
+            }),
+          ]);
         }
 
         const optionsFromState = Array.isArray(updatedState.last_presented_options)
@@ -1277,6 +1630,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
                 address: nextStateSnapshot.address,
                 guests: nextStateSnapshot.guests,
                 reservationTime: nextStateSnapshot.reservation_time,
+                pickupTime: nextStateSnapshot.pickup_time,
                 settings,
                 suggestedUpsell:
                   typeof nextStateSnapshot.upsell_item_name === "string" &&
@@ -1619,82 +1973,40 @@ async function createOrderFromPayload(
     throw new Error("Missing source user message id for order placement.");
   }
 
-  const { data: existingOrder } = await supabaseAdmin
-    .from("orders")
-    .select("id")
-    .eq("source_user_message_id", sourceUserMessageId)
-    .maybeSingle();
-
-  if (existingOrder) return existingOrder;
-
-  const { data: menuRows, error: menuError } = await supabaseAdmin
-    .from("menu_items")
-    .select("name, price, category")
-    .eq("branch_id", branchId)
-    .eq("is_available", true);
-
-  if (menuError) throw menuError;
-
-  const validatedItems = payload.items.map((item) => {
-    const match = (menuRows ?? []).find((row) => row.name.toLowerCase() === item.name.toLowerCase());
-    if (!match) {
-      throw new Error(`Menu item no longer exists: ${item.name}`);
-    }
-
-    return {
-      name: match.name,
-      qty: item.qty,
-      price: Number(match.price),
-      category: match.category ?? null,
-      size: item.size ?? null,
-      addons: Array.isArray(item.addons) ? item.addons.slice(0, 8) : [],
-      item_instructions: item.item_instructions ?? null,
-    };
-  });
-
-  const subtotal = validatedItems.reduce((total, item) => total + item.price * item.qty, 0);
   const deliveryFee =
     payload.type === "delivery" && settings.delivery_enabled && settings.delivery_fee > 0
       ? Number(settings.delivery_fee)
       : 0;
 
-  const { data: order, error: orderError } = await supabaseAdmin
-    .from("orders")
-    .insert({
-      branch_id: branchId,
-      conversation_id: conversationId,
-      source_user_message_id: sourceUserMessageId,
-      type: payload.type,
-      subtotal,
-      delivery_fee: deliveryFee,
-      customer_instructions: payload.customer_instructions ?? null,
-      address: payload.type === "delivery" ? payload.address : null,
-      guests: payload.type === "dine-in" ? payload.guests : null,
-      reservation_time: payload.type === "dine-in" ? payload.reservation_time : null,
-      status: "received",
-    })
-    .select("id")
-    .single();
+  const orderItems = payload.items.map((item) => ({
+    name: item.name,
+    qty: item.qty,
+    size: item.size ?? null,
+    addons: Array.isArray(item.addons) ? item.addons.slice(0, 8) : [],
+    item_instructions: item.item_instructions ?? null,
+  }));
 
-  if (orderError || !order) {
-    throw orderError ?? new Error("Failed to create order.");
+  const { data, error } = await supabaseAdmin.rpc("place_order_from_payload", {
+    p_conversation_id: conversationId,
+    p_branch_id: branchId,
+    p_source_user_message_id: sourceUserMessageId,
+    p_type: payload.type,
+    p_items: orderItems,
+    p_customer_instructions: payload.customer_instructions ?? null,
+    p_address: payload.type === "delivery" ? payload.address : null,
+    p_guests: payload.type === "dine-in" ? payload.guests : null,
+    p_reservation_time: payload.type === "dine-in" ? payload.reservation_time : null,
+    p_pickup_time: payload.type === "pickup" ? payload.pickup_time : null,
+    p_delivery_fee: deliveryFee,
+  });
+
+  if (error) {
+    throw error;
   }
 
-  const { error: itemsError } = await supabaseAdmin.from("order_items").insert(
-    validatedItems.map((item) => ({
-      order_id: order.id,
-      name: item.name,
-      qty: item.qty,
-      price: item.price,
-      size: item.size,
-      addons: item.addons,
-      item_instructions: item.item_instructions,
-    })),
-  );
-
-  if (itemsError) {
-    await supabaseAdmin.from("orders").delete().eq("id", order.id);
-    throw itemsError;
+  const order = Array.isArray(data) ? data[0] : data;
+  if (!order?.id) {
+    throw new Error("Failed to create order.");
   }
 
   return order;

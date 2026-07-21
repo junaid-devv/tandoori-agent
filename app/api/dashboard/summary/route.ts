@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -127,8 +128,6 @@ export async function GET(req: NextRequest) {
       generatedAt: new Date().toISOString(),
     });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load dashboard summary.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to load dashboard summary.", context: "dashboard summary GET" });
   }
 }
-

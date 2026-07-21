@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { createStaffAccount, listStaffMembers } from "@/lib/admin";
 import { requireAdminApiSession } from "@/lib/admin-request";
 
@@ -11,6 +12,8 @@ type StaffBody = {
   branch_ids?: string[];
 };
 
+const STAFF_BODY_LIMIT_BYTES = 16 * 1024;
+
 export async function GET() {
   const auth = await requireAdminApiSession();
   if (auth.response) {
@@ -21,8 +24,7 @@ export async function GET() {
     const staff = await listStaffMembers();
     return NextResponse.json(staff);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to load staff.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to load staff.", context: "admin staff GET" });
   }
 }
 
@@ -33,7 +35,7 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const body = (await req.json()) as StaffBody;
+    const body = await readLimitedJsonBody<StaffBody>(req, STAFF_BODY_LIMIT_BYTES);
     const userId = await createStaffAccount({
       email: body.email ?? "",
       password: body.password ?? "",
@@ -45,8 +47,10 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, userId });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to create staff account.";
-    const status = /required|least|must/i.test(message) ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    const validationMessage = error instanceof Error ? error.message : "Failed to create staff account.";
+    const status = /required|least|must/i.test(validationMessage) ? 400 : 500;
+    return status === 400
+      ? NextResponse.json({ error: validationMessage }, { status })
+      : apiErrorResponse(error, { fallback: "Failed to create staff account.", context: "admin staff POST" });
   }
 }

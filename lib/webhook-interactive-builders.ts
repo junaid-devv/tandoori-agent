@@ -97,6 +97,7 @@ export function buildFlowMessageForAgentReply(input: {
   address?: ConversationState["address"];
   guests?: ConversationState["guests"];
   reservationTime?: ConversationState["reservation_time"];
+  pickupTime?: ConversationState["pickup_time"];
   settings?: RestaurantSettings;
   suggestedUpsell?: { name: string; price: number } | null;
   body: string;
@@ -119,6 +120,7 @@ export function buildFlowMessageForAgentReply(input: {
     address: input.address,
     guests: input.guests,
     reservationTime: input.reservationTime,
+    pickupTime: input.pickupTime,
     settings: input.settings,
     suggestedUpsell: input.suggestedUpsell,
   });
@@ -131,6 +133,7 @@ function inferFlowContext(workflowStep: ConversationState["workflow_step"]): Wha
     workflowStep === "awaiting_order_type" ||
     workflowStep === "awaiting_delivery_address" ||
     workflowStep === "awaiting_dine_in_details" ||
+    workflowStep === "awaiting_pickup_time" ||
     workflowStep === "awaiting_confirmation"
   ) {
     return "checkout";

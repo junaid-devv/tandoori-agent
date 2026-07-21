@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { clsx } from "clsx";
 import { format, formatDistanceToNow, isSameDay } from "date-fns";
 import {
@@ -32,6 +33,7 @@ interface ConversationState {
   address: string | null;
   guests: number | null;
   reservation_time: string | null;
+  pickup_time: string | null;
   cart: unknown;
   last_error: string | null;
 }
@@ -55,6 +57,7 @@ interface ConversationPreview {
   updated_at: string;
   created_at: string;
   branches?: { id: string; name: string; slug: string; address: string } | null;
+  contacts?: CustomerProfile | CustomerProfile[] | null;
   conversation_states?: ConversationState | ConversationState[] | null;
   user_sessions?: UserSessionState | UserSessionState[] | null;
   messages?: Array<{
@@ -68,6 +71,24 @@ interface ConversationPreview {
 
 type ConversationDetail = Omit<ConversationPreview, "messages">;
 
+interface SavedAddress {
+  id: string;
+  label: string;
+  address: string;
+  use_count: number;
+  last_used_at: string;
+}
+
+interface CustomerProfile {
+  id: string;
+  preferred_language: string;
+  tags: unknown;
+  notes: string | null;
+  total_orders: number;
+  last_order_at: string | null;
+  customer_addresses?: SavedAddress[];
+}
+
 interface Message {
   id: string;
   ingest_seq: number;
@@ -79,6 +100,7 @@ interface Message {
   created_at: string;
   delivery_status?: string | null;
   delivery_error?: string | null;
+  delivery_status_updated_at?: string | null;
 }
 
 interface MessageResponse {
@@ -176,6 +198,29 @@ function formatMessageDay(dateText: string) {
   return format(new Date(dateText), "EEEE, dd MMM");
 }
 
+function pickContact(contact?: CustomerProfile | CustomerProfile[] | null): CustomerProfile | null {
+  if (!contact) return null;
+  return Array.isArray(contact) ? contact[0] ?? null : contact;
+}
+
+function getTags(contact: CustomerProfile | null): string[] {
+  return Array.isArray(contact?.tags)
+    ? contact.tags.map((tag) => String(tag).trim()).filter(Boolean)
+    : [];
+}
+
+function formatDeliveryStatus(message: Message) {
+  if (!message.delivery_status && !message.delivery_error) return "";
+
+  const statusText = message.delivery_error ? `Error: ${message.delivery_error}` : message.delivery_status;
+  const updatedAt = message.delivery_status_updated_at ? new Date(message.delivery_status_updated_at) : null;
+  if (!updatedAt || !Number.isFinite(updatedAt.getTime())) {
+    return statusText ?? "";
+  }
+
+  return `${statusText} · ${format(updatedAt, "h:mm a")}`;
+}
+
 function compareMessagesByTimeline(left: Message, right: Message) {
   const leftTime = new Date(left.created_at).getTime();
   const rightTime = new Date(right.created_at).getTime();
@@ -202,6 +247,8 @@ function mergeAndSortMessages(items: Message[]) {
 
 export default function ConversationsPage() {
   const { selectedBranchId, selectedBranch } = useDashboardContext();
+  const searchParams = useSearchParams();
+  const requestedConversationId = useMemo(() => searchParams.get("conversation_id"), [searchParams]);
   // --- State & Logic ---
   const [conversations, setConversations] = useState<ConversationPreview[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -215,8 +262,12 @@ export default function ConversationsPage() {
   const [sending, setSending] = useState(false);
   const [modeSaving, setModeSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [inboxFilter, setInboxFilter] = useState<"all" | "unread" | "human">("all");
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [composer, setComposer] = useState("");
+  const [customerNotes, setCustomerNotes] = useState("");
+  const [customerTags, setCustomerTags] = useState("");
+  const [savingCustomerProfile, setSavingCustomerProfile] = useState(false);
   
   const selectedIdRef = useRef<string | null>(null);
   const shouldStickToBottomRef = useRef(true);
@@ -243,7 +294,12 @@ export default function ConversationsPage() {
       if (!response.ok) throw new Error("Failed to load conversations");
       const data = (await response.json()) as ConversationPreview[];
       setConversations(data);
-      setSelectedId((current) => (data.some((item) => item.id === current) ? current : data[0]?.id ?? null));
+      setSelectedId((current) => {
+        if (requestedConversationId && data.some((item) => item.id === requestedConversationId)) {
+          return requestedConversationId;
+        }
+        return data.some((item) => item.id === current) ? current : data[0]?.id ?? null;
+      });
     } catch (error) {
       console.error(error);
       toast.error("Failed to load conversations.");
@@ -251,7 +307,7 @@ export default function ConversationsPage() {
       setLoadingList(false);
       setRefreshing(false);
     }
-  }, [selectedBranchId]);
+  }, [requestedConversationId, selectedBranchId]);
 
   const loadConversation = useCallback(async (conversationId: string) => {
     const response = await fetch(`/api/conversations/${conversationId}`, {
@@ -353,13 +409,15 @@ export default function ConversationsPage() {
   const filteredConversations = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     return conversations.filter((item) => {
+      if (inboxFilter === "unread" && !item.has_unread) return false;
+      if (inboxFilter === "human" && item.mode !== "human" && pickSession(item.user_sessions)?.status !== "human_handoff") return false;
       if (!query) return true;
 
       const latest = item.messages?.[0]?.content ?? "";
       const step = pickState(item.conversation_states)?.workflow_step ?? "";
       return [item.name ?? "", item.phone, latest, step].some((value) => value.toLowerCase().includes(query));
     });
-  }, [conversations, searchTerm]);
+  }, [conversations, inboxFilter, searchTerm]);
 
   const activePreview = useMemo(
     () => conversations.find((item) => item.id === selectedId) ?? null,
@@ -368,6 +426,9 @@ export default function ConversationsPage() {
   const activeConversation = conversation ?? activePreview;
   const activeState = pickState(activeConversation?.conversation_states);
   const activeSession = pickSession(activeConversation?.user_sessions);
+  const activeContact = pickContact(activeConversation?.contacts);
+  const activeTags = getTags(activeContact);
+  const activeTagText = activeTags.join(", ");
   const draftLines = getDraftLines(activeState?.cart);
   const draftItemCount = draftLines.reduce((sum, item) => sum + item.qty, 0);
   const oldestLoadedIngestSeq = useMemo(() => {
@@ -423,6 +484,38 @@ export default function ConversationsPage() {
     }
   };
 
+  useEffect(() => {
+    setCustomerNotes(activeContact?.notes ?? "");
+    setCustomerTags(activeTagText);
+  }, [activeContact?.id, activeContact?.notes, activeTagText]);
+
+  const handleCustomerProfileSave = async () => {
+    if (!selectedId) return;
+    setSavingCustomerProfile(true);
+    try {
+      const tags = customerTags
+        .split(",")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+      const response = await fetch(`/api/conversations/${selectedId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer_notes: customerNotes,
+          customer_tags: tags,
+        }),
+      });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Failed to save customer profile");
+      await Promise.all([loadConversation(selectedId), loadConversations(true)]);
+      toast.success("Customer profile saved.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save customer profile.");
+    } finally {
+      setSavingCustomerProfile(false);
+    }
+  };
+
   return (
     <div className="flex h-screen w-full overflow-hidden bg-slate-50 font-sans text-slate-900">
       
@@ -453,6 +546,20 @@ export default function ConversationsPage() {
               placeholder="Search chats..."
               className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm outline-none transition-all focus:border-brand/50 focus:bg-white focus:ring-2 focus:ring-brand/10"
             />
+          </div>
+          <div className="mt-3 grid grid-cols-3 gap-1 rounded-xl bg-slate-100 p-1">
+            {(["all", "unread", "human"] as const).map((filter) => (
+              <button
+                key={filter}
+                onClick={() => setInboxFilter(filter)}
+                className={clsx(
+                  "rounded-lg px-2 py-1.5 text-xs font-semibold capitalize transition-colors",
+                  inboxFilter === filter ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800",
+                )}
+              >
+                {filter}
+              </button>
+            ))}
           </div>
           <p className="mt-3 text-xs text-slate-500">
             {selectedBranch ? `Viewing ${selectedBranch.name}` : "Viewing all accessible branches"}
@@ -713,7 +820,7 @@ export default function ConversationsPage() {
                               <div className="whitespace-pre-wrap">{message.content}</div>
                               {(message.delivery_status || message.delivery_error) && (
                                 <div className={clsx("mt-2 text-[10px] italic", isIncoming ? "text-slate-400" : "text-white/50")}>
-                                  {message.delivery_error ? `Error: ${message.delivery_error}` : message.delivery_status}
+                                  {formatDeliveryStatus(message)}
                                 </div>
                               )}
                             </div>
@@ -802,6 +909,115 @@ export default function ConversationsPage() {
             </div>
             
             <div className="flex-1 overflow-y-auto p-6">
+              {activeContact && (
+                <div className="mb-5 space-y-4 rounded-xl border border-slate-100 bg-white p-4 text-sm text-slate-700 shadow-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Customer</p>
+                      <p className="font-semibold text-slate-900">{getConversationLabel(activeConversation)}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-lg font-bold text-slate-900">{activeContact.total_orders ?? 0}</p>
+                      <p className="text-xs text-slate-500">orders</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div>
+                      <p className="font-semibold text-slate-500">Language</p>
+                      <p className="mt-1 capitalize text-slate-900">{activeContact.preferred_language?.replace("_", " ") || "english"}</p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-500">Last order</p>
+                      <p className="mt-1 text-slate-900">
+                        {activeContact.last_order_at ? formatDistanceToNow(new Date(activeContact.last_order_at), { addSuffix: true }) : "No orders yet"}
+                      </p>
+                    </div>
+                  </div>
+
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-500">Tags</span>
+                    <input
+                      value={customerTags}
+                      onChange={(event) => setCustomerTags(event.target.value)}
+                      placeholder="vip, complaint, regular"
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand/50 focus:ring-2 focus:ring-brand/10"
+                    />
+                  </label>
+
+                  <label className="block">
+                    <span className="text-xs font-semibold text-slate-500">Staff notes</span>
+                    <textarea
+                      value={customerNotes}
+                      onChange={(event) => setCustomerNotes(event.target.value)}
+                      rows={3}
+                      placeholder="Preferences, complaint context, delivery hints..."
+                      className="mt-1 w-full resize-none rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-brand/50 focus:ring-2 focus:ring-brand/10"
+                    />
+                  </label>
+
+                  <button
+                    onClick={() => void handleCustomerProfileSave()}
+                    disabled={savingCustomerProfile}
+                    className="inline-flex w-full items-center justify-center rounded-lg bg-slate-900 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-slate-800 disabled:opacity-50"
+                  >
+                    {savingCustomerProfile ? <Loader2 size={14} className="mr-2 animate-spin" /> : null}
+                    Save Customer Profile
+                  </button>
+
+                  {activeContact.customer_addresses && activeContact.customer_addresses.length > 0 && (
+                    <div>
+                      <p className="mb-2 text-xs font-bold uppercase tracking-wider text-slate-400">Saved Addresses</p>
+                      <div className="space-y-2">
+                        {activeContact.customer_addresses.slice(0, 3).map((address) => (
+                          <div key={address.id} className="rounded-lg bg-slate-50 p-3 text-xs text-slate-600">
+                            <p className="font-semibold text-slate-900">{address.label}</p>
+                            <p className="mt-1 leading-relaxed">{address.address}</p>
+                            <p className="mt-1 text-slate-400">Used {address.use_count} time{address.use_count === 1 ? "" : "s"}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeState && (
+                <div className="mb-5 space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
+                  <div className="flex justify-between gap-3">
+                    <span className="text-slate-500">Step</span>
+                    <span className="text-right font-semibold capitalize text-slate-900">{formatStep(activeState.workflow_step)}</span>
+                  </div>
+                  <div className="flex justify-between gap-3">
+                    <span className="text-slate-500">Type</span>
+                    <span className="text-right font-semibold capitalize text-slate-900">{activeState.order_type?.replace("-", " ") ?? "Not selected"}</span>
+                  </div>
+                  {activeState.address && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-slate-500">Address</span>
+                      <span className="text-right font-semibold text-slate-900">{activeState.address}</span>
+                    </div>
+                  )}
+                  {activeState.guests != null && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-slate-500">Guests</span>
+                      <span className="text-right font-semibold text-slate-900">{activeState.guests}</span>
+                    </div>
+                  )}
+                  {activeState.reservation_time && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-slate-500">Reservation</span>
+                      <span className="text-right font-semibold text-slate-900">{format(new Date(activeState.reservation_time), "dd MMM, hh:mm a")}</span>
+                    </div>
+                  )}
+                  {activeState.pickup_time && (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-slate-500">Pickup</span>
+                      <span className="text-right font-semibold text-slate-900">{format(new Date(activeState.pickup_time), "dd MMM, hh:mm a")}</span>
+                    </div>
+                  )}
+                </div>
+              )}
               {draftLines.length === 0 ? (
                 <div className="text-center text-slate-400 mt-10">
                   <Package size={32} className="mx-auto mb-2 opacity-20" />

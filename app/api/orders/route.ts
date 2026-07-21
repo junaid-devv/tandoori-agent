@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -29,6 +30,7 @@ export async function GET(req: NextRequest) {
       address,
       guests,
       reservation_time,
+      pickup_time,
       assigned_to,
       status_notified_at,
       status_notification_status,
@@ -47,7 +49,7 @@ export async function GET(req: NextRequest) {
   const { data, error } = await query.range(offset, offset + limit - 1);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to load orders.", context: "orders GET" });
   }
 
   return NextResponse.json(data);

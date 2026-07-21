@@ -47,6 +47,7 @@ const BLOCKING_WORKFLOW_STEPS = new Set([
   "awaiting_order_type",
   "awaiting_delivery_address",
   "awaiting_dine_in_details",
+  "awaiting_pickup_time",
   "awaiting_confirmation",
 ]);
 
@@ -147,7 +148,8 @@ export function deriveSessionNode(
   if (
     state.workflow_step === "awaiting_order_type" ||
     state.workflow_step === "awaiting_delivery_address" ||
-    state.workflow_step === "awaiting_dine_in_details"
+    state.workflow_step === "awaiting_dine_in_details" ||
+    state.workflow_step === "awaiting_pickup_time"
   ) {
     return "checkout";
   }

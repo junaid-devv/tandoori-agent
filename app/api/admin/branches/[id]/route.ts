@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { deleteBranch, updateBranch } from "@/lib/admin";
 import { requireAdminApiSession } from "@/lib/admin-request";
 
@@ -10,6 +11,8 @@ type BranchBody = {
   is_active?: boolean;
 };
 
+const BRANCH_BODY_LIMIT_BYTES = 8 * 1024;
+
 export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/branches/[id]">) {
   const auth = await requireAdminApiSession();
   if (auth.response) {
@@ -18,7 +21,7 @@ export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/
 
   try {
     const { id } = await context.params;
-    const body = (await req.json()) as BranchBody;
+    const body = await readLimitedJsonBody<BranchBody>(req, BRANCH_BODY_LIMIT_BYTES);
     const branch = await updateBranch(id, {
       name: body.name ?? "",
       slug: body.slug ?? null,
@@ -29,9 +32,11 @@ export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/
 
     return NextResponse.json(branch);
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to update branch.";
-    const status = /required/i.test(message) ? 400 : 500;
-    return NextResponse.json({ error: message }, { status });
+    const validationMessage = error instanceof Error ? error.message : "Failed to update branch.";
+    const status = /required/i.test(validationMessage) ? 400 : 500;
+    return status === 400
+      ? NextResponse.json({ error: validationMessage }, { status })
+      : apiErrorResponse(error, { fallback: "Failed to update branch.", context: "admin branch PATCH" });
   }
 }
 
@@ -46,8 +51,10 @@ export async function DELETE(_: NextRequest, context: RouteContext<"/api/admin/b
     await deleteBranch(id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Failed to delete branch.";
-    const status = /not found/i.test(message) ? 404 : 500;
-    return NextResponse.json({ error: message }, { status });
+    const validationMessage = error instanceof Error ? error.message : "Failed to delete branch.";
+    const status = /not found/i.test(validationMessage) ? 404 : 500;
+    return status === 404
+      ? NextResponse.json({ error: validationMessage }, { status })
+      : apiErrorResponse(error, { fallback: "Failed to delete branch.", context: "admin branch DELETE" });
   }
 }

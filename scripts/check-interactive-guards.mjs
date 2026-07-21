@@ -40,6 +40,7 @@ const staleUuidGuard =
   "if (isUuidLike(rawText.trim()) && (!state.last_presented_options || state.last_presented_options.length === 0)) {";
 const uuidHelper = "function isUuidLike(value: string): boolean {";
 const controlPayloadGuardFragment = "city[_\\s-]?option";
+const pickupControlPayloadFragment = "order[_\\s-]?type[_\\s-]?(?:delivery|pickup|dine[_\\s-]?in)";
 const branchUuidComment = "Guard against UUID-like payloads from other interactive lists";
 const strictBranchNumberMatch = "const numberMatch = normalized.match(/^(?:branch|option|number)?\\s*(\\d{1,2})$/);";
 const urduQuestionRegex = "if (/[?\\u061F]/.test(rawText)) return true;";
@@ -47,6 +48,7 @@ const urduQuestionRegex = "if (/[?\\u061F]/.test(rawText)) return true;";
 mustInclude(orderEngine, staleUuidGuard, "Missing stale UUID guard in order engine.");
 mustInclude(orderEngine, uuidHelper, "Missing UUID helper in order engine.");
 mustInclude(orderEngine, controlPayloadGuardFragment, "Missing control payload guard for city/branch/category options.");
+mustInclude(orderEngine, pickupControlPayloadFragment, "Missing pickup order-type control payload guard.");
 mustInclude(orderEngine, urduQuestionRegex, "Missing Urdu/English question regex guard.");
 
 if (orderEngine.includes("ØŸ")) {

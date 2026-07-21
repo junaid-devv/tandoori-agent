@@ -54,6 +54,8 @@ type BranchMutationInput = {
   isActive?: boolean;
 };
 
+const MIN_STAFF_PASSWORD_LENGTH = 8;
+
 export function slugifyBranchName(value: string): string {
   return value
     .toLowerCase()
@@ -332,7 +334,9 @@ export async function createStaffAccount(input: CreateStaffInput) {
   const fullName = input.fullName.trim();
 
   if (!email) throw new Error("Email is required.");
-  if (!password || password.length < 6) throw new Error("Password must be at least 6 characters.");
+  if (!password || password.length < MIN_STAFF_PASSWORD_LENGTH) {
+    throw new Error(`Password must be at least ${MIN_STAFF_PASSWORD_LENGTH} characters.`);
+  }
   if (!fullName) throw new Error("Full name is required.");
 
   const normalized = normalizeStaffPayload(input);
@@ -392,6 +396,10 @@ export async function updateStaffAccount(userId: string, input: UpdateStaffInput
 
   const password = input.password?.trim();
   if (password) {
+    if (password.length < MIN_STAFF_PASSWORD_LENGTH) {
+      throw new Error(`Password must be at least ${MIN_STAFF_PASSWORD_LENGTH} characters.`);
+    }
+
     const { error: authError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
       password,
       user_metadata: {
@@ -454,22 +462,50 @@ async function deleteOrphanContacts() {
   }
 }
 
+function throwIfSupabaseError(error: { message?: string } | null, operation: string) {
+  if (error) {
+    throw new Error(`${operation}: ${error.message ?? "Supabase request failed."}`);
+  }
+}
+
 export async function wipeOperationalData(options: { branchId?: string | null } = {}) {
   const branchId = options.branchId ?? null;
 
   if (branchId) {
-    await supabaseAdmin.from("orders").delete().eq("branch_id", branchId);
-    await supabaseAdmin.from("menu_uploads").delete().eq("branch_id", branchId);
-    await supabaseAdmin.from("menu_items").delete().eq("branch_id", branchId);
-    await supabaseAdmin.from("conversations").delete().eq("branch_id", branchId);
-    await supabaseAdmin.from("contacts").update({ active_branch_id: null }).eq("active_branch_id", branchId);
+    const { error: orderError } = await supabaseAdmin.from("orders").delete().eq("branch_id", branchId);
+    throwIfSupabaseError(orderError, "Failed to delete branch orders");
+
+    const { error: uploadError } = await supabaseAdmin.from("menu_uploads").delete().eq("branch_id", branchId);
+    throwIfSupabaseError(uploadError, "Failed to delete branch menu uploads");
+
+    const { error: menuError } = await supabaseAdmin.from("menu_items").delete().eq("branch_id", branchId);
+    throwIfSupabaseError(menuError, "Failed to delete branch menu items");
+
+    const { error: conversationError } = await supabaseAdmin.from("conversations").delete().eq("branch_id", branchId);
+    throwIfSupabaseError(conversationError, "Failed to delete branch conversations");
+
+    const { error: contactError } = await supabaseAdmin
+      .from("contacts")
+      .update({ active_branch_id: null })
+      .eq("active_branch_id", branchId);
+    throwIfSupabaseError(contactError, "Failed to detach branch contacts");
+
     await deleteOrphanContacts();
     return;
   }
 
-  await supabaseAdmin.from("orders").delete().neq("id", "");
-  await supabaseAdmin.from("menu_uploads").delete().neq("id", "");
-  await supabaseAdmin.from("menu_items").delete().neq("id", "");
-  await supabaseAdmin.from("conversations").delete().neq("id", "");
-  await supabaseAdmin.from("contacts").delete().neq("id", "");
+  const { error: orderError } = await supabaseAdmin.from("orders").delete().neq("id", "");
+  throwIfSupabaseError(orderError, "Failed to delete orders");
+
+  const { error: uploadError } = await supabaseAdmin.from("menu_uploads").delete().neq("id", "");
+  throwIfSupabaseError(uploadError, "Failed to delete menu uploads");
+
+  const { error: menuError } = await supabaseAdmin.from("menu_items").delete().neq("id", "");
+  throwIfSupabaseError(menuError, "Failed to delete menu items");
+
+  const { error: conversationError } = await supabaseAdmin.from("conversations").delete().neq("id", "");
+  throwIfSupabaseError(conversationError, "Failed to delete conversations");
+
+  const { error: contactError } = await supabaseAdmin.from("contacts").delete().neq("id", "");
+  throwIfSupabaseError(contactError, "Failed to delete contacts");
 }

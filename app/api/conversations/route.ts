@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -24,6 +25,14 @@ export async function GET(req: NextRequest) {
       has_unread,
       updated_at,
       created_at,
+      contacts (
+        id,
+        preferred_language,
+        tags,
+        notes,
+        total_orders,
+        last_order_at
+      ),
       messages (
         content,
         created_at
@@ -44,8 +53,7 @@ export async function GET(req: NextRequest) {
       .range(offset, offset + limit - 1);
 
     if (error) {
-      console.error("API /conversations DB Error:", error);
-      return NextResponse.json({ error: error.message }, { status: 500 });
+      return apiErrorResponse(error, { fallback: "Failed to load conversations.", context: "conversations GET lite" });
     }
 
     return NextResponse.json(data ?? []);
@@ -61,12 +69,21 @@ export async function GET(req: NextRequest) {
       updated_at,
       created_at,
       branches (id, name, slug, address),
+      contacts (
+        id,
+        preferred_language,
+        tags,
+        notes,
+        total_orders,
+        last_order_at
+      ),
       conversation_states (
         workflow_step,
         order_type,
         address,
         guests,
         reservation_time,
+        pickup_time,
         cart,
         last_error
       ),
@@ -101,8 +118,7 @@ export async function GET(req: NextRequest) {
     .range(offset, offset + limit - 1);
 
   if (error) {
-    console.error("API /conversations DB Error:", error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return apiErrorResponse(error, { fallback: "Failed to load conversations.", context: "conversations GET" });
   }
 
   return NextResponse.json(data ?? []);

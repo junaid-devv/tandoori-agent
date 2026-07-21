@@ -37,6 +37,12 @@ type StaffDraft = { full_name: string; email: string; password: string; role: "a
 
 const EMPTY_BRANCH: BranchDraft = { name: "", slug: "", city: "", address: "", is_active: "active" };
 const EMPTY_STAFF: StaffDraft = { full_name: "", email: "", password: "", role: "branch_staff", branch_id: "" };
+const WIPE_ALL_CONFIRMATION = "WIPE ALL OPERATIONAL DATA";
+const MIN_STAFF_PASSWORD_LENGTH = 8;
+
+function branchWipeConfirmation(branchId: string) {
+  return `WIPE BRANCH ${branchId}`;
+}
 
 async function readJson<T>(response: Response) {
   const body = (await response.json()) as T & { error?: string };
@@ -467,7 +473,13 @@ export default function AdminConsole() {
                       setCreatingStaff(false);
                     }
                   }}
-                  disabled={creatingStaff || !staffDraft.full_name.trim() || !staffDraft.email.trim()}
+                  disabled={
+                    creatingStaff ||
+                    !staffDraft.full_name.trim() ||
+                    !staffDraft.email.trim() ||
+                    staffDraft.password.trim().length < MIN_STAFF_PASSWORD_LENGTH ||
+                    (staffDraft.role === "branch_staff" && !staffDraft.branch_id)
+                  }
                   className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-40 transition-colors"
                 >
                   {creatingStaff ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Create Account</>}
@@ -656,10 +668,19 @@ export default function AdminConsole() {
                   </div>
                   <button
                     onClick={async () => {
-                      if (!window.confirm("This will permanently wipe ALL operational data across every branch. Are you absolutely sure?")) return;
+                      const confirmation = window.prompt(
+                        `This permanently wipes all operational data across every branch. Type "${WIPE_ALL_CONFIRMATION}" to continue.`,
+                      );
+                      if (confirmation?.trim() !== WIPE_ALL_CONFIRMATION) return;
                       setResetting(true);
                       try {
-                        await readJson(await fetch("/api/admin/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branch_id: null }) }));
+                        await readJson(
+                          await fetch("/api/admin/reset", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ branch_id: null, confirmation }),
+                          }),
+                        );
                         toast.success("All operational data cleared.");
                         await loadData();
                       } catch (error) {
@@ -687,10 +708,21 @@ export default function AdminConsole() {
                     </div>
                     <button
                       onClick={async () => {
-                        if (!window.confirm(`Wipe all data for "${selectedBranch?.name || "this branch"}"?`)) return;
+                        const branchId = selectedBranchId;
+                        const expectedConfirmation = branchWipeConfirmation(branchId);
+                        const confirmation = window.prompt(
+                          `This permanently wipes operational data for "${selectedBranch?.name || "this branch"}". Type "${expectedConfirmation}" to continue.`,
+                        );
+                        if (confirmation?.trim() !== expectedConfirmation) return;
                         setResetting(true);
                         try {
-                          await readJson(await fetch("/api/admin/reset", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ branch_id: selectedBranchId }) }));
+                          await readJson(
+                            await fetch("/api/admin/reset", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ branch_id: branchId, confirmation }),
+                            }),
+                          );
                           toast.success("Branch data cleared.");
                           await loadData();
                         } catch (error) {

@@ -18,6 +18,9 @@ export interface RestaurantSettings {
   min_delivery_amount: number;
   delivery_enabled: boolean;
   delivery_fee: number;
+  delivery_areas: string[];
+  estimated_prep_minutes: number;
+  estimated_delivery_minutes: number;
   city: string;
   phone_delivery: string;
   phone_dine_in: string;
@@ -31,6 +34,9 @@ const DEFAULT_SETTINGS = {
   min_delivery_amount: 0,
   delivery_enabled: false,
   delivery_fee: 0,
+  delivery_areas: [] as string[],
+  estimated_prep_minutes: 30,
+  estimated_delivery_minutes: 45,
   city: "Wah Cantt",
   phone_delivery: "0341-1007722",
   phone_dine_in: "051-4904211",
@@ -70,6 +76,35 @@ export function validateRestaurantSettingsInput(settings: Partial<RestaurantSett
       throw new Error("Minimum delivery amount must be a non-negative number.");
     }
     normalized.min_delivery_amount = minimum;
+  }
+
+  if (settings.delivery_areas !== undefined) {
+    const rawAreas = Array.isArray(settings.delivery_areas)
+      ? settings.delivery_areas
+      : String(settings.delivery_areas ?? "").split(/\r?\n|,/);
+    const areas = [...new Set(
+      rawAreas
+        .map((area) => String(area).trim())
+        .filter((area) => area.length >= 2)
+        .slice(0, 40),
+    )];
+    normalized.delivery_areas = areas;
+  }
+
+  if (settings.estimated_prep_minutes !== undefined) {
+    const minutes = Number(settings.estimated_prep_minutes);
+    if (!Number.isFinite(minutes) || minutes < 5 || minutes > 240) {
+      throw new Error("Estimated prep time must be between 5 and 240 minutes.");
+    }
+    normalized.estimated_prep_minutes = Math.round(minutes);
+  }
+
+  if (settings.estimated_delivery_minutes !== undefined) {
+    const minutes = Number(settings.estimated_delivery_minutes);
+    if (!Number.isFinite(minutes) || minutes < 5 || minutes > 240) {
+      throw new Error("Estimated delivery time must be between 5 and 240 minutes.");
+    }
+    normalized.estimated_delivery_minutes = Math.round(minutes);
   }
 
   if (settings.opening_time !== undefined) {
@@ -160,6 +195,9 @@ export async function getRestaurantSettings(branchId: string): Promise<Restauran
     min_delivery_amount: Number(data.min_delivery_amount ?? 0),
     delivery_enabled: Boolean(data.delivery_enabled),
     delivery_fee: Number(data.delivery_fee ?? 0),
+    delivery_areas: normalizeDeliveryAreas(data.delivery_areas),
+    estimated_prep_minutes: normalizeEstimate(data.estimated_prep_minutes, DEFAULT_SETTINGS.estimated_prep_minutes),
+    estimated_delivery_minutes: normalizeEstimate(data.estimated_delivery_minutes, DEFAULT_SETTINGS.estimated_delivery_minutes),
     city: data.city ?? DEFAULT_SETTINGS.city,
     phone_delivery: data.phone_delivery ?? DEFAULT_SETTINGS.phone_delivery,
     phone_dine_in: data.phone_dine_in ?? DEFAULT_SETTINGS.phone_dine_in,
@@ -168,6 +206,17 @@ export async function getRestaurantSettings(branchId: string): Promise<Restauran
 
   setCached(cacheKey, result, SETTINGS_CACHE_TTL_MS);
   return result;
+}
+
+function normalizeDeliveryAreas(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((area) => String(area).trim()).filter((area) => area.length >= 2))].slice(0, 40);
+}
+
+function normalizeEstimate(value: unknown, fallback: number): number {
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes < 5 || minutes > 240) return fallback;
+  return Math.round(minutes);
 }
 
 export async function updateRestaurantSettings(branchId: string, settings: Partial<RestaurantSettings>) {

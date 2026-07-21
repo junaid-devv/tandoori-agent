@@ -13,7 +13,7 @@ export type OrderStatus =
   | "delivered"
   | "cancelled";
 
-export type OrderType = "delivery" | "dine-in";
+export type OrderType = "delivery" | "pickup" | "dine-in";
 export type LanguagePreference = "english" | "roman_urdu";
 export type WorkflowStep =
   | "idle"
@@ -23,12 +23,21 @@ export type WorkflowStep =
   | "awaiting_order_type"
   | "awaiting_delivery_address"
   | "awaiting_dine_in_details"
+  | "awaiting_pickup_time"
   | "awaiting_confirmation"
   | "awaiting_resume_decision";
 
 export type MessageSenderKind = "user" | "ai" | "human" | "system";
-export type MessageDeliveryStatus = "pending" | "sent" | "failed";
+export type MessageDeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
 export type StaffRole = "admin" | "branch_staff";
+export type StaffAlertKind =
+  | "human_handoff"
+  | "tool_validation"
+  | "webhook_processing"
+  | "delivery_notification"
+  | "customer_cancellation";
+export type StaffAlertSeverity = "low" | "medium" | "high";
+export type StaffAlertStatus = "open" | "acknowledged" | "resolved";
 
 export interface Database {
   public: {
@@ -62,6 +71,11 @@ export interface Database {
           phone: string;
           name: string | null;
           active_branch_id: string | null;
+          preferred_language: LanguagePreference;
+          tags: Json;
+          notes: string | null;
+          total_orders: number;
+          last_order_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -70,10 +84,42 @@ export interface Database {
           phone: string;
           name?: string | null;
           active_branch_id?: string | null;
+          preferred_language?: LanguagePreference;
+          tags?: Json;
+          notes?: string | null;
+          total_orders?: number;
+          last_order_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["contacts"]["Insert"]>;
+      };
+      customer_addresses: {
+        Row: {
+          id: string;
+          contact_id: string;
+          branch_id: string;
+          label: string;
+          address: string;
+          address_key: string;
+          use_count: number;
+          last_used_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          contact_id: string;
+          branch_id: string;
+          label?: string;
+          address: string;
+          address_key: string;
+          use_count?: number;
+          last_used_at?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["customer_addresses"]["Insert"]>;
       };
       conversations: {
         Row: {
@@ -113,6 +159,7 @@ export interface Database {
           whatsapp_msg_id: string | null;
           delivery_status: MessageDeliveryStatus | null;
           delivery_error: string | null;
+          delivery_status_updated_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -125,6 +172,7 @@ export interface Database {
           whatsapp_msg_id?: string | null;
           delivery_status?: MessageDeliveryStatus | null;
           delivery_error?: string | null;
+          delivery_status_updated_at?: string | null;
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["messages"]["Insert"]>;
@@ -139,6 +187,13 @@ export interface Database {
           min_delivery_amount: number;
           delivery_enabled: boolean;
           delivery_fee: number;
+          delivery_areas: Json;
+          estimated_prep_minutes: number;
+          estimated_delivery_minutes: number;
+          city: string;
+          phone_delivery: string;
+          phone_dine_in: string;
+          ai_personality: string;
           updated_at: string;
         };
         Insert: {
@@ -150,6 +205,13 @@ export interface Database {
           min_delivery_amount?: number;
           delivery_enabled?: boolean;
           delivery_fee?: number;
+          delivery_areas?: Json;
+          estimated_prep_minutes?: number;
+          estimated_delivery_minutes?: number;
+          city?: string;
+          phone_delivery?: string;
+          phone_dine_in?: string;
+          ai_personality?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["restaurant_settings"]["Insert"]>;
@@ -163,6 +225,9 @@ export interface Database {
           category: string | null;
           description: string | null;
           is_available: boolean;
+          available_days: Json;
+          available_start_time: string | null;
+          available_end_time: string | null;
           sort_order: number;
           created_at: string;
           updated_at: string;
@@ -175,6 +240,9 @@ export interface Database {
           category?: string | null;
           description?: string | null;
           is_available?: boolean;
+          available_days?: Json;
+          available_start_time?: string | null;
+          available_end_time?: string | null;
           sort_order?: number;
           created_at?: string;
           updated_at?: string;
@@ -216,6 +284,7 @@ export interface Database {
           address: string | null;
           guests: number | null;
           reservation_time: string | null;
+          pickup_time: string | null;
           customer_instructions: string | null;
           upsell_item_name: string | null;
           upsell_item_price: number | null;
@@ -247,6 +316,7 @@ export interface Database {
           address?: string | null;
           guests?: number | null;
           reservation_time?: string | null;
+          pickup_time?: string | null;
           customer_instructions?: string | null;
           upsell_item_name?: string | null;
           upsell_item_price?: number | null;
@@ -273,7 +343,7 @@ export interface Database {
           whatsapp_message_id: string | null;
           workflow_before: WorkflowStep;
           workflow_after: WorkflowStep;
-          decision_kind: "reply" | "place_order" | "fallback";
+          decision_kind: "reply" | "place_order" | "fallback" | "escalate_to_human";
           nlu_intent: string | null;
           nlu_confidence: number | null;
           nlu_unknown_items: Json;
@@ -290,7 +360,7 @@ export interface Database {
           whatsapp_message_id?: string | null;
           workflow_before: WorkflowStep;
           workflow_after: WorkflowStep;
-          decision_kind: "reply" | "place_order" | "fallback";
+          decision_kind: "reply" | "place_order" | "fallback" | "escalate_to_human";
           nlu_intent?: string | null;
           nlu_confidence?: number | null;
           nlu_unknown_items?: Json;
@@ -318,6 +388,7 @@ export interface Database {
           address: string | null;
           guests: number | null;
           reservation_time: string | null;
+          pickup_time: string | null;
           cancellation_requested_at: string | null;
           cancelled_at: string | null;
           assigned_to: string | null;
@@ -342,6 +413,7 @@ export interface Database {
           address?: string | null;
           guests?: number | null;
           reservation_time?: string | null;
+          pickup_time?: string | null;
           cancellation_requested_at?: string | null;
           cancelled_at?: string | null;
           assigned_to?: string | null;
@@ -409,6 +481,54 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["staff_branch_access"]["Insert"]>;
+      };
+      staff_alerts: {
+        Row: {
+          id: string;
+          conversation_id: string;
+          branch_id: string;
+          kind: StaffAlertKind;
+          severity: StaffAlertSeverity;
+          status: StaffAlertStatus;
+          message: string;
+          resolved_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          conversation_id: string;
+          branch_id: string;
+          kind: StaffAlertKind;
+          severity?: StaffAlertSeverity;
+          status?: StaffAlertStatus;
+          message: string;
+          resolved_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["staff_alerts"]["Insert"]>;
+      };
+      rate_limits: {
+        Row: {
+          scope: string;
+          identifier_hash: string;
+          request_count: number;
+          window_start: string;
+          blocked_until: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          scope: string;
+          identifier_hash: string;
+          request_count?: number;
+          window_start?: string;
+          blocked_until?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["rate_limits"]["Insert"]>;
       };
     };
   };
