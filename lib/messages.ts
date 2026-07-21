@@ -56,6 +56,21 @@ export async function persistSystemMessage(conversationId: string, content: stri
   return data;
 }
 
+export async function deleteUnsentOutboundMessage(messageId: string | null | undefined) {
+  if (!messageId) return;
+
+  const { error } = await supabaseAdmin
+    .from("messages")
+    .delete()
+    .eq("id", messageId)
+    .is("whatsapp_msg_id", null)
+    .eq("delivery_status", "failed");
+
+  if (error) {
+    console.error("[messages] Failed to delete unsent failed outbound message:", error);
+  }
+}
+
 export async function sendAndPersistOutboundMessage({
   conversationId,
   phone,

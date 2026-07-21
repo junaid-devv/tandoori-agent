@@ -11,7 +11,7 @@ import {
 } from "@/lib/branches";
 import { escalateToHuman, resumeBotForConversation } from "@/lib/handoff";
 import { sendAndPersistAssistantMessage } from "@/lib/assistant-dispatcher";
-import { OutboundMessageError, type MessageDeliveryStatus } from "@/lib/messages";
+import { deleteUnsentOutboundMessage, OutboundMessageError, type MessageDeliveryStatus } from "@/lib/messages";
 import {
   decideTurn,
   getDefaultConversationState,
@@ -110,25 +110,6 @@ function isBranchAddressLookupRequest(content: string): boolean {
   return /\b(address|location|where|kahan|kidhar|branch address|map)\b/.test(normalized);
 }
 
-function buildSavedBranchChoiceInteractiveList(branch: BranchSummary, prefersRomanUrdu: boolean) {
-  return {
-    body: prefersRomanUrdu
-      ? `Aap ki last selected branch *${branch.name}* hai. Continue karna hai ya branch change karni hai?`
-      : `Your previously selected branch is *${branch.name}*. Continue or choose a new branch?`,
-    buttonText: prefersRomanUrdu ? "Branch Option" : "Branch Option",
-    sectionTitle: prefersRomanUrdu ? "Branch" : "Branch",
-    rows: [
-      {
-        id: "branch_continue_saved",
-        title: prefersRomanUrdu ? "Continue Same Branch" : "Continue Same Branch",
-      },
-      {
-        id: "branch_change_saved",
-        title: prefersRomanUrdu ? "Select New Branch" : "Select New Branch",
-      },
-    ],
-  };
-}
 function shouldRunSemanticLookup(content: string): boolean {
   const normalized = content.toLowerCase().trim();
   if (normalized.length < 4) return false;
@@ -563,26 +544,6 @@ async function processWebhook(body: unknown) {
       });
       state = await getOrCreateConversationState(conversation.id);
 
-      if (
-        incomingContent &&
-        activeBranch &&
-        !isSelectNewBranchRequest(incomingContent) &&
-        shouldPromptSavedBranchChoiceOnEntry(state, incomingContent)
-      ) {
-        const persistedMessage = await persistUserMessage(conversation.id, incomingContent, message.id, createdAt);
-        await promptSavedBranchChoice({
-          conversation,
-          state,
-          phone: message.from,
-          whatsappMessageId: message.id,
-          createdAt,
-          ingestSeq: persistedMessage.message?.ingest_seq ?? null,
-          content: incomingContent,
-          activeBranch,
-          preferredLanguage: nextLanguage,
-        });
-        continue;
-      }
     }
 
     if (!incomingContent) {
@@ -650,24 +611,6 @@ async function processWebhook(body: unknown) {
       .eq("id", contact.id);
     if (languageUpdateError) {
       console.error("[webhook] Failed to update contact language preference:", languageUpdateError);
-    }
-
-    if (
-      activeBranch &&
-      shouldPromptSavedBranchChoiceOnEntry(state, content)
-    ) {
-      await promptSavedBranchChoice({
-        conversation,
-        state,
-        phone: message.from,
-        whatsappMessageId: message.id,
-        createdAt,
-        ingestSeq: persistedMessage.message?.ingest_seq ?? null,
-        content,
-        activeBranch,
-        preferredLanguage: nextLanguage,
-      });
-      continue;
     }
 
     if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) {
@@ -746,43 +689,18 @@ async function processWebhook(body: unknown) {
         continue;
       }
 
-      const shouldRepromptSavedBranchChoice = isGreetingOrAcknowledgmentMessage(content);
-
       if (!isSelectNewBranchRequest(content)) {
-        if (!shouldRepromptSavedBranchChoice) {
-          state = parseConversationState({
-            ...state,
-            last_presented_category: null,
-            last_presented_options: null,
-            last_presented_options_at: null,
-          });
-        }
-
-        if (shouldRepromptSavedBranchChoice) {
-          const branchChoicePrompt = activeBranch
-            ? buildSavedBranchChoiceInteractiveList(activeBranch, prefersRomanUrdu)
-            : null;
-          const fallbackPrompt = prefersRomanUrdu
-            ? "Continue same branch ya select new branch choose karein."
-            : "Please choose: continue with the same branch or select a new branch.";
-
-          await sendAndPersistAssistantMessage({
-            conversationId: conversation.id,
-            phone: message.from,
-            content: branchChoicePrompt?.body ?? fallbackPrompt,
-            interactiveList: branchChoicePrompt,
-            flowMessage: null,
-          });
-
-          await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
-            workflow_step: "idle",
-            preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
-            last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
-            last_presented_options: null,
-            last_presented_options_at: new Date().toISOString(),
-          });
-          continue;
-        }
+        await updateConversationState(state, {
+          last_presented_category: null,
+          last_presented_options: null,
+          last_presented_options_at: null,
+        });
+        state = parseConversationState({
+          ...state,
+          last_presented_category: null,
+          last_presented_options: null,
+          last_presented_options_at: null,
+        });
       }
     }
 
@@ -1719,6 +1637,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
             continue;
           }
 
+          await deleteUnsentOutboundMessage(error.persistedMessageId);
           await updateConversationState(state, {
             last_error: error.message,
           });
@@ -2087,97 +2006,6 @@ function getBranchSelectionPromptForCity(
     ...branches.map((branch, index) => `${index + 1}. ${branch.name}${branch.address ? ` - ${branch.address}` : ""}`),
     closing,
   ].join("\n");
-}
-
-function isGreetingOrAcknowledgmentMessage(content: string): boolean {
-  const incomingType = detectMessageType(content.toLowerCase().trim());
-  return incomingType === "greeting" || incomingType === "acknowledgment";
-}
-
-function shouldPromptSavedBranchChoiceOnEntry(state: ConversationState, content: string): boolean {
-  if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) return false;
-  if (!Array.isArray(state.cart) || state.cart.length > 0) return false;
-  if (isSelectNewBranchRequest(content) || isContinueWithSavedBranchRequest(content)) return false;
-  if (isBranchAddressLookupRequest(content)) return false;
-
-  const isEntryMessage = isGreetingOrAcknowledgmentMessage(content);
-
-  if (state.workflow_step === "idle") {
-    return isEntryMessage;
-  }
-
-  if (state.workflow_step !== "collecting_items") {
-    return false;
-  }
-
-  return isEntryMessage;
-}
-
-async function promptSavedBranchChoice(params: {
-  conversation: ConversationRow;
-  state: ConversationState;
-  phone: string;
-  whatsappMessageId: string;
-  createdAt: string;
-  ingestSeq: number | null;
-  content: string;
-  activeBranch: BranchSummary;
-  preferredLanguage: ConversationState["preferred_language"];
-}) {
-  const {
-    conversation,
-    state,
-    phone,
-    whatsappMessageId,
-    createdAt,
-    ingestSeq,
-    content,
-    activeBranch,
-    preferredLanguage,
-  } = params;
-  const prefersRomanUrdu = preferredLanguage === "roman_urdu";
-  const savedBranchChoice = buildSavedBranchChoiceInteractiveList(activeBranch, prefersRomanUrdu);
-  const promptSentAt = new Date().toISOString();
-  const statePatch: Partial<ConversationState> = {
-    workflow_step: "idle",
-    preferred_language: preferredLanguage,
-    last_presented_category: SAVED_BRANCH_CHOICE_MARKER,
-    last_presented_options: null,
-    last_presented_options_at: promptSentAt,
-  };
-
-  await sendAndPersistAssistantMessage({
-    conversationId: conversation.id,
-    phone,
-    content: savedBranchChoice.body,
-    interactiveList: savedBranchChoice,
-    flowMessage: null,
-  });
-
-  await markMessageProcessed(state, whatsappMessageId, createdAt, ingestSeq, statePatch);
-
-  const resumeSession = await getOrCreateUserSession(conversation.id, {
-    active_node: "branch_selection",
-    status: "active",
-    is_bot_active: true,
-  });
-  await updateUserSession(
-    conversation.id,
-    buildSessionUpdate({
-      session: resumeSession,
-      stateBefore: state,
-      stateAfter: parseConversationState({
-        ...state,
-        ...statePatch,
-        conversation_id: conversation.id,
-      }),
-      mode: "agent",
-      intent: null,
-      lastUserMessage: content,
-      lastAssistantReply: savedBranchChoice.body,
-      forceNode: "branch_selection",
-    }),
-  );
 }
 
 function shouldStartFreshOrderAfterInactivity(state: ConversationState, incomingCreatedAt: string): boolean {

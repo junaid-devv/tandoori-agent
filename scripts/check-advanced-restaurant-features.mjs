@@ -27,6 +27,10 @@ mustInclude(sources.menu, "isMenuScheduleAvailable", "Missing menu schedule filt
 mustInclude(sources.orderEngine, "isUseSavedAddressRequest", "Missing saved-address conversation shortcut.");
 mustInclude(sources.orderEngine, "isReorderRequest", "Missing reorder conversation shortcut.");
 mustInclude(sources.webhook, "saveCustomerAddressFromOrder", "Missing saved-address persistence after order placement.");
+if (sources.webhook.includes("promptSavedBranchChoice") || sources.webhook.includes("Continue Same Branch")) {
+  throw new Error("Automatic saved-branch choice prompt must not be reintroduced.");
+}
+mustInclude(sources.webhook, "deleteUnsentOutboundMessage(error.persistedMessageId)", "Missing cleanup for unsent failed outbound retries.");
 mustInclude(sources.webhook, "transcribeWhatsAppAudioMessage", "Missing WhatsApp voice-note transcription path.");
 mustInclude(sources.webhook, "https://api.groq.com/openai/v1/audio/transcriptions", "Missing Groq audio transcription endpoint.");
 mustInclude(sources.webhook, "whisper-large-v3-turbo", "Missing Groq whisper-large-v3-turbo model.");
