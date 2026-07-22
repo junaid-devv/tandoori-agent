@@ -124,7 +124,7 @@ export type WorkflowStep =
   | "awaiting_resume_decision";
 
 export type OrderType = "delivery" | "pickup" | "dine-in";
-export type LanguagePreference = "english" | "roman_urdu";
+export type LanguagePreference = "english" | "roman_urdu" | "urdu";
 
 export interface MenuCatalogItem {
   id: string;
@@ -375,6 +375,35 @@ const ROMAN_URDU_SIGNAL_WORDS = [
   "kitna",
   "kitne",
   "kar do",
+  // Additional common Roman Urdu words
+  "mujhe",
+  "mujhay",
+  "dena",
+  "dedo",
+  "lena",
+  "ledo",
+  "chahta",
+  "chahti",
+  "order",
+  "karni",
+  "karni hai",
+  "theek",
+  "thek",
+  "bilkul",
+  "shukriya",
+  "bhai",
+  "apka",
+  "aapka",
+  "mere",
+  "mera",
+  "ek",
+  "do",
+  "teen",
+  "char",
+  "pach",
+  "aur",
+  "wala",
+  "wali",
 ];
 
 const ENGLISH_SIGNAL_WORDS = [
@@ -571,10 +600,22 @@ function isQuantityPickerControlInput(rawText: string): boolean {
   return false;
 }
 
+/** Detect if text is primarily written in Arabic/Urdu script (Unicode block \u0600-\u06FF) */
+export function containsUrduScript(text: string): boolean {
+  const arabicUrduChars = (text.match(/[\u0600-\u06FF]/g) ?? []).length;
+  // Consider it Urdu script if more than 30% of non-space chars are Arabic/Urdu
+  const totalChars = text.replace(/\s/g, "").length;
+  if (totalChars === 0) return false;
+  return arabicUrduChars / totalChars > 0.3;
+}
+
 export function inferLanguagePreference(
   text: string,
   previous: LanguagePreference = "english",
 ): LanguagePreference {
+  // Pure Urdu (Arabic script) detection — highest priority
+  if (containsUrduScript(text)) return "urdu";
+
   const normalized = normalizeText(text);
   const romanScore = scoreSignals(normalized, ROMAN_URDU_SIGNAL_WORDS);
   const englishScore = scoreSignals(normalized, ENGLISH_SIGNAL_WORDS);

@@ -25,10 +25,6 @@ const STORAGE_KEY = "tandoori-selected-branch";
 const DashboardContext = createContext<DashboardContextValue | null>(null);
 
 function getInitialBranchId(session: DashboardSession): SelectedBranchId {
-  if (session.role === "admin") {
-    return "all";
-  }
-
   return session.defaultBranchId ?? session.allowedBranches[0]?.id ?? "all";
 }
 

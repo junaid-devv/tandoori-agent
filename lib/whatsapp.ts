@@ -61,6 +61,13 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs = WH
 }
 
 export async function sendWhatsAppMessage(to: string, body: string): Promise<WhatsAppSendResult> {
+  if (process.env.MOCK_WHATSAPP === "true") {
+    console.log(`[MOCK WHATSAPP] Sending text message to ${to}:`, body);
+    return {
+      messageId: `wamid.mockText${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
+      raw: { mock: true },
+    };
+  }
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
@@ -164,6 +171,13 @@ export async function sendWhatsAppInteractiveList(
   to: string,
   payload: WhatsAppInteractiveListPayload,
 ): Promise<WhatsAppSendResult> {
+  if (process.env.MOCK_WHATSAPP === "true") {
+    console.log(`[MOCK WHATSAPP] Sending interactive list to ${to}:`, payload);
+    return {
+      messageId: `wamid.mockList${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
+      raw: { mock: true },
+    };
+  }
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
@@ -255,6 +269,13 @@ export async function sendWhatsAppInteractiveFlow(
   to: string,
   payload: WhatsAppInteractiveFlowPayload,
 ): Promise<WhatsAppSendResult> {
+  if (process.env.MOCK_WHATSAPP === "true") {
+    console.log(`[MOCK WHATSAPP] Sending interactive flow to ${to}:`, payload);
+    return {
+      messageId: `wamid.mockFlow${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
+      raw: { mock: true },
+    };
+  }
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 

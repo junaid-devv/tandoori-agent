@@ -1,0 +1,1305 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tandoori Agent Polished Flow Demo</title>
+    <style>
+      :root {
+        --brand: #ea580c;
+        --brand-hover: #c2410c;
+        --bg: #f8fafc;
+        --line: #e2e8f0;
+        --soft: #f1f5f9;
+        --text: #0f172a;
+        --muted: #64748b;
+        --zinc-950: #09090b;
+        --zinc-900: #18181b;
+        --zinc-800: #27272a;
+        --zinc-700: #3f3f46;
+        --zinc-500: #71717a;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        overflow: hidden;
+        background: var(--bg);
+        color: var(--text);
+        font-family: Arial, Helvetica, sans-serif;
+        letter-spacing: 0;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      .app {
+        display: flex;
+        height: 100vh;
+        background: var(--bg);
+      }
+
+      .sidebar {
+        display: flex;
+        width: 256px;
+        height: 100vh;
+        flex-direction: column;
+        border-right: 1px solid var(--zinc-900);
+        background: var(--zinc-950);
+        color: white;
+        box-shadow: 0 25px 50px rgba(0, 0, 0, 0.22);
+      }
+
+      .brand {
+        border-bottom: 1px solid rgba(39, 39, 42, 0.7);
+        padding: 16px;
+      }
+
+      .brand-row {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .logo {
+        width: 40px;
+        height: 40px;
+        overflow: hidden;
+        border: 1px solid var(--zinc-800);
+        border-radius: 12px;
+        background: var(--zinc-900);
+        padding: 2px;
+      }
+
+      .logo img {
+        width: 100%;
+        height: 100%;
+        border-radius: 9px;
+        object-fit: cover;
+      }
+
+      .brand strong {
+        display: block;
+        font-size: 14px;
+        line-height: 1;
+      }
+
+      .brand strong span {
+        color: var(--brand);
+      }
+
+      .brand small {
+        display: block;
+        margin-top: 7px;
+        color: var(--zinc-500);
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.22em;
+        text-transform: uppercase;
+      }
+
+      .branch {
+        margin: 12px;
+        border: 1px solid var(--zinc-800);
+        border-radius: 12px;
+        background: rgba(24, 24, 27, 0.74);
+        padding: 10px;
+      }
+
+      .branch label {
+        display: block;
+        margin-bottom: 7px;
+        color: var(--zinc-500);
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+
+      .branch select {
+        width: 100%;
+        border: 1px solid var(--zinc-800);
+        border-radius: 8px;
+        background: var(--zinc-950);
+        color: #f4f4f5;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        outline: none;
+      }
+
+      .branch p {
+        margin: 8px 0 0;
+        color: var(--zinc-500);
+        font-size: 11px;
+        line-height: 1.35;
+      }
+
+      .nav {
+        flex: 1;
+        padding: 4px 12px;
+      }
+
+      .nav button {
+        display: flex;
+        width: 100%;
+        align-items: center;
+        justify-content: space-between;
+        border: 0;
+        border-radius: 12px;
+        background: transparent;
+        color: #a1a1aa;
+        padding: 10px 12px;
+        cursor: default;
+        font-size: 13px;
+        font-weight: 700;
+        text-align: left;
+      }
+
+      .nav button + button {
+        margin-top: 4px;
+      }
+
+      .nav button.active {
+        background: var(--zinc-900);
+        color: white;
+      }
+
+      .nav-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .nav-icon {
+        width: 18px;
+        color: var(--zinc-500);
+        text-align: center;
+      }
+
+      .active .nav-icon {
+        color: var(--brand);
+      }
+
+      .nav-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: var(--brand);
+        box-shadow: 0 0 8px rgba(234, 88, 12, 0.65);
+      }
+
+      .user {
+        border-top: 1px solid rgba(39, 39, 42, 0.7);
+        padding: 12px;
+      }
+
+      .user-card {
+        border: 1px solid var(--zinc-800);
+        border-radius: 12px;
+        background: rgba(24, 24, 27, 0.74);
+        padding: 10px;
+      }
+
+      .user-row {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .avatar {
+        display: grid;
+        width: 32px;
+        height: 32px;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--zinc-800);
+        color: #d4d4d8;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .user strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .user small {
+        display: block;
+        margin-top: 3px;
+        color: var(--zinc-500);
+        font-size: 9px;
+        font-weight: 800;
+        letter-spacing: 0.2em;
+        text-transform: uppercase;
+      }
+
+      .signout {
+        width: 100%;
+        margin-top: 9px;
+        border: 1px solid var(--zinc-800);
+        border-radius: 8px;
+        background: var(--zinc-950);
+        color: white;
+        padding: 7px 12px;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .main {
+        position: relative;
+        min-width: 0;
+        flex: 1;
+        overflow: hidden;
+      }
+
+      .pattern {
+        position: absolute;
+        inset: 0;
+        opacity: 0.03;
+        pointer-events: none;
+        background-image: radial-gradient(circle at 2px 2px, #000 1px, transparent 0);
+        background-size: 24px 24px;
+      }
+
+      .work {
+        position: relative;
+        z-index: 1;
+        height: 100%;
+        padding: 26px 40px 32px;
+      }
+
+      .work-inner {
+        position: relative;
+        height: 100%;
+        max-width: 1400px;
+        margin: 0 auto;
+      }
+
+      .top-tabs {
+        display: inline-flex;
+        gap: 4px;
+        margin-bottom: 20px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.9);
+        padding: 5px;
+        box-shadow: 0 8px 22px rgba(15, 23, 42, 0.06);
+      }
+
+      .top-tabs button {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: var(--muted);
+        padding: 10px 14px;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .top-tabs button.active {
+        background: var(--brand);
+        color: white;
+        box-shadow: 0 10px 18px rgba(234, 88, 12, 0.25);
+      }
+
+      .tab-num {
+        display: grid;
+        width: 20px;
+        height: 20px;
+        place-items: center;
+        border-radius: 50%;
+        background: rgba(100, 116, 139, 0.12);
+        font-size: 11px;
+      }
+
+      .top-tabs .active .tab-num {
+        background: rgba(255, 255, 255, 0.22);
+      }
+
+      .view {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 64px;
+        bottom: 82px;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(14px);
+        transition: opacity 380ms ease, transform 380ms ease;
+      }
+
+      .view.active {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
+
+      .page-head {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 6px;
+        font-size: 30px;
+        line-height: 1.1;
+        letter-spacing: -0.02em;
+      }
+
+      .muted {
+        margin: 0;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .brand-btn {
+        border: 0;
+        border-radius: 12px;
+        background: var(--brand);
+        color: white;
+        padding: 11px 20px;
+        font-size: 14px;
+        font-weight: 800;
+        box-shadow: 0 10px 20px rgba(251, 146, 60, 0.32);
+      }
+
+      .card {
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        background: white;
+        box-shadow: 0 4px 8px rgba(15, 23, 42, 0.05), 0 2px 4px rgba(15, 23, 42, 0.025);
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(4, 1fr);
+        gap: 20px;
+        margin-bottom: 26px;
+      }
+
+      .kpi {
+        min-height: 128px;
+        padding: 24px;
+      }
+
+      .kpi-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+
+      .kpi label {
+        color: var(--muted);
+        font-size: 14px;
+        font-weight: 700;
+      }
+
+      .kpi-icon {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        border-radius: 10px;
+        background: #fff7ed;
+        color: var(--brand);
+        font-weight: 900;
+      }
+
+      .kpi strong {
+        display: block;
+        font-size: 34px;
+        letter-spacing: -0.02em;
+      }
+
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 2fr) 360px;
+        gap: 28px;
+        height: calc(100% - 174px);
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid #f1f5f9;
+        padding: 20px 24px;
+      }
+
+      .panel-head h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .live {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        color: #059669;
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .live-dot {
+        position: relative;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #10b981;
+      }
+
+      .live-dot::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-radius: inherit;
+        background: inherit;
+        animation: ping 1.7s infinite;
+      }
+
+      @keyframes ping {
+        80%,
+        100% {
+          opacity: 0;
+          transform: scale(2.6);
+        }
+      }
+
+      .transaction {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        border-bottom: 1px solid #f8fafc;
+        padding: 17px 24px;
+      }
+
+      .person {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+      }
+
+      .initials {
+        display: grid;
+        width: 40px;
+        height: 40px;
+        place-items: center;
+        border: 1px solid var(--line);
+        border-radius: 50%;
+        background: #f1f5f9;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .person strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .amount {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+      }
+
+      .amount div {
+        text-align: right;
+      }
+
+      .amount strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .amount span {
+        color: #94a3b8;
+        font-size: 12px;
+      }
+
+      .status {
+        display: inline-flex;
+        min-width: 112px;
+        justify-content: center;
+        gap: 8px;
+        border-radius: 999px;
+        padding: 7px 10px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .status.new {
+        background: #eff6ff;
+        color: #1d4ed8;
+      }
+
+      .status.prep {
+        background: #fff7ed;
+        color: #c2410c;
+      }
+
+      .status.done {
+        background: #ecfdf5;
+        color: #047857;
+      }
+
+      .status-dot {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+      }
+
+      .side-card {
+        padding-bottom: 10px;
+      }
+
+      .alert {
+        padding: 17px 24px;
+      }
+
+      .tag {
+        display: inline-flex;
+        border-radius: 999px;
+        background: #fff7ed;
+        color: #c2410c;
+        padding: 5px 10px;
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .alert p {
+        margin: 10px 0 0;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+
+      .flow-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.32fr) 390px;
+        gap: 24px;
+        height: calc(100% - 80px);
+      }
+
+      .conversation-card {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        overflow: hidden;
+      }
+
+      .chat-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--line);
+        padding: 18px 22px;
+      }
+
+      .chat-title {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .chat-title h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .chat-title p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .mode {
+        display: flex;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--soft);
+        padding: 2px;
+      }
+
+      .mode span {
+        border-radius: 8px;
+        padding: 7px 12px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .mode .active {
+        background: white;
+        color: var(--text);
+        box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08);
+      }
+
+      .chat-body {
+        flex: 1;
+        overflow: hidden;
+        background: #f8fafc;
+        padding: 22px;
+      }
+
+      .messages {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        height: 100%;
+        max-width: 900px;
+        margin: 0 auto;
+      }
+
+      .bubble-row {
+        display: flex;
+        margin-top: 12px;
+        opacity: 0;
+        transform: translateY(10px);
+        transition: opacity 300ms ease, transform 300ms ease;
+      }
+
+      .bubble-row.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .bubble-row.customer {
+        justify-content: flex-start;
+      }
+
+      .bubble-row.agent {
+        justify-content: flex-end;
+      }
+
+      .bubble {
+        max-width: 62%;
+        border-radius: 18px;
+        padding: 14px 18px;
+        font-size: 15px;
+        line-height: 1.45;
+        box-shadow: 0 2px 6px rgba(15, 23, 42, 0.08);
+      }
+
+      .customer .bubble {
+        border-top-left-radius: 5px;
+        background: white;
+        color: #1e293b;
+        box-shadow: inset 0 0 0 1px #f1f5f9, 0 2px 6px rgba(15, 23, 42, 0.06);
+      }
+
+      .agent .bubble {
+        border-top-right-radius: 5px;
+        background: #1e293b;
+        color: white;
+      }
+
+      .speaker {
+        display: flex;
+        gap: 7px;
+        margin-bottom: 7px;
+        color: #94a3b8;
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .agent .speaker {
+        color: rgba(255, 255, 255, 0.62);
+      }
+
+      .mini {
+        color: inherit;
+        font-size: 11px;
+        opacity: 0.72;
+      }
+
+      .inspector {
+        display: grid;
+        grid-template-rows: auto auto 1fr;
+        gap: 16px;
+      }
+
+      .inspector-card {
+        padding: 20px;
+      }
+
+      .inspector-card h3 {
+        margin: 0 0 14px;
+        font-size: 15px;
+      }
+
+      .step-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .step {
+        display: flex;
+        gap: 10px;
+        border: 1px solid #eef2f7;
+        border-radius: 12px;
+        background: #fbfdff;
+        padding: 11px;
+        opacity: 0.46;
+        transition: opacity 260ms ease, border-color 260ms ease, background 260ms ease;
+      }
+
+      .step.active {
+        border-color: rgba(234, 88, 12, 0.45);
+        background: #fff7ed;
+        opacity: 1;
+      }
+
+      .step.done {
+        opacity: 1;
+      }
+
+      .step-num {
+        display: grid;
+        width: 24px;
+        height: 24px;
+        flex: 0 0 auto;
+        place-items: center;
+        border-radius: 50%;
+        background: #e2e8f0;
+        color: #475569;
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .step.active .step-num {
+        background: var(--brand);
+        color: white;
+      }
+
+      .step strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .step span {
+        display: block;
+        margin-top: 3px;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.35;
+      }
+
+      .cart-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border-bottom: 1px solid #eef2f7;
+        padding: 10px 0;
+        font-size: 14px;
+      }
+
+      .cart-line:last-child {
+        border-bottom: 0;
+      }
+
+      .total-box {
+        margin-top: 12px;
+        border-radius: 14px;
+        background: #111827;
+        color: white;
+        padding: 16px;
+      }
+
+      .total-box span {
+        color: #cbd5e1;
+        font-size: 12px;
+      }
+
+      .total-box strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 28px;
+      }
+
+      .order-view-grid {
+        display: grid;
+        grid-template-columns: 1fr 380px;
+        gap: 24px;
+        height: calc(100% - 80px);
+      }
+
+      .order-card {
+        overflow: hidden;
+        border-color: rgba(234, 88, 12, 0.3);
+        box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+      }
+
+      .order-summary {
+        display: flex;
+        align-items: center;
+        gap: 22px;
+        border-bottom: 1px solid #f1f5f9;
+        padding: 20px;
+      }
+
+      .order-no {
+        width: 190px;
+      }
+
+      .eyebrow {
+        margin: 0;
+        color: #94a3b8;
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      .order-no strong {
+        display: block;
+        font-size: 30px;
+      }
+
+      .status-border {
+        display: inline-flex;
+        margin-top: 8px;
+        border: 1px solid #bfdbfe;
+        border-radius: 8px;
+        background: #eff6ff;
+        color: #1d4ed8;
+        padding: 6px 10px;
+        font-size: 10px;
+        font-weight: 900;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      .order-main {
+        flex: 1;
+      }
+
+      .order-main h2 {
+        margin: 0;
+        font-size: 18px;
+      }
+
+      .phone-pill {
+        display: inline-flex;
+        margin-left: 10px;
+        border: 1px solid #fed7aa;
+        border-radius: 6px;
+        background: #fff7ed;
+        color: var(--brand);
+        padding: 3px 8px;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .order-price {
+        width: 150px;
+        text-align: right;
+      }
+
+      .order-price strong {
+        display: block;
+        font-size: 20px;
+      }
+
+      .order-detail {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 24px;
+        padding: 20px;
+      }
+
+      .detail-box {
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #f8fafc;
+        padding: 16px;
+      }
+
+      .detail-box h3 {
+        margin: 0 0 14px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+      }
+
+      .item-line,
+      .detail-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: white;
+        padding: 11px 12px;
+        font-size: 14px;
+      }
+
+      .item-line + .item-line,
+      .detail-line + .detail-line {
+        margin-top: 8px;
+      }
+
+      .detail-line {
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        padding: 7px 0;
+      }
+
+      .summary-card {
+        padding: 20px;
+      }
+
+      .summary-card h3 {
+        margin: 0 0 14px;
+        font-size: 15px;
+      }
+
+      .summary-row {
+        display: flex;
+        justify-content: space-between;
+        border-bottom: 1px solid #eef2f7;
+        padding: 11px 0;
+        font-size: 14px;
+      }
+
+      .summary-row:last-child {
+        border-bottom: 0;
+      }
+
+      .caption {
+        position: absolute;
+        left: 40px;
+        right: 40px;
+        bottom: 24px;
+        z-index: 5;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        border: 1px solid rgba(226, 232, 240, 0.95);
+        border-radius: 14px;
+        background: rgba(255, 255, 255, 0.94);
+        padding: 14px 18px;
+        box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14);
+        backdrop-filter: blur(12px);
+      }
+
+      .caption strong {
+        display: inline;
+        font-size: 14px;
+      }
+
+      .caption span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .progress {
+        width: 230px;
+        height: 7px;
+        border-radius: 999px;
+        background: #e5e7eb;
+        overflow: hidden;
+      }
+
+      .progress div {
+        width: 20%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--brand);
+        transition: width 400ms ease;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-row">
+            <div class="logo"><img src="../public/logo.jpg" alt="Tandoori logo" /></div>
+            <div>
+              <strong>Tandoori <span>Agent</span></strong>
+              <small>Management Hub</small>
+            </div>
+          </div>
+        </div>
+
+        <div class="branch">
+          <label>Active Branch</label>
+          <select><option>Tandoori Nights DHA</option><option>All branches</option></select>
+          <p>Branch focus: WhatsApp ordering, order queue, and staff handoff.</p>
+        </div>
+
+        <nav class="nav">
+          <button class="active"><span class="nav-left"><span class="nav-icon">[]</span>Overview</span><span class="nav-dot"></span></button>
+          <button><span class="nav-left"><span class="nav-icon">()</span>Conversations</span><span></span></button>
+          <button><span class="nav-left"><span class="nav-icon">#</span>Orders</span><span></span></button>
+          <button><span class="nav-left"><span class="nav-icon">%</span>Analytics</span><span></span></button>
+          <button><span class="nav-left"><span class="nav-icon">=</span>Menu Editor</span><span></span></button>
+          <button><span class="nav-left"><span class="nav-icon">*</span>Settings</span><span></span></button>
+        </nav>
+
+        <div class="user">
+          <div class="user-card">
+            <div class="user-row"><div class="avatar">SC</div><div><strong>Staff Console</strong><small>Admin</small></div></div>
+            <button class="signout">Sign Out</button>
+          </div>
+        </div>
+      </aside>
+
+      <main class="main">
+        <div class="pattern"></div>
+        <div class="work">
+          <div class="work-inner">
+            <div class="top-tabs">
+              <button class="active" data-target="overview"><span class="tab-num">1</span>Dashboard</button>
+              <button data-target="flow"><span class="tab-num">2</span>Conversation Flow</button>
+              <button data-target="order"><span class="tab-num">3</span>Order Created</button>
+            </div>
+
+            <section class="view active" data-view="overview">
+              <div class="page-head">
+                <div>
+                  <h1>Dashboard</h1>
+                  <p class="muted">Branch focus: Tandoori Nights DHA - live WhatsApp orders and staff queue.</p>
+                </div>
+                <button class="brand-btn">Manage Orders -&gt;</button>
+              </div>
+
+              <div class="kpis">
+                <div class="card kpi"><div class="kpi-top"><label>Active Orders</label><span class="kpi-icon">A</span></div><strong>7</strong></div>
+                <div class="card kpi"><div class="kpi-top"><label>Orders Today</label><span class="kpi-icon">O</span></div><strong>42</strong></div>
+                <div class="card kpi"><div class="kpi-top"><label>Gross Revenue</label><span class="kpi-icon">R</span></div><strong>Rs. 96k</strong></div>
+                <div class="card kpi"><div class="kpi-top"><label>AI Interactions</label><span class="kpi-icon">M</span></div><strong>118</strong></div>
+              </div>
+
+              <div class="dashboard-grid">
+                <div class="card">
+                  <div class="panel-head"><h2>Recent Transactions</h2><span class="live"><span class="live-dot"></span>Live</span></div>
+                  <div class="transaction">
+                    <div class="person"><span class="initials">AM</span><div><strong>Ayesha Malik</strong><div class="meta"><span>Order #1084</span><span>-</span><span>delivery</span><span>-</span><span>DHA Phase 5</span></div></div></div>
+                    <div class="amount"><div><strong>Rs. 5,150</strong><span>2 min ago</span></div><span class="status new"><span class="status-dot"></span>New</span></div>
+                  </div>
+                  <div class="transaction">
+                    <div class="person"><span class="initials">FR</span><div><strong>Farhan R.</strong><div class="meta"><span>Order #1083</span><span>-</span><span>pickup</span><span>-</span><span>counter</span></div></div></div>
+                    <div class="amount"><div><strong>Rs. 2,280</strong><span>9 min ago</span></div><span class="status prep"><span class="status-dot"></span>Preparing</span></div>
+                  </div>
+                  <div class="transaction">
+                    <div class="person"><span class="initials">SK</span><div><strong>Sara Khan</strong><div class="meta"><span>Order #1082</span><span>-</span><span>delivery</span><span>-</span><span>Gulberg</span></div></div></div>
+                    <div class="amount"><div><strong>Rs. 7,420</strong><span>18 min ago</span></div><span class="status done"><span class="status-dot"></span>Done</span></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div class="card side-card">
+                    <div class="panel-head"><div><h2>Staff Alerts</h2><p class="muted" style="font-size:12px;margin-top:2px">2 open items</p></div></div>
+                    <div class="alert"><span class="tag">New Order</span><p>Ayesha confirmed a family dinner order. Kitchen can start preparing immediately.</p></div>
+                    <div class="alert"><span class="tag">Human Handoff</span><p>One customer asked about event catering and needs staff follow-up.</p></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="view" data-view="flow">
+              <div class="page-head">
+                <div>
+                  <h1>Conversation Flow</h1>
+                  <p class="muted">A simple customer WhatsApp order, shown in plain language for the restaurant owner.</p>
+                </div>
+                <button class="brand-btn">AI Agent Active</button>
+              </div>
+
+              <div class="flow-grid">
+                <div class="card conversation-card">
+                  <div class="chat-head">
+                    <div class="chat-title"><span class="initials">AM</span><div><h2>Ayesha Malik</h2><p>WhatsApp customer - AI mode - delivery order</p></div></div>
+                    <div class="mode"><span class="active">AI</span><span>Human</span></div>
+                  </div>
+                  <div class="chat-body">
+                    <div class="messages" id="messages">
+                      <div class="bubble-row customer" data-step="0"><div class="bubble"><div class="speaker">Customer <span class="mini">7:18 PM</span></div>Hi, do you have a family BBQ deal for 4 people?</div></div>
+                      <div class="bubble-row agent" data-step="1"><div class="bubble"><div class="speaker">AI Agent <span class="mini">7:18 PM</span></div>Yes. Our Family BBQ Platter serves 4 and includes chicken tikka, seekh kabab, malai boti, naan, raita, and salad. Price is Rs. 4,350.</div></div>
+                      <div class="bubble-row customer" data-step="2"><div class="bubble"><div class="speaker">Customer <span class="mini">7:19 PM</span></div>Add one platter, 2 extra naans, and a 1.5L cold drink.</div></div>
+                      <div class="bubble-row agent" data-step="3"><div class="bubble"><div class="speaker">AI Agent <span class="mini">7:19 PM</span></div>Added to cart: Family BBQ Platter x1, Extra Naan x2, Cold Drink 1.5L x1. Delivery or pickup?</div></div>
+                      <div class="bubble-row customer" data-step="4"><div class="bubble"><div class="speaker">Customer <span class="mini">7:20 PM</span></div>Delivery to DHA Phase 5. Please make it medium spicy.</div></div>
+                      <div class="bubble-row agent" data-step="5"><div class="bubble"><div class="speaker">AI Agent <span class="mini">7:20 PM</span></div>Delivery is available. Your total is Rs. 5,150 including delivery. Reply Yes to confirm the COD order.</div></div>
+                      <div class="bubble-row customer" data-step="6"><div class="bubble"><div class="speaker">Customer <span class="mini">7:21 PM</span></div>Yes, confirm it.</div></div>
+                      <div class="bubble-row agent" data-step="7"><div class="bubble"><div class="speaker">AI Agent <span class="mini">7:21 PM</span></div>Thank you. Order #1084 has been placed. Estimated delivery is 45 minutes.</div></div>
+                    </div>
+                  </div>
+                </div>
+
+                <aside class="inspector">
+                  <div class="card inspector-card">
+                    <h3>What the agent understood</h3>
+                    <div class="step-list">
+                      <div class="step" data-inspector="0"><span class="step-num">1</span><div><strong>Customer asks for a deal</strong><span>Agent answers with the relevant menu item.</span></div></div>
+                      <div class="step" data-inspector="1"><span class="step-num">2</span><div><strong>Items are added</strong><span>Quantities and add-ons are converted into a cart.</span></div></div>
+                      <div class="step" data-inspector="2"><span class="step-num">3</span><div><strong>Delivery details captured</strong><span>Area, address, and spice note are stored.</span></div></div>
+                      <div class="step" data-inspector="3"><span class="step-num">4</span><div><strong>Customer confirms</strong><span>COD order is created only after confirmation.</span></div></div>
+                    </div>
+                  </div>
+
+                  <div class="card inspector-card">
+                    <h3>Live cart</h3>
+                    <div class="cart-line"><span>Family BBQ Platter x1</span><strong>Rs. 4,350</strong></div>
+                    <div class="cart-line"><span>Extra Naan x2</span><strong>Rs. 300</strong></div>
+                    <div class="cart-line"><span>Cold Drink 1.5L x1</span><strong>Rs. 300</strong></div>
+                    <div class="cart-line"><span>Delivery fee</span><strong>Rs. 200</strong></div>
+                    <div class="total-box"><span>COD total</span><strong>Rs. 5,150</strong></div>
+                  </div>
+                </aside>
+              </div>
+            </section>
+
+            <section class="view" data-view="order">
+              <div class="page-head">
+                <div>
+                  <h1>Order Queue</h1>
+                  <p class="muted">The confirmed chat becomes a staff-ready order with items, address, notes, and status.</p>
+                </div>
+                <button class="brand-btn">Refresh</button>
+              </div>
+
+              <div class="order-view-grid">
+                <div class="card order-card">
+                  <div class="order-summary">
+                    <div class="order-no"><p class="eyebrow">Order</p><strong>#1084</strong><span class="status-border">New Order</span></div>
+                    <div class="order-main"><h2>Ayesha Malik <span class="phone-pill">923001234567</span></h2><div class="meta"><span>7:21 PM</span><span>-</span><span>delivery</span><span>-</span><span>DHA Phase 5</span><span>-</span><span>Unassigned</span></div></div>
+                    <div class="order-price"><p class="eyebrow">4 items</p><strong>Rs. 5,150</strong><p class="muted" style="font-size:11px">SLA age: 2 min</p></div>
+                  </div>
+                  <div class="order-detail">
+                    <section class="detail-box">
+                      <h3>Order Items</h3>
+                      <div class="item-line"><strong>Family BBQ Platter x1</strong><span>Rs. 4,350</span></div>
+                      <div class="item-line"><strong>Extra Naan x2</strong><span>Rs. 300</span></div>
+                      <div class="item-line"><strong>Cold Drink 1.5L x1</strong><span>Rs. 300</span></div>
+                    </section>
+                    <section class="detail-box">
+                      <h3>Order Details</h3>
+                      <div class="detail-line"><span>Type</span><strong>delivery</strong></div>
+                      <div class="detail-line"><span>Address</span><strong>DHA Phase 5</strong></div>
+                      <div class="detail-line"><span>Customer note</span><strong>Medium spicy</strong></div>
+                      <div class="detail-line"><span>Subtotal</span><strong>Rs. 4,950</strong></div>
+                      <div class="detail-line"><span>Delivery Fee</span><strong>Rs. 200</strong></div>
+                      <div class="detail-line" style="border-top:1px solid var(--line);padding-top:10px"><span><strong>Total</strong></span><strong>Rs. 5,150</strong></div>
+                    </section>
+                  </div>
+                </div>
+
+                <aside class="card summary-card">
+                  <h3>Why this matters</h3>
+                  <div class="summary-row"><span>No phone call required</span><strong>Yes</strong></div>
+                  <div class="summary-row"><span>Menu prices protected</span><strong>Yes</strong></div>
+                  <div class="summary-row"><span>COD confirmation captured</span><strong>Yes</strong></div>
+                  <div class="summary-row"><span>Staff can update status</span><strong>Ready</strong></div>
+                  <div class="total-box"><span>Restaurant result</span><strong style="font-size:20px">A complete order lands directly in the dashboard.</strong></div>
+                </aside>
+              </div>
+            </section>
+          </div>
+        </div>
+
+        <div class="caption">
+          <div><strong id="caption-title">Dashboard view</strong> <span id="caption-body">Start with the original dashboard look: dark sidebar, active branch, KPIs, recent transactions, and staff alerts.</span></div>
+          <div class="progress"><div id="progress-bar"></div></div>
+        </div>
+      </main>
+    </div>
+
+    <script>
+      const tabCopy = {
+        overview: {
+          title: "Dashboard view",
+          body: "Start with the original dashboard look: dark sidebar, active branch, KPIs, recent transactions, and staff alerts.",
+          progress: "22%",
+        },
+        flow: {
+          title: "Readable conversation flow",
+          body: "A clean synthetic customer chat shows the agent answering, building the cart, collecting delivery details, and asking for confirmation.",
+          progress: "68%",
+        },
+        order: {
+          title: "Order created",
+          body: "The confirmed chat becomes a clear staff order with items, customer note, delivery address, total, and current status.",
+          progress: "100%",
+        },
+      };
+
+      function setTab(name) {
+        document.querySelectorAll(".top-tabs button").forEach((button) => button.classList.toggle("active", button.dataset.target === name));
+        document.querySelectorAll("[data-view]").forEach((view) => view.classList.toggle("active", view.dataset.view === name));
+        document.querySelector("#caption-title").textContent = tabCopy[name].title;
+        document.querySelector("#caption-body").textContent = tabCopy[name].body;
+        document.querySelector("#progress-bar").style.width = tabCopy[name].progress;
+
+        if (name === "flow") replayFlow();
+      }
+
+      function replayFlow() {
+        document.querySelectorAll(".bubble-row").forEach((row) => row.classList.remove("show"));
+        document.querySelectorAll(".step").forEach((step) => step.classList.remove("active", "done"));
+        const inspectorSteps = [...document.querySelectorAll(".step")];
+
+        document.querySelectorAll(".bubble-row").forEach((row, index) => {
+          window.setTimeout(() => {
+            row.classList.add("show");
+            const stepIndex = Math.min(Math.floor(index / 2), inspectorSteps.length - 1);
+            inspectorSteps.forEach((step, idx) => {
+              step.classList.toggle("active", idx === stepIndex);
+              step.classList.toggle("done", idx < stepIndex);
+            });
+          }, 500 + index * 1800);
+        });
+      }
+
+      document.querySelectorAll(".top-tabs button").forEach((button) => button.addEventListener("click", () => setTab(button.dataset.target)));
+
+      window.demoSetTab = setTab;
+      window.demoReplayFlow = replayFlow;
+      window.addEventListener("load", () => {
+        document.body.dataset.ready = "true";
+      });
+    </script>
+  </body>
+</html>

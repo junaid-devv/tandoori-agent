@@ -1,0 +1,1022 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Tandoori Agent Restaurant Demo</title>
+    <style>
+      :root {
+        --ink: #17202a;
+        --muted: #64707f;
+        --line: #e7ebef;
+        --surface: #f7f8f6;
+        --panel: #ffffff;
+        --brand: #e75f22;
+        --brand-dark: #b83f17;
+        --green: #1d9a66;
+        --blue: #2b6cb0;
+        --amber: #c78314;
+        --dark: #111316;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        overflow: hidden;
+        background: var(--surface);
+        color: var(--ink);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        letter-spacing: 0;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: 248px 1fr;
+        height: 100vh;
+      }
+
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        padding: 28px 20px;
+        background: #111316;
+        color: #f7f4ee;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .brand img {
+        width: 46px;
+        height: 46px;
+        border-radius: 12px;
+        object-fit: cover;
+      }
+
+      .brand strong {
+        display: block;
+        font-size: 18px;
+      }
+
+      .brand span {
+        display: block;
+        margin-top: 2px;
+        color: #b9b3aa;
+        font-size: 12px;
+      }
+
+      .nav {
+        display: grid;
+        gap: 8px;
+      }
+
+      .nav button {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        width: 100%;
+        padding: 12px 14px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: #b9b3aa;
+        text-align: left;
+        cursor: pointer;
+        transition: background 180ms ease, color 180ms ease, transform 180ms ease;
+      }
+
+      .nav button.active,
+      .nav button:hover {
+        background: rgba(231, 95, 34, 0.14);
+        color: white;
+      }
+
+      .nav button:hover {
+        transform: translateX(2px);
+      }
+
+      .dot {
+        width: 9px;
+        height: 9px;
+        border-radius: 99px;
+        background: currentColor;
+      }
+
+      .sidebar-footer {
+        margin-top: auto;
+        padding-top: 18px;
+        border-top: 1px solid rgba(255, 255, 255, 0.1);
+        color: #b9b3aa;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .main {
+        position: relative;
+        overflow: hidden;
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        height: 76px;
+        padding: 0 34px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.72);
+        backdrop-filter: blur(12px);
+      }
+
+      .topbar h1 {
+        margin: 0;
+        font-size: 26px;
+      }
+
+      .topbar p {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .branch-switch {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .branch-switch select {
+        min-width: 176px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+        padding: 9px 10px;
+        color: var(--ink);
+      }
+
+      .stage {
+        position: relative;
+        height: calc(100vh - 76px);
+        overflow: hidden;
+      }
+
+      .view {
+        position: absolute;
+        inset: 0;
+        display: grid;
+        gap: 26px;
+        padding: 28px 34px;
+        opacity: 0;
+        pointer-events: none;
+        transform: translateY(16px);
+        transition: opacity 420ms ease, transform 420ms ease;
+      }
+
+      .view.active {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translateY(0);
+      }
+
+      .overview {
+        grid-template-rows: auto 1fr;
+      }
+
+      .kpis {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 14px;
+      }
+
+      .metric {
+        min-height: 118px;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        box-shadow: 0 10px 28px rgba(16, 24, 40, 0.04);
+      }
+
+      .metric span {
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+        text-transform: uppercase;
+      }
+
+      .metric strong {
+        display: block;
+        margin-top: 14px;
+        font-size: 34px;
+        line-height: 1;
+      }
+
+      .metric em {
+        display: block;
+        margin-top: 10px;
+        color: var(--green);
+        font-size: 12px;
+        font-style: normal;
+      }
+
+      .split {
+        display: grid;
+        grid-template-columns: 1.44fr 0.86fr;
+        gap: 18px;
+        min-height: 0;
+      }
+
+      .panel {
+        min-height: 0;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        overflow: hidden;
+        box-shadow: 0 10px 28px rgba(16, 24, 40, 0.04);
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 17px 18px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .panel-head h2 {
+        margin: 0;
+        font-size: 16px;
+      }
+
+      .live {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .pulse {
+        width: 8px;
+        height: 8px;
+        border-radius: 99px;
+        background: currentColor;
+        box-shadow: 0 0 0 0 rgba(29, 154, 102, 0.45);
+        animation: pulse 1.6s infinite;
+      }
+
+      @keyframes pulse {
+        70% {
+          box-shadow: 0 0 0 8px rgba(29, 154, 102, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(29, 154, 102, 0);
+        }
+      }
+
+      .orders-list {
+        display: grid;
+      }
+
+      .order-row {
+        display: grid;
+        grid-template-columns: 1fr auto auto;
+        align-items: center;
+        gap: 18px;
+        padding: 16px 18px;
+        border-bottom: 1px solid #f0f2f4;
+      }
+
+      .order-row:last-child {
+        border-bottom: 0;
+      }
+
+      .customer {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+
+      .avatar {
+        display: grid;
+        place-items: center;
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        background: #eef1f2;
+        color: #47515c;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .customer strong,
+      .chat-person strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .customer span,
+      .chat-person span,
+      .muted {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .amount {
+        font-weight: 750;
+      }
+
+      .status {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 118px;
+        padding: 7px 10px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .status.new {
+        background: #e9f2ff;
+        color: var(--blue);
+      }
+
+      .status.prep {
+        background: #fff2dc;
+        color: var(--amber);
+      }
+
+      .status.route {
+        background: #eeeaff;
+        color: #6554c0;
+      }
+
+      .status.done {
+        background: #e7f8ef;
+        color: var(--green);
+      }
+
+      .alerts {
+        display: grid;
+      }
+
+      .alert {
+        padding: 16px 18px;
+        border-bottom: 1px solid #f0f2f4;
+      }
+
+      .alert small {
+        display: inline-block;
+        margin-bottom: 8px;
+        padding: 5px 8px;
+        border-radius: 99px;
+        background: #fff2dc;
+        color: #9a5b07;
+        font-size: 10px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .alert p {
+        margin: 0;
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .chat-view {
+        grid-template-columns: 1fr 360px;
+      }
+
+      .phone {
+        align-self: center;
+        justify-self: center;
+        width: min(410px, 100%);
+        height: 680px;
+        border: 10px solid #181b1f;
+        border-radius: 34px;
+        background: #f4f0e8;
+        box-shadow: 0 22px 54px rgba(16, 24, 40, 0.18);
+        overflow: hidden;
+      }
+
+      .phone-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 16px 18px;
+        background: #0c7b61;
+        color: white;
+      }
+
+      .chat-body {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        height: 542px;
+        padding: 18px;
+        overflow: hidden;
+      }
+
+      .bubble {
+        max-width: 82%;
+        padding: 10px 12px;
+        border-radius: 14px;
+        background: white;
+        font-size: 14px;
+        line-height: 1.38;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08);
+        opacity: 0;
+        transform: translateY(12px);
+        transition: opacity 240ms ease, transform 240ms ease;
+      }
+
+      .bubble.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      .bubble.me {
+        align-self: flex-end;
+        background: #dcf8c6;
+      }
+
+      .bubble.bot {
+        align-self: flex-start;
+      }
+
+      .phone-input {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 12px;
+        background: #ebe5dc;
+      }
+
+      .phone-input span {
+        flex: 1;
+        border-radius: 999px;
+        background: white;
+        padding: 10px 14px;
+        color: #7b7f86;
+        font-size: 13px;
+      }
+
+      .send {
+        display: grid;
+        place-items: center;
+        width: 40px;
+        height: 40px;
+        border-radius: 50%;
+        background: #0c7b61;
+        color: white;
+        font-weight: 800;
+      }
+
+      .inspector {
+        display: grid;
+        align-content: start;
+        gap: 14px;
+        padding: 18px;
+      }
+
+      .cart-line,
+      .setting-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 0;
+        border-bottom: 1px solid #f0f2f4;
+        font-size: 13px;
+      }
+
+      .cart-line:last-child,
+      .setting-line:last-child {
+        border-bottom: 0;
+      }
+
+      .total {
+        margin-top: 10px;
+        padding: 14px;
+        border-radius: 8px;
+        background: #111316;
+        color: white;
+      }
+
+      .total span {
+        display: block;
+        color: #b9b3aa;
+        font-size: 12px;
+      }
+
+      .total strong {
+        display: block;
+        margin-top: 4px;
+        font-size: 26px;
+      }
+
+      .queue-view {
+        grid-template-rows: auto 1fr;
+      }
+
+      .queue-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 16px;
+        min-height: 0;
+      }
+
+      .lane {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: var(--panel);
+        overflow: hidden;
+      }
+
+      .lane h2 {
+        margin: 0;
+        padding: 16px;
+        border-bottom: 1px solid var(--line);
+        font-size: 15px;
+      }
+
+      .ticket {
+        margin: 14px;
+        padding: 14px;
+        border: 1px solid #edf0f2;
+        border-radius: 8px;
+        background: #fbfcfc;
+        transition: transform 280ms ease, border-color 280ms ease, box-shadow 280ms ease;
+      }
+
+      .ticket.highlight {
+        transform: translateY(-4px);
+        border-color: rgba(231, 95, 34, 0.55);
+        box-shadow: 0 16px 28px rgba(231, 95, 34, 0.12);
+      }
+
+      .ticket-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        margin-bottom: 10px;
+      }
+
+      .ticket strong {
+        font-size: 14px;
+      }
+
+      .ticket ul {
+        margin: 0;
+        padding-left: 18px;
+        color: #46515d;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .menu-view {
+        grid-template-columns: 1fr 0.88fr;
+      }
+
+      .menu-list {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+        padding: 18px;
+      }
+
+      .menu-item {
+        border: 1px solid #edf0f2;
+        border-radius: 8px;
+        padding: 14px;
+        background: #fbfcfc;
+      }
+
+      .menu-item strong {
+        display: block;
+        font-size: 14px;
+      }
+
+      .menu-item span {
+        display: block;
+        margin-top: 7px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 12px;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .switch {
+        width: 34px;
+        height: 18px;
+        border-radius: 999px;
+        background: var(--green);
+        position: relative;
+      }
+
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 3px;
+        right: 3px;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: white;
+      }
+
+      .settings-panel {
+        padding: 18px;
+      }
+
+      .caption {
+        position: absolute;
+        left: 34px;
+        right: 34px;
+        bottom: 20px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        padding: 15px 18px;
+        border: 1px solid rgba(17, 19, 22, 0.08);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.88);
+        backdrop-filter: blur(14px);
+        box-shadow: 0 18px 42px rgba(16, 24, 40, 0.12);
+      }
+
+      .caption strong {
+        font-size: 14px;
+      }
+
+      .caption span {
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .progress {
+        width: 210px;
+        height: 7px;
+        border-radius: 999px;
+        background: #eceff1;
+        overflow: hidden;
+      }
+
+      .progress div {
+        width: 20%;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--brand);
+        transition: width 360ms ease;
+      }
+
+      @media (max-width: 900px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .sidebar {
+          display: none;
+        }
+
+        .topbar {
+          height: auto;
+          align-items: flex-start;
+          padding: 18px;
+        }
+
+        .stage {
+          height: calc(100vh - 96px);
+        }
+
+        .view {
+          padding: 18px;
+        }
+
+        .kpis,
+        .split,
+        .chat-view,
+        .queue-grid,
+        .menu-view,
+        .menu-list {
+          grid-template-columns: 1fr;
+        }
+
+        .caption {
+          left: 18px;
+          right: 18px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <img src="../public/logo.jpg" alt="Tandoori Agent logo" />
+          <div>
+            <strong>Tandoori Agent</strong>
+            <span>WhatsApp ordering dashboard</span>
+          </div>
+        </div>
+
+        <nav class="nav" aria-label="Demo sections">
+          <button class="active" data-view="overview"><span class="dot"></span> Live dashboard</button>
+          <button data-view="chat"><span class="dot"></span> WhatsApp order</button>
+          <button data-view="queue"><span class="dot"></span> Kitchen queue</button>
+          <button data-view="menu"><span class="dot"></span> Menu and settings</button>
+        </nav>
+
+        <div class="sidebar-footer">
+          COD-first ordering, human handoff, branch controls, menu sync, delivery zones, and live order status in one staff workspace.
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <h1 id="page-title">Live restaurant dashboard</h1>
+            <p id="page-subtitle">Today at Tandoori Nights DHA. Live order and chat data refresh in real time.</p>
+          </div>
+          <label class="branch-switch">
+            Branch
+            <select>
+              <option>Tandoori Nights DHA</option>
+              <option>Tandoori Nights Faisalabad</option>
+              <option>All branches</option>
+            </select>
+          </label>
+        </header>
+
+        <section class="stage">
+          <div class="view overview active" data-view-panel="overview">
+            <div class="kpis">
+              <div class="metric"><span>Active orders</span><strong>18</strong><em>+7 since lunch rush</em></div>
+              <div class="metric"><span>Orders today</span><strong>126</strong><em>92 from WhatsApp</em></div>
+              <div class="metric"><span>Gross revenue</span><strong>Rs. 184k</strong><em>COD and pickup</em></div>
+              <div class="metric"><span>AI interactions</span><strong>341</strong><em>31 handed to staff</em></div>
+            </div>
+
+            <div class="split">
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>Recent transactions</h2>
+                  <span class="live"><span class="pulse"></span> Live</span>
+                </div>
+                <div class="orders-list">
+                  <div class="order-row">
+                    <div class="customer"><span class="avatar">AR</span><div><strong>Ayesha R.</strong><span>#1048 - delivery - DHA Phase 5</span></div></div>
+                    <span class="amount">Rs. 4,350</span><span class="status new">New</span>
+                  </div>
+                  <div class="order-row">
+                    <div class="customer"><span class="avatar">HM</span><div><strong>Hamza M.</strong><span>#1047 - pickup - 22 minutes</span></div></div>
+                    <span class="amount">Rs. 2,080</span><span class="status prep">Preparing</span>
+                  </div>
+                  <div class="order-row">
+                    <div class="customer"><span class="avatar">SK</span><div><strong>Sara K.</strong><span>#1046 - delivery - Gulberg</span></div></div>
+                    <span class="amount">Rs. 6,220</span><span class="status route">On way</span>
+                  </div>
+                  <div class="order-row">
+                    <div class="customer"><span class="avatar">ZA</span><div><strong>Zain A.</strong><span>#1045 - dine-in - table 7</span></div></div>
+                    <span class="amount">Rs. 3,110</span><span class="status done">Done</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="panel">
+                <div class="panel-head">
+                  <h2>Staff alerts</h2>
+                  <span class="muted">3 open</span>
+                </div>
+                <div class="alerts">
+                  <div class="alert"><small>Human handoff</small><p>Customer asked for a catering discount on a 40-person order.</p></div>
+                  <div class="alert"><small>Delivery notice</small><p>Driver is delayed for order #1042. Customer was notified automatically.</p></div>
+                  <div class="alert"><small>AI review</small><p>Ambiguous message detected: "same deal but less spicy".</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="view chat-view" data-view-panel="chat">
+            <div class="phone">
+              <div class="phone-head">
+                <div class="chat-person"><strong>Ayesha R.</strong><span style="color: #d6fff1">WhatsApp order in progress</span></div>
+                <strong>#1048</strong>
+              </div>
+              <div class="chat-body">
+                <div class="bubble me">Hi, send menu for tandoori and deals.</div>
+                <div class="bubble bot">Sure. Today we have Chicken Tandoori, Seekh Kabab, Family BBQ Platter, Biryani, and cold drinks.</div>
+                <div class="bubble me">Add 2 chicken tandoori, 4 seekh kabab and 1 family naan basket.</div>
+                <div class="bubble bot">Added. Your cart is Rs. 3,850 before delivery. Delivery or pickup?</div>
+                <div class="bubble me">Delivery to DHA Phase 5. Less spicy.</div>
+                <div class="bubble bot">Delivery is available. Total is Rs. 4,350 with delivery. Reply CONFIRM to place the COD order.</div>
+                <div class="bubble me">CONFIRM</div>
+                <div class="bubble bot">Order #1048 is confirmed. Estimated delivery: 45-55 minutes.</div>
+              </div>
+              <div class="phone-input"><span>Message</span><div class="send">&gt;</div></div>
+            </div>
+
+            <aside class="panel inspector">
+              <div class="panel-head" style="padding: 0 0 14px; border-bottom: 1px solid var(--line)">
+                <h2>Parsed order</h2>
+                <span class="status new">Ready</span>
+              </div>
+              <div>
+                <div class="cart-line"><span>Chicken Tandoori x2</span><strong>Rs. 1,900</strong></div>
+                <div class="cart-line"><span>Seekh Kabab x4</span><strong>Rs. 1,400</strong></div>
+                <div class="cart-line"><span>Family Naan Basket</span><strong>Rs. 550</strong></div>
+                <div class="cart-line"><span>Delivery - DHA Phase 5</span><strong>Rs. 500</strong></div>
+              </div>
+              <div class="total"><span>COD total</span><strong>Rs. 4,350</strong></div>
+              <div class="setting-line"><span>Spice note</span><strong>Less spicy</strong></div>
+              <div class="setting-line"><span>Fulfillment</span><strong>Delivery</strong></div>
+              <div class="setting-line"><span>AI confidence</span><strong>96%</strong></div>
+            </aside>
+          </div>
+
+          <div class="view queue-view" data-view-panel="queue">
+            <div class="kpis">
+              <div class="metric"><span>New</span><strong>5</strong><em>Needs kitchen accept</em></div>
+              <div class="metric"><span>Preparing</span><strong>9</strong><em>Average 23 minutes</em></div>
+              <div class="metric"><span>Out for delivery</span><strong>4</strong><em>Drivers assigned</em></div>
+              <div class="metric"><span>Completed</span><strong>108</strong><em>Today</em></div>
+            </div>
+
+            <div class="queue-grid">
+              <section class="lane">
+                <h2>New</h2>
+                <article class="ticket highlight">
+                  <div class="ticket-head"><strong>#1048 Ayesha R.</strong><span class="amount">Rs. 4,350</span></div>
+                  <ul><li>2 Chicken Tandoori</li><li>4 Seekh Kabab</li><li>Less spicy, DHA Phase 5</li></ul>
+                </article>
+                <article class="ticket">
+                  <div class="ticket-head"><strong>#1049 Usman T.</strong><span class="amount">Rs. 1,980</span></div>
+                  <ul><li>2 Biryani</li><li>1 Raita</li><li>Pickup</li></ul>
+                </article>
+              </section>
+              <section class="lane">
+                <h2>Preparing</h2>
+                <article class="ticket">
+                  <div class="ticket-head"><strong>#1047 Hamza M.</strong><span class="amount">Rs. 2,080</span></div>
+                  <ul><li>BBQ platter</li><li>2 drinks</li><li>Pickup in 22 minutes</li></ul>
+                </article>
+                <article class="ticket">
+                  <div class="ticket-head"><strong>#1044 Fatima S.</strong><span class="amount">Rs. 3,760</span></div>
+                  <ul><li>Half karahi</li><li>Garlic naan</li><li>Delivery</li></ul>
+                </article>
+              </section>
+              <section class="lane">
+                <h2>On way</h2>
+                <article class="ticket">
+                  <div class="ticket-head"><strong>#1046 Sara K.</strong><span class="amount">Rs. 6,220</span></div>
+                  <ul><li>Family BBQ platter</li><li>6 naans</li><li>Driver notified</li></ul>
+                </article>
+                <article class="ticket">
+                  <div class="ticket-head"><strong>#1042 Bilal N.</strong><span class="amount">Rs. 2,900</span></div>
+                  <ul><li>2 Tikka</li><li>Malai boti</li><li>Delay alert sent</li></ul>
+                </article>
+              </section>
+            </div>
+          </div>
+
+          <div class="view menu-view" data-view-panel="menu">
+            <div class="panel">
+              <div class="panel-head">
+                <h2>Menu catalog</h2>
+                <span class="muted">84 active items</span>
+              </div>
+              <div class="menu-list">
+                <div class="menu-item"><strong>Chicken Tandoori</strong><span>Rs. 950 - BBQ - available until 11:30 PM</span><span class="toggle"><span class="switch"></span> Available</span></div>
+                <div class="menu-item"><strong>Family BBQ Platter</strong><span>Rs. 4,650 - serves 4 - upsell enabled</span><span class="toggle"><span class="switch"></span> Available</span></div>
+                <div class="menu-item"><strong>Seekh Kabab</strong><span>Rs. 350 - min order 2 pieces</span><span class="toggle"><span class="switch"></span> Available</span></div>
+                <div class="menu-item"><strong>Chicken Biryani</strong><span>Rs. 690 - lunch and dinner</span><span class="toggle"><span class="switch"></span> Available</span></div>
+                <div class="menu-item"><strong>Malai Boti</strong><span>Rs. 1,180 - kitchen stock: medium</span><span class="toggle"><span class="switch"></span> Available</span></div>
+                <div class="menu-item"><strong>Cold Drink 1.5L</strong><span>Rs. 290 - suggested with platters</span><span class="toggle"><span class="switch"></span> Available</span></div>
+              </div>
+            </div>
+
+            <aside class="panel settings-panel">
+              <div class="panel-head" style="padding: 0 0 14px; border-bottom: 1px solid var(--line)">
+                <h2>Branch settings</h2>
+                <span class="status done">Open</span>
+              </div>
+              <div class="setting-line"><span>Delivery areas</span><strong>DHA, Gulberg, Cantt</strong></div>
+              <div class="setting-line"><span>Minimum delivery</span><strong>Rs. 1,500</strong></div>
+              <div class="setting-line"><span>Delivery fee</span><strong>Rs. 500</strong></div>
+              <div class="setting-line"><span>Prep ETA</span><strong>25-35 min</strong></div>
+              <div class="setting-line"><span>Delivery ETA</span><strong>45-55 min</strong></div>
+              <div class="setting-line"><span>Human handoff</span><strong>Enabled</strong></div>
+              <div class="total"><span>Restaurant outcome</span><strong>Orders land in one staff queue without phone calls.</strong></div>
+            </aside>
+          </div>
+
+          <div class="caption">
+            <div>
+              <strong id="caption-title">Restaurant owner view</strong>
+              <span id="caption-body">Start with the numbers a manager cares about: active orders, today revenue, live chats, and staff alerts.</span>
+            </div>
+            <div class="progress"><div id="progress-bar"></div></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const views = {
+        overview: {
+          title: "Live restaurant dashboard",
+          subtitle: "Today at Tandoori Nights DHA. Live order and chat data refresh in real time.",
+          captionTitle: "Restaurant owner view",
+          captionBody: "Start with the numbers a manager cares about: active orders, today revenue, live chats, and staff alerts.",
+          progress: "20%",
+        },
+        chat: {
+          title: "WhatsApp order captured automatically",
+          subtitle: "The assistant understands menu items, quantities, delivery area, spice notes, and COD confirmation.",
+          captionTitle: "Customer conversation becomes an order",
+          captionBody: "A natural WhatsApp chat is parsed into a priced cart, delivery details, and an order number.",
+          progress: "48%",
+        },
+        queue: {
+          title: "Kitchen and delivery queue",
+          subtitle: "Staff can accept, prepare, dispatch, and complete orders while customers receive status updates.",
+          captionTitle: "Operational queue for staff",
+          captionBody: "The confirmed WhatsApp order appears beside pickup, dine-in, and delivery tickets.",
+          progress: "73%",
+        },
+        menu: {
+          title: "Menu and branch controls",
+          subtitle: "Managers control item availability, branch delivery rules, prep ETA, and human handoff settings.",
+          captionTitle: "Ready for restaurant operations",
+          captionBody: "Branch settings keep the assistant aligned with real kitchen capacity and delivery policy.",
+          progress: "100%",
+        },
+      };
+
+      const navButtons = [...document.querySelectorAll(".nav button")];
+      const panels = [...document.querySelectorAll("[data-view-panel]")];
+      const title = document.querySelector("#page-title");
+      const subtitle = document.querySelector("#page-subtitle");
+      const captionTitle = document.querySelector("#caption-title");
+      const captionBody = document.querySelector("#caption-body");
+      const progressBar = document.querySelector("#progress-bar");
+      const bubbles = [...document.querySelectorAll(".bubble")];
+
+      function revealChat() {
+        bubbles.forEach((bubble) => bubble.classList.remove("show"));
+        bubbles.forEach((bubble, index) => {
+          window.setTimeout(() => bubble.classList.add("show"), 250 + index * 520);
+        });
+      }
+
+      function setView(name) {
+        const copy = views[name];
+        navButtons.forEach((button) => button.classList.toggle("active", button.dataset.view === name));
+        panels.forEach((panel) => panel.classList.toggle("active", panel.dataset.viewPanel === name));
+        title.textContent = copy.title;
+        subtitle.textContent = copy.subtitle;
+        captionTitle.textContent = copy.captionTitle;
+        captionBody.textContent = copy.captionBody;
+        progressBar.style.width = copy.progress;
+
+        if (name === "chat") {
+          revealChat();
+        }
+      }
+
+      navButtons.forEach((button) => {
+        button.addEventListener("click", () => setView(button.dataset.view));
+      });
+
+      window.demoSetView = setView;
+      window.addEventListener("load", () => {
+        document.body.dataset.ready = "true";
+      });
+    </script>
+  </body>
+</html>

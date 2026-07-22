@@ -23,6 +23,7 @@ import {
 import { toast } from "sonner";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
+import { DemoController, type DemoControllerState } from "@/demo/controllers/demo-controller";
 
 // --- Types & Helpers ---
 type ConversationMode = "agent" | "human";
@@ -269,7 +270,21 @@ export default function ConversationsPage() {
   const [customerNotes, setCustomerNotes] = useState("");
   const [customerTags, setCustomerTags] = useState("");
   const [savingCustomerProfile, setSavingCustomerProfile] = useState(false);
-  
+  const [demoState, setDemoState] = useState<DemoControllerState | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      if (!window.__DEMO_CONTROLLER__) {
+        window.__DEMO_CONTROLLER__ = new DemoController();
+      }
+      const controller = window.__DEMO_CONTROLLER__;
+      setDemoState(controller.getState());
+      return controller.subscribe(() => {
+        setDemoState(controller.getState());
+      });
+    }
+  }, []);
+
   const selectedIdRef = useRef<string | null>(null);
   const shouldStickToBottomRef = useRef(true);
   const endRef = useRef<HTMLDivElement>(null);
@@ -411,10 +426,7 @@ export default function ConversationsPage() {
     };
   }, [loadConversation, loadMessages, revalidateList]);
 
-  useEffect(() => {
-    if (!shouldStickToBottomRef.current) return;
-    endRef.current?.scrollIntoView({ block: "end" });
-  }, [messages]);
+
 
   const filteredConversations = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
@@ -439,12 +451,53 @@ export default function ConversationsPage() {
   const activeContact = pickContact(activeConversation?.contacts);
   const activeTags = getTags(activeContact);
   const activeTagText = activeTags.join(", ");
-  const draftLines = getDraftLines(activeState?.cart);
-  const draftItemCount = draftLines.reduce((sum, item) => sum + item.qty, 0);
+  const rawDraftLines = getDraftLines(activeState?.cart);
+  const isDemoContact = activeConversation?.phone === "+923001234567" || activeConversation?.name === "Tariq Mahmood";
+
+  const displayMessages = useMemo(() => {
+    if (isDemoContact && demoState && demoState.activeMessages.length > 0) {
+      return demoState.activeMessages.map((dm, idx) => ({
+        id: dm.id,
+        ingest_seq: idx + 1,
+        conversation_id: activeConversation?.id || "demo-conv",
+        role: dm.sender_kind === "user" ? "user" : "assistant",
+        sender_kind: dm.sender_kind,
+        content: dm.content,
+        created_at: new Date(Date.now() - (demoState.activeMessages.length - idx) * 10000).toISOString(),
+        delivery_status: dm.deliveryStatus || "delivered",
+      })) as Message[];
+    }
+    return messages;
+  }, [isDemoContact, demoState, messages, activeConversation?.id]);
+
+  const displayDraftLines = useMemo(() => {
+    if (isDemoContact && demoState && demoState.cart.length > 0) {
+      return demoState.cart.map((item) => ({
+        name: item.name,
+        qty: item.qty,
+        size: item.size || null,
+        addons: item.addons || [],
+        notes: null,
+      }));
+    }
+    return rawDraftLines;
+  }, [isDemoContact, demoState, rawDraftLines]);
+
+  const displayDraftItemCount = displayDraftLines.reduce((sum: number, item: { qty: number }) => sum + item.qty, 0);
+  const displayWorkflowStep = isDemoContact && demoState ? demoState.workflowStep : activeState?.workflow_step;
+
   const oldestLoadedIngestSeq = useMemo(() => {
-    if (messages.length === 0) return null;
-    return messages.reduce((min, item) => Math.min(min, item.ingest_seq), messages[0].ingest_seq);
-  }, [messages]);
+    if (displayMessages.length === 0) return null;
+    return displayMessages.reduce((min, item) => Math.min(min, item.ingest_seq), displayMessages[0].ingest_seq);
+  }, [displayMessages]);
+
+  useEffect(() => {
+    if (isDemoContact && demoState) {
+      endRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    } else if (shouldStickToBottomRef.current) {
+      endRef.current?.scrollIntoView({ block: "end" });
+    }
+  }, [displayMessages, demoState, isDemoContact]);
 
   const handleSend = async () => {
     if (!selectedId || !composer.trim()) return;
@@ -598,6 +651,7 @@ export default function ConversationsPage() {
                 return (
                   <button
                     key={item.id}
+                    data-testid={`conversation-item-${item.phone.replace(/[^0-9]/g, "")}`}
                     onClick={() => {
                       setSelectedId(item.id);
                       setDetailsOpen(false);
@@ -702,7 +756,7 @@ export default function ConversationsPage() {
                       </a>
                       <span>&bull;</span>
                       <span className="flex items-center gap-1">
-                        <Sparkles size={10} className="text-brand" /> {formatStep(activeState?.workflow_step)}
+                        <Sparkles size={10} className="text-brand" /> {formatStep(displayWorkflowStep)}
                       </span>
                       {activeSession?.status === "human_handoff" && (
                         <>
@@ -725,6 +779,7 @@ export default function ConversationsPage() {
                       return (
                         <button
                           key={mode}
+                          data-testid={`mode-toggle-${mode}`}
                           onClick={() => void handleModeChange(mode)}
                           disabled={modeSaving}
                           className={clsx(
@@ -748,14 +803,15 @@ export default function ConversationsPage() {
                   </div>
 
                   <button
+                    data-testid="view-draft-button"
                     onClick={() => setDetailsOpen(true)}
                     className="relative rounded-lg border border-slate-200 bg-white p-2 text-slate-600 hover:bg-slate-50 sm:px-4 sm:py-2"
                   >
-                    <span className="hidden text-sm font-semibold sm:block">View Draft</span>
+                    <span className="hidden text-sm font-semibold sm:block">View Draft ({displayDraftItemCount})</span>
                     <ShoppingCart size={18} className="sm:hidden" />
-                    {draftItemCount > 0 && (
+                    {displayDraftItemCount > 0 && (
                       <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full bg-brand text-[9px] font-bold text-white sm:hidden">
-                        {draftItemCount}
+                        {displayDraftItemCount}
                       </span>
                     )}
                   </button>
@@ -776,22 +832,22 @@ export default function ConversationsPage() {
                 </div>
               )}
 
-              {loadingMessages && messages.length === 0 ? (
+              {loadingMessages && displayMessages.length === 0 ? (
                 <div className="flex h-full items-center justify-center">
                   <Loader2 size={24} className="animate-spin text-slate-300" />
                 </div>
               ) : (
                 <div className="mx-auto max-w-4xl space-y-6">
-                  {messages.map((message, index) => {
+                  {displayMessages.map((message, index) => {
                     const currentDate = new Date(message.created_at);
-                    const previousDate = index > 0 ? new Date(messages[index - 1].created_at) : null;
+                    const previousDate = index > 0 ? new Date(displayMessages[index - 1].created_at) : null;
                     const showDayDivider = !previousDate || !isSameDay(currentDate, previousDate);
                     const isIncoming = message.sender_kind === "user";
                     const isSystem = message.sender_kind === "system";
                     const isHuman = message.sender_kind === "human";
 
                     return (
-                      <div key={message.id}>
+                      <div key={message.id} data-testid="message-bubble">
                         {showDayDivider && (
                           <div className="mb-6 mt-2 flex items-center justify-center">
                             <span className="rounded-full bg-slate-200/50 px-3 py-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
@@ -839,6 +895,19 @@ export default function ConversationsPage() {
                       </div>
                     );
                   })}
+                  {demoState?.isTyping && (
+                    <div data-testid="typing-indicator" className="flex justify-start my-2">
+                      <div className="flex items-center gap-2 rounded-2xl rounded-tl-sm bg-slate-100 px-4 py-3 text-slate-500 shadow-sm">
+                        <Bot size={14} className="text-emerald-500 animate-pulse" />
+                        <span className="text-xs font-semibold text-slate-500">AI Agent is typing</span>
+                        <div className="flex items-center gap-1">
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" style={{ animationDelay: "0ms" }} />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" style={{ animationDelay: "150ms" }} />
+                          <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-slate-400" style={{ animationDelay: "300ms" }} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div ref={endRef} className="h-2" />
                 </div>
               )}
@@ -918,7 +987,7 @@ export default function ConversationsPage() {
               </button>
             </div>
             
-            <div className="flex-1 overflow-y-auto p-6">
+            <div data-testid="draft-panel" className="flex-1 overflow-y-auto p-6">
               {activeContact && (
                 <div className="mb-5 space-y-4 rounded-xl border border-slate-100 bg-white p-4 text-sm text-slate-700 shadow-sm">
                   <div className="flex items-center justify-between gap-3">
@@ -992,50 +1061,37 @@ export default function ConversationsPage() {
                 </div>
               )}
 
-              {activeState && (
+              {(activeState || (isDemoContact && demoState)) && (
                 <div className="mb-5 space-y-2 rounded-xl border border-slate-100 bg-slate-50 p-4 text-sm text-slate-700">
                   <div className="flex justify-between gap-3">
                     <span className="text-slate-500">Step</span>
-                    <span className="text-right font-semibold capitalize text-slate-900">{formatStep(activeState.workflow_step)}</span>
+                    <span className="text-right font-semibold capitalize text-slate-900">{formatStep(displayWorkflowStep)}</span>
                   </div>
                   <div className="flex justify-between gap-3">
                     <span className="text-slate-500">Type</span>
-                    <span className="text-right font-semibold capitalize text-slate-900">{activeState.order_type?.replace("-", " ") ?? "Not selected"}</span>
+                    <span className="text-right font-semibold capitalize text-slate-900">{(isDemoContact && demoState?.orderType) ? demoState.orderType : (activeState?.order_type?.replace("-", " ") ?? "Not selected")}</span>
                   </div>
-                  {activeState.address && (
+                  {(isDemoContact && demoState?.address) ? (
+                    <div className="flex justify-between gap-3">
+                      <span className="text-slate-500">Address</span>
+                      <span className="text-right font-semibold text-slate-900">{demoState.address}</span>
+                    </div>
+                  ) : activeState?.address ? (
                     <div className="flex justify-between gap-3">
                       <span className="text-slate-500">Address</span>
                       <span className="text-right font-semibold text-slate-900">{activeState.address}</span>
                     </div>
-                  )}
-                  {activeState.guests != null && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-slate-500">Guests</span>
-                      <span className="text-right font-semibold text-slate-900">{activeState.guests}</span>
-                    </div>
-                  )}
-                  {activeState.reservation_time && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-slate-500">Reservation</span>
-                      <span className="text-right font-semibold text-slate-900">{format(new Date(activeState.reservation_time), "dd MMM, hh:mm a")}</span>
-                    </div>
-                  )}
-                  {activeState.pickup_time && (
-                    <div className="flex justify-between gap-3">
-                      <span className="text-slate-500">Pickup</span>
-                      <span className="text-right font-semibold text-slate-900">{format(new Date(activeState.pickup_time), "dd MMM, hh:mm a")}</span>
-                    </div>
-                  )}
+                  ) : null}
                 </div>
               )}
-              {draftLines.length === 0 ? (
+              {displayDraftLines.length === 0 ? (
                 <div className="text-center text-slate-400 mt-10">
                   <Package size={32} className="mx-auto mb-2 opacity-20" />
                   <p className="text-sm">No items in the draft yet.</p>
                 </div>
               ) : (
                 <ul className="space-y-4">
-                  {draftLines.map((line, i) => (
+                  {displayDraftLines.map((line: DraftLine, i: number) => (
                     <li key={i} className="flex items-start justify-between rounded-xl border border-slate-100 bg-slate-50 p-4">
                       <div>
                         <p className="font-semibold text-slate-900">{line.name}</p>

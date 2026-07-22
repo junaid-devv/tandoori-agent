@@ -150,7 +150,7 @@ const ParsedTurnRemovalSchema = z.object({
 const OrderTurnInterpretationSchema = z.object({
   intent: OrderTurnIntentSchema,
   confidence: z.number().min(0).max(1),
-  language: z.enum(["english", "roman_urdu"]),
+  language: z.enum(["english", "roman_urdu", "urdu"]),
   add_items: z.array(ParsedTurnItemSchema).max(10),
   remove_items: z.array(ParsedTurnRemovalSchema).max(10),
   unknown_items: z.array(z.string().trim().min(1).max(120)).max(5),
@@ -208,9 +208,11 @@ function buildSupportPrompt(
   const aiPersonality = settings.ai_personality?.trim() || "Warm & Professional";
   const deliveryAreas = settings.delivery_areas.length > 0 ? settings.delivery_areas.join(", ") : "not restricted in settings";
   const languageInstruction =
-    preferredLanguage === "roman_urdu"
-      ? "Reply only in natural Roman Urdu written in English letters."
-      : "Reply only in natural English.";
+    preferredLanguage === "urdu"
+      ? "The customer writes in Urdu (Arabic script). Reply in natural Urdu written in Arabic script (اردو). Keep replies short and WhatsApp-friendly."
+      : preferredLanguage === "roman_urdu"
+        ? "Reply only in natural Roman Urdu written in English letters."
+        : "Reply only in natural English.";
 
   return [
     `You are the official WhatsApp assistant for ${appName}${city ? ` in ${city}` : ""}.`,
@@ -277,7 +279,7 @@ function buildOrderInterpreterPrompt(input: OrderTurnInterpretationInput): strin
     "{",
     '  "intent": "unknown",',
     '  "confidence": 0.0,',
-    '  "language": "english|roman_urdu",',
+    '  "language": "english|roman_urdu|urdu",',
     '  "add_items": [{"name":"Chicken Biryani", "qty":2}],',
     '  "remove_items": [{"name":"Chicken Biryani", "qty":1|"all"}],',
     '  "unknown_items": [""],',

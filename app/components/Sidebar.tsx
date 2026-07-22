@@ -187,11 +187,13 @@ export function Sidebar() {
               ? pathname === "/dashboard"
               : pathname.startsWith(href);
 
+          const testIdKey = href === "/dashboard" ? "overview" : href.split("/").pop();
           return (
             <Link
               key={href}
               href={href}
               prefetch
+              data-testid={`nav-${testIdKey}`}
               className={clsx(
                 "relative flex items-center justify-between overflow-hidden rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all group",
                 isActive

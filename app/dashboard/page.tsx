@@ -166,7 +166,7 @@ export default function DashboardPage() {
           { label: "Gross Revenue", val: `Rs. ${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: "text-indigo-600", bg: "bg-indigo-50" },
           { label: "AI Interactions", val: stats.chats, icon: MessageSquare, color: "text-brand", bg: "bg-orange-50" },
         ].map((item, i) => (
-          <div key={i} className="ui-card p-6 flex flex-col justify-between">
+          <div key={i} data-testid={`kpi-${item.label.toLowerCase().replace(/\s+/g, "-")}`} className="ui-card p-6 flex flex-col justify-between">
             <div className="flex items-center justify-between mb-4">
               <span className="text-sm font-medium text-slate-500">{item.label}</span>
               <div className={clsx("p-2 rounded-lg", item.bg)}>

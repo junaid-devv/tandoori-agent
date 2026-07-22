@@ -1,0 +1,266 @@
+{
+  "exportedAt": "2026-07-21T14:13:41.586Z",
+  "conversation": {
+    "id": "14ddb49c-80ab-46ef-9219-5649a838d3aa",
+    "branch_id": "71868596-1bf2-4d1c-a6a0-27fe3e387d7f",
+    "phone": "923155160301",
+    "name": "Junaid",
+    "mode": "agent",
+    "has_unread": true,
+    "created_at": "2026-07-21T13:53:46.42683+00:00",
+    "updated_at": "2026-07-21T13:55:41.820836+00:00",
+    "branches": {
+      "id": "71868596-1bf2-4d1c-a6a0-27fe3e387d7f",
+      "city": "Wah Cantt",
+      "name": "Tandoori New City",
+      "slug": "new-city",
+      "address": "PLOT NO. C-1A, BLOCK A, PHASE 2 CANTT, NEW CITY, WAH"
+    },
+    "conversation_states": {
+      "cart": [],
+      "guests": null,
+      "address": null,
+      "last_error": null,
+      "order_type": null,
+      "pickup_time": null,
+      "workflow_step": "idle",
+      "reservation_time": null
+    },
+    "user_sessions": {
+      "status": "active",
+      "active_node": "order_review",
+      "escalated_at": null,
+      "is_bot_active": true,
+      "escalation_reason": null,
+      "invalid_step_count": 0
+    },
+    "contacts": {
+      "id": "5d950f8b-0efc-45d8-a24a-57d2c461d515",
+      "tags": [],
+      "notes": null,
+      "total_orders": 1,
+      "last_order_at": "2026-07-21T13:55:44.556+00:00",
+      "preferred_language": "english"
+    }
+  },
+  "messages": [
+    {
+      "id": "d49d638e-63c4-459c-ada4-6ca5f1b5c043",
+      "ingest_seq": 2379,
+      "role": "user",
+      "sender_kind": "user",
+      "content": "71868596-1bf2-4d1c-a6a0-27fe3e387d7f",
+      "created_at": "2026-07-21T13:53:44+00:00",
+      "delivery_status": null,
+      "delivery_error": null,
+      "delivery_status_updated_at": null
+    },
+    {
+      "id": "c31f53b3-789b-430b-af5a-fb792d4b6b8a",
+      "ingest_seq": 2380,
+      "role": "assistant",
+      "sender_kind": "ai",
+      "content": "Great, you've selected *Tandoori New City*. Address: PLOT NO. C-1A, BLOCK A, PHASE 2 CANTT, NEW CITY, WAH\n\nNow choose a category or send any item name.",
+      "created_at": "2026-07-21T13:53:47.736914+00:00",
+      "delivery_status": "delivered",
+      "delivery_error": null,
+      "delivery_status_updated_at": "2026-07-21T13:53:49+00:00"
+    },
+    {
+      "id": "5b316182-6cc9-4f1b-949c-0897dc926d81",
+      "ingest_seq": 2381,
+      "role": "user",
+      "sender_kind": "user",
+      "content": "category_option_5",
+      "created_at": "2026-07-21T13:53:56+00:00",
+      "delivery_status": null,
+      "delivery_error": null,
+      "delivery_status_updated_at": null
+    },
+    {
+      "id": "00b9b447-5b06-4410-b465-2767ff6245c2",
+      "ingest_seq": 2383,
+      "role": "assistant",
+      "sender_kind": "ai",
+      "content": "*DESSERTS* items:\n1. COOKIE CRUNCH ICE-CREAM - Rs. 690\n2. KHEER THOOTHI - Rs. 295\n3. KULFI - Rs. 170\n4. PLAIN ICE-CREAM (2 SCOOPS) - Rs. 540\n5. TANDOORI SPECIAL ICE-CREAM - Rs. 815\n6. TUTTI FRUITTI ICE-CREAM - Rs. 695\nReply with number or item name and quantity (e.g., *2* or *2 Chicken Karahi*).",
+      "created_at": "2026-07-21T13:54:06.209801+00:00",
+      "delivery_status": "delivered",
+      "delivery_error": null,
+      "delivery_status_updated_at": "2026-07-21T13:54:07+00:00"
+    },
+    {
+      "id": "2245e393-ff4f-4536-aec2-ba006a62d9e6",
+      "ingest_seq": 2384,
+      "role": "user",
+      "sender_kind": "user",
+      "content": "113fb7da-b00c-4abf-aa46-0036a5a2568c",
+      "created_at": "2026-07-21T13:54:12+00:00",
+      "delivery_status": null,
+      "delivery_error": null,
+      "delivery_status_updated_at": null
+    },
+    {
+      "id": "ae5d6dd7-3736-418d-9695-0573592a658a",
+      "ingest_seq": 2386,
+      "role": "assistant",
+      "sender_kind": "ai",
+      "content": "*KHEER THOOTHI* selected. How many would you like?",
+      "created_at": "2026-07-21T13:54:23.089116+00:00",
+      "delivery_status": "delivered",
+      "delivery_error": null,
+      "delivery_status_updated_at": "2026-07-21T13:54:24+00:00"
+    },
+    {
+      "id": "d98d94a4-9cea-4ab4-b811-a18916c604be",
+      "ingest_seq": 2387,
+      "role": "user",
+      "sender_kind": "user",
+      "content": "__qty_pick__:3",
+      "created_at": "2026-07-21T13:54:27+00:00",
+      "delivery_status": null,
+      "delivery_error": null,
+      "delivery_status_updated_at": null
+    },
+    {
+      "id": "e4d3c9c0-6acb-4996-9607-8dbc68c84895",
+      "ingest_seq": 2388,
+      "role": "assistant",
+      "sender_kind": "ai",
+      "content": "Added: KHEER THOOTHI x3\n\nWould you like to add *GREEN TEA* (Rs. 225)?",
+      "created_at": "2026-07-21T13:54:32.037516+00:00",
+      "delivery_status": "delivered",
+      "delivery_error": null,
+      "delivery_status_updated_at": "2026-07-21T13:54:33+00:00"
+    },
+    {
+      "id": "92769ae5-ef79-4086-88f5-dfb1c2771e7a",
+      "ingest_seq": 2389,
+      "role": "user",
+      "sender_kind": "user",
+      "content": "Ek full chicken karahi bhi add kr dain",
+      "created_at": "2026-07-21T13:54:49+00:00",
+      "delivery_status": null,
+      "delivery_error": null,
+      "delivery_status_updated_at": null
+    },
+    {
+      "id": "eae97b34-22f2-47ab-8c1d-d48af647d6b4",
+      "ingest_seq": 2391,
+      "role": "assistant",
+      "sender_kind": "ai",
+      "content": "Added: CHICKEN KARAHI (FULL) x1\n\nYou can keep adding items.",
+      "created_at": "2026-07-21T13:54:57.147685+00:00",
+      "delivery_status": "delivered",
+      "delivery_error": null,
+      "delivery_status_updated_at": "2026-07-21T13:54:58+00:00"
+    },
+    {
+      "id": "2879102a-d55d-49b8-ae64-db1ff60f6a76",
+      "ingest_seq": 2392,
+      "role": "user",
+      "sender_kind": "user",
+      "content": "order_type_delivery",
+      "created_at": "2026-07-21T13:55:05+00:00",
+      "delivery_status": null,
+      "delivery_error": null,
+      "delivery_status_updated_at": null
+    },
+    {
+      "id": "f0d59133-16de-469e-9d0f-7de2398a5adb",
+      "ingest_seq": 2393,
+      "role": "assistant",
+      "sender_kind": "ai",
+      "content": "Great, please share your full delivery address.",
+      "created_at": "2026-07-21T13:55:12.430743+00:00",
+      "delivery_status": "delivered",
+      "delivery_error": null,
+      "delivery_status_updated_at": "2026-07-21T13:55:13+00:00"
+    },
+    {
+      "id": "5be557ba-ad2c-468c-8d38-62bc185af39b",
+      "ingest_seq": 2394,
+      "role": "user",
+      "sender_kind": "user",
+      "content": "New city phase 2",
+      "created_at": "2026-07-21T13:55:19+00:00",
+      "delivery_status": null,
+      "delivery_error": null,
+      "delivery_status_updated_at": null
+    },
+    {
+      "id": "7e277b2c-a59f-47be-b5f3-5d7b610cccf9",
+      "ingest_seq": 2395,
+      "role": "assistant",
+      "sender_kind": "ai",
+      "content": "Order summary:\n- KHEER THOOTHI x3 = Rs. 885\n- CHICKEN KARAHI (FULL) x1 = Rs. 2495\nSubtotal: Rs. 3380\nDelivery fee: Rs. 200\nTotal: Rs. 3580\nAddress: New city phase 2\nIf this address is correct, reply *Yes*. To change it, send *change address* or the new address.\nTo change items, send add/remove instructions.",
+      "created_at": "2026-07-21T13:55:24.757587+00:00",
+      "delivery_status": "delivered",
+      "delivery_error": null,
+      "delivery_status_updated_at": "2026-07-21T13:55:26+00:00"
+    },
+    {
+      "id": "05ef9fe7-c3dc-4208-9742-9f7e73c46b18",
+      "ingest_seq": 2396,
+      "role": "user",
+      "sender_kind": "user",
+      "content": "Yes",
+      "created_at": "2026-07-21T13:55:39+00:00",
+      "delivery_status": null,
+      "delivery_error": null,
+      "delivery_status_updated_at": null
+    },
+    {
+      "id": "bf11d672-698b-441a-b5e5-0ee91908c6cd",
+      "ingest_seq": 2397,
+      "role": "assistant",
+      "sender_kind": "ai",
+      "content": "Thank you! Your order has been placed.\nDelivery estimate is about 45 minutes after confirmation. Prep time is about 30 minutes.\nFor urgent help: 0341-1007722",
+      "created_at": "2026-07-21T13:55:45.192717+00:00",
+      "delivery_status": "delivered",
+      "delivery_error": null,
+      "delivery_status_updated_at": "2026-07-21T13:55:46+00:00"
+    }
+  ],
+  "orders": [
+    {
+      "id": "9f2c8281-dbed-4aa5-9e11-54fc9c9151a2",
+      "order_number": 57,
+      "type": "delivery",
+      "status": "received",
+      "subtotal": 3380,
+      "delivery_fee": 200,
+      "address": "New city phase 2",
+      "customer_instructions": null,
+      "assigned_to": null,
+      "created_at": "2026-07-21T13:55:44.043844+00:00",
+      "branches": {
+        "name": "Tandoori New City",
+        "slug": "new-city"
+      },
+      "conversations": {
+        "name": "Junaid",
+        "phone": "923155160301"
+      },
+      "order_items": [
+        {
+          "id": "5da87792-bc7b-4696-a6d5-1c5fa414cbc1",
+          "qty": 3,
+          "name": "KHEER THOOTHI",
+          "size": null,
+          "price": 295,
+          "addons": [],
+          "item_instructions": null
+        },
+        {
+          "id": "bd903ae7-9c3a-488b-a5d4-dc7c973bd59c",
+          "qty": 1,
+          "name": "CHICKEN KARAHI (FULL)",
+          "size": null,
+          "price": 2495,
+          "addons": [],
+          "item_instructions": null
+        }
+      ]
+    }
+  ]
+}

@@ -248,7 +248,7 @@ export default function OrdersPage() {
             const totalItems = order.order_items.reduce((sum, item) => sum + item.qty, 0);
 
             return (
-              <div key={order.id} className={clsx("rounded-2xl border bg-white shadow-sm transition-all", expanded ? "border-brand/30 shadow-md" : "border-slate-200 hover:border-slate-300")}>
+              <div key={order.id} data-testid={`order-card-${order.order_number}`} className={clsx("rounded-2xl border bg-white shadow-sm transition-all", expanded ? "border-brand/30 shadow-md" : "border-slate-200 hover:border-slate-300")}>
                 <div className="cursor-pointer p-4 lg:p-5" onClick={() => setExpandedId(expanded ? null : order.id)}>
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
                     <div className="flex items-center gap-4 lg:w-52">
@@ -293,6 +293,7 @@ export default function OrdersPage() {
                       <div className="flex items-center gap-2">
                         <div className="relative">
                           <select
+                            data-testid={`order-status-select-${order.order_number}`}
                             value={order.status}
                             disabled={savingId === order.id}
                             onClick={(event) => event.stopPropagation()}
@@ -308,7 +309,7 @@ export default function OrdersPage() {
                           <ChevronDown size={12} className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                         </div>
 
-                        <button onClick={(event) => { event.stopPropagation(); setExpandedId(expanded ? null : order.id); }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500">
+                        <button data-testid={`order-expand-${order.order_number}`} onClick={(event) => { event.stopPropagation(); setExpandedId(expanded ? null : order.id); }} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500">
                           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                         </button>
                       </div>

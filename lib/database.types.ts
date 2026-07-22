@@ -14,7 +14,7 @@ export type OrderStatus =
   | "cancelled";
 
 export type OrderType = "delivery" | "pickup" | "dine-in";
-export type LanguagePreference = "english" | "roman_urdu";
+export type LanguagePreference = "english" | "roman_urdu" | "urdu";
 export type WorkflowStep =
   | "idle"
   | "awaiting_branch_selection"
