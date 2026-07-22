@@ -23,7 +23,7 @@ const source = fs.readFileSync(target, "utf8");
 const guardOption = "if (/^category\\s+option\\s+\\d{1,2}$/.test(text)) return false;";
 const guardMore = "if (/^category\\s+more\\s+\\d{1,2}$/.test(text)) return false;";
 const genericMatcher =
-  "return /(menu|show.*menu|what.*have|list.*items?|kya.*hai|dikhao|category|categories|price|rates?)/.test(text);";
+  "return /(menu|show.*menu|what.*have|list.*items?|kya.*hai|dikhao|category|categories|price|rates?|kaun si.*(?:item|dish|food|biryani|chicken|karahi|option)|(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert)\\b.*\\bavailable|available.*\\b(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert))/.test(text);";
 
 const optionIndex = source.indexOf(guardOption);
 const moreIndex = source.indexOf(guardMore);

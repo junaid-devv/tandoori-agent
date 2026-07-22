@@ -22,6 +22,12 @@ const MENU_TOKEN_STOP_WORDS = new Set([
   "quantity",
 ]);
 
+export function stripVoiceNotePrefix(value: string): string {
+  return value
+    .replace(/^\s*\[(?:voice\s*note|audio\s*(?:message|note)?|transcription)\]\s*:?/i, "")
+    .trim();
+}
+
 const URDU_ORDER_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/[۰٠]/g, "0"],
   [/[۱١]/g, "1"],
@@ -33,6 +39,7 @@ const URDU_ORDER_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/[۷٧]/g, "7"],
   [/[۸٨]/g, "8"],
   [/[۹٩]/g, "9"],
+  [/(?:کر)/g, " kar "],
   [/(?:ایک|اک|اِک)/g, " ek "],
   [/(?:دو)/g, " do "],
   [/(?:تین)/g, " teen "],
@@ -44,12 +51,31 @@ const URDU_ORDER_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/(?:دس)/g, " das "],
   [/(?:فل|فُل|فول)/g, " full "],
   [/(?:ہاف|نصف)/g, " half "],
+  [/(?:مینیو|مینو|مینوں|منیو)/g, " menu "],
+  [/(?:آرڈر|ارڈر)/g, " order "],
+  [/(?:آپشن|اوپشن|اوشن|اویشن)/g, " option "],
+  [/(?:ایویلیبل|اویلیبل|دستیاب|ملے\s*گا|ملے\s*گی|مل\s*جائے\s*گا|مل\s*جائے\s*گی)/g, " available "],
+  [/(?:کون\s*سی|کونسا|کون\s*سا|کونسے|کون\s*سے)/g, " kaun si "],
+  [/(?:کیا)/g, " kya "],
+  [/(?:میں|مے)/g, " mein "],
+  [/(?:اور)/g, " aur "],
+  [/(?:بھی)/g, " bhi "],
+  [/(?:کوئی|کوی)/g, " koi "],
+  [/(?:یہ|وہ|ہے|ہیں|تھا|تھی|کرنا|لینا|دینا|مجھے|ہمیں|آپ|اپ)/g, " "],
   [/(?:چکن|مرغی)/g, " chicken "],
   [/(?:مٹن|بکرا|بکرے)/g, " mutton "],
   [/(?:بیف|گائے)/g, " beef "],
   [/(?:بریانی)/g, " biryani "],
+  [/(?:پلاؤ|پلاو)/g, " pulao "],
+  [/(?:چاول)/g, " rice "],
   [/(?:کڑاہی|کڑائی|کرائی|کراہی)/g, " karahi "],
   [/(?:ہانڈی)/g, " handi "],
+  [/(?:قورمہ|کورمہ)/g, " qorma "],
+  [/(?:نہاری|نھاری)/g, " nihari "],
+  [/(?:حلیم)/g, " haleem "],
+  [/(?:دال)/g, " daal "],
+  [/(?:پایہ|پاۓ|پائے)/g, " paya "],
+  [/(?:سالن)/g, " salan "],
   [/(?:تکہ|ٹکہ)/g, " tikka "],
   [/(?:بوٹی)/g, " boti "],
   [/(?:کباب|کبب)/g, " kabab "],
@@ -83,7 +109,7 @@ function expandUrduOrderTokens(value: string): string {
 }
 
 export function normalizeText(value: string): string {
-  const withAliasExpansion = expandUrduOrderTokens(value)
+  const withAliasExpansion = expandUrduOrderTokens(stripVoiceNotePrefix(value))
     .toLowerCase()
     .replace(/\bice[\s-]?cream\b/g, "ice cream");
   return withAliasExpansion

@@ -53,6 +53,7 @@ import {
 import {
   extractFlowResponseCommand,
 } from "@/lib/whatsapp-flow";
+import { normalizeText } from "@/lib/order-text-utils";
 import {
   claimWebhookEvent,
   markWebhookEventFailed,
@@ -1346,9 +1347,9 @@ async function drainConversationQueue(conversation: ConversationRow) {
         isOpenNow = settings.is_accepting_orders && isWithinOperatingHours(settings.opening_time, settings.closing_time);
       }
       // Detect message type for optimization
-      const normalizedIncoming = nextMessage.content.toLowerCase().trim();
+      const normalizedIncoming = normalizeText(nextMessage.content);
       const messageType = detectMessageType(normalizedIncoming);
-      const hasDirectMenuSignal = /(menu|show.*menu|list.*items?|category|categories|price|rates?|kya.*hai|dikhao)/.test(normalizedIncoming);
+      const hasDirectMenuSignal = /(menu|show.*menu|list.*items?|category|categories|price|rates?|kya.*hai|dikhao|kaun si.*(?:item|dish|food|biryani|chicken|karahi|option)|(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert)\b.*\bavailable|available.*\b(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert))/.test(normalizedIncoming);
       const shouldPrimeMenuOnGreeting =
         messageType === "greeting" &&
         (state.workflow_step === "idle" || state.workflow_step === "collecting_items") &&

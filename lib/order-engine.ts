@@ -19,7 +19,7 @@ import {
   parseGuestCount,
   parseReservationTime,
 } from "./order-input-parsers";
-import { itemSimilarityScore, normalizeCompact, normalizeText, tokenOverlapScore, tokenizeForMenuMatching } from "./order-text-utils";
+import { itemSimilarityScore, normalizeCompact, normalizeText, stripVoiceNotePrefix, tokenOverlapScore, tokenizeForMenuMatching } from "./order-text-utils";
 import { type RestaurantSettings } from "./settings";
 import { createStaffAlert } from "./staff-alerts";
 import { supabaseAdmin } from "./supabase-admin";
@@ -346,6 +346,29 @@ const ORDER_NOTE_INPUT_MARKER = "__order_note_input__";
 const ORDER_NOTE_ADD_TOKEN = "order_note_add";
 const ORDER_NOTE_REMOVE_TOKEN = "order_note_remove";
 const ORDER_NOTE_CANCEL_TOKEN = "order_note_cancel";
+const ORDER_ENGINE_DEFAULT_INTERPRETATION: OrderTurnInterpretation = {
+  intent: "unknown",
+  confidence: 0,
+  language: "english",
+  add_items: [],
+  remove_items: [],
+  unknown_items: [],
+  order_type: null,
+  address: null,
+  guests: null,
+  reservation_time: null,
+  category_query: null,
+  asks_menu: false,
+  asks_payment: false,
+  asks_eta: false,
+  asks_status: false,
+  wants_confirmation: null,
+  wants_restart: false,
+  wants_continue: false,
+  wants_human: false,
+  sentiment: "neutral",
+  notes: null,
+};
 const SIZE_WORDS = new Map<string, string>([
   ["small", "Small"],
   ["sm", "Small"],
@@ -673,7 +696,7 @@ function buildAddressChangePrompt(savedAddress: string | null, settings: Restaur
 }
 
 export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
-  const rawText = context.messageText.trim();
+  const rawText = stripVoiceNotePrefix(context.messageText).trim();
   const normalizedText = normalizeText(rawText);
   const preferredLanguage = inferLanguagePreference(rawText, context.state.preferred_language);
   const prefersRomanUrdu = preferredLanguage === "roman_urdu";
@@ -889,6 +912,44 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         ...state,
         workflow_step: state.resume_workflow_step ?? state.workflow_step,
       });
+      if (isOrderFlowMessageWhileAwaitingNote(rawText, normalizedText, context.menuItems)) {
+        const redirected = await decideTurn({
+          ...context,
+          messageText: rawText,
+          state: {
+            ...state,
+            preferred_language: preferredLanguage,
+            workflow_step: nextStep,
+            resume_workflow_step: null,
+            last_presented_category: null,
+            last_presented_options: null,
+            last_presented_options_at: null,
+          },
+        });
+        return {
+          ...redirected,
+          statePatch: redirected.statePatch
+            ? withPreferredLanguage(
+              {
+                last_presented_category: null,
+                last_presented_options: null,
+                last_presented_options_at: null,
+                resume_workflow_step: null,
+                ...redirected.statePatch,
+              },
+              (redirected.statePatch.preferred_language as LanguagePreference | undefined) ?? preferredLanguage,
+            )
+            : withPreferredLanguage(
+              {
+                last_presented_category: null,
+                last_presented_options: null,
+                last_presented_options_at: null,
+                resume_workflow_step: null,
+              },
+              preferredLanguage,
+            ),
+        };
+      }
 
       if (isOrderNoteCancelRequest(normalizedText)) {
         return replyDecision(
@@ -1267,6 +1328,89 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         ? "Aap ka koi recent order nahi mila. Naya order place karna chahenge?"
         : "I couldn't find any recent orders. Would you like to place a new order?",
       withPreferredLanguage({}, preferredLanguage),
+    );
+  }
+
+  const earlyMenuItems = getAvailableMenuItems(context.menuItems);
+  const earlyDirectOrderMessage = isLikelyDirectOrderRequest(
+    rawText,
+    normalizedText,
+    { ...ORDER_ENGINE_DEFAULT_INTERPRETATION, language: preferredLanguage },
+    earlyMenuItems,
+  );
+  if (isLikelyMenuRequest(normalizedText) && !earlyDirectOrderMessage) {
+    const availabilityQuery = extractItemAvailabilityQuery(normalizedText);
+    if (availabilityQuery) {
+      const itemSuggestions = findLikelyMenuSuggestions(availabilityQuery, earlyMenuItems, 12);
+      if (itemSuggestions.length > 0) {
+        return replyDecision(
+          buildItemMatchesReply(availabilityQuery, itemSuggestions, prefersRomanUrdu),
+          withPreferredLanguage(
+            {
+              workflow_step: "collecting_items",
+              last_presented_options: itemSuggestions,
+              last_presented_options_at: new Date().toISOString(),
+            },
+            preferredLanguage,
+          ),
+        );
+      }
+    }
+
+    const categoryReply = buildCategoryListReply(earlyMenuItems, prefersRomanUrdu);
+    return replyDecision(
+      categoryReply.text,
+      withPreferredLanguage(
+        {
+          workflow_step: state.cart.length > 0 ? "collecting_items" : state.workflow_step,
+          last_presented_category: "__category_list__",
+          last_presented_options: null,
+          last_presented_options_at: null,
+        },
+        preferredLanguage,
+      ),
+      undefined,
+      categoryReply.interactiveList,
+    );
+  }
+
+  const earlyDirectHints = resolveRequestedItems([], [], earlyMenuItems, rawText, context.semanticMatches);
+  if (
+    hasDirectOrderVerb(normalizedText) &&
+    earlyDirectHints.matched.length > 0 &&
+    earlyDirectHints.ambiguous.length === 0
+  ) {
+    const nextStateBase: ConversationState = {
+      ...state,
+      cart: mergeCartItems(state.cart, earlyDirectHints.matched),
+      workflow_step: "collecting_items",
+      preferred_language: preferredLanguage,
+      last_presented_category: null,
+      last_presented_options: null,
+      last_presented_options_at: null,
+    };
+    const nextState = applyCheckoutSignalsToState({
+      state: nextStateBase,
+      interpretation: { ...ORDER_ENGINE_DEFAULT_INTERPRETATION, language: preferredLanguage, intent: "add_items", confidence: 0.95 },
+      rawText,
+      settings: context.settings,
+    });
+    return buildLogisticsOrSummaryReply(
+      {
+        state: nextState,
+        settings: context.settings,
+        matchedAdds: earlyDirectHints,
+        removedItemsText: "",
+        menuItems: context.menuItems,
+        skipUpsell: true,
+      },
+      {
+        intent: "add_items",
+        confidence: 0.95,
+        unknownItems: earlyDirectHints.unknown,
+        sentiment: "neutral",
+        notes: "deterministic_direct_order",
+      },
     );
   }
 
@@ -3008,7 +3152,7 @@ function isLikelyMenuRequest(text: string): boolean {
   if (/^category\s+option\s+\d{1,2}$/.test(text)) return false;
   if (/^category\s+more\s+\d{1,2}$/.test(text)) return false;
 
-  return /(menu|show.*menu|what.*have|list.*items?|kya.*hai|dikhao|category|categories|price|rates?)/.test(text);
+  return /(menu|show.*menu|what.*have|list.*items?|kya.*hai|dikhao|category|categories|price|rates?|kaun si.*(?:item|dish|food|biryani|chicken|karahi|option)|(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert)\b.*\bavailable|available.*\b(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert))/.test(text);
 }
 
 function hasDirectOrderVerb(normalizedText: string): boolean {
@@ -3040,6 +3184,20 @@ function isLikelyDirectOrderRequest(
   const inlineItems = findInlineItems(rawText, menuItems);
   if (inlineItems.length > 0 && (hasOrderVerb || hasQtySignal || hasOrderTypeShortcut)) return true;
 
+  return false;
+}
+
+function isOrderFlowMessageWhileAwaitingNote(
+  rawText: string,
+  normalizedText: string,
+  menuItems: MenuCatalogItem[],
+): boolean {
+  if (!normalizedText) return false;
+  if (isOrderNoteCancelRequest(normalizedText) || isOrderNoteRemoveRequest(normalizedText)) return false;
+  if (isLikelyMenuRequest(normalizedText)) return true;
+  if (parseOrderTypeShortcut(normalizedText) != null) return true;
+  if (hasDirectOrderVerb(normalizedText)) return true;
+  if (findInlineItems(rawText, getAvailableMenuItems(menuItems)).length > 0) return true;
   return false;
 }
 
