@@ -49,7 +49,11 @@ export function detectMessageType(normalizedText: string): MessageType {
   // still hydrate menu data and don't get downgraded to greeting-only.
   const hasMenuSignal =
       /\b(menu|item|dish|food|drink|beverage|price|cost|available|category|biryani|karahi|bbq|burger|pizza|roll|fries)\b/i.test(normalizedText) ||
-      /\d+\s*(piece|pcs|kg|g|liter|l|ml|cup|plate|bowl)/i.test(normalizedText);
+      /\d+\s*(piece|pcs|kg|g|liter|l|ml|cup|plate|bowl)/i.test(normalizedText) ||
+      // Urdu Arabic script food/menu keywords
+      /[\u0645][\u06cc][\u0646][\u06cc][\u0648]|[\u0686][\u06a9][\u0646]|[\u06a9][\u0691][\u0627][\u06c1][\u06cc]|[\u0628][\u0631][\u06cc][\u0627][\u0646][\u06cc]|[\u0646][\u0627][\u0646]|[\u0631][\u0648][\u0679][\u06cc]|[\u0622][\u0631][\u0688][\u0631]|[\u0642][\u0648][\u0631][\u0645][\u06c1]|[\u0646][\u06c1][\u0627][\u0631][\u06cc]|[\u062f][\u0627][\u0644]|[\u062d][\u0644][\u06cc][\u0645]|[\u067e][\u06cc][\u0632][\u0627]|[\u0628][\u0631][\u06af][\u0631]/.test(normalizedText) ||
+      // Voice note transcriptions should be treated as potential orders
+      /^\[voice note\]/i.test(normalizedText);
   if (hasMenuSignal) {
     return "menu_related";
   }
@@ -124,7 +128,7 @@ export type WorkflowStep =
   | "awaiting_resume_decision";
 
 export type OrderType = "delivery" | "pickup" | "dine-in";
-export type LanguagePreference = "english" | "roman_urdu" | "urdu";
+export type LanguagePreference = "english" | "roman_urdu";
 
 export interface MenuCatalogItem {
   id: string;
@@ -613,8 +617,9 @@ export function inferLanguagePreference(
   text: string,
   previous: LanguagePreference = "english",
 ): LanguagePreference {
-  // Pure Urdu (Arabic script) detection — highest priority
-  if (containsUrduScript(text)) return "urdu";
+  // Pure Urdu (Arabic script) detection — treat as roman_urdu preference
+  // (database constraint only allows 'english' | 'roman_urdu')
+  if (containsUrduScript(text)) return "roman_urdu";
 
   const normalized = normalizeText(text);
   const romanScore = scoreSignals(normalized, ROMAN_URDU_SIGNAL_WORDS);

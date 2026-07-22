@@ -150,7 +150,7 @@ const ParsedTurnRemovalSchema = z.object({
 const OrderTurnInterpretationSchema = z.object({
   intent: OrderTurnIntentSchema,
   confidence: z.number().min(0).max(1),
-  language: z.enum(["english", "roman_urdu", "urdu"]),
+  language: z.enum(["english", "roman_urdu"]),
   add_items: z.array(ParsedTurnItemSchema).max(10),
   remove_items: z.array(ParsedTurnRemovalSchema).max(10),
   unknown_items: z.array(z.string().trim().min(1).max(120)).max(5),
@@ -208,11 +208,9 @@ function buildSupportPrompt(
   const aiPersonality = settings.ai_personality?.trim() || "Warm & Professional";
   const deliveryAreas = settings.delivery_areas.length > 0 ? settings.delivery_areas.join(", ") : "not restricted in settings";
   const languageInstruction =
-    preferredLanguage === "urdu"
-      ? "The customer writes in Urdu (Arabic script). Reply in natural Urdu written in Arabic script (اردو). Keep replies short and WhatsApp-friendly."
-      : preferredLanguage === "roman_urdu"
-        ? "Reply only in natural Roman Urdu written in English letters."
-        : "Reply only in natural English.";
+    preferredLanguage === "roman_urdu"
+      ? "Reply only in natural Roman Urdu written in English letters. The customer may write in Urdu Arabic script (اردو) or Roman Urdu — understand both and always reply in Roman Urdu."
+      : "Reply only in natural English. The customer may write in Urdu Arabic script (اردو) — understand it and still reply in English.";
 
   return [
     `You are the official WhatsApp assistant for ${appName}${city ? ` in ${city}` : ""}.`,
@@ -273,13 +271,17 @@ function buildOrderInterpreterPrompt(input: OrderTurnInterpretationInput): strin
     "- If the user asks for a human, is abusive, or sounds angry, set wants_human=true.",
     "- If quantity is not clearly an integer, do not guess. Leave the item out of add_items and mention it in unknown_items or notes.",
     "- If an item is descriptive or misspelled, use SEMANTIC_MENU_MATCHES only as verified candidate hints.",
+    "- The customer may write in Urdu Arabic script (اردو), Roman Urdu, or English. Understand ALL three and map food item names to their closest MENU_CATALOG match.",
+    "- Common Urdu food terms: چکن = Chicken, کڑاہی = Karahi, بریانی = Biryani, نان = Naan, روٹی = Roti, چاول = Rice, سالن = Salan/Curry, دال = Daal, قورمہ = Qorma, نہاری = Nihari, پایہ = Paya, حلیم = Haleem, برگر = Burger, پیزا = Pizza, فرائیز = Fries, رول = Roll, مینیو = Menu, آرڈر = Order, بیف = Beef, مٹن = Mutton.",
+    "- Messages prefixed with '[Voice note]' are voice-to-text transcriptions. Treat the text after the prefix as a normal customer message and parse it for order intent.",
+    "- If the user writes 'مینیو' or 'menu' or 'meniu', set intent=browse_menu and asks_menu=true.",
     "intent must be one of:",
     "greeting,add_items,remove_items,set_order_type,provide_address,provide_dine_in_details,confirm_order,modify_order,browse_menu,category_question,payment_question,eta_question,order_status_question,cancel_order,restart_order,continue_order,chitchat,unknown",
     "Schema:",
     "{",
     '  "intent": "unknown",',
     '  "confidence": 0.0,',
-    '  "language": "english|roman_urdu|urdu",',
+    '  "language": "english|roman_urdu",',
     '  "add_items": [{"name":"Chicken Biryani", "qty":2}],',
     '  "remove_items": [{"name":"Chicken Biryani", "qty":1|"all"}],',
     '  "unknown_items": [""],',

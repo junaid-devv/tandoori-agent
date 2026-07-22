@@ -550,9 +550,7 @@ async function processWebhook(body: unknown) {
       if (message.type !== "reaction") {
         if (message.type === "audio") {
           const voiceFallback =
-            state.preferred_language === "urdu"
-              ? "آپ کا وائس نوٹ مل گیا، لیکن ابھی آٹومیٹک ٹرانسکرپشن دستیاب نہیں ہے۔ اسٹاف آپ کی مدد کرے گا۔ AI سے آرڈر جاری رکھنے کے لیے براہ کرم ٹیکسٹ میں آرڈر بھیجیں۔"
-              : state.preferred_language === "roman_urdu"
+            state.preferred_language === "roman_urdu"
               ? "Voice note receive ho gaya hai, lekin is waqt automatic transcription available nahi. Staff aapki help karega. Agar AI se order continue karna hai to please text mein order bhej dein."
               : "I received your voice note, but automatic transcription is not available right now. A staff member will help. To continue with the AI, please type your order.";
           const persistedVoiceMessage = await persistUserMessage(
@@ -582,9 +580,7 @@ async function processWebhook(body: unknown) {
         }
 
         const nonTextReply =
-          state.preferred_language === "urdu"
-            ? "براہ کرم ٹیکسٹ میسج بھیجیں، میں مینو اور آرڈر میں مدد کروں گا۔"
-            : state.preferred_language === "roman_urdu"
+          state.preferred_language === "roman_urdu"
             ? "Please text message bhej dein, main menu aur order mein help kar deta hoon."
             : "Please send a text message and I'll help you with the menu or your order.";
         const nonTextFlow = buildFlowMessageForAgentReply({
@@ -761,9 +757,7 @@ async function processWebhook(body: unknown) {
     if (conversation.mode === "human") {
       if (incomingContent && shouldResumeBotFromHumanMessage(incomingContent)) {
         const resumeReply =
-          state.preferred_language === "urdu"
-            ? "ٹھیک ہے، AI اسسٹنٹ دوبارہ فعال ہو گیا ہے۔ آپ اپنا آرڈر بھیج سکتے ہیں۔"
-            : state.preferred_language === "roman_urdu"
+          state.preferred_language === "roman_urdu"
             ? "Theek hai, AI assistant dobara active kar diya gaya hai. Aap apna order message bhej dein."
             : "Done, the AI assistant is active again. You can send your order now.";
 
