@@ -26,7 +26,8 @@
     "demo:seed": "node --no-warnings --experimental-strip-types demo/seed/seed-demo-data.ts",
     "demo:record": "node --no-warnings --experimental-strip-types demo/playwright/record-product-demo.ts",
     "demo:record:headed": "node --no-warnings --experimental-strip-types demo/playwright/record-product-demo-headed.ts",
-    "demo:debug": "npx playwright test --config=demo/playwright/playwright.demo.config.ts --debug"
+    "demo:debug": "npx playwright test --config=demo/playwright/playwright.demo.config.ts --debug",
+    "db:clear-chat": "node --no-warnings --experimental-strip-types scripts/clear_chat.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",
