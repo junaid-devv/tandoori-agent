@@ -3,8 +3,10 @@ import {
   sendWhatsAppInteractiveFlow,
   sendWhatsAppInteractiveList,
   sendWhatsAppMessage,
+  sendWhatsAppReplyButtons,
   type WhatsAppInteractiveFlowPayload,
   type WhatsAppInteractiveListPayload,
+  type WhatsAppReplyButtonPayload,
 } from "./whatsapp";
 
 export type MessageSenderKind = "user" | "ai" | "human" | "system";
@@ -30,6 +32,10 @@ type OutboundMessageParams = {
 
 type OutboundInteractiveMessageParams = OutboundMessageParams & {
   interactive: WhatsAppInteractiveListPayload;
+};
+
+type OutboundReplyButtonMessageParams = OutboundMessageParams & {
+  replyButtons: WhatsAppReplyButtonPayload;
 };
 
 type OutboundFlowMessageParams = OutboundMessageParams & {
@@ -230,6 +236,70 @@ export async function sendAndPersistOutboundInteractiveMessage({
 
   try {
     const result = await sendWhatsAppInteractiveList(phone, interactive);
+    const { error: updateError } = await supabaseAdmin
+      .from("messages")
+      .update({
+        whatsapp_msg_id: result.messageId,
+        delivery_status: "sent",
+        delivery_error: null,
+        delivery_status_updated_at: new Date().toISOString(),
+      })
+      .eq("id", inserted.id);
+
+    if (updateError) {
+      throw new OutboundMessageError(updateError.message, true, inserted.id);
+    }
+
+    return {
+      id: inserted.id,
+      whatsappMessageId: result.messageId,
+    };
+  } catch (error) {
+    const message = toErrorMessage(error);
+
+    await supabaseAdmin
+      .from("messages")
+      .update({
+        delivery_status: error instanceof OutboundMessageError && error.messageSent ? "sent" : "failed",
+        delivery_error: message,
+        delivery_status_updated_at: new Date().toISOString(),
+      })
+      .eq("id", inserted.id);
+
+    if (error instanceof OutboundMessageError) {
+      throw error;
+    }
+
+    throw new OutboundMessageError(message, false, inserted.id);
+  }
+}
+
+export async function sendAndPersistOutboundReplyButtonMessage({
+  conversationId,
+  phone,
+  content,
+  senderKind,
+  replyButtons,
+}: OutboundReplyButtonMessageParams) {
+  const { data: inserted, error: insertError } = await supabaseAdmin
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      sender_kind: senderKind,
+      content,
+      delivery_status: "pending",
+      delivery_status_updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (insertError || !inserted) {
+    throw insertError ?? new Error("Failed to persist outbound reply button message before send.");
+  }
+
+  try {
+    const result = await sendWhatsAppReplyButtons(phone, replyButtons);
     const { error: updateError } = await supabaseAdmin
       .from("messages")
       .update({

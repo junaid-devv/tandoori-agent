@@ -245,6 +245,12 @@ export type TurnDecision =
       sectionTitle?: string;
       rows: Array<{ id: string; title: string; description?: string }>;
     } | null;
+    replyButtons?: {
+      body: string;
+      buttons: Array<{ id: string; title: string }>;
+      headerText?: string;
+      footerText?: string;
+    } | null;
     statePatch: Partial<ConversationState>;
     trace?: TurnTrace;
   }
@@ -902,7 +908,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         preferredLanguage,
       ),
       undefined,
-      buildOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+      null,
+      buildOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled),
     );
   }
 
@@ -968,8 +975,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
             preferredLanguage,
           ),
           undefined,
+          null,
           nextStep === "collecting_items"
-            ? buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+            ? buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled)
             : null,
         );
       }
@@ -1009,8 +1017,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
             preferredLanguage,
           ),
           undefined,
+          null,
           nextStep === "collecting_items"
-            ? buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+            ? buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled)
             : null,
         );
       }
@@ -1118,7 +1127,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           preferredLanguage,
         ),
         undefined,
-        buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+        null,
+        buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled),
       );
     }
 
@@ -1154,7 +1164,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           preferredLanguage,
         ),
         undefined,
-        buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+        null,
+        buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled),
       );
     }
 
@@ -1225,8 +1236,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
             preferredLanguage,
           ),
           undefined,
+          null,
           nextStep === "collecting_items"
-            ? buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+            ? buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled)
             : null,
         );
       }
@@ -1236,28 +1248,36 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
   // ULTRA-FAST PATTERN-BASED EARLY EXIT FOR SIMPLE GREETINGS - No AI call, no DB queries
   if (isSimpleGreetingPattern(rawText) && state.cart.length === 0 && isConversationStartStep) {
     if (canOfferFreshMenuOnGreeting) {
-      const categoryReply = buildCategoryListReply(getAvailableMenuItems(context.menuItems), prefersRomanUrdu, 1);
-      const welcome = getGreetingReply(rawText, prefersRomanUrdu);
+      const welcome = getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true);
       return replyDecision(
-        [welcome, categoryReply.text, buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
+        [welcome, buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
           .filter(Boolean)
           .join("\n\n"),
         withPreferredLanguage(
           {
-            workflow_step: "collecting_items",
-            last_presented_category: "__category_list__",
+            workflow_step: "idle",
+            last_presented_category: null,
             last_presented_options: null,
             last_presented_options_at: null,
           },
           preferredLanguage,
         ),
         undefined,
-        categoryReply.interactiveList,
+        null,
+        {
+          body: prefersRomanUrdu
+            ? "Menu dekhne ya branch change karne ke liye button select karein."
+            : "Use the buttons below to view the menu or change your branch.",
+          buttons: [
+            { id: "action_view_menu", title: "View Menu" },
+            { id: "branch_change_saved", title: "Change Branch" },
+          ],
+        },
       );
     }
 
     return replyDecision(
-      [getGreetingReply(rawText, prefersRomanUrdu), buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
+      [getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true), buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
         .filter(Boolean)
         .join("\n\n"),
       withPreferredLanguage({}, preferredLanguage),
@@ -1277,28 +1297,36 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
   // EARLY EXIT FOR DETECTED GREETINGS (fallback to AI-detected greetings)
   if (messageType === "greeting" && state.cart.length === 0 && isConversationStartStep) {
     if (canOfferFreshMenuOnGreeting) {
-      const categoryReply = buildCategoryListReply(getAvailableMenuItems(context.menuItems), prefersRomanUrdu, 1);
-      const welcome = getGreetingReply(rawText, prefersRomanUrdu);
+      const welcome = getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true);
       return replyDecision(
-        [welcome, categoryReply.text, buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
+        [welcome, buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
           .filter(Boolean)
           .join("\n\n"),
         withPreferredLanguage(
           {
-            workflow_step: "collecting_items",
-            last_presented_category: "__category_list__",
+            workflow_step: "idle",
+            last_presented_category: null,
             last_presented_options: null,
             last_presented_options_at: null,
           },
           preferredLanguage,
         ),
         undefined,
-        categoryReply.interactiveList,
+        null,
+        {
+          body: prefersRomanUrdu
+            ? "Menu dekhne ya branch change karne ke liye button select karein."
+            : "Use the buttons below to view the menu or change your branch.",
+          buttons: [
+            { id: "action_view_menu", title: "View Menu" },
+            { id: "branch_change_saved", title: "Change Branch" },
+          ],
+        },
       );
     }
 
     return replyDecision(
-      [getGreetingReply(rawText, prefersRomanUrdu), buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
+      [getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true), buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
         .filter(Boolean)
         .join("\n\n"),
       withPreferredLanguage({}, preferredLanguage),
@@ -2184,7 +2212,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     state.workflow_step === "idle"
   ) {
     const categoryReply = buildCategoryListReply(menuItems, prefersRomanUrdu, 1);
-    const welcome = getGreetingReply(rawText, prefersRomanUrdu);
+    const welcome = getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, false);
     const combined = `${welcome}\n\n${categoryReply.text}`;
 
     return replyDecision(
@@ -2684,9 +2712,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
       buildQuantityPickerCategoryKey: (itemId: string) => `${QUANTITY_PICK_PREFIX}${itemId}`,
       mergeCartItems,
       buildOrderTypePrompt,
-      buildOrderTypeInteractiveList,
-      buildQuickOrderTypeInteractiveList,
-      buildUpsellInteractiveList,
+      buildOrderTypeReplyButtons,
+      buildQuickOrderTypeReplyButtons,
+      buildUpsellReplyButtons,
       handleOrderTypeSelection,
       inferGeneralQtyOverride,
       applyQtyOverride,
@@ -3427,11 +3455,18 @@ function replyDecision(
     sectionTitle?: string;
     rows: Array<{ id: string; title: string; description?: string }>;
   } | null,
+  replyButtons?: {
+    body: string;
+    buttons: Array<{ id: string; title: string }>;
+    headerText?: string;
+    footerText?: string;
+  } | null,
 ): TurnDecision {
   return {
     kind: "reply",
     reply,
     interactiveList,
+    replyButtons,
     statePatch,
     trace,
   };
@@ -3685,21 +3720,17 @@ function isUpsellNo(normalizedText: string): boolean {
   );
 }
 
-function buildUpsellInteractiveList(romanUrdu: boolean, itemName?: string, itemPrice?: number): {
+function buildUpsellReplyButtons(romanUrdu: boolean, itemName?: string, itemPrice?: number): {
   body: string;
-  buttonText: string;
-  sectionTitle?: string;
-  rows: Array<{ id: string; title: string; description?: string }>;
+  buttons: Array<{ id: string; title: string }>;
 } {
   const itemText = itemName && itemPrice != null ? 
-    (romanUrdu ? `${itemName} (Rs. ${itemPrice})` : `${itemName} (Rs. ${itemPrice})`) : 
+    (romanUrdu ? `*${itemName}* (Rs. ${itemPrice})` : `*${itemName}* (Rs. ${itemPrice})`) : 
     (romanUrdu ? "Suggested item" : "Suggested item");
 
   return {
-    body: romanUrdu ? `${itemText} add karna chahenge?` : `Would you like to add ${itemText}?`,
-    buttonText: romanUrdu ? "Choose" : "Choose",
-    sectionTitle: romanUrdu ? "Upsell" : "Upsell",
-    rows: [
+    body: romanUrdu ? `Aap ${itemText} add karna chahenge?` : `Would you like to add ${itemText}?`,
+    buttons: [
       {
         id: "upsell_yes",
         title: romanUrdu ? "Haan, Add Kar Do" : "Yes, Add It",
@@ -3712,81 +3743,47 @@ function buildUpsellInteractiveList(romanUrdu: boolean, itemName?: string, itemP
   };
 }
 
-function buildOrderTypeInteractiveList(
+function buildOrderTypeReplyButtons(
   romanUrdu: boolean,
   deliveryEnabled: boolean,
 ): {
   body: string;
-  buttonText: string;
-  sectionTitle?: string;
-  rows: Array<{ id: string; title: string; description?: string }>;
+  buttons: Array<{ id: string; title: string }>;
 } | null {
-  const rows: Array<{ id: string; title: string; description?: string }> = [];
+  const buttons: Array<{ id: string; title: string }> = [];
 
   if (deliveryEnabled) {
-    rows.push({
-      id: "order_type_delivery",
-      title: romanUrdu ? "Delivery" : "Delivery",
-      description: romanUrdu ? "Address par bhejna hai" : "Send to my address",
-    });
+    buttons.push({ id: "order_type_delivery", title: romanUrdu ? "🛵 Delivery" : "🛵 Delivery" });
   }
 
-  rows.push({
-    id: "order_type_pickup",
-    title: romanUrdu ? "Pickup" : "Pickup",
-    description: romanUrdu ? "Restaurant se collect karna hai" : "I will collect from restaurant",
-  });
+  buttons.push({ id: "order_type_pickup", title: romanUrdu ? "📦 Pickup" : "📦 Pickup" });
+  buttons.push({ id: "order_type_dine_in", title: romanUrdu ? "🍽️ Dine-in" : "🍽️ Dine-in" });
 
-  rows.push({
-    id: "order_type_dine_in",
-    title: romanUrdu ? "Dine-in" : "Dine-in",
-    description: romanUrdu ? "Restaurant mein khaana hai" : "I will eat at restaurant",
-  });
-
-  rows.push({
-    id: ORDER_NOTE_ADD_TOKEN,
-    title: romanUrdu ? "Add / Edit Note" : "Add / Edit Note",
-    description: romanUrdu ? "Special instruction likhein" : "Add special instruction",
-  });
-
-  rows.push({
-    id: ORDER_NOTE_REMOVE_TOKEN,
-    title: romanUrdu ? "Remove Note" : "Remove Note",
-    description: romanUrdu ? "Existing note clear karein" : "Clear current note",
-  });
-
-  if (rows.length === 0) {
-    return null;
-  }
+  if (buttons.length === 0) return null;
 
   return {
     body: romanUrdu
-      ? "Apna order type select karein."
-      : "Please choose your order type.",
-    buttonText: romanUrdu ? "Choose Type" : "Choose Type",
-    sectionTitle: romanUrdu ? "Order Type" : "Order Type",
-    rows,
+      ? "Apna order type select karein. Koi special instruction add karne ke liye 'add note' likh sakte hain."
+      : "Please choose your order type. To add special instructions, just type 'add note'.",
+    buttons,
   };
 }
 
-function buildQuickOrderTypeInteractiveList(
+function buildQuickOrderTypeReplyButtons(
   romanUrdu: boolean,
   deliveryEnabled: boolean,
 ): {
   body: string;
-  buttonText: string;
-  sectionTitle?: string;
-  rows: Array<{ id: string; title: string; description?: string }>;
+  buttons: Array<{ id: string; title: string }>;
 } | null {
-  const base = buildOrderTypeInteractiveList(romanUrdu, deliveryEnabled);
+  const base = buildOrderTypeReplyButtons(romanUrdu, deliveryEnabled);
   if (!base) return null;
 
   return {
     ...base,
     body: romanUrdu
-      ? "Checkout options"
-      : "Checkout options",
-    buttonText: romanUrdu ? "Checkout" : "Checkout",
+      ? "Cart updated! Aagay barhne ke liye order type select karein. Note add karne ke liye 'add note' likhein."
+      : "Cart updated! Please choose your order type to proceed. Type 'add note' for special instructions.",
   };
 }
 
@@ -4105,12 +4102,6 @@ function buildLogisticsOrSummaryReply(
   ) {
     const upsell = pickUpsellSuggestion(params.menuItems, params.state);
     if (upsell) {
-      parts.push(
-        romanUrdu
-          ? `Aap *${upsell.name}* (Rs. ${upsell.price}) add karna chahenge?`
-          : `Would you like to add *${upsell.name}* (Rs. ${upsell.price})?`,
-      );
-
       return replyDecision(
         parts.join("\n\n"),
         withPreferredLanguage(
@@ -4124,7 +4115,8 @@ function buildLogisticsOrSummaryReply(
           params.state.preferred_language,
         ),
         trace,
-        buildUpsellInteractiveList(romanUrdu, upsell.name, upsell.price),
+        null,
+        buildUpsellReplyButtons(romanUrdu, upsell.name, upsell.price),
       );
     }
   }
@@ -4151,7 +4143,8 @@ function buildLogisticsOrSummaryReply(
           params.state.preferred_language,
         ),
         trace,
-        buildQuickOrderTypeInteractiveList(romanUrdu, params.settings.delivery_enabled),
+        null,
+        buildQuickOrderTypeReplyButtons(romanUrdu, params.settings.delivery_enabled),
       );
     }
 
@@ -4172,7 +4165,8 @@ function buildLogisticsOrSummaryReply(
           params.state.preferred_language,
         ),
         trace,
-        buildQuickOrderTypeInteractiveList(romanUrdu, params.settings.delivery_enabled),
+        null,
+        buildQuickOrderTypeReplyButtons(romanUrdu, params.settings.delivery_enabled),
       );
     }
 
@@ -4191,7 +4185,8 @@ function buildLogisticsOrSummaryReply(
         params.state.preferred_language,
       ),
       trace,
-      buildOrderTypeInteractiveList(romanUrdu, params.settings.delivery_enabled),
+      null,
+      buildOrderTypeReplyButtons(romanUrdu, params.settings.delivery_enabled),
     );
   }
 
@@ -4321,47 +4316,39 @@ function buildSummaryReply(
   const total = subtotal + deliveryFee;
 
   const lines: string[] = [
-    "Order summary:",
-    ...state.cart.map((item) => `- ${formatDraftItemLabel(item)} x${item.qty} = Rs. ${item.price * item.qty}`),
-    `Subtotal: Rs. ${subtotal}`,
+    "🧾 *Order Summary*",
+    "──────────────",
+    ...state.cart.map((item) => `▪ ${formatDraftItemLabel(item)}  x${item.qty}\n   Rs. ${item.price * item.qty}`),
+    "──────────────",
+    `💰 *Subtotal*: Rs. ${subtotal}`,
   ];
 
   if (deliveryFee > 0) {
-    lines.push(`Delivery fee: Rs. ${deliveryFee}`);
+    lines.push(`🛵 *Delivery Fee*: Rs. ${deliveryFee}`);
   }
 
-  lines.push(`Total: Rs. ${total}`);
+  lines.push(`💳 *Total*: Rs. ${total}`);
+  lines.push("");
 
   if (state.order_type === "delivery" && state.address) {
-    lines.push(`Address: ${state.address}`);
-    lines.push(
-      romanUrdu
-        ? "Address theek hai to *Haan* likhein. Address change karna ho to *change address* ya new address bhej dein."
-        : "If this address is correct, reply *Yes*. To change it, send *change address* or the new address.",
-    );
+    lines.push(`📍 *Delivery Address*:\n${state.address}`);
   } else if (state.order_type === "pickup") {
-    lines.push(`Pickup time: ${formatReservationTime(state.pickup_time)}`);
+    lines.push(`🕒 *Pickup Time*:\n${formatReservationTime(state.pickup_time)}`);
   } else if (state.order_type === "dine-in") {
-    lines.push(`Guests: ${state.guests ?? "-"}`);
-    lines.push(`Time: ${formatReservationTime(state.reservation_time)}`);
+    lines.push(`👥 *Guests*: ${state.guests ?? "-"}`);
+    lines.push(`🕒 *Time*: ${formatReservationTime(state.reservation_time)}`);
   }
 
   if (state.customer_instructions) {
-    lines.push(`Instructions: ${state.customer_instructions}`);
+    lines.push(`📝 *Instructions*:\n${state.customer_instructions}`);
   }
 
+  const buttons = [
+    { id: "confirm_order", title: "Confirm Order" },
+    { id: "modify_order", title: "Modify Items" }
+  ];
   if (state.order_type === "delivery" && state.address) {
-    lines.push(
-      romanUrdu
-        ? "Items change karne ke liye add/remove message bhej dein."
-        : "To change items, send add/remove instructions.",
-    );
-  } else {
-    lines.push(
-      romanUrdu
-        ? "Confirm karne ke liye *Haan* likhein. Change ke liye item add/remove message bhej dein."
-        : "Reply *Yes* to confirm. To make changes, send add/remove instructions.",
-    );
+    buttons.push({ id: "change_address", title: "Change Address" });
   }
 
   return replyDecision(
@@ -4375,6 +4362,13 @@ function buildSummaryReply(
       state.preferred_language,
     ),
     trace,
+    null,
+    {
+      body: romanUrdu 
+        ? "Please apna order confirm karein." 
+        : "Please confirm your order.",
+      buttons
+    }
   );
 }
 

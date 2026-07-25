@@ -68,6 +68,10 @@ type SharedHelpers = {
       sectionTitle?: string;
       rows: Array<{ id: string; title: string; description?: string }>;
     } | null,
+    replyButtons?: {
+      body: string;
+      buttons: Array<{ id: string; title: string }>;
+    } | null,
   ) => TurnDecision;
   withPreferredLanguage: (
     patch: Partial<ConversationState>,
@@ -140,37 +144,31 @@ type LogisticsHelpers = SharedHelpers & {
   buildQuantityPickerCategoryKey: (itemId: string) => string;
   mergeCartItems: (current: DraftCartItem[], additions: DraftCartItem[]) => DraftCartItem[];
   buildOrderTypePrompt: (deliveryEnabled: boolean, romanUrdu: boolean) => string;
-  buildOrderTypeInteractiveList: (
+  buildOrderTypeReplyButtons: (
     romanUrdu: boolean,
     deliveryEnabled: boolean,
   ) =>
     | {
       body: string;
-      buttonText: string;
-      sectionTitle?: string;
-      rows: Array<{ id: string; title: string; description?: string }>;
+      buttons: Array<{ id: string; title: string }>;
     }
     | null;
-  buildQuickOrderTypeInteractiveList: (
+  buildQuickOrderTypeReplyButtons: (
     romanUrdu: boolean,
     deliveryEnabled: boolean,
   ) =>
     | {
       body: string;
-      buttonText: string;
-      sectionTitle?: string;
-      rows: Array<{ id: string; title: string; description?: string }>;
+      buttons: Array<{ id: string; title: string }>;
     }
     | null;
-  buildUpsellInteractiveList: (
+  buildUpsellReplyButtons: (
     romanUrdu: boolean,
     itemName?: string,
     itemPrice?: number,
   ) => {
     body: string;
-    buttonText: string;
-    sectionTitle?: string;
-    rows: Array<{ id: string; title: string; description?: string }>;
+    buttons: Array<{ id: string; title: string }>;
   };
   handleOrderTypeSelection: (
     context: TurnContext,
@@ -457,7 +455,8 @@ export function handleLogisticsAndFallbackFlow(params: {
           preferredLanguage,
         ),
         trace,
-        helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+        null,
+        helpers.buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled),
       );
     }
 
@@ -480,7 +479,8 @@ export function handleLogisticsAndFallbackFlow(params: {
           preferredLanguage,
         ),
         trace,
-        helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+        null,
+        helpers.buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled),
       );
     }
 
@@ -492,7 +492,7 @@ export function handleLogisticsAndFallbackFlow(params: {
       };
     }
 
-    const upsellInteractive = helpers.buildUpsellInteractiveList(
+    const upsellInteractive = helpers.buildUpsellReplyButtons(
       prefersRomanUrdu,
       state.upsell_item_name || undefined,
       state.upsell_item_price || undefined,
@@ -503,6 +503,7 @@ export function handleLogisticsAndFallbackFlow(params: {
         : `Would you like to add *${state.upsell_item_name}*?`,
       helpers.withPreferredLanguage({ workflow_step: "awaiting_upsell_reply" }, preferredLanguage),
       trace,
+      null,
       upsellInteractive,
     );
   }
@@ -535,8 +536,9 @@ export function handleLogisticsAndFallbackFlow(params: {
           preferredLanguage,
         ),
         trace,
+        null,
         context.isOpenNow
-          ? helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+          ? helpers.buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled)
           : null,
       );
     }
@@ -563,8 +565,9 @@ export function handleLogisticsAndFallbackFlow(params: {
           preferredLanguage,
         ),
         trace,
+        null,
         context.isOpenNow
-          ? helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled)
+          ? helpers.buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled)
           : null,
       );
     }
@@ -587,7 +590,8 @@ export function handleLogisticsAndFallbackFlow(params: {
         : `${helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu)} You can also ask to remove items or change quantity.`,
       helpers.withPreferredLanguage({ workflow_step: "awaiting_order_type" }, preferredLanguage),
       trace,
-      helpers.buildOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+      null,
+      helpers.buildOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled),
     );
   }
 
@@ -790,7 +794,8 @@ export function handleLogisticsAndFallbackFlow(params: {
           preferredLanguage,
         ),
         trace,
-        helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+        null,
+        helpers.buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled),
       );
     }
 
@@ -805,7 +810,8 @@ export function handleLogisticsAndFallbackFlow(params: {
           : `${helpers.buildOrderTypePrompt(context.settings.delivery_enabled, prefersRomanUrdu)}`,
         helpers.withPreferredLanguage({ workflow_step: "awaiting_order_type" }, preferredLanguage),
         trace,
-        helpers.buildOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+        null,
+        helpers.buildOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled),
       );
     }
 
@@ -815,7 +821,8 @@ export function handleLogisticsAndFallbackFlow(params: {
         : "You can keep adding items.",
       helpers.withPreferredLanguage({ workflow_step: "collecting_items" }, preferredLanguage),
       trace,
-      helpers.buildQuickOrderTypeInteractiveList(prefersRomanUrdu, context.settings.delivery_enabled),
+      null,
+      helpers.buildQuickOrderTypeReplyButtons(prefersRomanUrdu, context.settings.delivery_enabled),
     );
   }
 

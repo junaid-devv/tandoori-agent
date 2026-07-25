@@ -110,8 +110,9 @@ export function buildCategoryItemsReply(
   }
 
   const selectableItems = rows.slice(0, 10);
-  const lines = selectableItems.map((item, index) => `${index + 1}. ${item.name} - Rs. ${item.price}`);
+  const lines = selectableItems.map((item, index) => `▪ *${index + 1}*. ${item.name}\n   Rs. ${item.price}`);
   if (rows.length > selectableItems.length) {
+    lines.push("");
     lines.push(
       romanUrdu
         ? `...aur ${rows.length - selectableItems.length} items bhi hain. Naam bhej kar search karein.`
@@ -120,8 +121,10 @@ export function buildCategoryItemsReply(
   }
 
   const text = [
-    `*${category}* items:`,
+    `🍽️ *${category}*`,
+    "──────────────",
     ...lines,
+    "──────────────",
     romanUrdu
       ? "Number ya item name ke sath quantity bhej dein (misal: *2* ya *2 Chicken Karahi*)."
       : "Reply with number or item name and quantity (e.g., *2* or *2 Chicken Karahi*).",

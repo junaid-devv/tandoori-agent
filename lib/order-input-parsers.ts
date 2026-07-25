@@ -230,20 +230,7 @@ export function parseReservationTime(
   return buildRestaurantDateTimeIso(year, month, day, hours, minutes);
 }
 
-export function getGreetingReply(rawText: string, romanUrdu: boolean): string {
-  const text = rawText.toLowerCase();
-  const isSalam = /\b(assalam|aoa|salam)\b/.test(text);
-
-  if (romanUrdu) {
-    return isSalam
-      ? "Walaikum Assalam! Aapko kya order karna hai? Item ka naam bhej dein."
-      : "Hello! Aapko kya order karna hai? Item ka naam bhej dein.";
-  } else {
-    return isSalam
-      ? "Walaikum Assalam! What would you like to order? Send any item name."
-      : "Hello! What would you like to order? Send any item name.";
-  }
-}
+export { getGreetingReply } from "./message-personality.ts";
 
 export function isSimpleGreetingPattern(text: string): boolean {
   const normalized = text.toLowerCase().trim();

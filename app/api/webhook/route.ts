@@ -1531,6 +1531,8 @@ async function drainConversationQueue(conversation: ConversationRow) {
             )
             : null);
 
+        const replyButtons = "replyButtons" in decision ? decision.replyButtons : null;
+
         const flowMessage =
           decision.kind === "place_order"
             ? null
@@ -1570,6 +1572,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
           phone: conversation.phone,
           content: reply,
           interactiveList,
+          replyButtons,
           flowMessage,
         });
         await updateConversationState(state, {
