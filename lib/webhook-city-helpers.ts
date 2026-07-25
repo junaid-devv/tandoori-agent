@@ -216,3 +216,11 @@ export function buildInteractiveCategoryUI(
     replyButtons: null,
   };
 }
+
+export function buildInteractiveCategoryList(
+  menuItems: MenuCatalogCategoryItem[],
+  prefersRomanUrdu: boolean,
+  page: number = 1,
+) {
+  return buildInteractiveCategoryUI(menuItems, prefersRomanUrdu, page).interactiveList;
+}

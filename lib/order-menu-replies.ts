@@ -1,5 +1,5 @@
-import { getMenuCategories } from "./order-menu-categories";
-import { itemSimilarityScore, normalizeText, tokenOverlapScore } from "./order-text-utils";
+import { getMenuCategories } from "./order-menu-categories.ts";
+import { itemSimilarityScore, normalizeText, tokenOverlapScore } from "./order-text-utils.ts";
 
 type MenuCatalogItemLike = {
   id: string;
