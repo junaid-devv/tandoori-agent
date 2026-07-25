@@ -52,43 +52,50 @@ export function findCategoryRequest(text: string, menuItems: MenuCatalogItemLike
     }
   }
 
+  const isShortQuery = normalized.split(/\s+/).length <= 3;
+
   for (const category of categories) {
     const normCategory = normalizeText(category);
-    if (normCategory && normalized.includes(normCategory)) return category;
+    if (normCategory && (normalized === normCategory || (isShortQuery && normalized.includes(normCategory)))) return category;
   }
 
-  for (const rule of CATEGORY_INTENT_ALIAS_RULES) {
-    const hasIntentToken = rule.queryTokens.some((token) => normalized.includes(normalizeText(token)));
-    if (!hasIntentToken) continue;
+  if (isShortQuery) {
+    for (const rule of CATEGORY_INTENT_ALIAS_RULES) {
+      const hasIntentToken = rule.queryTokens.some((token) => {
+        const normToken = normalizeText(token);
+        return normalized === normToken || normalized === `${normToken}s` || normalized === `${normToken} category` || normalized === `show ${normToken}`;
+      });
+      if (!hasIntentToken) continue;
 
-    const rankedCandidates = categories
-      .map((category, index) => {
-        const normalizedCategory = normalizeText(category);
-        const score = rule.categoryHints.reduce((total, hint) => {
-          return normalizedCategory.includes(normalizeText(hint)) ? total + 1 : total;
-        }, 0);
-        return { category, index, score };
-      })
-      .filter((entry) => entry.score > 0)
-      .sort((left, right) => right.score - left.score || left.index - right.index);
+      const rankedCandidates = categories
+        .map((category, index) => {
+          const normalizedCategory = normalizeText(category);
+          const score = rule.categoryHints.reduce((total, hint) => {
+            return normalizedCategory.includes(normalizeText(hint)) ? total + 1 : total;
+          }, 0);
+          return { category, index, score };
+        })
+        .filter((entry) => entry.score > 0)
+        .sort((left, right) => right.score - left.score || left.index - right.index);
 
-    if (rankedCandidates.length > 0) {
-      return rankedCandidates[0].category;
+      if (rankedCandidates.length > 0) {
+        return rankedCandidates[0].category;
+      }
     }
+
+    const fuzzyCategory = categories
+      .map((category) => ({
+        category,
+        score: Math.max(
+          itemSimilarityScore(normalized, normalizeText(category)),
+          tokenOverlapScore(normalized, normalizeText(category)),
+        ),
+      }))
+      .filter((entry) => entry.score >= 0.7)
+      .sort((left, right) => right.score - left.score)[0];
+
+    if (fuzzyCategory) return fuzzyCategory.category;
   }
-
-  const fuzzyCategory = categories
-    .map((category) => ({
-      category,
-      score: Math.max(
-        itemSimilarityScore(normalized, normalizeText(category)),
-        tokenOverlapScore(normalized, normalizeText(category)),
-      ),
-    }))
-    .filter((entry) => entry.score >= 0.52)
-    .sort((left, right) => right.score - left.score)[0];
-
-  if (fuzzyCategory) return fuzzyCategory.category;
 
   return null;
 }
@@ -133,13 +140,13 @@ export function buildCategoryItemsReply(
     ...(hasMore
       ? [
           romanUrdu
-            ? `List mein se item select karein (aur ${rows.length - selectableItems.length} items mazeed hain).`
-            : `Select an item from the list (${rows.length - selectableItems.length} more available).`,
+            ? `List se select karein. Baki ${rows.length - selectableItems.length} items dekhne ke liye naam type karein.`
+            : `Select from the list, or type item name to search the remaining ${rows.length - selectableItems.length} items.`,
         ]
       : [
           romanUrdu
-            ? "List mein se item select karein."
-            : "Select an item from the list below.",
+            ? "Apni pasand ka item list se select karein."
+            : "Please choose your item from the list.",
         ]),
   ].join("\n");
 
