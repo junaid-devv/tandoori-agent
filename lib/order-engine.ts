@@ -1997,6 +1997,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           preferredLanguage,
         ),
         trace,
+        categoryReply.interactiveList ?? null,
       );
     }
 
@@ -2123,6 +2124,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           preferredLanguage,
         ),
         trace,
+        categoryReply.interactiveList ?? null,
       );
     }
   }
@@ -2180,6 +2182,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           preferredLanguage,
         ),
         trace,
+        categoryReply.interactiveList ?? null,
       );
     }
   }

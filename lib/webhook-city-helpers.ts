@@ -153,25 +153,40 @@ function getUniqueMenuCategories(menuItems: MenuCatalogCategoryItem[]): string[]
   return [...new Set(menuItems.map((item) => item.category?.trim() || "General"))];
 }
 
-export function buildInteractiveCategoryList(
+export function buildInteractiveCategoryUI(
   menuItems: MenuCatalogCategoryItem[],
   prefersRomanUrdu: boolean,
   page: number,
-):
-  | {
-    body: string;
-    buttonText: string;
-    sectionTitle?: string;
-    rows: Array<{ id: string; title: string; description?: string }>;
-  }
-  | null {
+): {
+  interactiveList: { body: string; buttonText: string; sectionTitle?: string; rows: Array<{ id: string; title: string; description?: string }> } | null;
+  replyButtons: { body: string; buttons: Array<{ id: string; title: string }> } | null;
+} {
   const categories = getUniqueMenuCategories(menuItems);
-  if (categories.length < 2) return null;
+  if (categories.length < 2) return { interactiveList: null, replyButtons: null };
 
+  const body = prefersRomanUrdu
+    ? "Menu category select karein:"
+    : "Choose a category:";
+
+  // If we have 3 or fewer categories, use Quick Reply Buttons for a better UX!
+  if (categories.length <= 3) {
+    return {
+      interactiveList: null,
+      replyButtons: {
+        body,
+        buttons: categories.map((cat, index) => ({
+          id: `category_option_${index + 1}`,
+          title: cat.length > 20 ? cat.slice(0, 19) + "…" : cat,
+        })),
+      },
+    };
+  }
+
+  // Otherwise, use an Interactive List
   const pageSize = 9;
   const safePage = Math.max(1, page);
   const start = (safePage - 1) * pageSize;
-  if (start >= categories.length) return null;
+  if (start >= categories.length) return { interactiveList: null, replyButtons: null };
 
   const pageCategories = categories.slice(start, start + pageSize);
   const rows = pageCategories.map((category, index) => {
@@ -192,11 +207,12 @@ export function buildInteractiveCategoryList(
   }
 
   return {
-    body: prefersRomanUrdu
-      ? "Menu categories se ek select karein."
-      : "Choose a category from the menu.",
-    buttonText: prefersRomanUrdu ? "Select Category" : "Select Category",
-    sectionTitle: prefersRomanUrdu ? "Categories" : "Categories",
-    rows,
+    interactiveList: {
+      body,
+      buttonText: prefersRomanUrdu ? "Select Category" : "Select Category",
+      sectionTitle: prefersRomanUrdu ? "Categories" : "Categories",
+      rows,
+    },
+    replyButtons: null,
   };
 }

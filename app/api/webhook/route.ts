@@ -43,7 +43,7 @@ import {
 } from "@/lib/webhook-interactive-builders";
 import {
   buildCityBranchGroups,
-  buildInteractiveCategoryList,
+  buildInteractiveCategoryUI,
   buildInteractiveListForCities,
   findCitySelection,
   getCitySelectionPrompt,
@@ -369,13 +369,13 @@ async function processWebhook(body: unknown) {
             ? `Theek hai, *${selectedBranch.name}* select ho gayi. Address: ${selectedBranch.address}\n\nAb category select karein ya item name bhej dein.`
             : `Great, you've selected *${selectedBranch.name}*. Address: ${selectedBranch.address}\n\nNow choose a category or send any item name.`;
           const selectedMenuItems = await getMenuCatalog(selectedBranch.id);
-          const categoryInteractiveList = buildInteractiveCategoryList(selectedMenuItems, prefersRomanUrdu, 1);
-
+          const categoryUI = buildInteractiveCategoryUI(selectedMenuItems, prefersRomanUrdu, 1);
           await sendAndPersistAssistantMessage({
             conversationId: selectedConversation.id,
             phone: message.from,
             content: assistantReply,
-            interactiveList: categoryInteractiveList,
+            interactiveList: categoryUI.interactiveList,
+            replyButtons: categoryUI.replyButtons,
             flowMessage: null,
           });
 
@@ -459,13 +459,14 @@ async function processWebhook(body: unknown) {
         ? `Theek hai, *${selectedBranch.name}* select ho gayi. Address: ${selectedBranch.address}\n\nAb category select karein ya item name bhej dein.`
         : `Great, you've selected *${selectedBranch.name}*. Address: ${selectedBranch.address}\n\nNow choose a category or send any item name.`;
       const selectedMenuItems = await getMenuCatalog(selectedBranch.id);
-      const categoryInteractiveList = buildInteractiveCategoryList(selectedMenuItems, prefersRomanUrdu, 1);
+      const categoryUI = buildInteractiveCategoryUI(selectedMenuItems, prefersRomanUrdu, 1);
 
       await sendAndPersistAssistantMessage({
         conversationId: selectedConversation.id,
         phone: message.from,
         content: assistantReply,
-        interactiveList: categoryInteractiveList,
+        interactiveList: categoryUI.interactiveList,
+        replyButtons: categoryUI.replyButtons,
         flowMessage: null,
       });
 
@@ -617,7 +618,7 @@ async function processWebhook(body: unknown) {
     if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) {
       if (isContinueWithSavedBranchRequest(content) && activeBranch) {
         const selectedMenuItems = await getMenuCatalog(activeBranch.id);
-        const categoryInteractiveList = buildInteractiveCategoryList(selectedMenuItems, prefersRomanUrdu, 1);
+        const categoryUI = buildInteractiveCategoryUI(selectedMenuItems, prefersRomanUrdu, 1);
         const continueReply = prefersRomanUrdu
           ? `Theek hai, *${activeBranch.name}* continue karte hain. Ab category select karein ya item name bhej dein.`
           : `Great, continuing with *${activeBranch.name}*. Now choose a category or send any item name.`;
@@ -626,7 +627,8 @@ async function processWebhook(body: unknown) {
           conversationId: conversation.id,
           phone: message.from,
           content: continueReply,
-          interactiveList: categoryInteractiveList,
+          interactiveList: categoryUI.interactiveList,
+          replyButtons: categoryUI.replyButtons,
           flowMessage: null,
         });
 

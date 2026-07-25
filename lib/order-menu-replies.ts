@@ -97,40 +97,60 @@ export function buildCategoryItemsReply(
   category: string,
   menuItems: MenuCatalogItemLike[],
   romanUrdu: boolean,
-): { text: string; selectableItems: MenuCatalogItemLike[] } {
+): {
+  text: string;
+  selectableItems: MenuCatalogItemLike[];
+  interactiveList?: {
+    body: string;
+    buttonText: string;
+    sectionTitle?: string;
+    rows: Array<{ id: string; title: string; description?: string }>;
+  } | null;
+} {
   const target = normalizeText(category);
   const rows = menuItems.filter((item) => normalizeText(item.category ?? "General") === target);
   if (rows.length === 0) {
     return {
       text: romanUrdu
-        ? "Is category mein items nahi mile. Kisi aur category ka number ya naam bhej dein."
-        : "No items found in that category. Please send another category number or name.",
+        ? "Is category mein items nahi mile. Kisi aur category ka naam bhej dein."
+        : "No items found in that category. Please send another category name.",
       selectableItems: [],
     };
   }
 
   const selectableItems = rows.slice(0, 10);
-  const lines = selectableItems.map((item, index) => `▪ *${index + 1}*. ${item.name}\n   Rs. ${item.price}`);
-  if (rows.length > selectableItems.length) {
-    lines.push("");
-    lines.push(
-      romanUrdu
-        ? `...aur ${rows.length - selectableItems.length} items bhi hain. Naam bhej kar search karein.`
-        : `...and ${rows.length - selectableItems.length} more. Send item name to search further.`,
-    );
-  }
+  const hasMore = rows.length > selectableItems.length;
+
+  const listRows = selectableItems.map((item) => ({
+    id: item.name,
+    title: item.name.length > 24 ? `${item.name.slice(0, 21)}...` : item.name,
+    description: `Rs. ${item.price}`,
+  }));
 
   const text = [
     `🍽️ *${category}*`,
     "──────────────",
-    ...lines,
-    "──────────────",
-    romanUrdu
-      ? "Number ya item name ke sath quantity bhej dein (misal: *2* ya *2 Chicken Karahi*)."
-      : "Reply with number or item name and quantity (e.g., *2* or *2 Chicken Karahi*).",
+    ...(hasMore
+      ? [
+          romanUrdu
+            ? `List mein se item select karein (aur ${rows.length - selectableItems.length} items mazeed hain).`
+            : `Select an item from the list (${rows.length - selectableItems.length} more available).`,
+        ]
+      : [
+          romanUrdu
+            ? "List mein se item select karein."
+            : "Select an item from the list below.",
+        ]),
   ].join("\n");
 
-  return { text, selectableItems };
+  const interactiveList = {
+    body: text,
+    buttonText: romanUrdu ? "View Items" : "View Items",
+    sectionTitle: category.length > 24 ? `${category.slice(0, 21)}...` : category,
+    rows: listRows,
+  };
+
+  return { text, selectableItems, interactiveList };
 }
 
 export function buildAmbiguousItemReply(query: string, options: MenuCatalogItemLike[], romanUrdu: boolean): string {
