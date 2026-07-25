@@ -154,30 +154,17 @@ export function buildCategoryItemsReply(
 }
 
 export function buildAmbiguousItemReply(query: string, options: MenuCatalogItemLike[], romanUrdu: boolean): string {
-  const lines = options.slice(0, 3).map((item, index) => `${index + 1}. ${item.name} - Rs. ${item.price}`);
-  return [
-    romanUrdu
-      ? `*${query}* se mutaliq kaunsa item chahiye?`
-      : `Which item did you mean for *${query}*?`,
-    ...lines,
-    romanUrdu ? "Number bhej dein." : "Reply with the number.",
-  ].join("\n");
+  return romanUrdu
+    ? `*${query}* se mutaliq kaunsa item chahiye?`
+    : `Which item did you mean for *${query}*?`;
 }
 
 export function buildItemMatchesReply(query: string, options: MenuCatalogItemLike[], romanUrdu: boolean): string {
-  const lines = options.slice(0, 10).map((item, index) => `${index + 1}. ${item.name} - Rs. ${item.price}`);
   const topResultsHint =
     options.length >= 10
       ? romanUrdu
-        ? "Top matches dikhaye gaye hain. Zyada exact result ke liye poora item name bhej dein."
-        : "Showing top matches. Send a more specific item name for broader accuracy."
-      : null;
-  return [
-    romanUrdu ? `*${query}* ke related items ye hain:` : `Here are matching items for *${query}*:`,
-    ...lines,
-    ...(topResultsHint ? [topResultsHint] : []),
-    romanUrdu
-      ? "Order ke liye number select karein ya item name + quantity bhej dein."
-      : "Reply with a number, or send item name with quantity to order.",
-  ].join("\n");
+        ? "\n\nTop matches dikhaye gaye hain. Zyada exact result ke liye poora item name bhej dein."
+        : "\n\nShowing top matches. Send a more specific item name for broader accuracy."
+      : "";
+  return (romanUrdu ? `*${query}* ke related items ye hain:` : `Here are matching items for *${query}*:`) + topResultsHint;
 }

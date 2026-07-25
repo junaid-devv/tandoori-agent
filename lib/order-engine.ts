@@ -1398,7 +1398,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         preferredLanguage,
       ),
       undefined,
-      categoryReply.interactiveList,
+      categoryReply.interactiveList ?? null,
+      categoryReply.replyButtons ?? null,
     );
   }
 
@@ -2081,7 +2082,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         preferredLanguage,
       ),
       trace,
-      categoryReply.interactiveList,
+      categoryReply.interactiveList ?? null,
+      categoryReply.replyButtons ?? null,
     );
   }
 
@@ -2103,7 +2105,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         preferredLanguage,
       ),
       trace,
-      categoryReply.interactiveList,
+      categoryReply.interactiveList ?? null,
+      categoryReply.replyButtons ?? null,
     );
   }
 
@@ -2145,8 +2148,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           preferredLanguage,
         ),
         trace,
-        categoryReply.interactiveList,
-      );
+        categoryReply.interactiveList ?? null,
+      categoryReply.replyButtons ?? null,
+    );
     }
 
     if (/^(more|next|more categories)$/i.test(rawText.trim())) {
@@ -2163,8 +2167,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           preferredLanguage,
         ),
         trace,
-        categoryReply.interactiveList,
-      );
+        categoryReply.interactiveList ?? null,
+      categoryReply.replyButtons ?? null,
+    );
     }
 
     const category = findCategoryRequest(normalizedText, menuItems);
@@ -2230,7 +2235,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         preferredLanguage,
       ),
       trace,
-      categoryReply.interactiveList,
+      categoryReply.interactiveList ?? null,
+      categoryReply.replyButtons ?? null,
     );
   }
 
@@ -2402,8 +2408,9 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
           preferredLanguage,
         ),
         trace,
-        categoryReply.interactiveList,
-      );
+        categoryReply.interactiveList ?? null,
+      categoryReply.replyButtons ?? null,
+    );
     }
 
     return replyDecision(
