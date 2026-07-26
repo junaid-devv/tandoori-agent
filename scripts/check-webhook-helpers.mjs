@@ -11,6 +11,10 @@ import {
   buildInteractiveListForBranches,
   buildInteractiveListForPresentedOptions,
 } from "../lib/webhook-interactive-builders.ts";
+import {
+  buildCategoryItemsReply,
+  buildMenuItemRowId,
+} from "../lib/order-menu-replies.ts";
 
 function pass(message) {
   console.log(`PASS: ${message}`);
@@ -49,6 +53,7 @@ function testInteractiveBuilders() {
   );
   assert.ok(presented);
   assert.equal(presented.rows.length, 2);
+  assert.equal(presented.rows[0].id, buildMenuItemRowId("i1"));
 
   const branchList = buildInteractiveListForBranches(
     [{ id: "b1", name: "Main Branch", slug: "main", address: "Mall Road, Lahore" }],
@@ -58,6 +63,22 @@ function testInteractiveBuilders() {
   assert.ok(branchList);
   assert.equal(branchList.rows[0].id, "b1");
   pass("Interactive list builders return expected list payloads.");
+}
+
+function testCategoryItemRowsUseStableItemIds() {
+  const reply = buildCategoryItemsReply(
+    "Pakistani Cuisine",
+    [
+      { id: "hari-mirch-1", name: "Chicken Hari Mirch", price: 1495, category: "Pakistani Cuisine", is_available: true },
+      { id: "karahi-1", name: "Chicken Karahi", price: 1395, category: "Pakistani Cuisine", is_available: true },
+    ],
+    false,
+  );
+
+  assert.ok(reply.interactiveList);
+  assert.equal(reply.interactiveList.rows[0].id, buildMenuItemRowId("hari-mirch-1"));
+  assert.equal(reply.interactiveList.rows[0].title, "Chicken Hari Mirch");
+  pass("Category item rows use stable menu item IDs instead of item names.");
 }
 
 function testFlowBuilders() {
@@ -92,6 +113,7 @@ try {
   testCityHelpers();
   testCategoryInteractivePagination();
   testInteractiveBuilders();
+  testCategoryItemRowsUseStableItemIds();
   testFlowBuilders();
 } catch (error) {
   console.error("FAIL:", error instanceof Error ? error.message : error);

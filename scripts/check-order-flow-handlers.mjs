@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import { handleAwaitingConfirmationFlow, handleLogisticsAndFallbackFlow } from "../lib/order-flow-handlers.ts";
 
 function pass(message) {
@@ -272,10 +274,24 @@ function testPickupTimeCollection() {
   pass("Logistics handler collects pickup time and moves to summary.");
 }
 
+function testOrderEngineInteractiveWiring() {
+  const enginePath = path.join(process.cwd(), "lib", "order-engine.ts");
+  const source = fs.readFileSync(enginePath, "utf8").replace(/\r\n/g, "\n");
+
+  assert.ok(source.includes("parseOrderSummaryAction(rawText, normalizedText)"));
+  assert.ok(source.includes("handleOrderSummaryAction(context, state, preferredLanguage, summaryAction)"));
+  assert.ok(source.includes("notes: \"order_summary_action\""));
+  assert.ok(source.includes("shouldTreatAsPresentedOptionSelection(rawText, earlyPresentedSelection)"));
+  assert.ok(source.includes("notes: \"interactive_presented_option\""));
+  assert.ok(source.includes("trimmed.toLowerCase().startsWith(MENU_ITEM_ROW_PREFIX)"));
+  pass("Order engine has deterministic summary-action and menu-item selection wiring.");
+}
+
 try {
   testAwaitingConfirmationPlacesOrder();
   testLogisticsEmptyCartGuard();
   testPickupTimeCollection();
+  testOrderEngineInteractiveWiring();
 } catch (error) {
   console.error("FAIL:", error instanceof Error ? error.message : error);
   process.exit(1);

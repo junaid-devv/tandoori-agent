@@ -3,6 +3,7 @@ import type { ConversationState, MenuCatalogItem } from "./order-engine";
 import type { RestaurantSettings } from "./settings";
 import { buildWhatsAppFlowPayload, type WhatsAppFlowContext } from "./whatsapp-flow.ts";
 import type { WhatsAppInteractiveFlowPayload } from "./whatsapp";
+import { buildMenuItemRowId } from "./order-menu-replies.ts";
 
 type InteractiveListPayload =
   | {
@@ -22,7 +23,7 @@ export function buildInteractiveListForPresentedOptions(
   }
 
   const rows = options.slice(0, 10).map((item) => ({
-    id: item.id,
+    id: buildMenuItemRowId(item.id),
     title: item.name,
     description: `Rs. ${item.price}${item.category ? ` - ${item.category}` : ""}`,
   }));

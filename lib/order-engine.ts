@@ -6,6 +6,7 @@ import {
   buildCategoryItemsReply,
   buildItemMatchesReply,
   findCategoryRequest,
+  MENU_ITEM_ROW_PREFIX,
 } from "./order-menu-replies";
 import type { SemanticMenuMatch } from "./semantic-menu";
 import {
@@ -352,6 +353,7 @@ const ORDER_NOTE_INPUT_MARKER = "__order_note_input__";
 const ORDER_NOTE_ADD_TOKEN = "order_note_add";
 const ORDER_NOTE_REMOVE_TOKEN = "order_note_remove";
 const ORDER_NOTE_CANCEL_TOKEN = "order_note_cancel";
+type OrderSummaryAction = "confirm" | "modify" | "change_address";
 const ORDER_ENGINE_DEFAULT_INTERPRETATION: OrderTurnInterpretation = {
   intent: "unknown",
   confidence: 0,
@@ -753,6 +755,13 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         : "Sure, I will continue in English. Send *menu* or your order whenever ready.",
       withPreferredLanguage({}, explicitLanguage),
     );
+  }
+
+  const summaryAction = state.workflow_step === "awaiting_confirmation"
+    ? parseOrderSummaryAction(rawText, normalizedText)
+    : null;
+  if (summaryAction) {
+    return handleOrderSummaryAction(context, state, preferredLanguage, summaryAction);
   }
 
   if (
@@ -1243,6 +1252,28 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         );
       }
     }
+  }
+
+  const earlyPresentedSelection =
+    state.last_presented_options &&
+    state.last_presented_options.length > 0 &&
+    isPresentedOptionsFresh(state)
+      ? findPresentedOptionByDirectValue(rawText, state.last_presented_options)
+      : null;
+  if (earlyPresentedSelection && shouldTreatAsPresentedOptionSelection(rawText, earlyPresentedSelection)) {
+    return buildPresentedOptionSelectionDecision(
+      context,
+      state,
+      earlyPresentedSelection,
+      preferredLanguage,
+      {
+        intent: "add_items",
+        confidence: 0.99,
+        unknownItems: [],
+        sentiment: "neutral",
+        notes: "interactive_presented_option",
+      },
+    );
   }
 
   // ULTRA-FAST PATTERN-BASED EARLY EXIT FOR SIMPLE GREETINGS - No AI call, no DB queries
@@ -3445,6 +3476,185 @@ function attemptsCheckoutProgression(
   return false;
 }
 
+function parseOrderSummaryAction(rawText: string, normalizedText: string): OrderSummaryAction | null {
+  const raw = rawText.trim();
+  if (!raw && !normalizedText) return null;
+
+  if (/^confirm[_\s-]?order$/i.test(raw) || /^(?:confirm|confirm order|place order)$/i.test(normalizedText)) {
+    return "confirm";
+  }
+
+  if (/^modify[_\s-]?order$/i.test(raw) || /^(?:modify|modify order|modify items|change items|edit order|edit items)$/i.test(normalizedText)) {
+    return "modify";
+  }
+
+  if (/^change[_\s-]?address$/i.test(raw) || /^(?:change address|new address|edit address)$/i.test(normalizedText)) {
+    return "change_address";
+  }
+
+  return null;
+}
+
+function handleOrderSummaryAction(
+  context: TurnContext,
+  state: ConversationState,
+  preferredLanguage: LanguagePreference,
+  action: OrderSummaryAction,
+): TurnDecision {
+  const romanUrdu = preferredLanguage === "roman_urdu";
+  const trace: TurnTrace = {
+    intent: action === "confirm" ? "confirm_order" : action === "modify" ? "modify_order" : "provide_address",
+    confidence: 0.99,
+    unknownItems: [],
+    sentiment: "neutral",
+    notes: "order_summary_action",
+  };
+
+  if (action === "confirm") {
+    if (!context.isOpenNow) {
+      return replyDecision(
+        buildClosedReply(context.settings, romanUrdu, state.cart.length > 0),
+        withPreferredLanguage(
+          state.cart.length > 0 ? { workflow_step: "collecting_items" } : {},
+          preferredLanguage,
+        ),
+        trace,
+      );
+    }
+
+    const validation = validateDraftForPlacement(state, context.settings);
+    if (validation.ok === false) {
+      return replyDecision(
+        validation.reply(romanUrdu),
+        withPreferredLanguage(validation.statePatch, preferredLanguage),
+        trace,
+      );
+    }
+
+    return {
+      kind: "place_order",
+      reply: buildOrderPlacedReply(context.settings, validation.order.type, romanUrdu),
+      statePatch: withPreferredLanguage(
+        {
+          ...resetDraftState(),
+          summary_sent_at: new Date().toISOString(),
+        },
+        preferredLanguage,
+      ),
+      order: validation.order,
+      trace,
+    };
+  }
+
+  if (action === "change_address") {
+    if (state.order_type !== "delivery") {
+      return replyDecision(
+        romanUrdu
+          ? "Address sirf delivery order ke liye change hota hai. Aap pickup ya dine-in details change kar sakte hain."
+          : "Address can only be changed for delivery orders. You can still change pickup or dine-in details.",
+        withPreferredLanguage({ workflow_step: "collecting_items" }, preferredLanguage),
+        trace,
+      );
+    }
+
+    return replyDecision(
+      buildAddressChangePrompt(context.savedAddress?.address ?? null, context.settings, romanUrdu),
+      withPreferredLanguage(
+        {
+          ...buildPersistedStatePatch(state),
+          workflow_step: "awaiting_delivery_address",
+          address: null,
+          summary_sent_at: null,
+        },
+        preferredLanguage,
+      ),
+      trace,
+    );
+  }
+
+  return replyDecision(
+    romanUrdu
+      ? "Theek hai, batayein kya change karna hai. Item add/remove karein ya quantity likh dein."
+      : "Sure. Tell me what to change: add an item, remove an item, or update quantity.",
+    withPreferredLanguage(
+      {
+        ...buildPersistedStatePatch(state),
+        workflow_step: "collecting_items",
+        summary_sent_at: null,
+        last_presented_category: null,
+        last_presented_options: null,
+        last_presented_options_at: null,
+      },
+      preferredLanguage,
+    ),
+    trace,
+  );
+}
+
+function shouldTreatAsPresentedOptionSelection(rawText: string, item: MenuCatalogItem): boolean {
+  const trimmed = rawText.trim();
+  if (!trimmed) return false;
+  if (trimmed.toLowerCase().startsWith(MENU_ITEM_ROW_PREFIX)) return true;
+  if (trimmed === item.id) return true;
+  return normalizeText(trimmed) === normalizeText(item.name);
+}
+
+function buildPresentedOptionSelectionDecision(
+  context: TurnContext,
+  state: ConversationState,
+  selectedItem: MenuCatalogItem,
+  preferredLanguage: LanguagePreference,
+  trace: TurnTrace,
+): TurnDecision {
+  const romanUrdu = preferredLanguage === "roman_urdu";
+
+  if (shouldPromptForQuantityPicker(selectedItem)) {
+    const quantityPrompt = buildQuantityPickerReply(selectedItem, romanUrdu);
+    return replyDecision(
+      quantityPrompt.text,
+      withPreferredLanguage(
+        {
+          workflow_step: "collecting_items",
+          last_presented_category: `${QUANTITY_PICK_PREFIX}${selectedItem.id}`,
+          last_presented_options: [selectedItem],
+          last_presented_options_at: new Date().toISOString(),
+        },
+        preferredLanguage,
+      ),
+      trace,
+      quantityPrompt.interactiveList,
+    );
+  }
+
+  const selectedCartItem: DraftCartItem = {
+    name: selectedItem.name,
+    qty: 1,
+    price: selectedItem.price,
+    category: selectedItem.category,
+    size: null,
+    addons: [],
+    item_instructions: null,
+  };
+  return buildLogisticsOrSummaryReply(
+    {
+      state: {
+        ...state,
+        cart: mergeCartItems(state.cart, [selectedCartItem]),
+        workflow_step: "collecting_items",
+        preferred_language: preferredLanguage,
+        last_presented_category: null,
+        last_presented_options: null,
+        last_presented_options_at: null,
+      },
+      settings: context.settings,
+      matchedAdds: { matched: [selectedCartItem], unknown: [], ambiguous: [] },
+      removedItemsText: "",
+      menuItems: context.menuItems,
+    },
+    trace,
+  );
+}
+
 function withPreferredLanguage(
   patch: Partial<ConversationState>,
   preferredLanguage: LanguagePreference,
@@ -5259,6 +5469,14 @@ function findPresentedOptionByDirectValue(rawText: string, options: MenuCatalogI
   const trimmed = rawText.trim();
   if (!trimmed) return null;
 
+  const prefixedId = trimmed.toLowerCase().startsWith(MENU_ITEM_ROW_PREFIX)
+    ? trimmed.slice(MENU_ITEM_ROW_PREFIX.length).trim()
+    : null;
+  if (prefixedId) {
+    const byPrefixedId = options.find((item) => item.id === prefixedId);
+    if (byPrefixedId) return byPrefixedId;
+  }
+
   const byId = options.find((item) => item.id === trimmed);
   if (byId) return byId;
 
@@ -5358,6 +5576,7 @@ function isLikelySelectionCommand(normalizedText: string): boolean {
   if (/^(?:option|item|no|number)\s*\d{1,2}$/.test(normalizedText)) return true;
   if (/^(?:option|item|no|number)\s*\d{1,2}\s*(?:x|qty|quantity|times)\s*\d{1,2}$/.test(normalizedText)) return true;
   if (/^category[_\s-]?option[_\s-]?\d{1,2}$/i.test(normalizedText)) return true;
+  if (/^menu\s+item\s+[a-z0-9-]+$/i.test(normalizedText)) return true;
 
   return false;
 }
@@ -5367,7 +5586,7 @@ function isControlPayloadToken(value: string): boolean {
   if (!trimmed) return false;
   if (isUuidLike(trimmed)) return true;
 
-  return /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|pickup|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|upsell[_\s-]?(?:yes|no)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
+  return /^(?:menu[_\s-]?item[:_\s-][a-z0-9-]+|category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|pickup|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|upsell[_\s-]?(?:yes|no)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
     trimmed,
   );
 }
@@ -5382,7 +5601,7 @@ function parseSelectionWithQty(
   // These are control payloads from interactive lists/flows, not item picks.
   // Let dedicated handlers route them instead of turning them into option numbers.
   if (
-    /^(?:category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|pickup|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
+    /^(?:menu[_\s-]?item[:_\s-][a-z0-9-]+|category[_\s-]?(?:option|more)[_\s-]?\d{1,2}|city[_\s-]?option[_\s-]?\d{1,2}|branch[_\s-]?option[_\s-]?\d{1,2}|order[_\s-]?type[_\s-]?(?:delivery|pickup|dine[_\s-]?in)|order[_\s-]?note[_\s-]?(?:add|remove|cancel)|qty[_\s-]?(?:option|pick)[_\s-]?\d{1,2}|qty[_\s-]?custom|__qty_pick__:(?:\d{1,2}|custom))$/i.test(
       trimmed,
     )
   ) {

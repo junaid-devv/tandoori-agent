@@ -9,6 +9,12 @@ type MenuCatalogItemLike = {
   is_available: boolean;
 };
 
+export const MENU_ITEM_ROW_PREFIX = "menu_item:";
+
+export function buildMenuItemRowId(itemId: string): string {
+  return `${MENU_ITEM_ROW_PREFIX}${itemId}`;
+}
+
 const CATEGORY_INTENT_ALIAS_RULES: Array<{
   queryTokens: string[];
   categoryHints: string[];
@@ -129,7 +135,7 @@ export function buildCategoryItemsReply(
   const hasMore = rows.length > selectableItems.length;
 
   const listRows = selectableItems.map((item) => ({
-    id: item.name,
+    id: buildMenuItemRowId(item.id),
     title: item.name.length > 24 ? `${item.name.slice(0, 21)}...` : item.name,
     description: `Rs. ${item.price}`,
   }));
