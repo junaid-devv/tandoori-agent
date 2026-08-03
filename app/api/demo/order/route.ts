@@ -54,7 +54,7 @@ export async function POST(request: Request) {
         subtotal: demoOrder.subtotal,
         delivery_fee: demoOrder.deliveryFee,
         address: demoOrder.address,
-        customer_instructions: "Mild spice in Peshawari Karahi please",
+        customer_instructions: "Extra sauce on Zinger Burger please",
         assigned_to: null,
       })
       .select()

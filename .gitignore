@@ -40,6 +40,16 @@ output/**/*.log
 
 # typescript
 *.tsbuildinfo
+
+# env files (can opt-in for committing if needed)
+.env*
+!.env.example
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
 next-env.d.ts
 
 # Large binaries / executables
@@ -55,3 +65,5 @@ test.js
 last_reply.txt
 tsc_output.txt
 settings_dump.json
+output/playwright/page@*.webm
+scratch/

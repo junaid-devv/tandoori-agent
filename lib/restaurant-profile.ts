@@ -112,7 +112,7 @@ export function validateRestaurantProfileInput(input: Partial<RestaurantProfile>
     currency: validateRequiredText(input.currency, "Currency label", 12),
     timezone: validateRequiredText(input.timezone, "Timezone", 80),
     branch_mode: validateBranchMode(input.branch_mode),
-    default_branch_id: validateOptionalText(input.default_branch_id, "Default branch", 80),
+    default_branch_id: validateOptionalText(input.default_branch_id, "Primary branch", 80),
     support_phone: validateRequiredText(input.support_phone, "Support phone", 40),
     delivery_phone: validateRequiredText(input.delivery_phone, "Delivery phone", 40),
     dine_in_phone: validateRequiredText(input.dine_in_phone, "Dine-in phone", 40),

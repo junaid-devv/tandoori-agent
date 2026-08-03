@@ -103,6 +103,12 @@ interface Message {
   delivery_status?: string | null;
   delivery_error?: string | null;
   delivery_status_updated_at?: string | null;
+  replyButtons?: Array<{ id: string; title: string }>;
+  listSelector?: {
+    title: string;
+    buttonText: string;
+    rows: Array<{ id: string; title: string; description?: string }>;
+  };
 }
 
 interface MessageResponse {
@@ -452,7 +458,7 @@ export default function ConversationsPage() {
   const activeTags = getTags(activeContact);
   const activeTagText = activeTags.join(", ");
   const rawDraftLines = getDraftLines(activeState?.cart);
-  const isDemoContact = activeConversation?.phone === "+923001234567" || activeConversation?.name === "Tariq Mahmood";
+  const isDemoContact = activeConversation?.phone === "+923331234567" || activeConversation?.name === "Ahmed Khan" || activeConversation?.phone === "+923001234567" || activeConversation?.name === "Tariq Mahmood";
 
   const displayMessages = useMemo(() => {
     if (isDemoContact && demoState && demoState.activeMessages.length > 0) {
@@ -465,6 +471,8 @@ export default function ConversationsPage() {
         content: dm.content,
         created_at: new Date(Date.now() - (demoState.activeMessages.length - idx) * 10000).toISOString(),
         delivery_status: dm.deliveryStatus || "delivered",
+        replyButtons: dm.replyButtons,
+        listSelector: dm.listSelector,
       })) as Message[];
     }
     return messages;
@@ -884,6 +892,52 @@ export default function ConversationsPage() {
                                 </span>
                               </div>
                               <div className="whitespace-pre-wrap">{message.content}</div>
+
+                              {/* Interactive WhatsApp Reply Buttons */}
+                              {message.replyButtons && message.replyButtons.length > 0 && (
+                                <div className="mt-3 flex flex-wrap gap-2 border-t border-white/20 pt-2.5">
+                                  {message.replyButtons.map((btn) => (
+                                    <div
+                                      key={btn.id}
+                                      className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-200 shadow-sm backdrop-blur-sm"
+                                    >
+                                      <Sparkles size={11} className="text-emerald-300" />
+                                      <span>{btn.title}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+
+                              {/* Interactive WhatsApp List Selector Card */}
+                              {message.listSelector && (
+                                <div className="mt-3 overflow-hidden rounded-xl border border-white/15 bg-black/40 p-3 shadow-inner">
+                                  <div className="flex items-center justify-between text-xs font-bold text-slate-200 mb-2">
+                                    <span className="flex items-center gap-1.5 text-emerald-300">
+                                      <Package size={13} />
+                                      {message.listSelector.title}
+                                    </span>
+                                    <span className="rounded bg-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-200 uppercase tracking-wider">
+                                      Interactive List
+                                    </span>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    {message.listSelector.rows.map((row) => (
+                                      <div
+                                        key={row.id}
+                                        className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 p-2 text-xs"
+                                      >
+                                        <div>
+                                          <p className="font-semibold text-white">{row.title}</p>
+                                          {row.description && <p className="text-[11px] text-slate-300">{row.description}</p>}
+                                        </div>
+                                        <span className="rounded-md border border-emerald-500/40 bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300">
+                                          Select
+                                        </span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                               {(message.delivery_status || message.delivery_error) && (
                                 <div className={clsx("mt-2 text-[10px] italic", isIncoming ? "text-slate-400" : "text-white/50")}>
                                   {formatDeliveryStatus(message)}

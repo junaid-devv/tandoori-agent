@@ -35,7 +35,7 @@ export function Sidebar() {
   const appName = profile.app_name;
   const [firstWord, ...rest] = appName.split(" ");
   const navItems = session.role === "admin" ? adminNavItems : baseNavItems;
-  const showBranchPicker = profile.branch_mode === "multiple";
+  const showBranchPicker = profile.branch_mode === "multiple" || (session.role === "admin" && session.allowedBranches.length > 1);
 
   const [globalUnreadCount, setGlobalUnreadCount] = useState(0);
   const notifiedSetRef = useRef<Set<string>>(new Set());
@@ -179,7 +179,7 @@ export function Sidebar() {
           )}
           <p className="mt-1.5 line-clamp-2 text-[11px] text-zinc-500">
             {!showBranchPicker
-              ? "Single-location mode"
+              ? selectedBranch?.address || "Branch assigned by admin"
               : selectedBranch
               ? selectedBranch.address
               : session.role === "admin"

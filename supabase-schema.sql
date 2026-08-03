@@ -11,10 +11,6 @@ create table if not exists branches (
   updated_at timestamptz not null default now()
 );
 
-insert into branches (slug, name, city, address)
-values ('default-branch', 'Main Location', 'City', 'Please update this location address')
-on conflict (slug) do nothing;
-
 create table if not exists restaurant_profiles (
   id text primary key default 'default',
   app_name text not null default 'Restaurant Agent',
@@ -34,8 +30,8 @@ create table if not exists restaurant_profiles (
   updated_at timestamptz not null default now()
 );
 
-insert into restaurant_profiles (id, default_branch_id)
-select 'default', id from branches where slug = 'default-branch'
+insert into restaurant_profiles (id)
+values ('default')
 on conflict (id) do nothing;
 
 create table if not exists contacts (
@@ -112,10 +108,6 @@ create table if not exists restaurant_settings (
   ai_personality text not null default 'Warm & Professional',
   updated_at timestamptz not null default now()
 );
-
-insert into restaurant_settings (branch_id)
-select id from branches where slug = 'default-branch'
-on conflict (branch_id) do nothing;
 
 create table if not exists menu_items (
   id uuid primary key default gen_random_uuid(),

@@ -313,7 +313,7 @@ export default function AdminConsole() {
                 <div>
                   <h2 className="text-base font-bold text-slate-900">Location Mode</h2>
                   <p className="mt-1 text-xs text-slate-400">
-                    Single-location mode keeps branch IDs internally but hides branch choice from customers and staff.
+                    Single location keeps branch IDs internally but hides branch choice from customers and staff.
                   </p>
                 </div>
               </div>
@@ -343,7 +343,7 @@ export default function AdminConsole() {
               </div>
 
               <div className="mt-4">
-                <Field label="Default Branch / Main Location">
+                <Field label="Primary Branch">
                   <select value={profileDraft.default_branch_id ?? ""} onChange={(event) => updateProfileDraft("default_branch_id", event.target.value || null)} className={selectCls}>
                     <option value="">First active branch</option>
                     {branches.filter((branch) => branch.is_active).map((branch) => (
@@ -757,7 +757,7 @@ export default function AdminConsole() {
                               {branches.filter((b) => b.is_active).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
                             </select>
                           </Field>
-                          <Field label="Default Branch">
+                          <Field label="Primary Branch">
                             <select value={member.default_branch_id ?? ""} onChange={(e) => setStaff((c) => c.map((s) => s.user_id === member.user_id ? { ...s, default_branch_id: e.target.value || null } : s))} className={selectCls}>
                               <option value="">Same as assigned</option>
                               {branches.filter((b) => b.id === assignedBranchId).map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}

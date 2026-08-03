@@ -1,3 +1,20 @@
+export interface DemoReplyButton {
+  id: string;
+  title: string;
+}
+
+export interface DemoListRow {
+  id: string;
+  title: string;
+  description?: string;
+}
+
+export interface DemoListSelector {
+  title: string;
+  buttonText: string;
+  rows: DemoListRow[];
+}
+
 export interface DemoMessage {
   id: string;
   sender_kind: "user" | "ai" | "system";
@@ -5,6 +22,8 @@ export interface DemoMessage {
   typingDuration?: number;
   delayAfter?: number;
   deliveryStatus?: "sent" | "delivered" | "read";
+  replyButtons?: DemoReplyButton[];
+  listSelector?: DemoListSelector;
   cartItems?: Array<{
     name: string;
     qty: number;
@@ -41,20 +60,20 @@ export interface DemoScenario {
 }
 
 export const RESTAURANT_ORDER_SCENARIO: DemoScenario = {
-  id: "tandoori-order-flow",
-  name: "Tandoori Hub Pakistani Feast Order",
-  customerName: "Tariq Mahmood",
-  customerPhone: "+923001234567",
-  branchSlug: "tandoori-islamabad",
+  id: "fastfood-order-flow",
+  name: "Burger Hub Fast Food Order",
+  customerName: "Ahmed Khan",
+  customerPhone: "+923331234567",
+  branchSlug: "burger-hub-dha",
   initialCart: [],
   initialWorkflowStep: "idle",
   messages: [
     {
       id: "msg-1",
       sender_kind: "user",
-      content: "Assalamu Alaikum! I'd like to place a delivery order for dinner.",
+      content: "Assalam-o-Alaikum! 1 Zinger Burger meal delivery hojaye gi?",
       typingDuration: 0,
-      delayAfter: 1200,
+      delayAfter: 1000,
       deliveryStatus: "read",
       workflowStep: "awaiting_order_type",
       orderType: "delivery",
@@ -62,83 +81,96 @@ export const RESTAURANT_ORDER_SCENARIO: DemoScenario = {
     {
       id: "msg-2",
       sender_kind: "ai",
-      content: "Walaikum Assalam Tariq sb! 🌿 Welcome to Tandoori Hub. I'd be delighted to take your delivery order!\n\nCould you please share your complete delivery address and nearest landmark?",
-      typingDuration: 1400,
+      content: "Walaikum Assalam Ahmed! 🍔 Sure, delivery available hai. Order start karne ke liye option select karein:",
+      typingDuration: 1200,
       delayAfter: 1500,
       deliveryStatus: "delivered",
+      replyButtons: [
+        { id: "delivery", title: "🚚 Delivery" },
+        { id: "pickup", title: "🏠 Pickup" },
+        { id: "dine_in", title: "🍽️ Dine-In" },
+      ],
       workflowStep: "awaiting_delivery_address",
     },
     {
       id: "msg-3",
       sender_kind: "user",
-      content: "House #42, Street 7, Sector F-6/2, Islamabad (near Super Market).",
+      content: "🚚 Delivery",
       typingDuration: 0,
-      delayAfter: 1200,
+      delayAfter: 1000,
       deliveryStatus: "read",
-      workflowStep: "collecting_items",
-      address: "House #42, Street 7, Sector F-6/2, Islamabad",
+      workflowStep: "awaiting_delivery_address",
     },
     {
       id: "msg-4",
       sender_kind: "ai",
-      content: "Thank you! We deliver to Sector F-6/2! 🚚\n\nWhat delicious items would you like to order today? Our Peshawari Chicken Karahi and Fresh Naans are customer favorites!",
-      typingDuration: 1500,
-      delayAfter: 1500,
+      content: "Got it! Please share your complete delivery address & landmark:",
+      typingDuration: 1100,
+      delayAfter: 1400,
       deliveryStatus: "delivered",
-      workflowStep: "collecting_items",
+      workflowStep: "awaiting_delivery_address",
     },
     {
       id: "msg-5",
       sender_kind: "user",
-      content: "Please add 1 Full Peshawari Chicken Karahi and 4 Roghani Naans.",
+      content: "House #15, Street 4, DHA Phase 5, Lahore",
       typingDuration: 0,
-      delayAfter: 1200,
+      delayAfter: 1000,
       deliveryStatus: "read",
-      cartItems: [
-        { name: "Peshawari Chicken Karahi", qty: 1, size: "Full", price: 2400 },
-        { name: "Roghani Naan", qty: 4, price: 80 },
-      ],
-      workflowStep: "awaiting_upsell_reply",
+      workflowStep: "collecting_items",
+      address: "House #15, Street 4, DHA Phase 5, Lahore",
     },
     {
       id: "msg-6",
       sender_kind: "ai",
-      content: "Our Special Peshawari Chicken Karahi is our top seller! 🍲\n\nI have added:\n• 1x Peshawari Chicken Karahi (Full) - Rs. 2,400\n• 4x Roghani Naan - Rs. 320\n\nWould you like to complement your meal with Mint Raita or Chilled Cokes (1.5L)?",
-      typingDuration: 1800,
+      content: "Address saved! 📍 We deliver to DHA Phase 5. Menu se popular item choose karein:",
+      typingDuration: 1400,
       delayAfter: 1500,
       deliveryStatus: "delivered",
-      workflowStep: "awaiting_upsell_reply",
+      listSelector: {
+        title: "Fast Food Menu Options",
+        buttonText: "📋 View Menu Options",
+        rows: [
+          { id: "item-1", title: "Smash Zinger Combo", description: "Rs. 890 — Crispy Zinger + Fries + Soft Drink" },
+          { id: "item-2", title: "Loaded Cheese Fries", description: "Rs. 490 — Melted Cheese, Jalapeños & Sauce" },
+          { id: "item-3", title: "Classic Beef Burger", description: "Rs. 750 — Double Beef Patty & Cheddar" },
+          { id: "item-4", title: "Club Sandwich Meal", description: "Rs. 650 — Triple Layered Sandwich & Fries" },
+        ],
+      },
+      workflowStep: "collecting_items",
     },
     {
       id: "msg-7",
       sender_kind: "user",
-      content: "Yes, please add 1 Mint Raita and 2 Cokes (1.5L).",
+      content: "1 Smash Zinger Combo aur 1 Loaded Cheese Fries kar dein.",
       typingDuration: 0,
-      delayAfter: 1200,
+      delayAfter: 1000,
       deliveryStatus: "read",
       cartItems: [
-        { name: "Peshawari Chicken Karahi", qty: 1, size: "Full", price: 2400 },
-        { name: "Roghani Naan", qty: 4, price: 80 },
-        { name: "Mint Raita", qty: 1, price: 180 },
-        { name: "Coke 1.5L", qty: 2, price: 200 },
+        { name: "Smash Zinger Combo", qty: 1, size: "Combo", price: 890 },
+        { name: "Loaded Cheese Fries", qty: 1, price: 490 },
       ],
       workflowStep: "awaiting_confirmation",
     },
     {
       id: "msg-8",
       sender_kind: "ai",
-      content: "Excellent choices! 🥤 Here is your final Order Summary:\n\n📋 ITEMS:\n• 1x Peshawari Chicken Karahi (Full) — Rs. 2,400\n• 4x Roghani Naan — Rs. 320\n• 1x Mint Raita — Rs. 180\n• 2x Coke 1.5L — Rs. 400\n-----------------------------------\nSubtotal: Rs. 3,300\nDelivery Fee: Rs. 150\nTotal Amount: Rs. 3,450\n\n📍 DELIVERY ADDRESS:\nHouse #42, Street 7, Sector F-6/2, Islamabad\n\nPlease reply 'CONFIRM' to place your order now!",
-      typingDuration: 2000,
+      content: "Awesome choice! 🛍️ Here is your Order Summary:\n\n📋 ITEMS:\n• 1x Smash Zinger Combo — Rs. 890\n• 1x Loaded Cheese Fries — Rs. 490\n-----------------------------------\nSubtotal: Rs. 1,380\nDelivery Fee: Rs. 150\nTotal Amount: Rs. 1,530\n\n📍 DELIVERY ADDRESS:\nHouse #15, Street 4, DHA Phase 5, Lahore\n\nWould you like to confirm this order?",
+      typingDuration: 1800,
       delayAfter: 1500,
       deliveryStatus: "delivered",
+      replyButtons: [
+        { id: "confirm", title: "✅ Confirm Order" },
+        { id: "edit", title: "✏️ Edit Cart" },
+      ],
       workflowStep: "awaiting_confirmation",
     },
     {
       id: "msg-9",
       sender_kind: "user",
-      content: "CONFIRM",
+      content: "✅ Confirm Order",
       typingDuration: 0,
-      delayAfter: 1200,
+      delayAfter: 1000,
       deliveryStatus: "read",
       workflowStep: "completed",
       triggerOrderSync: true,
@@ -146,8 +178,8 @@ export const RESTAURANT_ORDER_SCENARIO: DemoScenario = {
     {
       id: "msg-10",
       sender_kind: "ai",
-      content: "🎉 Thank you, Tariq sb! Your order #1042 has been successfully confirmed!\n\n💰 Total: Rs. 3,450 (Cash on Delivery)\n⏱️ Estimated Delivery: 35 - 45 Minutes\n\nOur kitchen has started preparing your fresh Peshawari Karahi. You can track your order status live on our dashboard!",
-      typingDuration: 1800,
+      content: "🎉 Thanks Ahmed! Order #1042 confirm ho gaya hai!\n\n💰 Total: Rs. 1,530 (Cash on Delivery)\n⏱️ ETA: 25 - 35 Minutes\n\nKitchen is preparing your fresh order now. Live status dashboard par track kar saktay hain!",
+      typingDuration: 1600,
       delayAfter: 1000,
       deliveryStatus: "delivered",
       workflowStep: "completed",
@@ -156,17 +188,15 @@ export const RESTAURANT_ORDER_SCENARIO: DemoScenario = {
   finalOrder: {
     orderNumber: 1042,
     type: "delivery",
-    customerName: "Tariq Mahmood",
-    phone: "+923001234567",
-    address: "House #42, Street 7, Sector F-6/2, Islamabad",
+    customerName: "Ahmed Khan",
+    phone: "+923331234567",
+    address: "House #15, Street 4, DHA Phase 5, Lahore",
     items: [
-      { name: "Peshawari Chicken Karahi", qty: 1, price: 2400, size: "Full" },
-      { name: "Roghani Naan", qty: 4, price: 80 },
-      { name: "Mint Raita", qty: 1, price: 180 },
-      { name: "Coke 1.5L", qty: 2, price: 200 },
+      { name: "Smash Zinger Combo", qty: 1, price: 890, size: "Combo" },
+      { name: "Loaded Cheese Fries", qty: 1, price: 490 },
     ],
-    subtotal: 3300,
+    subtotal: 1380,
     deliveryFee: 150,
-    total: 3450,
+    total: 1530,
   },
 };

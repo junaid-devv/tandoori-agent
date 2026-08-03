@@ -80,11 +80,16 @@ export async function runProductDemoRecording(options?: { headless?: boolean }) 
   const warmupContext = await browser.newContext({ viewport: { width: 1920, height: 1080 } });
   const warmupPage = await warmupContext.newPage();
 
-  await warmupPage.goto(`${baseUrl}/login`, { waitUntil: "networkidle" });
-  await warmupPage.fill('input[type="email"]', demoEmail);
-  await warmupPage.fill('input[type="password"]', demoPassword);
-  await warmupPage.click('button[type="submit"]');
-  await warmupPage.waitForURL("**/dashboard", { timeout: 15000 });
+  await warmupPage.goto(`${baseUrl}/login`, { waitUntil: "domcontentloaded" });
+  if (warmupPage.url().includes("/login")) {
+    const emailInput = warmupPage.locator('input[type="email"]');
+    if (await emailInput.isVisible({ timeout: 3000 }).catch(() => false)) {
+      await emailInput.fill(demoEmail);
+      await warmupPage.fill('input[type="password"]', demoPassword);
+      await warmupPage.click('button[type="submit"]');
+      await warmupPage.waitForURL("**/dashboard", { timeout: 15000 });
+    }
+  }
 
   // Prime all 7 routes into Next.js router & browser memory
   const routesToWarm = [
@@ -97,7 +102,7 @@ export async function runProductDemoRecording(options?: { headless?: boolean }) 
     "/dashboard/admin",
   ];
   for (const route of routesToWarm) {
-    await warmupPage.goto(`${baseUrl}${route}`, { waitUntil: "networkidle" });
+    await warmupPage.goto(`${baseUrl}${route}`, { waitUntil: "domcontentloaded" });
     await warmupPage.waitForTimeout(300);
   }
 
@@ -130,8 +135,8 @@ export async function runProductDemoRecording(options?: { headless?: boolean }) 
   await smoothMoveAndClick(page, '[data-testid="nav-conversations"]');
   await page.waitForTimeout(1800);
 
-  console.log("👤 Selecting Demo Customer (Tariq Mahmood)...");
-  const demoConvSelector = '[data-testid="conversation-item-923001234567"]';
+  console.log("👤 Selecting Demo Customer (Ahmed Khan)...");
+  const demoConvSelector = '[data-testid="conversation-item-923331234567"]';
   await page.locator(demoConvSelector).waitFor({ state: "visible", timeout: 10000 });
   await smoothMoveAndClick(page, demoConvSelector);
   await page.waitForTimeout(1800);

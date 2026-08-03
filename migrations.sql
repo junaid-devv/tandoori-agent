@@ -5,17 +5,13 @@ create table if not exists branches (
   slug text not null unique,
   name text not null,
   city text not null default 'City',
-  address text not null default 'Please update this location address',
+  address text not null default '',
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table branches add column if not exists city text not null default 'City';
-
-insert into branches (slug, name, city, address)
-values ('default-branch', 'Main Location', 'City', 'Please update this location address')
-on conflict (slug) do nothing;
 
 create table if not exists restaurant_profiles (
   id text primary key default 'default',
@@ -37,8 +33,8 @@ create table if not exists restaurant_profiles (
 );
 alter table restaurant_profiles drop constraint if exists restaurant_profiles_branch_mode_check;
 alter table restaurant_profiles add constraint restaurant_profiles_branch_mode_check check (branch_mode in ('single', 'multiple')) not valid;
-insert into restaurant_profiles (id, default_branch_id)
-select 'default', id from branches where slug = 'default-branch'
+insert into restaurant_profiles (id)
+values ('default')
 on conflict (id) do nothing;
 
 create table if not exists contacts (
@@ -92,9 +88,14 @@ update conversations set contact_id = contacts.id
 from contacts
 where conversations.contact_id is null and conversations.phone = contacts.phone;
 
-update conversations set branch_id = branches.id
-from branches
-where conversations.branch_id is null and branches.slug = 'default-branch';
+update conversations set branch_id = fallback_branch.id
+from (
+  select id from branches
+  where is_active = true
+  order by created_at asc
+  limit 1
+) fallback_branch
+where conversations.branch_id is null;
 
 do $$
 begin
@@ -137,13 +138,19 @@ alter table restaurant_settings add constraint restaurant_settings_estimated_pre
 alter table restaurant_settings drop constraint if exists restaurant_settings_estimated_delivery_minutes_check;
 alter table restaurant_settings add constraint restaurant_settings_estimated_delivery_minutes_check check (estimated_delivery_minutes between 5 and 240) not valid;
 
-update restaurant_settings set branch_id = branches.id
-from branches
-where restaurant_settings.branch_id is null and branches.slug = 'default-branch';
+update restaurant_settings set branch_id = fallback_branch.id
+from (
+  select id from branches
+  where is_active = true
+  order by created_at asc
+  limit 1
+) fallback_branch
+where restaurant_settings.branch_id is null;
 
 create unique index if not exists idx_restaurant_settings_branch_id on restaurant_settings(branch_id);
 insert into restaurant_settings (branch_id)
-select id from branches where slug = 'default-branch'
+select branches.id from branches
+where branches.is_active = true
 on conflict (branch_id) do nothing;
 
 alter table menu_items add column if not exists branch_id uuid references branches(id) on delete cascade;
@@ -154,14 +161,24 @@ alter table menu_items add column if not exists available_start_time text;
 alter table menu_items add column if not exists available_end_time text;
 alter table menu_items drop constraint if exists menu_items_available_days_check;
 alter table menu_items add constraint menu_items_available_days_check check (jsonb_typeof(available_days) = 'array') not valid;
-update menu_items set branch_id = branches.id
-from branches
-where menu_items.branch_id is null and branches.slug = 'default-branch';
+update menu_items set branch_id = fallback_branch.id
+from (
+  select id from branches
+  where is_active = true
+  order by created_at asc
+  limit 1
+) fallback_branch
+where menu_items.branch_id is null;
 
 alter table menu_uploads add column if not exists branch_id uuid references branches(id) on delete cascade;
-update menu_uploads set branch_id = branches.id
-from branches
-where menu_uploads.branch_id is null and branches.slug = 'default-branch';
+update menu_uploads set branch_id = fallback_branch.id
+from (
+  select id from branches
+  where is_active = true
+  order by created_at asc
+  limit 1
+) fallback_branch
+where menu_uploads.branch_id is null;
 
 create sequence if not exists messages_ingest_seq_seq;
 alter table messages add column if not exists ingest_seq bigint;
@@ -274,9 +291,14 @@ alter table order_items add column if not exists item_instructions text;
 update orders set branch_id = conversations.branch_id
 from conversations
 where orders.branch_id is null and orders.conversation_id = conversations.id;
-update orders set branch_id = branches.id
-from branches
-where orders.branch_id is null and branches.slug = 'default-branch';
+update orders set branch_id = fallback_branch.id
+from (
+  select id from branches
+  where is_active = true
+  order by created_at asc
+  limit 1
+) fallback_branch
+where orders.branch_id is null;
 
 create unique index if not exists idx_orders_source_user_message_id on orders(source_user_message_id) where source_user_message_id is not null;
 alter table orders drop constraint if exists orders_status_notification_status_check;
@@ -546,9 +568,14 @@ begin
   end if;
 end $$;
 
-update contacts set active_branch_id = branches.id
-from branches
-where contacts.active_branch_id is null and branches.slug = 'default-branch';
+update contacts set active_branch_id = fallback_branch.id
+from (
+  select id from branches
+  where is_active = true
+  order by created_at asc
+  limit 1
+) fallback_branch
+where contacts.active_branch_id is null;
 
 create table if not exists staff_profiles (
   user_id uuid primary key references auth.users(id) on delete cascade,

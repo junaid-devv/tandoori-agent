@@ -28,10 +28,15 @@ const STORAGE_KEY = "restaurant-agent-selected-branch";
 const DashboardContext = createContext<DashboardContextValue | null>(null);
 
 function getInitialBranchId(session: DashboardSession, profile: RestaurantProfile): SelectedBranchId {
+  const adminCanViewAll = session.role === "admin" && profile.branch_mode === "multiple";
   const profileDefaultBranchId =
     profile.default_branch_id && session.allowedBranches.some((branch) => branch.id === profile.default_branch_id)
       ? profile.default_branch_id
       : null;
+
+  if (adminCanViewAll) {
+    return "all";
+  }
 
   if (profile.branch_mode !== "multiple") {
     return profileDefaultBranchId ?? session.defaultBranchId ?? session.allowedBranches[0]?.id ?? "all";
@@ -46,13 +51,14 @@ function resolveStoredBranchId(
   rawValue: string | null,
 ): SelectedBranchId | null {
   if (!rawValue) return null;
+  const adminCanViewAll = session.role === "admin" && profile.branch_mode === "multiple";
 
-  if (profile.branch_mode !== "multiple" && rawValue === "all") {
+  if (!adminCanViewAll && rawValue === "all") {
     return null;
   }
 
   if (rawValue === "all") {
-    return session.role === "admin" ? "all" : null;
+    return adminCanViewAll ? "all" : null;
   }
 
   const isAllowed = session.allowedBranches.some((branch) => branch.id === rawValue);

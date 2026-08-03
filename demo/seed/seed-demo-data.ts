@@ -10,7 +10,7 @@ function createDemoSupabaseAdmin() {
   const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   if (!supabaseUrl || !serviceKey) {
-  console.error("❌ Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.");
+    console.error("❌ Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.");
     throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.");
   }
 
@@ -20,29 +20,41 @@ function createDemoSupabaseAdmin() {
 export async function seedDemoData() {
   const supabaseAdmin = createDemoSupabaseAdmin();
 
-  console.log("🌱 [DEMO SEED] Starting deterministic demo data seeding...");
+  console.log("🌱 [DEMO SEED] Starting generic fast-food demo data seeding...");
 
-  // 1. Ensure Demo Branch exists
-  const branchSlug = "tandoori-islamabad";
-  const branchLookup = await supabaseAdmin
+  // 1. Update Restaurant Profile (Burger Hub - Single Branch Mode)
+  await supabaseAdmin
+    .from("restaurant_profiles")
+    .upsert({
+      id: "default",
+      app_name: "Burger Hub",
+      dashboard_title: "Burger Hub Management",
+      city: "Lahore",
+      currency: "Rs.",
+      brand_color: "#EA580C",
+      brand_hover_color: "#C2410C",
+      branch_mode: "single",
+      ai_personality_default: "Warm & Professional",
+    }, { onConflict: "id" });
+
+  // Delete secondary branches to enforce true single-branch mode for demo
+  await supabaseAdmin.from("branches").delete().neq("slug", "burger-hub-dha");
+
+  // 2. Ensure Single Primary Branch
+  const primarySlug = "burger-hub-dha";
+  let { data: branch } = await supabaseAdmin
     .from("branches")
     .select("*")
-    .eq("slug", branchSlug)
+    .eq("slug", primarySlug)
     .maybeSingle();
-  let branch = branchLookup.data;
-  const branchError = branchLookup.error;
-
-  if (branchError) {
-    throw new Error(`Failed to load demo branch: ${branchError.message}`);
-  }
 
   if (!branch) {
     const { data: newBranch, error: createBranchErr } = await supabaseAdmin
       .from("branches")
       .insert({
-        slug: branchSlug,
-        name: "Tandoori Hub - Flagship Branch",
-        address: "Sector F-6/2, Islamabad",
+        slug: primarySlug,
+        name: "Burger Hub — Main Branch",
+        address: "Phase 5 Commercial, DHA, Lahore",
         is_active: true,
       })
       .select()
@@ -52,33 +64,41 @@ export async function seedDemoData() {
       throw new Error(`Failed to create demo branch: ${createBranchErr?.message}`);
     }
     branch = newBranch;
+  } else {
+    await supabaseAdmin
+      .from("branches")
+      .update({
+        name: "Burger Hub — Main Branch",
+        address: "Phase 5 Commercial, DHA, Lahore",
+        is_active: true,
+      })
+      .eq("id", branch.id);
   }
-
   const branchId = branch.id;
 
-  // 2. Ensure Restaurant Settings for Demo Branch
+  // 3. Restaurant Settings
   await supabaseAdmin
     .from("restaurant_settings")
     .upsert(
       {
         branch_id: branchId,
         is_accepting_orders: true,
-        opening_time: "11:00 AM",
-        closing_time: "11:30 PM",
+        opening_time: "12:00 PM",
+        closing_time: "02:00 AM",
         delivery_enabled: true,
         delivery_fee: 150,
-        min_delivery_amount: 500,
-        city: "Islamabad",
-        phone_delivery: "051-8899112",
-        phone_dine_in: "051-8899113",
+        min_delivery_amount: 450,
+        city: "Lahore",
+        phone_delivery: "042-111-222-333",
+        phone_dine_in: "042-111-222-334",
         ai_personality: "Warm & Professional",
-        delivery_areas: ["F-6", "F-7", "F-8", "G-6", "G-7", "E-7", "Blue Area"],
+        delivery_areas: ["DHA Phase 1-6", "Gulberg", "Model Town", "Garden Town", "Askari 10"],
       },
       { onConflict: "branch_id" }
     );
 
-  // 3. Ensure Demo Contact ("Tariq Mahmood")
-  const demoPhone = "+923001234567";
+  // 4. Demo Customer Contact ("Ahmed Khan")
+  const demoPhone = "+923331234567";
   let { data: contact } = await supabaseAdmin
     .from("contacts")
     .select("*")
@@ -90,13 +110,13 @@ export async function seedDemoData() {
       .from("contacts")
       .insert({
         phone: demoPhone,
-        name: "Tariq Mahmood",
+        name: "Ahmed Khan",
         active_branch_id: branchId,
-        preferred_language: "english",
-        tags: ["VIP", "Regular", "Family Orders"],
-        notes: "Prefers mild spice level in Karahi. Prompt delivery to F-6/2.",
-        total_orders: 5,
-        last_order_at: new Date(Date.now() - 86400000 * 3).toISOString(),
+        preferred_language: "roman_urdu",
+        tags: ["VIP", "Regular", "Burger Fan"],
+        notes: "Prefers extra sauce on Zinger Burger. Prompt delivery to DHA Phase 5.",
+        total_orders: 8,
+        last_order_at: new Date().toISOString(),
       })
       .select()
       .single();
@@ -106,19 +126,18 @@ export async function seedDemoData() {
     }
     contact = newContact;
   } else {
-    // Update contact details
     await supabaseAdmin
       .from("contacts")
       .update({
-        name: "Tariq Mahmood",
+        name: "Ahmed Khan",
         active_branch_id: branchId,
-        tags: ["VIP", "Regular", "Family Orders"],
-        notes: "Prefers mild spice level in Karahi. Prompt delivery to F-6/2.",
+        tags: ["VIP", "Regular", "Burger Fan"],
+        notes: "Prefers extra sauce on Zinger Burger. Prompt delivery to DHA Phase 5.",
       })
       .eq("id", contact.id);
   }
 
-  // 4. Ensure Demo Customer Address
+  // Address
   await supabaseAdmin
     .from("customer_addresses")
     .upsert(
@@ -126,9 +145,9 @@ export async function seedDemoData() {
         contact_id: contact.id,
         branch_id: branchId,
         label: "Home",
-        address: "House #42, Street 7, Sector F-6/2, Islamabad",
-        address_key: "home_f6_2",
-        use_count: 4,
+        address: "House #15, Street 4, DHA Phase 5, Lahore",
+        address_key: "home_dha_5",
+        use_count: 6,
       },
       { onConflict: "contact_id,branch_id,address_key" }
     );
@@ -153,7 +172,7 @@ export async function seedDemoData() {
       contact_id: contact.id,
       branch_id: branchId,
       phone: demoPhone,
-      name: "Tariq Mahmood",
+      name: "Ahmed Khan",
       mode: "agent",
       has_unread: false,
     })
@@ -164,7 +183,6 @@ export async function seedDemoData() {
     throw new Error(`Failed to create demo conversation: ${convErr?.message}`);
   }
 
-  // Initial conversation state
   await supabaseAdmin
     .from("conversation_states")
     .upsert(
@@ -172,20 +190,23 @@ export async function seedDemoData() {
         conversation_id: conversation.id,
         workflow_step: "idle",
         cart: [],
-        preferred_language: "english",
+        preferred_language: "roman_urdu",
       },
       { onConflict: "conversation_id" }
     );
 
-  // 6. Ensure Demo Menu Items exist for Demo Branch
+  // 6. Fast Food Menu Items
   const menuItems = [
-    { name: "Peshawari Chicken Karahi", price: 2400, category: "Karahi Specialties", description: "Fresh chicken cooked in traditional Peshawari style with fresh tomatoes and ginger.", is_available: true },
-    { name: "Mutton Shinwari Karahi", price: 3400, category: "Karahi Specialties", description: "Tender mutton cooked in pure desi ghee with green chillies.", is_available: true },
-    { name: "Roghani Naan", price: 80, category: "Tandoor & Breads", description: "Soft tandoori naan glazed with sesame seeds and butter.", is_available: true },
-    { name: "Garlic Naan", price: 100, category: "Tandoor & Breads", description: "Freshly baked naan topped with crushed garlic and cilantro.", is_available: true },
-    { name: "Mint Raita", price: 180, category: "Sides & Beverages", description: "Chilled yogurt mixed with fresh mint, coriander, and spices.", is_available: true },
-    { name: "Coke 1.5L", price: 200, category: "Sides & Beverages", description: "Chilled 1.5 Liter Coca-Cola bottle.", is_available: true },
-    { name: "Shahi Kheer", price: 350, category: "Desserts", description: "Traditional rice pudding infused with saffron and pistachios.", is_available: true },
+    { name: "Smash Zinger Combo", price: 890, category: "Gourmet Burgers", description: "Crispy double Zinger patty, melted cheddar, signature sauce + Fries + Drink.", is_available: true },
+    { name: "Classic Beef Burger", price: 750, category: "Gourmet Burgers", description: "Juicy beef patty, smoked cheddar, caramelized onions & BBQ mayo.", is_available: true },
+    { name: "Grilled Chicken Burger", price: 680, category: "Gourmet Burgers", description: "Flame grilled chicken breast, lettuce, tomato & garlic aioli.", is_available: true },
+    { name: "Loaded Cheese Fries", price: 490, category: "Sides & Appetizers", description: "Crispy fries smothered in liquid cheese, jalapeños & crispy bacon bits.", is_available: true },
+    { name: "Crispy Chicken Wings (6pcs)", price: 550, category: "Sides & Appetizers", description: "Crispy fried wings tossed in Spicy Buffalo or BBQ sauce.", is_available: true },
+    { name: "Club Sandwich Meal", price: 650, category: "Sandwiches & Wraps", description: "Triple layered toasted bread with grilled chicken, egg & cheese + Fries.", is_available: true },
+    { name: "Zinger Paratha Roll", price: 380, category: "Sandwiches & Wraps", description: "Crispy Zinger strip wrapped in crispy tandoori paratha with garlic mayo.", is_available: true },
+    { name: "Chocolate Shake", price: 350, category: "Beverages & Shakes", description: "Thick creamy Belgian chocolate milkshake topped with whipped cream.", is_available: true },
+    { name: "Soft Drink 500ml", price: 120, category: "Beverages & Shakes", description: "Chilled Coca-Cola / Sprite / Fanta 500ml.", is_available: true },
+    { name: "Molten Lava Cake", price: 420, category: "Desserts", description: "Warm chocolate cake with gooey molten center served with vanilla ice cream.", is_available: true },
   ];
 
   for (const item of menuItems) {
@@ -204,7 +225,78 @@ export async function seedDemoData() {
     }
   }
 
-  // 7. Ensure Demo Admin User exists for login
+  // 7. Seed 45 Historical & Active Orders for Analytics & Overview
+  console.log("📊 Seeding historical orders for analytics charts...");
+  const orderStatuses = ["delivered", "delivered", "delivered", "delivered", "preparing", "received", "cancelled"];
+  const orderTypes: Array<"delivery" | "pickup" | "dine-in"> = ["delivery", "delivery", "pickup", "dine-in"];
+  const names = ["Zaid Ali", "Fatima Noor", "Usman Sheikh", "Sana Malik", "Hamza Bilal", "Ayesha Khan", "Omer Farooq", "Zainab Shah"];
+
+  const now = Date.now();
+  for (let i = 0; i < 40; i++) {
+    const daysAgo = Math.floor(Math.random() * 28);
+    const hoursAgo = Math.floor(Math.random() * 12);
+    const createdAt = new Date(now - (daysAgo * 86400000 + hoursAgo * 3600000)).toISOString();
+    const status = i < 3 ? (i === 0 ? "received" : i === 1 ? "preparing" : "out_for_delivery") : orderStatuses[i % orderStatuses.length];
+    const type = orderTypes[i % orderTypes.length];
+    const customerName = names[i % names.length];
+    const phone = `+92321${1000000 + i}`;
+
+    // Create dummy contact & conversation for each historical order
+    const { data: histContact } = await supabaseAdmin
+      .from("contacts")
+      .upsert({ phone, name: customerName, active_branch_id: branchId }, { onConflict: "phone" })
+      .select()
+      .single();
+
+    if (histContact) {
+      const { data: histConv } = await supabaseAdmin
+        .from("conversations")
+        .insert({
+          contact_id: histContact.id,
+          branch_id: branchId,
+          phone,
+          name: customerName,
+          mode: "agent",
+          has_unread: i === 0,
+          updated_at: createdAt,
+          created_at: createdAt,
+        })
+        .select()
+        .single();
+
+      if (histConv) {
+        const item1 = menuItems[i % menuItems.length];
+        const item2 = menuItems[(i + 3) % menuItems.length];
+        const subtotal = item1.price + item2.price;
+        const deliveryFee = type === "delivery" ? 150 : 0;
+
+        const { data: createdOrder } = await supabaseAdmin
+          .from("orders")
+          .insert({
+            branch_id: branchId,
+            conversation_id: histConv.id,
+            type,
+            status,
+            subtotal,
+            delivery_fee: deliveryFee,
+            address: type === "delivery" ? `House #${i + 1}, Street ${i % 10 + 1}, DHA, Lahore` : null,
+            created_at: createdAt,
+            updated_at: createdAt,
+          })
+          .select()
+          .single();
+
+        if (createdOrder) {
+          await supabaseAdmin.from("order_items").insert([
+            { order_id: createdOrder.id, name: item1.name, qty: 1, price: item1.price },
+            { order_id: createdOrder.id, name: item2.name, qty: 1, price: item2.price },
+          ]);
+        }
+      }
+    }
+  }
+
+  // 8. Demo Admin User
   const demoEmail = process.env.DEMO_USER_EMAIL || "demo_admin@tandoori.pk";
   const demoPassword = process.env.DEMO_USER_PASSWORD || "DemoAdmin123!";
 
@@ -228,7 +320,6 @@ export async function seedDemoData() {
     userId = created.user.id;
   }
 
-  // Upsert staff profile
   await supabaseAdmin.from("staff_profiles").upsert(
     {
       user_id: userId,
@@ -239,7 +330,7 @@ export async function seedDemoData() {
     { onConflict: "user_id" }
   );
 
-  console.log("✅ [DEMO SEED] Demo data seeding completed successfully!");
+  console.log("✅ [DEMO SEED] Generic fast-food demo data seeding completed!");
   return { branchId, conversationId: conversation.id, demoPhone, demoEmail };
 }
 

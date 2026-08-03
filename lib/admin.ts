@@ -78,7 +78,7 @@ function normalizeStaffPayload(input: CreateStaffInput | UpdateStaffInput) {
   }
 
   if (defaultBranchId && role === "branch_staff" && !branchIds.includes(defaultBranchId)) {
-    throw new Error("Default branch must be one of the allowed branches for branch staff.");
+    throw new Error("Primary branch must be one of the allowed branches for branch staff.");
   }
 
   return {
@@ -261,6 +261,12 @@ export async function deleteBranch(branchId: string) {
     .update({ default_branch_id: null })
     .eq("default_branch_id", branchId);
   if (profileError) throw profileError;
+
+  const { error: restaurantProfileError } = await supabaseAdmin
+    .from("restaurant_profiles")
+    .update({ default_branch_id: null, updated_at: new Date().toISOString() })
+    .eq("default_branch_id", branchId);
+  if (restaurantProfileError) throw restaurantProfileError;
 
   const { error: contactsError } = await supabaseAdmin
     .from("contacts")
