@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import type { CSSProperties } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
+import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -14,26 +15,27 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const appName = process.env.NEXT_PUBLIC_APP_NAME || "Restaurant Agent";
-const brandColor = process.env.NEXT_PUBLIC_BRAND_COLOR || "#EA580C";
-const rootStyle = { "--brand": brandColor } as CSSProperties & Record<"--brand", string>;
+export async function generateMetadata(): Promise<Metadata> {
+  const profile = await getRestaurantProfile();
+  return {
+    title: `${profile.app_name} - Agent Dashboard`,
+    description: `WhatsApp AI ordering agent dashboard for ${profile.app_name}`,
+  };
+}
 
-export const metadata: Metadata = {
-  title: `${appName} — Agent Dashboard`,
-  description: `WhatsApp AI ordering agent dashboard for ${appName}`,
-};
-
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const profile = await getRestaurantProfile();
+  const rootStyle = {
+    "--brand": profile.brand_color,
+    "--brand-hover": profile.brand_hover_color,
+  } as CSSProperties & Record<"--brand" | "--brand-hover", string>;
+
   return (
-    <html
-      lang="en"
-      suppressHydrationWarning
-      style={rootStyle}
-    >
+    <html lang="en" suppressHydrationWarning style={rootStyle}>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
         suppressHydrationWarning

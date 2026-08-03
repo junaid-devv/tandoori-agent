@@ -1,3 +1,5 @@
+import { getRestaurantProfile } from "./restaurant-profile";
+
 type WhatsAppSendResult = {
   messageId: string | null;
   raw: unknown;
@@ -49,8 +51,8 @@ export type WhatsAppInteractiveFlowPayload = {
 const STATUS_MESSAGES: Record<string, string> = {
   preparing: "Your order is being prepared. It will be ready soon.",
   out_for_delivery: "Your order is on the way and should reach you shortly.",
-  delivered: `Your order has been delivered. Thank you for choosing ${process.env.NEXT_PUBLIC_APP_NAME || "us"}.`,
-  cancelled: `Your order has been cancelled. For help, please call ${process.env.NEXT_PUBLIC_APP_PHONE_DELIVERY || "our support line"}.`,
+  delivered: "Your order has been delivered. Thank you for choosing {restaurant}.",
+  cancelled: "Your order has been cancelled. For help, please call {support_phone}.",
 };
 const WHATSAPP_REQUEST_TIMEOUT_MS = Number(process.env.WHATSAPP_REQUEST_TIMEOUT_MS) || 15_000;
 
@@ -482,8 +484,13 @@ export async function sendWhatsAppInteractiveFlow(
 }
 
 export async function notifyCustomer(phone: string, status: string, conversationId?: string) {
-  const message = STATUS_MESSAGES[status];
-  if (!message) return;
+  const template = STATUS_MESSAGES[status];
+  if (!template) return;
+
+  const profile = await getRestaurantProfile();
+  const message = template
+    .replace("{restaurant}", profile.app_name || "us")
+    .replace("{support_phone}", profile.support_phone || profile.delivery_phone || "our support line");
 
   await sendWhatsAppMessage(phone, message);
 

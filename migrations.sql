@@ -4,15 +4,42 @@ create table if not exists branches (
   id uuid primary key default gen_random_uuid(),
   slug text not null unique,
   name text not null,
-  address text not null default 'Please update this branch address',
+  city text not null default 'City',
+  address text not null default 'Please update this location address',
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-insert into branches (slug, name, address)
-values ('default-branch', 'Default Branch', 'Please update this branch address')
+alter table branches add column if not exists city text not null default 'City';
+
+insert into branches (slug, name, city, address)
+values ('default-branch', 'Main Location', 'City', 'Please update this location address')
 on conflict (slug) do nothing;
+
+create table if not exists restaurant_profiles (
+  id text primary key default 'default',
+  app_name text not null default 'Restaurant Agent',
+  dashboard_title text not null default 'Restaurant Dashboard',
+  logo_url text,
+  brand_color text not null default '#EA580C',
+  brand_hover_color text not null default '#C2410C',
+  city text not null default 'City',
+  currency text not null default 'Rs.',
+  timezone text not null default 'Asia/Karachi',
+  branch_mode text not null default 'single',
+  default_branch_id uuid references branches(id) on delete set null,
+  support_phone text not null default 'Update support phone',
+  delivery_phone text not null default 'Update delivery phone',
+  dine_in_phone text not null default 'Update dine-in phone',
+  ai_personality_default text not null default 'Warm & Professional',
+  updated_at timestamptz not null default now()
+);
+alter table restaurant_profiles drop constraint if exists restaurant_profiles_branch_mode_check;
+alter table restaurant_profiles add constraint restaurant_profiles_branch_mode_check check (branch_mode in ('single', 'multiple')) not valid;
+insert into restaurant_profiles (id, default_branch_id)
+select 'default', id from branches where slug = 'default-branch'
+on conflict (id) do nothing;
 
 create table if not exists contacts (
   id uuid primary key default gen_random_uuid(),
@@ -99,9 +126,9 @@ alter table restaurant_settings add column if not exists delivery_fee numeric no
 alter table restaurant_settings add column if not exists delivery_areas jsonb not null default '[]'::jsonb;
 alter table restaurant_settings add column if not exists estimated_prep_minutes integer not null default 30;
 alter table restaurant_settings add column if not exists estimated_delivery_minutes integer not null default 45;
-alter table restaurant_settings add column if not exists city text not null default 'Wah Cantt';
-alter table restaurant_settings add column if not exists phone_delivery text not null default '0341-1007722';
-alter table restaurant_settings add column if not exists phone_dine_in text not null default '051-4904211';
+alter table restaurant_settings add column if not exists city text not null default 'City';
+alter table restaurant_settings add column if not exists phone_delivery text not null default 'Update delivery phone';
+alter table restaurant_settings add column if not exists phone_dine_in text not null default 'Update dine-in phone';
 alter table restaurant_settings add column if not exists ai_personality text not null default 'Warm & Professional';
 alter table restaurant_settings drop constraint if exists restaurant_settings_delivery_areas_array_check;
 alter table restaurant_settings add constraint restaurant_settings_delivery_areas_array_check check (jsonb_typeof(delivery_areas) = 'array') not valid;
@@ -680,6 +707,8 @@ $$;
 
 drop trigger if exists update_branches_updated_at on branches;
 create trigger update_branches_updated_at before update on branches for each row execute function update_updated_at_column();
+drop trigger if exists update_restaurant_profiles_updated_at on restaurant_profiles;
+create trigger update_restaurant_profiles_updated_at before update on restaurant_profiles for each row execute function update_updated_at_column();
 drop trigger if exists update_contacts_updated_at on contacts;
 create trigger update_contacts_updated_at before update on contacts for each row execute function update_updated_at_column();
 drop trigger if exists update_customer_addresses_updated_at on customer_addresses;
@@ -700,6 +729,7 @@ drop trigger if exists update_rate_limits_updated_at on rate_limits;
 create trigger update_rate_limits_updated_at before update on rate_limits for each row execute function update_updated_at_column();
 
 alter table branches enable row level security;
+alter table restaurant_profiles enable row level security;
 alter table contacts enable row level security;
 alter table customer_addresses enable row level security;
 alter table conversations enable row level security;
@@ -717,6 +747,8 @@ alter table rate_limits enable row level security;
 
 drop policy if exists "service_branches" on branches;
 create policy "service_branches" on branches for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+drop policy if exists "service_restaurant_profiles" on restaurant_profiles;
+create policy "service_restaurant_profiles" on restaurant_profiles for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_contacts" on contacts;
 create policy "service_contacts" on contacts for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 drop policy if exists "service_customer_addresses" on customer_addresses;
@@ -750,6 +782,9 @@ do $$
 begin
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'branches') then
     alter publication supabase_realtime add table branches;
+  end if;
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'restaurant_profiles') then
+    alter publication supabase_realtime add table restaurant_profiles;
   end if;
   if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and tablename = 'conversations') then
     alter publication supabase_realtime add table conversations;
@@ -1060,7 +1095,7 @@ begin
 end $$;
 
 -- Branch city mapping for city -> branch conversational flow
-alter table branches add column if not exists city text not null default 'Wah Cantt';
+alter table branches add column if not exists city text not null default 'City';
 update branches as b
 set city = coalesce(nullif(trim(rs.city), ''), b.city)
 from restaurant_settings as rs

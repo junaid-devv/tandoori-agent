@@ -7,12 +7,11 @@ import {
   ChevronRight
 } from "lucide-react";
 import { clsx } from "clsx";
-
-const LOGO_URL = process.env.NEXT_PUBLIC_LOGO_URL ?? "";
-const APP_NAME = process.env.NEXT_PUBLIC_APP_NAME ?? "Restaurant";
+import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 
 export function Header() {
   const pathname = usePathname();
+  const { profile } = useDashboardContext();
   const [scrolled, setScrolled] = useState(false);
 
   useEffect(() => {
@@ -40,19 +39,19 @@ export function Header() {
       {/* Left: Logo + Breadcrumbs */}
       <div className="flex items-center gap-4">
         {/* Restaurant Logo */}
-        {LOGO_URL ? (
+        {profile.logo_url ? (
           <div className="w-9 h-9 rounded-xl overflow-hidden border border-zinc-800 shadow-[0_0_12px_rgba(0,0,0,0.4)] flex-shrink-0">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={LOGO_URL}
-              alt={`${APP_NAME} logo`}
+              src={profile.logo_url}
+              alt={`${profile.app_name} logo`}
               className="w-full h-full object-cover"
             />
           </div>
         ) : (
           <div className="w-9 h-9 rounded-xl bg-brand/10 border border-brand/30 flex items-center justify-center flex-shrink-0">
             <span className="text-brand font-black text-sm">
-              {APP_NAME.charAt(0)}
+              {profile.app_name.charAt(0)}
             </span>
           </div>
         )}

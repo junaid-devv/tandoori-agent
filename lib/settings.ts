@@ -1,4 +1,5 @@
 import { getCached, invalidateCache, setCached } from "./cache";
+import { getRestaurantProfile } from "./restaurant-profile";
 import { supabaseAdmin } from "./supabase-admin";
 import {
   buildRestaurantDateTimeIso,
@@ -25,6 +26,7 @@ export interface RestaurantSettings {
   phone_delivery: string;
   phone_dine_in: string;
   ai_personality: string;
+  timezone: string;
 }
 
 const DEFAULT_SETTINGS = {
@@ -37,11 +39,24 @@ const DEFAULT_SETTINGS = {
   delivery_areas: [] as string[],
   estimated_prep_minutes: 30,
   estimated_delivery_minutes: 45,
-  city: "Wah Cantt",
-  phone_delivery: "0341-1007722",
-  phone_dine_in: "051-4904211",
+  city: process.env.NEXT_PUBLIC_APP_CITY?.trim() || "City",
+  phone_delivery: process.env.NEXT_PUBLIC_APP_PHONE_DELIVERY?.trim() || "",
+  phone_dine_in: process.env.NEXT_PUBLIC_APP_PHONE_DINE_IN?.trim() || "",
   ai_personality: "Warm & Professional",
+  timezone: process.env.RESTAURANT_TIMEZONE?.trim() || "Asia/Karachi",
 };
+
+async function getDefaultSettings() {
+  const profile = await getRestaurantProfile();
+  return {
+    ...DEFAULT_SETTINGS,
+    city: profile.city,
+    phone_delivery: profile.delivery_phone || profile.support_phone,
+    phone_dine_in: profile.dine_in_phone || profile.support_phone,
+    ai_personality: profile.ai_personality_default,
+    timezone: profile.timezone,
+  };
+}
 
 export {
   buildRestaurantDateTimeIso,
@@ -181,11 +196,13 @@ export async function getRestaurantSettings(branchId: string): Promise<Restauran
 
   if (error || !data) {
     console.error("[getRestaurantSettings] Falling back to safe defaults:", error);
+    const defaultSettings = await getDefaultSettings();
     return {
       branch_id: branchId,
-      ...DEFAULT_SETTINGS,
+      ...defaultSettings,
     };
   }
+  const defaultSettings = await getDefaultSettings();
 
   const result: RestaurantSettings = {
     branch_id: data.branch_id,
@@ -196,12 +213,13 @@ export async function getRestaurantSettings(branchId: string): Promise<Restauran
     delivery_enabled: Boolean(data.delivery_enabled),
     delivery_fee: Number(data.delivery_fee ?? 0),
     delivery_areas: normalizeDeliveryAreas(data.delivery_areas),
-    estimated_prep_minutes: normalizeEstimate(data.estimated_prep_minutes, DEFAULT_SETTINGS.estimated_prep_minutes),
-    estimated_delivery_minutes: normalizeEstimate(data.estimated_delivery_minutes, DEFAULT_SETTINGS.estimated_delivery_minutes),
-    city: data.city ?? DEFAULT_SETTINGS.city,
-    phone_delivery: data.phone_delivery ?? DEFAULT_SETTINGS.phone_delivery,
-    phone_dine_in: data.phone_dine_in ?? DEFAULT_SETTINGS.phone_dine_in,
-    ai_personality: data.ai_personality ?? DEFAULT_SETTINGS.ai_personality,
+    estimated_prep_minutes: normalizeEstimate(data.estimated_prep_minutes, defaultSettings.estimated_prep_minutes),
+    estimated_delivery_minutes: normalizeEstimate(data.estimated_delivery_minutes, defaultSettings.estimated_delivery_minutes),
+    city: data.city ?? defaultSettings.city,
+    phone_delivery: data.phone_delivery ?? defaultSettings.phone_delivery,
+    phone_dine_in: data.phone_dine_in ?? defaultSettings.phone_dine_in,
+    ai_personality: data.ai_personality ?? defaultSettings.ai_personality,
+    timezone: defaultSettings.timezone,
   };
 
   setCached(cacheKey, result, SETTINGS_CACHE_TTL_MS);
@@ -221,6 +239,7 @@ function normalizeEstimate(value: unknown, fallback: number): number {
 
 export async function updateRestaurantSettings(branchId: string, settings: Partial<RestaurantSettings>) {
   const validated = validateRestaurantSettingsInput(settings);
+  const defaultSettings = await getDefaultSettings();
   const { data: existing, error: existingError } = await supabaseAdmin
     .from("restaurant_settings")
     .select("id")
@@ -236,7 +255,7 @@ export async function updateRestaurantSettings(branchId: string, settings: Parti
     ? supabaseAdmin.from("restaurant_settings").update(validated).eq("branch_id", branchId)
     : supabaseAdmin.from("restaurant_settings").insert({
         branch_id: branchId,
-        ...DEFAULT_SETTINGS,
+        ...defaultSettings,
         ...validated,
       });
 
@@ -249,12 +268,12 @@ export async function updateRestaurantSettings(branchId: string, settings: Parti
   invalidateCache(`settings:${branchId}`);
 }
 
-export function isWithinOperatingHours(openingTime: string, closingTime: string): boolean {
+export function isWithinOperatingHours(openingTime: string, closingTime: string, timeZone?: string): boolean {
   const parsedOpening = parseRestaurantClock(openingTime);
   const parsedClosing = parseRestaurantClock(closingTime);
   if (!parsedOpening || !parsedClosing) return false;
 
-  const now = getRestaurantNowParts();
+  const now = getRestaurantNowParts(timeZone);
   const nowMinutes = now.hour * 60 + now.minute;
 
   if (parsedClosing.totalMinutes < parsedOpening.totalMinutes) {

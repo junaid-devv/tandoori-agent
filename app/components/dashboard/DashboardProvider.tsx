@@ -3,11 +3,14 @@
 import { createContext, useContext, useMemo, useState, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { DashboardSession } from "@/lib/auth";
+import type { RestaurantProfile } from "@/lib/restaurant-profile-types";
 
 type SelectedBranchId = string | "all";
 
 type DashboardContextValue = {
   session: DashboardSession;
+  profile: RestaurantProfile;
+  setProfile: (profile: RestaurantProfile) => void;
   selectedBranchId: SelectedBranchId;
   selectedBranch:
     | {
@@ -21,15 +24,32 @@ type DashboardContextValue = {
   logout: () => Promise<void>;
 };
 
-const STORAGE_KEY = "tandoori-selected-branch";
+const STORAGE_KEY = "restaurant-agent-selected-branch";
 const DashboardContext = createContext<DashboardContextValue | null>(null);
 
-function getInitialBranchId(session: DashboardSession): SelectedBranchId {
+function getInitialBranchId(session: DashboardSession, profile: RestaurantProfile): SelectedBranchId {
+  const profileDefaultBranchId =
+    profile.default_branch_id && session.allowedBranches.some((branch) => branch.id === profile.default_branch_id)
+      ? profile.default_branch_id
+      : null;
+
+  if (profile.branch_mode !== "multiple") {
+    return profileDefaultBranchId ?? session.defaultBranchId ?? session.allowedBranches[0]?.id ?? "all";
+  }
+
   return session.defaultBranchId ?? session.allowedBranches[0]?.id ?? "all";
 }
 
-function resolveStoredBranchId(session: DashboardSession, rawValue: string | null): SelectedBranchId | null {
+function resolveStoredBranchId(
+  session: DashboardSession,
+  profile: RestaurantProfile,
+  rawValue: string | null,
+): SelectedBranchId | null {
   if (!rawValue) return null;
+
+  if (profile.branch_mode !== "multiple" && rawValue === "all") {
+    return null;
+  }
 
   if (rawValue === "all") {
     return session.role === "admin" ? "all" : null;
@@ -41,20 +61,23 @@ function resolveStoredBranchId(session: DashboardSession, rawValue: string | nul
 
 export function DashboardProvider({
   session,
+  profile,
   children,
 }: {
   session: DashboardSession;
+  profile: RestaurantProfile;
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const [profileState, setProfileState] = useState(profile);
   const [selectedBranchId, setSelectedBranchIdState] = useState<SelectedBranchId>(() => {
-    const fallbackBranchId = getInitialBranchId(session);
+    const fallbackBranchId = getInitialBranchId(session, profile);
     if (typeof window === "undefined") {
       return fallbackBranchId;
     }
 
     const stored = window.localStorage.getItem(STORAGE_KEY);
-    return resolveStoredBranchId(session, stored) ?? fallbackBranchId;
+    return resolveStoredBranchId(session, profile, stored) ?? fallbackBranchId;
   });
 
   const selectedBranch = useMemo(() => {
@@ -65,6 +88,8 @@ export function DashboardProvider({
   const value = useMemo<DashboardContextValue>(() => {
     return {
       session,
+      profile: profileState,
+      setProfile: setProfileState,
       selectedBranchId,
       selectedBranch,
       setSelectedBranchId: (branchId) => {
@@ -79,7 +104,7 @@ export function DashboardProvider({
         });
       },
     };
-  }, [router, selectedBranch, selectedBranchId, session]);
+  }, [profileState, router, selectedBranch, selectedBranchId, session]);
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
 }

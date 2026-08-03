@@ -7,6 +7,7 @@ import {
   getBranchById,
   getBranchSelectionPrompt,
   isBranchChangeRequest,
+  type BranchRecord,
   type BranchSummary,
 } from "@/lib/branches";
 import { escalateToHuman, resumeBotForConversation } from "@/lib/handoff";
@@ -54,6 +55,7 @@ import {
   extractFlowResponseCommand,
 } from "@/lib/whatsapp-flow";
 import { normalizeText } from "@/lib/order-text-utils";
+import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import {
   claimWebhookEvent,
   markWebhookEventFailed,
@@ -295,6 +297,15 @@ async function processWebhookEventInBackground(eventId: string) {
   });
 }
 
+function pickDefaultBranch(branches: BranchRecord[], defaultBranchId: string | null) {
+  if (defaultBranchId) {
+    const configured = branches.find((branch) => branch.id === defaultBranchId);
+    if (configured) return configured;
+  }
+
+  return branches[0] ?? null;
+}
+
 async function processWebhook(body: unknown) {
   const statusEvents = extractIncomingStatusEvents(body);
   if (statusEvents.length > 0) {
@@ -304,7 +315,10 @@ async function processWebhook(body: unknown) {
   const events = extractIncomingMessages(body);
   if (events.length === 0) return;
 
-  const branches = await getActiveBranches();
+  const [branches, restaurantProfile] = await Promise.all([
+    getActiveBranches(),
+    getRestaurantProfile(),
+  ]);
   const cityGroups = await buildCityBranchGroups(branches);
   const agentConversations = new Map<string, ConversationRow>();
 
@@ -313,9 +327,18 @@ async function processWebhook(body: unknown) {
     const contact = await upsertContact(message.from, contactName);
     const incomingContent = await extractIncomingContent(message);
     const prefersRomanUrdu = inferLanguagePreference(incomingContent ?? "", "english") !== "english";
-    const activeBranch = contact.active_branch_id
+    let activeBranch = contact.active_branch_id
       ? branches.find((branch) => branch.id === contact.active_branch_id) ?? null
       : null;
+
+    if ((!contact.active_branch_id || !activeBranch) && restaurantProfile.branch_mode !== "multiple") {
+      const defaultBranch = pickDefaultBranch(branches, restaurantProfile.default_branch_id);
+      if (defaultBranch) {
+        await setActiveBranch(contact.id, defaultBranch.id);
+        contact.active_branch_id = defaultBranch.id;
+        activeBranch = defaultBranch;
+      }
+    }
 
     if (!contact.active_branch_id || !activeBranch) {
       if (contact.active_branch_id && !activeBranch) {
@@ -708,6 +731,23 @@ async function processWebhook(body: unknown) {
     }
 
     if (isSelectNewBranchRequest(content)) {
+      if (restaurantProfile.branch_mode !== "multiple") {
+        const branchReply = prefersRomanUrdu
+          ? `${activeBranch.name} is restaurant ka main location hai. Aap yahin se order continue kar sakte hain.`
+          : `${activeBranch.name} is the active location for this restaurant. You can continue ordering here.`;
+        await sendAndPersistAssistantMessage({
+          conversationId: conversation.id,
+          phone: message.from,
+          content: branchReply,
+          interactiveList: null,
+          flowMessage: null,
+        });
+        await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
+          preferred_language: nextLanguage,
+        });
+        continue;
+      }
+
       const prefersRomanUrduForFlow = state.preferred_language !== "english";
       const availableCities = cityGroups.map((group) => group.city);
       const cityInteractiveList = buildInteractiveListForCities(availableCities, prefersRomanUrduForFlow);
@@ -1323,7 +1363,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
     }
     let settings = await getRestaurantSettings(conversation.branch_id);
     let settingsLoadedAt = Date.now();
-    let isOpenNow = settings.is_accepting_orders && isWithinOperatingHours(settings.opening_time, settings.closing_time);
+    let isOpenNow = settings.is_accepting_orders && isWithinOperatingHours(settings.opening_time, settings.closing_time, settings.timezone);
     let cachedMenuItems: MenuCatalogItem[] | null = null;
     let menuLoadedAt = 0;
 
@@ -1346,7 +1386,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
       if (Date.now() - settingsLoadedAt > 60_000) {
         settings = await getRestaurantSettings(conversation.branch_id);
         settingsLoadedAt = Date.now();
-        isOpenNow = settings.is_accepting_orders && isWithinOperatingHours(settings.opening_time, settings.closing_time);
+        isOpenNow = settings.is_accepting_orders && isWithinOperatingHours(settings.opening_time, settings.closing_time, settings.timezone);
       }
       // Detect message type for optimization
       const normalizedIncoming = normalizeText(nextMessage.content);

@@ -5,6 +5,7 @@ import {
   normalizeAvailabilityTime,
   type WeekdayKey,
 } from "./menu-availability";
+import { getRestaurantProfile } from "./restaurant-profile";
 import { syncMenuEmbeddingsForBranch } from "./semantic-menu";
 import { supabaseAdmin } from "./supabase-admin";
 
@@ -173,6 +174,7 @@ export async function getMenuCatalog(branchId: string): Promise<MenuCatalogItem[
     return [];
   }
 
+  const profile = await getRestaurantProfile();
   const items = data.map((item) => ({
     id: item.id,
     name: item.name,
@@ -183,7 +185,7 @@ export async function getMenuCatalog(branchId: string): Promise<MenuCatalogItem[
       availableDays: item.available_days,
       availableStartTime: item.available_start_time,
       availableEndTime: item.available_end_time,
-      timeZone: process.env.RESTAURANT_TIMEZONE,
+      timeZone: profile.timezone,
     }),
     base_is_available: item.is_available ?? true,
     available_days: normalizeAvailabilityDays(item.available_days),

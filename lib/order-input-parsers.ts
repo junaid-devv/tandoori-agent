@@ -150,7 +150,7 @@ export function parseGuestCount(text: string, clampQty: (qty: number) => number)
 
 export function parseReservationTime(
   text: string,
-  settings?: { opening_time: string; closing_time: string },
+  settings?: { opening_time: string; closing_time: string; timezone?: string },
 ): string | null {
   const normalized = text.trim();
   const amPm = normalized.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/i);
@@ -163,7 +163,7 @@ export function parseReservationTime(
   if (relative) {
     const amount = Number.parseInt(relative[1], 10);
     const unit = relative[2].toLowerCase();
-    const now = getRestaurantNowParts();
+    const now = getRestaurantNowParts(settings?.timezone);
     const nowTotalMinutes = now.hour * 60 + now.minute;
 
     let targetMinutes: number;
@@ -186,7 +186,7 @@ export function parseReservationTime(
       day = rollover.getUTCDate();
     }
 
-    const parsedTime = buildRestaurantDateTimeIso(year, month, day, hours, minutes);
+    const parsedTime = buildRestaurantDateTimeIso(year, month, day, hours, minutes, settings?.timezone);
 
     if (settings && !isWithinOperatingHoursForTime(hours, minutes, settings.opening_time, settings.closing_time)) {
       return null;
@@ -212,7 +212,7 @@ export function parseReservationTime(
     return null;
   }
 
-  const now = getRestaurantNowParts();
+  const now = getRestaurantNowParts(settings?.timezone);
   let year = now.year;
   let month = now.month;
   let day = now.day;
@@ -227,7 +227,7 @@ export function parseReservationTime(
     day = rollover.getUTCDate();
   }
 
-  return buildRestaurantDateTimeIso(year, month, day, hours, minutes);
+  return buildRestaurantDateTimeIso(year, month, day, hours, minutes, settings?.timezone);
 }
 
 export { getGreetingReply } from "./message-personality.ts";

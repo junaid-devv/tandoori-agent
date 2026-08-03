@@ -1,12 +1,16 @@
 import { DashboardProvider } from "@/app/components/dashboard/DashboardProvider";
 import { requireDashboardSession } from "@/lib/auth";
 import { Sidebar } from "@/app/components/Sidebar";
+import { getRestaurantProfile } from "@/lib/restaurant-profile";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const session = await requireDashboardSession();
+  const [session, profile] = await Promise.all([
+    requireDashboardSession(),
+    getRestaurantProfile(),
+  ]);
 
   return (
-    <DashboardProvider session={session}>
+    <DashboardProvider session={session} profile={profile}>
       <div className="flex bg-slate-50 text-slate-900 h-screen overflow-hidden">
         <Sidebar />
 

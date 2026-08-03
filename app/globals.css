@@ -12,6 +12,8 @@
 
 @theme {
   --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-dark: var(--brand-hover);
   --color-bg-app: var(--bg-app);
 }
 

@@ -1254,12 +1254,20 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     }
   }
 
-  const earlyPresentedSelection =
-    state.last_presented_options &&
-    state.last_presented_options.length > 0 &&
-    isPresentedOptionsFresh(state)
-      ? findPresentedOptionByDirectValue(rawText, state.last_presented_options)
-      : null;
+  const directIdSelection = findPresentedOptionByDirectValue(rawText, context.menuItems);
+  const isExplicitIdTap = directIdSelection && (
+    isUuidLike(rawText.trim()) ||
+    rawText.trim().toLowerCase().startsWith(MENU_ITEM_ROW_PREFIX) ||
+    directIdSelection.id === rawText.trim()
+  );
+
+  const earlyPresentedSelection = isExplicitIdTap
+    ? directIdSelection
+    : (state.last_presented_options &&
+       state.last_presented_options.length > 0 &&
+       isPresentedOptionsFresh(state)
+        ? findPresentedOptionByDirectValue(rawText, state.last_presented_options)
+        : null);
   if (earlyPresentedSelection && shouldTreatAsPresentedOptionSelection(rawText, earlyPresentedSelection)) {
     return buildPresentedOptionSelectionDecision(
       context,
@@ -2277,9 +2285,12 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     !isPresentedOptionsFresh(state) &&
     isLikelySelectionCommand(normalizedText)
   ) {
-    // Accept old interactive UUID taps if the item still exists in live menu.
+    // Accept old interactive item ID / UUID taps if the item still exists in live menu.
     // This prevents "expired option" friction when users tap a slightly older list.
-    if (canRecoverStaleItemSelection && isUuidLike(rawText.trim())) {
+    const isExplicitIdSelection = isUuidLike(rawText.trim()) ||
+      rawText.trim().toLowerCase().startsWith(MENU_ITEM_ROW_PREFIX) ||
+      findPresentedOptionByDirectValue(rawText, menuItems)?.id === rawText.trim();
+    if (canRecoverStaleItemSelection && isExplicitIdSelection) {
       const staleDirectSelection = findPresentedOptionByDirectValue(rawText, menuItems);
       if (staleDirectSelection) {
         if (shouldPromptForQuantityPicker(staleDirectSelection)) {

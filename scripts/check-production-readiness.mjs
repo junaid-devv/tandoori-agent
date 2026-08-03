@@ -95,6 +95,8 @@ if (value("WHATSAPP_FLOW_ID") || value("WHATSAPP_FLOW_NAME")) {
 mustInclude("migrations.sql", "create or replace function place_order_from_payload", "Atomic order placement RPC");
 mustInclude("migrations.sql", "create or replace function claim_webhook_event", "Atomic webhook claim RPC");
 mustInclude("migrations.sql", "create or replace function check_rate_limit", "Rate-limit RPC");
+mustInclude("migrations.sql", "create table if not exists restaurant_profiles", "Restaurant profile customization table");
+mustInclude("migrations.sql", "branch_mode text", "Restaurant branch mode migration");
 mustInclude("migrations.sql", "delivery_areas jsonb", "Delivery area settings migration");
 mustInclude("migrations.sql", "delivery_status_updated_at", "WhatsApp delivery status timestamp migration");
 

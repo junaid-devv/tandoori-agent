@@ -1,4 +1,4 @@
-# Tandoori Agent
+# Restaurant Agent
 
 WhatsApp Cloud API ordering assistant for restaurants, built with Next.js, Supabase, and AI-assisted menu/order understanding.
 
@@ -53,6 +53,8 @@ Fill `.env.local` with real Supabase, WhatsApp, and AI credentials. The most imp
 | `ADMIN_RESET_ENABLED` | Optional production gate for destructive dashboard reset |
 
 Optional WhatsApp Flows variables are documented in [.env.example](.env.example).
+
+Branding and operational defaults can be edited from **Dashboard -> Admin -> Branding** after the first admin account is created. Use `single` branch mode for restaurants with no public branch selection, or `multiple` branch mode when customers should choose a city/branch before ordering.
 
 To generate strong local values for `WHATSAPP_VERIFY_TOKEN` and `RATE_LIMIT_HASH_SECRET` without printing them:
 
@@ -122,7 +124,7 @@ npm run check:production-readiness
 - Keep `ADMIN_RESET_ENABLED=false` unless production admins explicitly need destructive reset controls.
 - Configure Meta webhook subscription for messages and status callbacks.
 - Make sure `WHATSAPP_VERIFY_TOKEN` exactly matches the token configured in Meta.
-- Set restaurant settings in the dashboard for each branch: open hours, delivery enabled, delivery fee, minimum delivery, delivery areas, prep ETA, delivery ETA, phone numbers, and AI tone.
+- Set the restaurant profile in Admin -> Branding, then configure branch settings: open hours, delivery enabled, delivery fee, minimum delivery, delivery areas, prep ETA, delivery ETA, phone numbers, and AI tone.
 - Test at least one real delivery, pickup, dine-in, human handoff, unsupported media, status update, and duplicate webhook replay before launch.
 
 ## Architecture

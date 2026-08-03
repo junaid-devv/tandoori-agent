@@ -2,12 +2,13 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { clsx } from "clsx";
-import { Loader2, LogOut, Trash2, GitBranch, Users, ShieldAlert, Plus, ChevronRight, CheckCircle2, XCircle, Building2, Eye, Save, AlertTriangle } from "lucide-react";
+import { Loader2, LogOut, Trash2, GitBranch, Users, ShieldAlert, Plus, ChevronRight, CheckCircle2, XCircle, Building2, Eye, Save, AlertTriangle, Palette } from "lucide-react";
 import { toast } from "sonner";
 import { useDashboardContext } from "./DashboardProvider";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
+import type { RestaurantProfile } from "@/lib/restaurant-profile-types";
 
-type Tab = "branches" | "staff" | "safety";
+type Tab = "branding" | "branches" | "staff" | "safety";
 
 type BranchSummary = {
   id: string;
@@ -71,14 +72,20 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 const inputCls = "w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-100 transition-all";
 const selectCls = inputCls;
 
+function colorInputValue(value: string) {
+  return /^#[0-9a-f]{6}$/i.test(value) ? value : "#EA580C";
+}
+
 export default function AdminConsole() {
-  const { session, selectedBranchId, selectedBranch, setSelectedBranchId, logout } = useDashboardContext();
-  const [tab, setTab] = useState<Tab>("branches");
+  const { session, profile, setProfile, selectedBranchId, selectedBranch, setSelectedBranchId, logout } = useDashboardContext();
+  const [tab, setTab] = useState<Tab>("branding");
   const [branches, setBranches] = useState<BranchSummary[]>([]);
   const [staff, setStaff] = useState<StaffSummary[]>([]);
+  const [profileDraft, setProfileDraft] = useState<RestaurantProfile>(profile);
 
   const [creatingBranch, setCreatingBranch] = useState(false);
   const [creatingStaff, setCreatingStaff] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [savingBranchId, setSavingBranchId] = useState<string | null>(null);
   const [savingStaffId, setSavingStaffId] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
@@ -105,26 +112,62 @@ export default function AdminConsole() {
     useDataCache<BranchSummary[]>("/api/admin/branches");
   const { data: cachedStaff, isLoading: staffLoading, revalidate: revalidateStaff } =
     useDataCache<StaffSummary[]>("/api/admin/staff");
+  const { data: cachedProfile, isLoading: profileLoading, revalidate: revalidateProfile } =
+    useDataCache<RestaurantProfile>("/api/admin/restaurant-profile");
 
-  const loading = branchesLoading || staffLoading;
+  const loading = branchesLoading || staffLoading || profileLoading;
 
   useEffect(() => { if (cachedBranches) setBranches(cachedBranches); }, [cachedBranches]);
   useEffect(() => { if (cachedStaff) setStaff(cachedStaff); }, [cachedStaff]);
+  useEffect(() => { if (cachedProfile) setProfileDraft(cachedProfile); }, [cachedProfile]);
 
   function invalidateAdminCache() {
     invalidateCache("/api/admin/branches");
     invalidateCache("/api/admin/staff");
+    invalidateCache("/api/admin/restaurant-profile");
   }
 
   function reloadData() {
     invalidateAdminCache();
     revalidateBranches();
     revalidateStaff();
+    revalidateProfile();
+  }
+
+  function updateProfileDraft<K extends keyof RestaurantProfile>(key: K, value: RestaurantProfile[K]) {
+    setProfileDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function saveProfile() {
+    setSavingProfile(true);
+    try {
+      const updated = await readJson<RestaurantProfile>(
+        await fetch("/api/admin/restaurant-profile", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(profileDraft),
+        }),
+      );
+      setProfileDraft(updated);
+      setProfile(updated);
+      if (updated.branch_mode !== "multiple" && selectedBranchId === "all") {
+        setSelectedBranchId(updated.default_branch_id ?? branches.find((branch) => branch.is_active)?.id ?? "all");
+      }
+      document.documentElement.style.setProperty("--brand", updated.brand_color);
+      document.documentElement.style.setProperty("--brand-hover", updated.brand_hover_color);
+      invalidateCache("/api/admin/restaurant-profile");
+      toast.success("Restaurant profile saved.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save restaurant profile.");
+    } finally {
+      setSavingProfile(false);
+    }
   }
 
   if (session.role !== "admin") return null;
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
+    { key: "branding", label: "Branding", icon: <Palette size={15} /> },
     { key: "branches", label: "Branches", icon: <GitBranch size={15} /> },
     { key: "staff", label: "Staff", icon: <Users size={15} /> },
     { key: "safety", label: "Danger Zone", icon: <ShieldAlert size={15} /> },
@@ -207,6 +250,142 @@ export default function AdminConsole() {
       </div>
 
       {/* ────────── BRANCHES TAB ────────── */}
+      {tab === "branding" && (
+        <section className="space-y-5">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <h2 className="text-base font-bold text-slate-900">Restaurant Profile</h2>
+                <p className="mt-1 text-xs text-slate-400">
+                  Controls the dashboard brand, WhatsApp identity, and whether customers see branch selection.
+                </p>
+              </div>
+              <button
+                onClick={() => void saveProfile()}
+                disabled={savingProfile}
+                className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Save Profile
+              </button>
+            </div>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2">
+              <Field label="Restaurant Name">
+                <input value={profileDraft.app_name} onChange={(event) => updateProfileDraft("app_name", event.target.value)} className={inputCls} placeholder="Restaurant name" />
+              </Field>
+              <Field label="Dashboard Title">
+                <input value={profileDraft.dashboard_title} onChange={(event) => updateProfileDraft("dashboard_title", event.target.value)} className={inputCls} placeholder="Management Dashboard" />
+              </Field>
+              <Field label="Logo URL">
+                <input value={profileDraft.logo_url ?? ""} onChange={(event) => updateProfileDraft("logo_url", event.target.value || null)} className={inputCls} placeholder="https://..." />
+              </Field>
+              <Field label="Default City">
+                <input value={profileDraft.city} onChange={(event) => updateProfileDraft("city", event.target.value)} className={inputCls} placeholder="City" />
+              </Field>
+              <Field label="Brand Color">
+                <div className="flex gap-2">
+                  <input type="color" value={colorInputValue(profileDraft.brand_color)} onChange={(event) => updateProfileDraft("brand_color", event.target.value.toUpperCase())} className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1" />
+                  <input value={profileDraft.brand_color} onChange={(event) => updateProfileDraft("brand_color", event.target.value)} className={inputCls} />
+                </div>
+              </Field>
+              <Field label="Hover Color">
+                <div className="flex gap-2">
+                  <input type="color" value={colorInputValue(profileDraft.brand_hover_color)} onChange={(event) => updateProfileDraft("brand_hover_color", event.target.value.toUpperCase())} className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1" />
+                  <input value={profileDraft.brand_hover_color} onChange={(event) => updateProfileDraft("brand_hover_color", event.target.value)} className={inputCls} />
+                </div>
+              </Field>
+              <Field label="Currency Label">
+                <input value={profileDraft.currency} onChange={(event) => updateProfileDraft("currency", event.target.value)} className={inputCls} placeholder="Rs." />
+              </Field>
+              <Field label="Timezone">
+                <input value={profileDraft.timezone} onChange={(event) => updateProfileDraft("timezone", event.target.value)} className={inputCls} placeholder="Asia/Karachi" />
+              </Field>
+            </div>
+          </div>
+
+          <div className="grid gap-5 lg:grid-cols-2">
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white">
+                  <GitBranch size={16} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Location Mode</h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Single-location mode keeps branch IDs internally but hides branch choice from customers and staff.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                {[
+                  { value: "single", title: "Single location", body: "Use this for restaurants with no branches or one main outlet." },
+                  { value: "multiple", title: "Multiple branches", body: "Customers choose city and branch before ordering." },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => updateProfileDraft("branch_mode", option.value as RestaurantProfile["branch_mode"])}
+                    className={clsx(
+                      "rounded-xl border p-4 text-left transition-colors",
+                      profileDraft.branch_mode === option.value
+                        ? "border-zinc-900 bg-zinc-950 text-white"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300",
+                    )}
+                  >
+                    <span className="block text-sm font-bold">{option.title}</span>
+                    <span className={clsx("mt-1 block text-xs", profileDraft.branch_mode === option.value ? "text-zinc-400" : "text-slate-400")}>
+                      {option.body}
+                    </span>
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-4">
+                <Field label="Default Branch / Main Location">
+                  <select value={profileDraft.default_branch_id ?? ""} onChange={(event) => updateProfileDraft("default_branch_id", event.target.value || null)} className={selectCls}>
+                    <option value="">First active branch</option>
+                    {branches.filter((branch) => branch.is_active).map((branch) => (
+                      <option key={branch.id} value={branch.id}>{branch.name}</option>
+                    ))}
+                  </select>
+                </Field>
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white">
+                  <Users size={16} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Contact & Voice Defaults</h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Used when branch-level settings are missing and in global dashboard copy.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-4">
+                <Field label="Support Phone">
+                  <input value={profileDraft.support_phone} onChange={(event) => updateProfileDraft("support_phone", event.target.value)} className={inputCls} />
+                </Field>
+                <Field label="Delivery Phone">
+                  <input value={profileDraft.delivery_phone} onChange={(event) => updateProfileDraft("delivery_phone", event.target.value)} className={inputCls} />
+                </Field>
+                <Field label="Dine-in Phone">
+                  <input value={profileDraft.dine_in_phone} onChange={(event) => updateProfileDraft("dine_in_phone", event.target.value)} className={inputCls} />
+                </Field>
+                <Field label="Default AI Tone">
+                  <textarea value={profileDraft.ai_personality_default} onChange={(event) => updateProfileDraft("ai_personality_default", event.target.value)} rows={3} className={clsx(inputCls, "resize-none")} />
+                </Field>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
       {tab === "branches" && (
         <section className="space-y-5">
           {/* Create Branch Card */}

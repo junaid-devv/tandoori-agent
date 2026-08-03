@@ -23,7 +23,7 @@ type SettingsState = {
   ai_personality: string;
 };
 
-const CITY_OPTIONS = ["Wah Cantt", "Rawalpindi", "Islamabad", "Lahore", "Karachi", "Peshawar"] as const;
+const CITY_OPTIONS = ["Rawalpindi", "Islamabad", "Lahore", "Karachi", "Peshawar"] as const;
 const AI_PERSONALITY_PRESETS = [
   "Warm & Professional",
   "Friendly & Casual",
@@ -52,7 +52,7 @@ function toMeridiemLabel(value: string): string {
 }
 
 export default function SettingsPage() {
-  const { selectedBranchId, selectedBranch } = useDashboardContext();
+  const { profile, selectedBranchId, selectedBranch } = useDashboardContext();
   const [saving, setSaving] = useState(false);
   const [settings, setSettings] = useState<SettingsState>({
     is_accepting_orders: true,
@@ -86,7 +86,11 @@ export default function SettingsPage() {
     }
   }, [cachedSettings]);
 
-  const selectedCityOption = CITY_OPTIONS.includes(settings.city as (typeof CITY_OPTIONS)[number])
+  const cityOptions = useMemo(
+    () => [...new Set([profile.city, ...CITY_OPTIONS].map((city) => city.trim()).filter(Boolean))],
+    [profile.city],
+  );
+  const selectedCityOption = cityOptions.includes(settings.city)
     ? settings.city
     : "__custom__";
   const selectedPersonalityOption = AI_PERSONALITY_PRESETS.includes(
@@ -337,7 +341,7 @@ export default function SettingsPage() {
               }
               className="w-40 text-right text-sm font-semibold text-slate-800 bg-transparent outline-none"
             >
-              {CITY_OPTIONS.map((city) => (
+              {cityOptions.map((city) => (
                 <option key={city} value={city}>
                   {city}
                 </option>

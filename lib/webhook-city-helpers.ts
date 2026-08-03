@@ -138,7 +138,7 @@ export async function buildCityBranchGroups(branches: BranchSummary[]): Promise<
 }
 
 function deriveCityFromAddress(address: string | null | undefined): string {
-  const fallbackCity = process.env.NEXT_PUBLIC_APP_CITY?.trim() || "Wah Cantt";
+  const fallbackCity = process.env.NEXT_PUBLIC_APP_CITY?.trim() || "City";
   if (!address) return fallbackCity;
 
   const parts = address

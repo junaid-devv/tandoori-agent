@@ -3,6 +3,7 @@ import { apiErrorResponse, readLimitedJsonBody, requireTrimmedString } from "@/l
 import { requireApiSession } from "@/lib/branch-request";
 import { canAccessOrder } from "@/lib/record-access";
 import { sendAndPersistOutboundMessage } from "@/lib/messages";
+import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { createStaffAlert, resolveStaffAlerts } from "@/lib/staff-alerts";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -41,8 +42,8 @@ const STATUS_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
 const STATUS_MESSAGES: Record<Exclude<OrderStatus, "received">, string> = {
   preparing: "Your order is being prepared. It will be ready soon.",
   out_for_delivery: "Your order is on the way and should reach you shortly.",
-  delivered: `Your order has been delivered. Thank you for choosing ${process.env.NEXT_PUBLIC_APP_NAME || "us"}.`,
-  cancelled: `Your order has been cancelled. For help, please call ${process.env.NEXT_PUBLIC_APP_PHONE_DELIVERY || "our support line"}.`,
+  delivered: "Your order has been delivered. Thank you for choosing {restaurant}.",
+  cancelled: "Your order has been cancelled. For help, please call {support_phone}.",
 };
 
 function normalizeAssignee(value: string | null | undefined) {
@@ -164,7 +165,10 @@ export async function PATCH(
   const conversationId = typedOrder.conversation_id;
   const statusChanged = status !== undefined && status !== typedExistingOrder.status;
   if (statusChanged && status && status in STATUS_MESSAGES) {
-    const notificationMessage = STATUS_MESSAGES[status as keyof typeof STATUS_MESSAGES];
+    const profile = await getRestaurantProfile();
+    const notificationMessage = STATUS_MESSAGES[status as keyof typeof STATUS_MESSAGES]
+      .replace("{restaurant}", profile.app_name || "us")
+      .replace("{support_phone}", profile.support_phone || profile.delivery_phone || "our support line");
     if (phone) {
       try {
         await sendAndPersistOutboundMessage({

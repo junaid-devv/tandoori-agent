@@ -94,8 +94,8 @@ function getTimeZoneOffsetMs(date: Date, timeZone = getRestaurantTimeZone()): nu
   return asUtc - date.getTime();
 }
 
-export function getRestaurantNowParts(): RestaurantTimeParts {
-  return getTimeZoneParts(new Date(), getRestaurantTimeZone());
+export function getRestaurantNowParts(timeZone = getRestaurantTimeZone()): RestaurantTimeParts {
+  return getTimeZoneParts(new Date(), timeZone);
 }
 
 export function buildRestaurantDateTimeIso(

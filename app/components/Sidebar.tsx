@@ -31,10 +31,11 @@ const adminNavItems = [...baseNavItems, { href: "/dashboard/admin", label: "Admi
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { session, selectedBranchId, selectedBranch, setSelectedBranchId, logout } = useDashboardContext();
-  const appName = process.env.NEXT_PUBLIC_APP_NAME || "Tandoori Hub";
+  const { session, profile, selectedBranchId, selectedBranch, setSelectedBranchId, logout } = useDashboardContext();
+  const appName = profile.app_name;
   const [firstWord, ...rest] = appName.split(" ");
   const navItems = session.role === "admin" ? adminNavItems : baseNavItems;
+  const showBranchPicker = profile.branch_mode === "multiple";
 
   const [globalUnreadCount, setGlobalUnreadCount] = useState(0);
   const notifiedSetRef = useRef<Set<string>>(new Set());
@@ -129,12 +130,18 @@ export function Sidebar() {
       <div className="border-b border-zinc-800/60 px-4 py-4">
         <Link href="/dashboard" className="flex items-center gap-3.5 group">
           <div className="h-10 w-10 flex-shrink-0 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 p-0.5 shadow-md shadow-black/40 transition-transform duration-300 group-hover:scale-105 active:scale-95">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src="/logo.jpg"
-              alt={`${appName} logo`}
-              className="w-full h-full object-cover rounded-lg"
-            />
+            {profile.logo_url ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={profile.logo_url}
+                alt={`${appName} logo`}
+                className="w-full h-full object-cover rounded-lg"
+              />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center rounded-lg bg-brand/10 text-sm font-black text-brand">
+                {appName.charAt(0).toUpperCase()}
+              </div>
+            )}
           </div>
           <div>
             <p className="text-sm font-bold leading-none tracking-tight text-white">
@@ -150,9 +157,9 @@ export function Sidebar() {
       <div className="px-3 pt-3">
         <label className="block rounded-xl border border-zinc-800 bg-zinc-900/70 p-2.5">
           <span className="mb-1.5 block text-[9px] font-bold uppercase tracking-[0.2em] text-zinc-500">
-            Active Branch
+            {showBranchPicker ? "Active Branch" : "Location"}
           </span>
-          {session.role === "admin" ? (
+          {showBranchPicker && session.role === "admin" ? (
             <select
               value={selectedBranchId}
               onChange={(event) => setSelectedBranchId(event.target.value as string | "all")}
@@ -167,11 +174,13 @@ export function Sidebar() {
             </select>
           ) : (
             <div className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-2.5 py-1.5 text-xs font-semibold text-zinc-100">
-              {selectedBranch?.name || session.allowedBranches[0]?.name || "Assigned branch"}
+              {selectedBranch?.name || session.allowedBranches[0]?.name || profile.app_name}
             </div>
           )}
           <p className="mt-1.5 line-clamp-2 text-[11px] text-zinc-500">
-            {selectedBranch
+            {!showBranchPicker
+              ? "Single-location mode"
+              : selectedBranch
               ? selectedBranch.address
               : session.role === "admin"
                 ? "Admin overview across all branches"

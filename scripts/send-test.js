@@ -7,7 +7,7 @@ require('dotenv').config({ path: '.env.local' });
 
   if (!to || !message) {
     console.log('❌ Usage: node scripts/send-test.js <phone_number> "<message>"');
-    console.log('Example: node scripts/send-test.js 923001234567 "Hello from Tandoori!"');
+    console.log('Example: node scripts/send-test.js 923001234567 "Hello from Restaurant Agent!"');
     process.exit(1);
   }
 

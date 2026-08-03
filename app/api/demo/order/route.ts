@@ -6,7 +6,7 @@ import { getDashboardSession } from "@/lib/auth";
 export async function POST(request: Request) {
   const isDemoEnabled = process.env.ENABLE_DEMO_MODE === "true" || process.env.NODE_ENV !== "production";
   const demoSecret = request.headers.get("x-demo-secret");
-  const expectedSecret = process.env.DEMO_SECRET_KEY || "tandoori-demo-secret-key";
+  const expectedSecret = process.env.DEMO_SECRET_KEY || "restaurant-demo-secret-key";
   const session = await getDashboardSession();
 
   if (!isDemoEnabled && demoSecret !== expectedSecret && !session) {

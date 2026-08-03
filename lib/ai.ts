@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import { z } from "zod";
 import type { BranchSummary } from "./branches";
+import { getRestaurantProfile } from "./restaurant-profile";
+import type { RestaurantProfile } from "./restaurant-profile-types";
 import type { SemanticMenuMatch } from "./semantic-menu";
 import type { LanguagePreference, MenuCatalogItem, OrderType, WorkflowStep } from "./order-engine";
 import type { RestaurantSettings } from "./settings";
@@ -201,8 +203,9 @@ function buildSupportPrompt(
   isOpenNow: boolean,
   hasHistory: boolean,
   preferredLanguage: LanguagePreference,
+  profile: RestaurantProfile,
 ): string {
-  const appName = process.env.NEXT_PUBLIC_APP_NAME || "Restaurant";
+  const appName = profile.app_name || "Restaurant";
   const city = settings.city?.trim() || "";
   const phone = settings.phone_delivery?.trim() || "our support line";
   const aiPersonality = settings.ai_personality?.trim() || "Warm & Professional";
@@ -481,10 +484,11 @@ export async function getCustomerSupportReply(
   preferredLanguage: LanguagePreference,
   branch: BranchSummary,
 ): Promise<string> {
+  const profile = await getRestaurantProfile();
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     {
       role: "system",
-      content: buildSupportPrompt(branch, settings, isOpenNow, hasHistory, preferredLanguage),
+      content: buildSupportPrompt(branch, settings, isOpenNow, hasHistory, preferredLanguage, profile),
     },
   ];
 
@@ -638,6 +642,7 @@ function fixMalformedJson(jsonString: string): string | null {
 }
 
 async function createMenuCompletion(client: OpenAI, model: string, imageUrl: string) {
+  const profile = await getRestaurantProfile();
   const clients = [
     { client, model, name: "primary" },
     { client: googleClient, model: "gemini-2.0-flash", name: "google" },
@@ -656,7 +661,7 @@ async function createMenuCompletion(client: OpenAI, model: string, imageUrl: str
           messages: [
             {
               role: "system",
-              content: `You are a professional menu digitizer for ${process.env.NEXT_PUBLIC_APP_NAME || "the restaurant"}.
+              content: `You are a professional menu digitizer for ${profile.app_name || "the restaurant"}.
 
 Extract every menu item visible in this image.
 

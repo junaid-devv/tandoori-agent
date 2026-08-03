@@ -50,6 +50,8 @@ async function checkTableColumns(table: string, columns: string): Promise<Health
 
 async function checkDatabaseShape(): Promise<HealthCheck> {
   const checks = await Promise.all([
+    checkTableColumns("restaurant_profiles", "id, app_name, brand_color, branch_mode, default_branch_id"),
+    checkTableColumns("branches", "id, city, address"),
     checkTableColumns("restaurant_settings", "branch_id, delivery_areas, estimated_prep_minutes, estimated_delivery_minutes"),
     checkTableColumns("messages", "id, whatsapp_msg_id, delivery_status, delivery_status_updated_at, delivery_error"),
     checkTableColumns("webhook_events", "id, status, payload, processed_at, locked_at, locked_by"),
