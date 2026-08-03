@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { BarChart3, Loader2, RefreshCw, ShoppingBag, Users, Utensils } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
@@ -37,7 +37,6 @@ function label(value: string) {
 export default function AnalyticsPage() {
   const { selectedBranchId, selectedBranch } = useDashboardContext();
   const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
   const analyticsUrl = useMemo(() =>
     selectedBranchId === "all"
@@ -53,10 +52,7 @@ export default function AnalyticsPage() {
     revalidate,
   } = useDataCache<AnalyticsPayload>(analyticsUrl);
 
-  useEffect(() => {
-    if (fetchError) setError(fetchError.message);
-    else setError(null);
-  }, [fetchError]);
+  const error = fetchError?.message ?? null;
 
   const loadAnalytics = useCallback((showRefreshing = false) => {
     if (showRefreshing) {
@@ -65,7 +61,6 @@ export default function AnalyticsPage() {
       invalidateCache("/api/dashboard/analytics");
       setTimeout(() => setRefreshing(false), 600);
     }
-    setError(null);
     revalidate();
   }, [revalidate]);
 

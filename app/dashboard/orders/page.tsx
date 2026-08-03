@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, ChevronUp, Clock, MapPin, Package, Phone, RefreshCw, Search, ShoppingBag, Truck, UserRound } from "lucide-react";
 import { clsx } from "clsx";
 import { format, formatDistanceToNow } from "date-fns";

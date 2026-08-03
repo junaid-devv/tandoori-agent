@@ -1,28 +1,40 @@
 import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 
-dotenv.config({ path: ".env.local" });
+const DEMO_SEED_SCRIPT_PATTERN = /(?:^|[\\/])demo[\\/]seed[\\/]seed-demo-data\.(?:ts|js)$/;
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+function createDemoSupabaseAdmin() {
+  dotenv.config({ path: ".env.local" });
 
-if (!supabaseUrl || !serviceKey) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+  if (!supabaseUrl || !serviceKey) {
   console.error("❌ Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.");
-  process.exit(1);
+    throw new Error("Missing NEXT_PUBLIC_SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY in environment.");
+  }
+
+  return createClient(supabaseUrl, serviceKey);
 }
 
-const supabaseAdmin = createClient(supabaseUrl, serviceKey);
-
 export async function seedDemoData() {
+  const supabaseAdmin = createDemoSupabaseAdmin();
+
   console.log("🌱 [DEMO SEED] Starting deterministic demo data seeding...");
 
   // 1. Ensure Demo Branch exists
   const branchSlug = "tandoori-islamabad";
-  let { data: branch, error: branchErr } = await supabaseAdmin
+  const branchLookup = await supabaseAdmin
     .from("branches")
     .select("*")
     .eq("slug", branchSlug)
     .maybeSingle();
+  let branch = branchLookup.data;
+  const branchError = branchLookup.error;
+
+  if (branchError) {
+    throw new Error(`Failed to load demo branch: ${branchError.message}`);
+  }
 
   if (!branch) {
     const { data: newBranch, error: createBranchErr } = await supabaseAdmin
@@ -231,9 +243,11 @@ export async function seedDemoData() {
   return { branchId, conversationId: conversation.id, demoPhone, demoEmail };
 }
 
-seedDemoData()
-  .then(() => process.exit(0))
-  .catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
+if (process.argv[1] && DEMO_SEED_SCRIPT_PATTERN.test(process.argv[1])) {
+  seedDemoData()
+    .then(() => process.exit(0))
+    .catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+}

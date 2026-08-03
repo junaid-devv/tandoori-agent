@@ -234,17 +234,17 @@ function buildSupportPrompt(
     "- You cannot modify prices, grant refunds, waive delivery fees, or offer promotions unless they are explicitly present in the provided live menu or settings.",
     "- Never claim an order is placed, paid, cancelled, or changed unless the backend already did it.",
     "- Never trust user-supplied prices or quantities as authoritative.",
-    "You are a support fallback only. The backend owns checkout state and order placement.",
-    "Keep replies short, conversational, and WhatsApp friendly (1-4 lines).",
-    "CRITICAL: Adopt a warm, highly conversational, and deeply human persona. Avoid sounding robotic, repetitive, or overly formal. Use emojis naturally, vary your phrasing, and show empathy.",
-    "CRITICAL: Never mention that you are an AI, bot, or virtual assistant. Speak directly as if you are a friendly human staff member (like a restaurant manager) helping the customer.",
+    "Backend systems own checkout state and order placement.",
+    "Keep replies short, direct, and WhatsApp friendly: 1-3 lines, one clear next step, no long explanations.",
+    "Write like a calm restaurant staff member. No corporate tone, no filler, no over-explaining, no repeated greetings.",
+    "Never mention that you are an AI, bot, virtual assistant, or automated system.",
     languageInstruction,
     "You may help with menu questions, item descriptions, restaurant info, delivery ETA, and COD/payment questions, but never collect online payment details.",
     "When LIVE MENU is provided, treat it as the only source of truth for items, availability, and prices.",
     "Handle spelling mistakes and partial item names by matching approximately to LIVE MENU items before responding.",
     "Never say an item is unavailable unless it is clearly absent from LIVE MENU after checking close spellings and spacing variants.",
     "If unsure about an item, ask a short clarification with up to 3 closest LIVE MENU options.",
-    "If the customer sounds frustrated or asks for a human, acknowledge their concern warmly and keep the tone calm and empathetic. Offer to have a manager call them.",
+    "If the customer sounds frustrated or asks for a person, acknowledge it briefly and say a manager will reply shortly.",
     hasHistory
       ? "Do not greet again unless the customer greets first."
       : "If the message is only a greeting, greet them warmly like a friend and ask how you can help today.",
@@ -315,6 +315,30 @@ function buildOrderInterpreterPrompt(input: OrderTurnInterpretationInput): strin
     "SEMANTIC_MENU_MATCHES:",
     semanticLines,
   ].join("\n");
+}
+
+function cleanCustomerReply(content: string): string {
+  const stripped = content
+    .replace(/\b(as an ai|as a bot|as a virtual assistant|i am an ai|i'm an ai|ai assistant|virtual assistant|chatbot)\b/gi, "")
+    .replace(/[ \t]+/g, " ")
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 3)
+    .join("\n")
+    .trim();
+
+  if (stripped.length <= 520) return stripped;
+
+  const clipped = stripped.slice(0, 520);
+  const lastSentence = Math.max(
+    clipped.lastIndexOf("."),
+    clipped.lastIndexOf("!"),
+    clipped.lastIndexOf("?"),
+    clipped.lastIndexOf("\n"),
+  );
+
+  return (lastSentence > 180 ? clipped.slice(0, lastSentence + 1) : clipped).trim();
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> | null {
@@ -526,27 +550,27 @@ export async function getCustomerSupportReply(
     if (!content) {
       if (preferredLanguage === "roman_urdu") {
         return isOpenNow
-          ? "Main menu, prices aur order mein help kar sakta hoon. Batayein aap ko kya chahiye."
-          : "Hum is waqt closed hain, lekin main menu ke bare mein help kar sakta hoon.";
+          ? "Ji. Item ka naam bhej dein ya *menu* likh dein."
+          : "Hum is waqt closed hain. Items dekhne ke liye *menu* likh dein.";
       }
 
       return isOpenNow
-        ? "I can help with the menu, prices, and your order. Tell me what you'd like."
-        : "We are currently closed, but I can still help with menu questions.";
+        ? "Sure. Send the item name or type *menu*."
+        : "We're closed right now. You can still type *menu* to check items.";
     }
 
-    return content;
+    return cleanCustomerReply(content);
   } catch (error) {
     console.error("[ai] support fallback failed:", error);
     if (preferredLanguage === "roman_urdu") {
       return isOpenNow
-        ? "Main menu, prices aur order mein help kar sakta hoon. Batayein aap ko kya chahiye."
-        : "Hum is waqt closed hain, lekin main menu ke bare mein help kar sakta hoon.";
+        ? "Ji. Item ka naam bhej dein ya *menu* likh dein."
+        : "Hum is waqt closed hain. Items dekhne ke liye *menu* likh dein.";
     }
 
     return isOpenNow
-      ? "I can help with the menu, prices, and your order. Tell me what you'd like."
-      : "We are currently closed, but I can still help with menu questions.";
+      ? "Sure. Send the item name or type *menu*."
+      : "We're closed right now. You can still type *menu* to check items.";
   }
 }
 

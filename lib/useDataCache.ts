@@ -131,8 +131,6 @@ export function useDataCache<T>(url: string | null): DataCacheState<T> {
     return () => {
       cancelled = true;
     };
-    // revalidationCount is used as a manual "bump" to re-run this effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, revalidationCount]);
 
   const revalidate = useCallback(() => {

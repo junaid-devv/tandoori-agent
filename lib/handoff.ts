@@ -5,8 +5,8 @@ import { getOrCreateUserSession, updateUserSession } from "./user-session";
 
 function buildHandoffReply(prefersRomanUrdu: boolean): string {
   return prefersRomanUrdu
-    ? "Main aap ko restaurant manager se connect kar raha hoon. Thori dair mein human team reply karegi."
-    : "I'm transferring you to the restaurant manager now. A human team member will reply shortly.";
+    ? "Main manager ko message forward kar raha hoon. Thori dair mein reply aa jayega."
+    : "I'm forwarding this to the manager. They'll reply shortly.";
 }
 
 export async function escalateToHuman(input: {

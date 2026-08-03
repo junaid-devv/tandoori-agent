@@ -576,8 +576,8 @@ async function processWebhook(body: unknown) {
         if (message.type === "audio") {
           const voiceFallback =
             state.preferred_language === "roman_urdu"
-              ? "Voice note receive ho gaya hai, lekin is waqt automatic transcription available nahi. Staff aapki help karega. Agar AI se order continue karna hai to please text mein order bhej dein."
-              : "I received your voice note, but automatic transcription is not available right now. A staff member will help. To continue with the AI, please type your order.";
+              ? "Voice note mil gaya hai, lekin is waqt sun kar order lena available nahi. Manager reply karega. Jaldi order karna ho to item text mein bhej dein."
+              : "I received your voice note, but voice ordering is not available right now. A manager will reply. For a faster order, please type the items.";
           const persistedVoiceMessage = await persistUserMessage(
             conversation.id,
             "[Voice note received - transcription unavailable]",
@@ -801,8 +801,8 @@ async function processWebhook(body: unknown) {
       if (incomingContent && shouldResumeBotFromHumanMessage(incomingContent)) {
         const resumeReply =
           state.preferred_language === "roman_urdu"
-            ? "Theek hai, AI assistant dobara active kar diya gaya hai. Aap apna order message bhej dein."
-            : "Done, the AI assistant is active again. You can send your order now.";
+            ? "Theek hai. Apna order message bhej dein."
+            : "Done. Send your order when ready.";
 
         await resumeBotForConversation(conversation.id);
         await supabaseAdmin
@@ -1715,7 +1715,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
             : `Sorry, *${missingMenuItem[1]}* is no longer available right now. Please send another item name or type *menu*.`
           : replyLanguage === "roman_urdu"
             ? "Maazrat, system is waqt thora busy hai. Thori dair mein dubara message bhej dein ya urgent help ke liye call karein."
-            : "I'm sorry, the system is a little busy right now. Please send your message again in a moment or call us for urgent help.";
+            : "Sorry, we're a little busy right now. Please send that again in a moment or call us for urgent help.";
         try {
           await sendAndPersistAssistantMessage({
             conversationId: conversation.id,

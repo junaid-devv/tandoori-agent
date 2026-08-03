@@ -1327,8 +1327,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
   if (isSimpleAcknowledgmentPattern(rawText) && !isWorkflowGateStep) {
     return replyDecision(
       prefersRomanUrdu
-        ? "Ji theek hai, batayein main aapki mazeed kya madad kar sakta hoon?"
-        : "Alright, let me know how else I can help you!",
+        ? "Ji theek hai. Item ka naam bhej dein ya *menu* likh dein."
+        : "Alright. Send an item name or type *menu*.",
       withPreferredLanguage({}, preferredLanguage),
     );
   }
@@ -1376,8 +1376,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
   if (messageType === "acknowledgment" && !isWorkflowGateStep) {
     return replyDecision(
       prefersRomanUrdu
-        ? "Theek hai, bataiye main kya kar sakta hoon aap ke liye?"
-        : "Alright, let me know how I can help you!",
+        ? "Theek hai. Order ke liye item ka naam bhej dein."
+        : "Sure. Send the item name when you're ready.",
       withPreferredLanguage({}, preferredLanguage),
     );
   }
@@ -1818,8 +1818,8 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
       kind: "escalate_to_human",
       reply:
         preferredLanguage === "roman_urdu"
-          ? "Main aap ko human team se connect kar raha hoon."
-          : "I'm connecting you with a human team member.",
+          ? "Main manager ko message forward kar raha hoon."
+          : "I'm forwarding this to the manager.",
       reason:
         interpretation.wants_human || /(human|manager|agent|representative|insaan|banday se baat|staff)/i.test(rawText)
           ? "Customer requested a human handoff."
