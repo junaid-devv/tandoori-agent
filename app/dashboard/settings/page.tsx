@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Bot, Clock, Phone, RefreshCw, Save, Store, Truck } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { toast } from "sonner";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
@@ -126,15 +127,29 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-48">
-        <RefreshCw className="w-5 h-5 animate-spin text-slate-400" />
+      <div className="flex w-full flex-col gap-4 pb-8">
+        <PageHeader
+          title="Settings"
+          description={
+            selectedBranch
+              ? `Loading rules for ${selectedBranch.name}.`
+              : "Loading store hours, delivery rules, and agent behavior."
+          }
+        />
+        <div className="flex h-48 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 shadow-sm">
+          <RefreshCw className="h-5 w-5 animate-spin" />
+        </div>
       </div>
     );
   }
 
   if (selectedBranchId === "all") {
     return (
-      <div className="w-full pb-8">
+      <div className="flex w-full flex-col gap-4 pb-8">
+        <PageHeader
+          title="Settings"
+          description="Choose one branch before editing store hours, delivery rules, and agent behavior."
+        />
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
           Select a single branch from the sidebar to edit its settings.
         </div>
@@ -144,24 +159,25 @@ export default function SettingsPage() {
 
   return (
     <div className="flex w-full flex-col gap-4 pb-4 sm:pb-8">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 sm:text-3xl">Settings</h1>
-          <p className="mt-0.5 line-clamp-1 text-xs text-slate-500 sm:mt-1 sm:text-sm">
-            {selectedBranch
-              ? `These rules apply to ${selectedBranch.name}.`
-              : "These rules directly control whether the agent can accept and place orders."}
-          </p>
-        </div>
-        <button
-          onClick={save}
-          disabled={saving}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition hover:bg-brand-hover disabled:opacity-50 sm:w-auto"
-        >
-          {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-          Save Changes
-        </button>
-      </div>
+      <PageHeader
+        title="Settings"
+        description={
+          selectedBranch
+            ? `Rules for ${selectedBranch.name}.`
+            : "Control whether the agent can accept and place orders."
+        }
+        actions={
+          <button
+            onClick={save}
+            disabled={saving}
+            className="flex h-9 items-center justify-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition hover:bg-brand-hover disabled:opacity-50"
+            aria-label="Save settings"
+          >
+            {saving ? <RefreshCw size={15} className="animate-spin" /> : <Save size={15} />}
+            <span className="hidden sm:inline">Save Changes</span>
+          </button>
+        }
+      />
 
       <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         <Card icon={<Store size={16} />} title="Store Status">

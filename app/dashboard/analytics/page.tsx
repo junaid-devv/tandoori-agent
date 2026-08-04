@@ -4,6 +4,7 @@ import { useCallback, useMemo, useState } from "react";
 import { BarChart3, Loader2, RefreshCw, ShoppingBag, Users, Utensils } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 type AnalyticsPayload = {
@@ -73,50 +74,47 @@ export default function AnalyticsPage() {
     [data],
   );
 
-  if (loading && !data) {
-    return (
-      <div className="flex h-[60vh] items-center justify-center text-slate-400">
-        <Loader2 size={28} className="animate-spin" />
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-4 pb-4 sm:space-y-6 sm:pb-10">
-      <div className="flex flex-col gap-3 border-b border-slate-200 pb-3 md:flex-row md:items-end md:justify-between sm:pb-5">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 sm:text-3xl">Analytics</h1>
-          <p className="mt-0.5 text-xs text-slate-500 sm:mt-1 sm:text-sm">
-            Last {data?.rangeDays ?? 30} days{selectedBranch ? ` for ${selectedBranch.name}` : " across accessible branches"}.
-          </p>
-        </div>
-        <button
-          onClick={() => void loadAnalytics(true)}
-          disabled={refreshing}
-          className="inline-flex w-full items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50 sm:w-auto"
-        >
-          {refreshing ? <Loader2 size={16} className="mr-2 animate-spin" /> : <RefreshCw size={16} className="mr-2" />}
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        title="Analytics"
+        description={`Last ${data?.rangeDays ?? 30} days${selectedBranch ? ` for ${selectedBranch.name}` : " across accessible branches"}.`}
+        actions={
+          <button
+            onClick={() => void loadAnalytics(true)}
+            disabled={refreshing}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+            aria-label="Refresh analytics"
+          >
+            {refreshing ? <Loader2 size={15} className="animate-spin" /> : <RefreshCw size={15} />}
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        }
+      />
 
       {error ? (
         <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm font-medium text-red-700">{error}</div>
+      ) : null}
+
+      {loading && !data ? (
+        <div className="flex h-[40vh] items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 shadow-sm">
+          <Loader2 size={24} className="animate-spin" />
+        </div>
       ) : null}
 
       {data ? (
         <>
           <section className="grid grid-cols-2 gap-2 sm:gap-3 xl:grid-cols-4">
             {[
-              { label: "Orders", value: data.totals.orders, icon: ShoppingBag },
-              { label: "Revenue", value: money(data.totals.revenue), icon: BarChart3 },
-              { label: "Repeat Customers", value: data.totals.repeatCustomers, icon: Users },
-              { label: "Active Orders", value: data.totals.activeOrders, icon: Utensils },
+              { label: "Orders", value: data.totals.orders, icon: ShoppingBag, surface: "bg-orange-50/55 border-orange-100", iconColor: "text-brand" },
+              { label: "Revenue", value: money(data.totals.revenue), icon: BarChart3, surface: "bg-emerald-50/55 border-emerald-100", iconColor: "text-emerald-600" },
+              { label: "Repeat Customers", value: data.totals.repeatCustomers, icon: Users, surface: "bg-indigo-50/55 border-indigo-100", iconColor: "text-indigo-600" },
+              { label: "Active Orders", value: data.totals.activeOrders, icon: Utensils, surface: "bg-blue-50/55 border-blue-100", iconColor: "text-blue-600" },
             ].map((metric) => (
-              <div key={metric.label} className="rounded-xl border border-slate-200 bg-white p-3 sm:p-4">
+              <div key={metric.label} className={clsx("rounded-xl border p-3 shadow-sm sm:p-4", metric.surface)}>
                 <div className="mb-2 flex items-center justify-between gap-2 sm:mb-3">
                   <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 sm:text-xs">{metric.label}</p>
-                  <metric.icon size={16} className="text-brand" />
+                  <metric.icon size={16} className={metric.iconColor} />
                 </div>
                 <p className="break-words text-xl font-bold text-slate-900 sm:text-2xl">{metric.value}</p>
               </div>

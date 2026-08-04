@@ -5,6 +5,7 @@ import { ChevronDown, ChevronUp, Clock, MapPin, Package, Phone, RefreshCw, Searc
 import { clsx } from "clsx";
 import { format, formatDistanceToNow } from "date-fns";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { toast } from "sonner";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
@@ -197,20 +198,22 @@ export default function OrdersPage() {
 
   return (
     <div className="space-y-4 pb-4 sm:space-y-6 sm:pb-10">
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 sm:text-3xl">Order Queue</h1>
-          <p className="line-clamp-1 text-xs text-slate-500 sm:text-sm">
-            {selectedBranch
-              ? `Showing orders for ${selectedBranch.name}.`
-              : "Showing combined orders across all branches."}
-          </p>
-        </div>
-        <button onClick={() => revalidate()} disabled={loading} className="flex h-10 w-full items-center justify-center rounded-xl bg-brand px-5 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition-colors hover:bg-brand-hover disabled:opacity-50 sm:w-auto">
-          <RefreshCw size={14} className={clsx("mr-2", loading && "animate-spin")} />
-          Refresh
-        </button>
-      </div>
+      <PageHeader
+        title="Order Queue"
+        description={selectedBranch ? `Showing orders for ${selectedBranch.name}.` : "Showing combined orders across all branches."}
+        meta={<span className="rounded-full bg-orange-50 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-brand">{counts.active} active</span>}
+        actions={
+          <button
+            onClick={() => revalidate()}
+            disabled={loading}
+            className="flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 shadow-sm transition-colors hover:bg-slate-50 disabled:opacity-50"
+            aria-label="Refresh orders"
+          >
+            <RefreshCw size={15} className={clsx(loading && "animate-spin")} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        }
+      />
 
       <div className="sticky top-0 z-10 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur lg:static lg:flex-row lg:items-center lg:justify-between">
         <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-1">

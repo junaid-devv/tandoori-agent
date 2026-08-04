@@ -5,6 +5,7 @@ import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
@@ -138,35 +139,31 @@ export default function DashboardPage() {
 
   return (
     <div className="animate-fade-in space-y-4 sm:space-y-6">
-      {/* Top Action Bar */}
-      <div className="flex flex-col justify-between gap-3 md:flex-row md:items-end">
-        <div>
-          <h1 className="mb-0.5 text-xl font-bold tracking-tight text-slate-900 sm:text-3xl">Dashboard</h1>
-          <p className="line-clamp-1 text-xs text-slate-500 sm:text-sm">
-            {selectedBranch
-              ? `${selectedBranch.name} - ${selectedBranch.address}`
-              : "All active branches"}
-          </p>
-        </div>
-        <div className="flex items-center gap-3 sm:justify-end">
-          <Link href="/dashboard/settings" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900">
+      <PageHeader
+        title="Dashboard"
+        description={selectedBranch ? `${selectedBranch.name} - ${selectedBranch.address}` : "All active branches"}
+        actions={
+          <>
+          <Link href="/dashboard/settings" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900" aria-label="Open settings">
             <Settings size={18} />
           </Link>
-          <Link href="/dashboard/orders" className="flex min-h-10 flex-1 items-center justify-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-medium text-white shadow-sm shadow-orange-200 transition-all hover:bg-brand-hover sm:flex-none sm:px-5">
-            Manage Orders <ArrowUpRight size={16} />
+          <Link href="/dashboard/orders" className="flex h-9 items-center justify-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition-all hover:bg-brand-hover">
+            <span className="hidden sm:inline">Manage Orders</span>
+            <ArrowUpRight size={16} />
           </Link>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* KPI Section */}
       <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
         {[
-          { label: "Active Orders", val: stats.active, icon: Activity, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Orders Today", val: stats.today, icon: ShoppingBag, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Gross Revenue", val: `Rs. ${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: "text-indigo-600", bg: "bg-indigo-50" },
-          { label: "AI Interactions", val: stats.chats, icon: MessageSquare, color: "text-brand", bg: "bg-orange-50" },
+          { label: "Active Orders", val: stats.active, icon: Activity, color: "text-blue-600", bg: "bg-blue-50", surface: "bg-blue-50/50 border-blue-100" },
+          { label: "Orders Today", val: stats.today, icon: ShoppingBag, color: "text-emerald-600", bg: "bg-emerald-50", surface: "bg-emerald-50/50 border-emerald-100" },
+          { label: "Gross Revenue", val: `Rs. ${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: "text-indigo-600", bg: "bg-indigo-50", surface: "bg-indigo-50/50 border-indigo-100" },
+          { label: "AI Interactions", val: stats.chats, icon: MessageSquare, color: "text-brand", bg: "bg-orange-50", surface: "bg-orange-50/55 border-orange-100" },
         ].map((item, i) => (
-          <div key={i} data-testid={`kpi-${item.label.toLowerCase().replace(/\s+/g, "-")}`} className="ui-card flex min-h-[92px] flex-col justify-between p-3 sm:min-h-[132px] sm:p-5">
+          <div key={i} data-testid={`kpi-${item.label.toLowerCase().replace(/\s+/g, "-")}`} className={clsx("flex min-h-[88px] flex-col justify-between rounded-xl border p-3 shadow-sm sm:min-h-[124px] sm:p-5", item.surface)}>
             <div className="mb-3 flex items-start justify-between gap-2 sm:mb-4">
               <span className="text-xs font-semibold leading-tight text-slate-500 sm:text-sm">{item.label}</span>
               <div className={clsx("rounded-lg p-1.5 sm:p-2", item.bg)}>
