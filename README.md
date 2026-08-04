@@ -1,4 +1,4 @@
-# Restaurant Agent
+# ORDERiQ
 
 WhatsApp Cloud API ordering assistant for restaurants, built with Next.js, Supabase, and AI-assisted menu/order understanding.
 
