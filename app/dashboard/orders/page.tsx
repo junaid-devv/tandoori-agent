@@ -196,26 +196,26 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="space-y-6 pb-10">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+    <div className="space-y-4 pb-4 sm:space-y-6 sm:pb-10">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Order Queue</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-xl font-bold text-slate-900 sm:text-3xl">Order Queue</h1>
+          <p className="line-clamp-1 text-xs text-slate-500 sm:text-sm">
             {selectedBranch
               ? `Showing orders for ${selectedBranch.name}.`
               : "Showing combined orders across all branches."}
           </p>
         </div>
-        <button onClick={() => revalidate()} disabled={loading} className="flex h-10 items-center justify-center rounded-xl bg-brand px-5 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition-colors hover:bg-brand-hover disabled:opacity-50">
+        <button onClick={() => revalidate()} disabled={loading} className="flex h-10 w-full items-center justify-center rounded-xl bg-brand px-5 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition-colors hover:bg-brand-hover disabled:opacity-50 sm:w-auto">
           <RefreshCw size={14} className={clsx("mr-2", loading && "animate-spin")} />
           Refresh
         </button>
       </div>
 
-      <div className="flex flex-col gap-4 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm lg:flex-row lg:items-center lg:justify-between">
-        <div className="flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-1">
+      <div className="sticky top-0 z-10 flex flex-col gap-3 rounded-xl border border-slate-200 bg-white/95 p-2 shadow-sm backdrop-blur lg:static lg:flex-row lg:items-center lg:justify-between">
+        <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-slate-50 p-1">
           {(["all", "active", "delivered", "cancelled"] as FilterTab[]).map((tab) => (
-            <button key={tab} onClick={() => setActiveTab(tab)} className={clsx("rounded-lg px-4 py-2 text-xs font-semibold capitalize transition-colors", activeTab === tab ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}>
+            <button key={tab} onClick={() => setActiveTab(tab)} className={clsx("shrink-0 rounded-lg px-4 py-2 text-xs font-semibold capitalize transition-colors", activeTab === tab ? "bg-white text-brand shadow-sm" : "text-slate-500 hover:text-slate-700")}>
               {tab} <span className="ml-1 text-[10px] text-slate-400">{counts[tab]}</span>
             </button>
           ))}
@@ -234,7 +234,7 @@ export default function OrdersPage() {
 
       <div className="space-y-3">
         {loading && filteredOrders.length === 0 ? (
-          Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-28 animate-pulse rounded-2xl border border-slate-200 bg-white" />)
+          Array.from({ length: 3 }).map((_, index) => <div key={index} className="h-24 animate-pulse rounded-xl border border-slate-200 bg-white" />)
         ) : filteredOrders.length === 0 ? (
           <div className="rounded-3xl border-2 border-dashed border-slate-200 bg-white py-20 text-center text-slate-500">
             <ShoppingBag size={28} className="mx-auto mb-3 text-slate-400" />
@@ -248,13 +248,13 @@ export default function OrdersPage() {
             const totalItems = order.order_items.reduce((sum, item) => sum + item.qty, 0);
 
             return (
-              <div key={order.id} data-testid={`order-card-${order.order_number}`} className={clsx("rounded-2xl border bg-white shadow-sm transition-all", expanded ? "border-brand/30 shadow-md" : "border-slate-200 hover:border-slate-300")}>
-                <div className="cursor-pointer p-4 lg:p-5" onClick={() => setExpandedId(expanded ? null : order.id)}>
-                  <div className="flex flex-col gap-4 lg:flex-row lg:items-center">
-                    <div className="flex items-center gap-4 lg:w-52">
+              <div key={order.id} data-testid={`order-card-${order.order_number}`} className={clsx("rounded-xl border bg-white shadow-sm transition-all", expanded ? "border-brand/30 shadow-md" : "border-slate-200 hover:border-slate-300")}>
+                <div className="cursor-pointer p-3 lg:p-5" onClick={() => setExpandedId(expanded ? null : order.id)}>
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+                    <div className="flex flex-wrap items-center gap-3 lg:w-52 lg:flex-nowrap lg:gap-4">
                       <div>
                         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">Order</p>
-                        <p className="text-2xl font-bold text-slate-900">#{order.order_number}</p>
+                        <p className="text-xl font-bold text-slate-900 sm:text-2xl">#{order.order_number}</p>
                       </div>
                       <span className={clsx("rounded-lg border px-2.5 py-1 text-[10px] font-bold uppercase tracking-widest", statusMeta.color)}>
                         {statusMeta.label}
@@ -271,7 +271,7 @@ export default function OrdersPage() {
                           </a>
                         )}
                       </div>
-                      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1.5"><Clock size={13} /> {formatDistanceToNow(new Date(order.created_at), { addSuffix: true })}</span>
                         <span className="inline-flex items-center gap-1.5 capitalize">{order.type === "delivery" ? <Truck size={13} /> : <Package size={13} />}{order.type.replace("-", " ")}</span>
                         {order.branches?.name && <span className="inline-flex items-center gap-1.5">{order.branches.name}</span>}
@@ -280,7 +280,7 @@ export default function OrdersPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-4 border-t border-slate-100 pt-3 lg:border-0 lg:pt-0">
+                    <div className="flex flex-col gap-2 border-t border-slate-100 pt-2 sm:flex-row sm:items-center sm:justify-between sm:gap-4 lg:border-0 lg:pt-0">
                       <div className="text-left lg:text-right">
                         <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400">{totalItems} items</p>
                         <p className="text-lg font-bold text-slate-900">Rs. {total.toLocaleString()}</p>
@@ -290,15 +290,15 @@ export default function OrdersPage() {
                         )}
                       </div>
 
-                      <div className="flex items-center gap-2">
-                        <div className="relative">
+                      <div className="grid grid-cols-[1fr_auto] items-center gap-2 sm:flex">
+                        <div className="relative min-w-0">
                           <select
                             data-testid={`order-status-select-${order.order_number}`}
                             value={order.status}
                             disabled={savingId === order.id}
                             onClick={(event) => event.stopPropagation()}
                             onChange={(event) => void handleStatusChange(order, event.target.value as OrderStatus)}
-                            className="appearance-none rounded-xl border border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-700 outline-none transition-all focus:ring-2 focus:ring-brand/10"
+                            className="w-full appearance-none rounded-xl border border-slate-200 bg-slate-50 py-2 pl-3 pr-8 text-[10px] font-bold uppercase tracking-[0.1em] text-slate-700 outline-none transition-all focus:ring-2 focus:ring-brand/10"
                           >
                             {getStatusOptions(order.status).map((status) => (
                               <option key={status} value={status}>
@@ -338,14 +338,14 @@ export default function OrdersPage() {
 
                         <section className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                           <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Assignment</p>
-                          <div className="flex gap-2">
+                          <div className="flex flex-col gap-2 sm:flex-row">
                             <input
                               value={assignees[order.id] ?? ""}
                               onChange={(event) => setAssignees((prev) => ({ ...prev, [order.id]: event.target.value }))}
                               placeholder="Assign to kitchen or rider..."
                               className="flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-orange-200 focus:ring-2 focus:ring-brand/10"
                             />
-                            <button onClick={() => void handleAssign(order)} disabled={savingId === order.id} className="rounded-xl bg-brand px-4 text-sm font-semibold text-white disabled:opacity-50">
+                            <button onClick={() => void handleAssign(order)} disabled={savingId === order.id} className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50 sm:py-0">
                               Save
                             </button>
                           </div>

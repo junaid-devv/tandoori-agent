@@ -588,17 +588,17 @@ export default function ConversationsPage() {
   };
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-slate-50 font-sans text-slate-900">
+    <div className="flex h-[calc(100dvh-8.75rem)] min-h-[480px] w-full overflow-hidden rounded-xl border border-slate-200 bg-slate-50 font-sans text-slate-900 shadow-sm sm:h-[calc(100dvh-8rem)] lg:h-[calc(100dvh-5rem)] lg:rounded-2xl">
       
       {/* 1. SIDEBAR INBOX - Reduced width to lg:w-[300px] */}
       <aside
         className={clsx(
-          "flex shrink-0 flex-col border-r border-slate-200 bg-white transition-all duration-300 ease-in-out",
+          "flex min-w-0 shrink-0 flex-col border-r border-slate-200 bg-white transition-all duration-300 ease-in-out",
           selectedId ? "hidden w-full lg:flex lg:w-[300px]" : "flex w-full lg:w-[300px]"
         )}
       >
-        <div className="flex-shrink-0 border-b border-slate-200 bg-white p-4">
-          <div className="flex items-center justify-between pb-4">
+        <div className="flex-shrink-0 border-b border-slate-200 bg-white p-3 sm:p-4">
+          <div className="flex items-center justify-between pb-3 sm:pb-4">
             <h1 className="text-xl font-bold tracking-tight text-slate-900">Inbox</h1>
             <button
               onClick={() => void loadConversations(true)}
@@ -632,7 +632,7 @@ export default function ConversationsPage() {
               </button>
             ))}
           </div>
-          <p className="mt-3 text-xs text-slate-500">
+          <p className="mt-2 text-xs text-slate-500 sm:mt-3">
             {selectedBranch ? `Viewing ${selectedBranch.name}` : "Viewing all accessible branches"}
           </p>
         </div>
@@ -745,24 +745,24 @@ export default function ConversationsPage() {
           </div>
         ) : (
           <>
-            <header className="flex-shrink-0 border-b border-slate-200 bg-white/80 px-4 py-3 backdrop-blur-md sm:px-6">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
+            <header className="flex-shrink-0 border-b border-slate-200 bg-white/80 px-3 py-2.5 backdrop-blur-md sm:px-6 sm:py-3">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-start gap-2 sm:items-center sm:gap-3">
                   <button onClick={() => setSelectedId(null)} className="mr-1 rounded-full p-2 hover:bg-slate-100 lg:hidden">
                     <ArrowLeft size={18} className="text-slate-600" />
                   </button>
                   <div className="hidden h-10 w-10 items-center justify-center rounded-full bg-brand/10 text-brand sm:flex font-bold">
                     {getConversationInitials(activeConversation)}
                   </div>
-                  <div>
-                    <h2 className="text-lg font-bold text-slate-900 leading-none">
+                  <div className="min-w-0">
+                    <h2 className="truncate text-base font-bold leading-tight text-slate-900 sm:text-lg">
                       {getConversationLabel(activeConversation)}
                     </h2>
-                    <div className="mt-1 flex items-center gap-2 text-xs text-slate-500">
-                      <a href={`tel:${activeConversation.phone}`} className="flex items-center gap-1 hover:text-brand">
+                    <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
+                      <a href={`tel:${activeConversation.phone}`} className="flex min-w-0 items-center gap-1 hover:text-brand">
                         <Phone size={10} /> {activeConversation.phone}
                       </a>
-                      <span>&bull;</span>
+                      <span className="hidden sm:inline">&bull;</span>
                       <span className="flex items-center gap-1">
                         <Sparkles size={10} className="text-brand" /> {formatStep(displayWorkflowStep)}
                       </span>
@@ -776,7 +776,7 @@ export default function ConversationsPage() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3">
+                <div className="flex shrink-0 items-center gap-2 sm:gap-3">
                   {/* Redesigned AI/Human Switch with Icons & Loading State */}
                   <div className="hidden items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5 sm:flex">
                     {(["agent", "human"] as ConversationMode[]).map((mode) => {
@@ -827,7 +827,7 @@ export default function ConversationsPage() {
               </div>
             </header>
 
-            <div ref={messagesViewportRef} className="flex-1 overflow-y-auto bg-slate-50 px-4 py-6 sm:px-6">
+            <div ref={messagesViewportRef} className="flex-1 overflow-y-auto bg-slate-50 px-3 py-5 sm:px-6 sm:py-6">
               {hasMoreMessages && (
                 <div className="mb-6 flex justify-center">
                   <button
@@ -873,7 +873,7 @@ export default function ConversationsPage() {
                         ) : (
                           <div className={clsx("flex", isIncoming ? "justify-start" : "justify-end")}>
                             <div className={clsx(
-                                "relative max-w-[85%] rounded-2xl px-5 py-3.5 text-[15px] leading-relaxed shadow-sm sm:max-w-[75%]",
+                                "relative max-w-[92%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm sm:max-w-[75%] sm:px-5 sm:py-3.5 sm:text-[15px]",
                                 isIncoming
                                   ? "rounded-tl-sm bg-white text-slate-800 ring-1 ring-inset ring-slate-100"
                                   : isHuman
@@ -899,10 +899,10 @@ export default function ConversationsPage() {
                                   {message.replyButtons.map((btn) => (
                                     <div
                                       key={btn.id}
-                                      className="flex items-center justify-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/20 px-3.5 py-1.5 text-xs font-semibold text-emerald-200 shadow-sm backdrop-blur-sm"
+                                    className="flex min-w-0 items-center justify-center gap-1.5 rounded-xl border border-emerald-400/40 bg-emerald-500/20 px-3 py-1.5 text-xs font-semibold text-emerald-200 shadow-sm backdrop-blur-sm"
                                     >
                                       <Sparkles size={11} className="text-emerald-300" />
-                                      <span>{btn.title}</span>
+                                      <span className="truncate">{btn.title}</span>
                                     </div>
                                   ))}
                                 </div>
@@ -911,10 +911,10 @@ export default function ConversationsPage() {
                               {/* Interactive WhatsApp List Selector Card */}
                               {message.listSelector && (
                                 <div className="mt-3 overflow-hidden rounded-xl border border-white/15 bg-black/40 p-3 shadow-inner">
-                                  <div className="flex items-center justify-between text-xs font-bold text-slate-200 mb-2">
-                                    <span className="flex items-center gap-1.5 text-emerald-300">
+                                  <div className="mb-2 flex flex-col gap-2 text-xs font-bold text-slate-200 sm:flex-row sm:items-center sm:justify-between">
+                                    <span className="flex min-w-0 items-center gap-1.5 text-emerald-300">
                                       <Package size={13} />
-                                      {message.listSelector.title}
+                                      <span className="truncate">{message.listSelector.title}</span>
                                     </span>
                                     <span className="rounded bg-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-200 uppercase tracking-wider">
                                       Interactive List
@@ -924,7 +924,7 @@ export default function ConversationsPage() {
                                     {message.listSelector.rows.map((row) => (
                                       <div
                                         key={row.id}
-                                        className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 p-2 text-xs"
+                                        className="flex flex-col gap-2 rounded-lg border border-white/10 bg-white/5 p-2 text-xs sm:flex-row sm:items-center sm:justify-between"
                                       >
                                         <div>
                                           <p className="font-semibold text-white">{row.title}</p>
@@ -968,10 +968,10 @@ export default function ConversationsPage() {
             </div>
 
             {/* Floating Composer */}
-            <div className="flex-shrink-0 bg-white p-4 sm:p-6 sm:pt-4 border-t border-slate-100">
+            <div className="flex-shrink-0 border-t border-slate-100 bg-white p-3 sm:p-6 sm:pt-4">
               <div className="mx-auto max-w-4xl">
                 {activeConversation.mode === "agent" ? (
-                  <div className="flex flex-col items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center">
+                  <div className="flex flex-col items-start justify-between gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 sm:flex-row sm:items-center sm:gap-3">
                     <p className="flex items-center gap-2 text-sm font-medium text-slate-600">
                       <Bot size={16} className="text-slate-400" />
                       AI is currently handling this chat.
@@ -979,7 +979,7 @@ export default function ConversationsPage() {
                     <button
                       onClick={() => void handleModeChange("human")}
                       disabled={modeSaving}
-                      className="inline-flex items-center justify-center rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-200 transition-all hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50"
+                      className="inline-flex w-full items-center justify-center rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-slate-700 shadow-sm ring-1 ring-inset ring-slate-200 transition-all hover:bg-slate-100 hover:text-slate-900 disabled:opacity-50 sm:w-auto"
                     >
                       {modeSaving ? (
                         <Loader2 size={14} className="mr-1.5 animate-spin text-slate-400" />
@@ -1006,7 +1006,7 @@ export default function ConversationsPage() {
                       placeholder="Type a message... (Press Enter to send)"
                       className="w-full resize-none bg-transparent px-4 py-4 text-[15px] outline-none"
                     />
-                    <div className="flex items-center justify-between bg-slate-50 px-4 py-2 border-t border-slate-100">
+                    <div className="flex flex-col gap-2 border-t border-slate-100 bg-slate-50 px-4 py-2 sm:flex-row sm:items-center sm:justify-between">
                       <span className="text-xs text-slate-400">
                         Manual mode active. The AI is paused.
                       </span>
@@ -1030,7 +1030,7 @@ export default function ConversationsPage() {
       {/* 3. SLIDE-OVER DRAFT PANEL */}
       {detailsOpen && activeConversation && (
         <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/20 backdrop-blur-sm transition-opacity">
-          <div className="w-full max-w-sm animate-in slide-in-from-right bg-white shadow-2xl sm:border-l border-slate-200 h-screen flex flex-col">
+          <div className="flex h-dvh w-full max-w-sm animate-in flex-col border-slate-200 bg-white shadow-2xl slide-in-from-right sm:border-l">
             <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
               <div>
                 <h3 className="font-bold text-slate-900">Current Draft</h3>

@@ -143,11 +143,11 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="w-full flex flex-col gap-4 pb-8">
-      <div className="flex items-center justify-between">
+    <div className="flex w-full flex-col gap-4 pb-4 sm:pb-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
-          <p className="text-sm text-slate-500 mt-1">
+          <h1 className="text-xl font-bold text-slate-900 sm:text-3xl">Settings</h1>
+          <p className="mt-0.5 line-clamp-1 text-xs text-slate-500 sm:mt-1 sm:text-sm">
             {selectedBranch
               ? `These rules apply to ${selectedBranch.name}.`
               : "These rules directly control whether the agent can accept and place orders."}
@@ -156,14 +156,14 @@ export default function SettingsPage() {
         <button
           onClick={save}
           disabled={saving}
-          className="flex items-center gap-2 bg-brand text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition hover:bg-brand-hover disabled:opacity-50 shadow-sm shadow-orange-200"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition hover:bg-brand-hover disabled:opacity-50 sm:w-auto"
         >
           {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
           Save Changes
         </button>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 2xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
         <Card icon={<Store size={16} />} title="Store Status">
           <SettingRow label="Accept Orders">
             <Toggle
@@ -429,21 +429,21 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-      <div className="flex items-center gap-2.5 px-5 py-4 border-b border-slate-100">
+    <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <div className="flex items-center gap-2.5 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
         <span className="text-slate-500">{icon}</span>
         <span className="text-sm font-bold text-slate-800 uppercase tracking-widest">{title}</span>
       </div>
-      <div className="flex flex-col gap-0 flex-1 px-5 py-3 divide-y divide-slate-50">{children}</div>
+      <div className="flex flex-1 flex-col gap-0 divide-y divide-slate-50 px-4 py-2 sm:px-5 sm:py-3">{children}</div>
     </div>
   );
 }
 
 function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between py-2.5">
-      <span className="text-sm text-slate-600 font-medium">{label}</span>
-      {children}
+    <div className="flex flex-col gap-1.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:py-2.5">
+      <span className="text-sm font-medium text-slate-600">{label}</span>
+      <div className="flex justify-start sm:justify-end">{children}</div>
     </div>
   );
 }

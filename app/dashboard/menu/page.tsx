@@ -454,7 +454,7 @@ export default function MenuPage() {
   };
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="space-y-4 pb-4 sm:space-y-6 sm:pb-10">
       {!canEditSingleBranch ? (
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
           Select a single branch from the sidebar to edit its menu.
@@ -462,29 +462,29 @@ export default function MenuPage() {
       ) : null}
 
       {canEditSingleBranch ? (
-      <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+      <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-slate-900">Menu Editor</h1>
-          <p className="text-sm text-slate-500">
+          <h1 className="text-xl font-bold text-slate-900 sm:text-3xl">Menu Editor</h1>
+          <p className="line-clamp-2 text-xs text-slate-500 sm:text-sm">
             {selectedBranch
               ? `Editing menu for ${selectedBranch.name}. Uploads create a reviewable preview first.`
               : "Uploads create a reviewable preview first, and save mode controls whether we merge changes or replace the full catalog."}
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="grid gap-2 sm:flex sm:flex-wrap sm:items-center">
           <label className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-600 shadow-sm">
             <input type="checkbox" checked={replaceExisting} onChange={(event) => setReplaceExisting(event.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300 text-brand focus:ring-brand/20" />
             Replace catalog on save
           </label>
 
-          <label className="flex cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50">
+          <label className="flex cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 sm:py-2.5">
             {processing ? <Loader2 className="mr-2 h-4 w-4 animate-spin text-brand" /> : <UploadCloud size={16} className="mr-2 text-slate-500" />}
             {processing ? "Scanning..." : "Upload Photo"}
             <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" disabled={processing} />
           </label>
 
-          <label className="flex cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50">
+          <label className="flex cursor-pointer items-center justify-center rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 sm:py-2.5">
             {jsonUploading ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin text-brand" />
             ) : (
@@ -500,12 +500,12 @@ export default function MenuPage() {
             />
           </label>
 
-          <button onClick={() => setItems((prev) => [{ name: "", price: 0, category: "", is_available: true, available_days: [], available_start_time: null, available_end_time: null }, ...prev])} className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50">
+          <button onClick={() => setItems((prev) => [{ name: "", price: 0, category: "", is_available: true, available_days: [], available_start_time: null, available_end_time: null }, ...prev])} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 sm:py-2.5">
             <Plus size={16} className="mr-1.5 inline" />
             Add Row
           </button>
 
-          <button onClick={() => void handleSaveAll()} disabled={selectedBranchId === "all" || bulkSaving || items.length === 0} className="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition-colors hover:bg-brand-hover disabled:opacity-50">
+          <button onClick={() => void handleSaveAll()} disabled={selectedBranchId === "all" || bulkSaving || items.length === 0} className="rounded-xl bg-brand px-5 py-2 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition-colors hover:bg-brand-hover disabled:opacity-50 sm:py-2.5">
             {bulkSaving ? <Loader2 size={16} className="mr-2 inline animate-spin" /> : <CheckCircle2 size={16} className="mr-2 inline" />}
             {replaceExisting ? "Save Replacement" : "Apply Changes"}
           </button>
@@ -548,8 +548,8 @@ export default function MenuPage() {
       )}
 
       {canEditSingleBranch ? (
-      <div className="rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <div className="flex flex-col gap-3 border-b border-slate-200 bg-slate-50/70 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="rounded-xl border border-slate-200 bg-white shadow-sm sm:rounded-2xl">
+        <div className="sticky top-0 z-10 flex flex-col gap-3 border-b border-slate-200 bg-slate-50/95 p-3 backdrop-blur sm:static sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div className="flex gap-2 text-xs font-semibold text-slate-600">
             <span className="rounded-full bg-white px-3 py-1">{items.length} items</span>
             <span className="rounded-full bg-white px-3 py-1">{replaceExisting ? "Replace mode" : "Merge mode"}</span>
@@ -581,7 +581,119 @@ export default function MenuPage() {
           </div>
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="block divide-y divide-slate-100 md:hidden">
+          {loading && filteredItems.length === 0 ? (
+            Array.from({ length: 4 }).map((_, index) => <div key={index} className="h-44 animate-pulse bg-slate-50" />)
+          ) : filteredItems.length === 0 ? (
+            <div className="px-4 py-16 text-center text-slate-500">
+              <p className="text-sm font-medium">No menu items match the current filters.</p>
+            </div>
+          ) : (
+            filteredItems.map((item) => {
+              const index = items.findIndex((entry) => (item.id ? entry.id === item.id : entry === item));
+              return (
+                <div key={item.id ?? `mobile-draft-${index}`} className={clsx("space-y-3 p-3", item._deleting && "pointer-events-none opacity-40")}>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0 flex-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Item Name</label>
+                      <div className="mt-1 flex items-center gap-2">
+                        {item._saving && <Loader2 size={12} className="shrink-0 animate-spin text-brand" />}
+                        <input
+                          value={item.name}
+                          onChange={(event) => mutateItem(index, { name: event.target.value })}
+                          onBlur={() => void handleBlurSave(item, index)}
+                          placeholder="e.g. Garlic Naan"
+                          className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-medium outline-none focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
+                        />
+                      </div>
+                    </div>
+                    <button onClick={() => void handleDelete(item, index)} className="mt-5 rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500">
+                      {item._deleting ? <Loader2 size={16} className="animate-spin text-red-400" /> : <Trash2 size={16} />}
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <label className="block">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Category</span>
+                      <input
+                        value={item.category}
+                        onChange={(event) => mutateItem(index, { category: event.target.value })}
+                        onBlur={() => void handleBlurSave(item, index)}
+                        placeholder="Breads"
+                        className="mt-1 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
+                      />
+                    </label>
+                    <label className="block">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Price</span>
+                      <div className="mt-1 flex items-center rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 focus-within:border-orange-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-brand/10">
+                        <span className="mr-1.5 text-sm text-slate-400">Rs.</span>
+                        <input
+                          type="number"
+                          value={item.price || ""}
+                          onChange={(event) => mutateItem(index, { price: Number(event.target.value) || 0 })}
+                          onBlur={() => void handleBlurSave(item, index)}
+                          className="w-full bg-transparent text-sm font-semibold outline-none"
+                        />
+                      </div>
+                    </label>
+                  </div>
+
+                  <div>
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Schedule</span>
+                      <button onClick={() => void handleToggle(item, index)} className={clsx("relative inline-flex h-5 w-9 items-center rounded-full transition-colors", item.is_available ? "bg-emerald-500" : "bg-slate-200")}>
+                        <span className={clsx("inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform", item.is_available ? "translate-x-4" : "translate-x-1")} />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      {WEEKDAYS.map((day) => {
+                        const selectedDays = normalizeDays(item.available_days);
+                        const isSelected = selectedDays.includes(day.key);
+                        return (
+                          <button
+                            key={day.key}
+                            type="button"
+                            title={day.key}
+                            onClick={() => {
+                              const nextDays = isSelected
+                                ? selectedDays.filter((entry) => entry !== day.key)
+                                : [...selectedDays, day.key];
+                              void handleSchedulePatch(item, index, { available_days: nextDays });
+                            }}
+                            className={clsx(
+                              "h-8 w-8 rounded-md text-[11px] font-bold transition-colors",
+                              isSelected ? "bg-brand text-white" : "bg-slate-100 text-slate-500 hover:bg-slate-200",
+                            )}
+                          >
+                            {day.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      <input
+                        type="time"
+                        value={item.available_start_time ?? ""}
+                        onChange={(event) => mutateItem(index, { available_start_time: event.target.value || null })}
+                        onBlur={(event) => void handleSchedulePatch(item, index, { available_start_time: event.currentTarget.value || null })}
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs outline-none focus:border-orange-200 focus:ring-2 focus:ring-brand/10"
+                      />
+                      <input
+                        type="time"
+                        value={item.available_end_time ?? ""}
+                        onChange={(event) => mutateItem(index, { available_end_time: event.target.value || null })}
+                        onBlur={(event) => void handleSchedulePatch(item, index, { available_end_time: event.currentTarget.value || null })}
+                        className="rounded-lg border border-slate-200 bg-white px-2 py-2 text-xs outline-none focus:border-orange-200 focus:ring-2 focus:ring-brand/10"
+                      />
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden overflow-x-auto md:block">
           <div className="min-w-[1120px]">
             <div className="grid grid-cols-[2.5fr_1.5fr_120px_280px_90px_70px] gap-4 border-b border-slate-200 bg-slate-50 px-6 py-3 text-xs font-bold uppercase tracking-wider text-slate-500">
               <div>Item Name</div>
