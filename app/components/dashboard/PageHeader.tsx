@@ -13,7 +13,6 @@ export function PageHeader({
 }) {
   return (
     <header className="relative overflow-hidden rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:px-5 sm:py-4">
-      <div className="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-brand via-orange-300 to-transparent" />
       <div
         className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 opacity-80 sm:block"
         style={{

@@ -217,9 +217,6 @@ export function Sidebar() {
               <p className="truncate text-sm font-bold leading-none text-white">
                 {firstWord} <span className="text-brand">{rest.join(" ")}</span>
               </p>
-              <p className="mt-0.5 truncate text-[9px] font-bold uppercase tracking-[0.18em] text-zinc-500">
-                Dashboard
-              </p>
             </div>
           </Link>
 
