@@ -157,45 +157,6 @@ export function Sidebar() {
     </Link>
   );
 
-  const renderBranchPicker = (mobile = false) => (
-    <label className={clsx("block border border-zinc-800 bg-zinc-900/70", mobile ? "rounded-lg p-1.5" : "rounded-xl p-2.5")}>
-      <span className={clsx("mb-1 block font-bold uppercase text-zinc-500", mobile ? "sr-only" : "text-[9px] tracking-[0.2em]")}>
-        {showBranchPicker ? "Active Branch" : "Location"}
-      </span>
-      {showBranchPicker && session.role === "admin" ? (
-        <select
-          value={selectedBranchId}
-          onChange={(event) => setSelectedBranchId(event.target.value as string | "all")}
-          className={clsx(
-            "w-full rounded-lg border border-zinc-800 bg-zinc-950 text-xs font-medium text-zinc-100 outline-none focus:border-brand",
-            mobile ? "px-2 py-1.5" : "px-2.5 py-1.5",
-          )}
-        >
-          <option value="all">All branches</option>
-          {session.allowedBranches.map((branch) => (
-            <option key={branch.id} value={branch.id}>
-              {branch.name}
-            </option>
-          ))}
-        </select>
-      ) : (
-        <div className={clsx("w-full truncate rounded-lg border border-zinc-800 bg-zinc-950 text-xs font-semibold text-zinc-100", mobile ? "px-2 py-1.5" : "px-2.5 py-1.5")}>
-          {selectedBranch?.name || session.allowedBranches[0]?.name || profile.app_name}
-        </div>
-      )}
-      {!mobile && (
-        <p className="mt-1.5 line-clamp-2 text-[11px] text-zinc-500">
-          {!showBranchPicker
-            ? selectedBranch?.address || "Branch assigned by admin"
-            : selectedBranch
-            ? selectedBranch.address
-            : session.role === "admin"
-              ? "Admin overview across all branches"
-              : "Branch is assigned by admin"}
-        </p>
-      )}
-    </label>
-  );
 
   return (
     <>
