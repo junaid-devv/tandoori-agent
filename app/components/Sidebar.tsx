@@ -96,7 +96,8 @@ export function Sidebar() {
               notifiedSetRef.current.add(conv.id);
               playNotificationSound();
 
-              const latestMsg = conv.messages?.[0]?.content || 'New message!';
+              let latestMsg = conv.messages?.[0]?.content || 'New message!';
+              latestMsg = latestMsg.replace(/\\n/g, " ").replace(/\n/g, " ").replace(/\*\*/g, "");
               toast.message(`New message from ${conv.name || conv.phone}`, {
                 description: latestMsg.length > 50 ? latestMsg.slice(0, 50) + '...' : latestMsg
               });
@@ -199,7 +200,7 @@ export function Sidebar() {
   return (
     <>
       <div className="z-30 border-b border-zinc-900 bg-zinc-950 shadow-lg lg:hidden">
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(120px,44%)_auto] items-center gap-2 px-3 py-2">
+        <div className="flex items-center justify-between px-3 py-2">
           <Link href="/dashboard" className="flex min-w-0 items-center gap-2">
             <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900 p-0.5 text-xs font-black text-brand">
               {profile.logo_url ? (
@@ -219,8 +220,6 @@ export function Sidebar() {
               </p>
             </div>
           </Link>
-
-          {renderBranchPicker(true)}
 
           <button
             onClick={() => void logout()}
@@ -271,10 +270,6 @@ export function Sidebar() {
       <aside className="sticky top-0 z-20 hidden h-dvh w-60 flex-col overflow-hidden border-r border-zinc-900 bg-zinc-950 shadow-2xl lg:flex xl:w-64">
       <div className="border-b border-zinc-800/60 px-4 py-4">
         {renderBrandMark()}
-      </div>
-
-      <div className="px-3 pt-3">
-        {renderBranchPicker()}
       </div>
 
       <nav className="no-scrollbar flex-1 space-y-1 overflow-y-auto px-3 py-3">

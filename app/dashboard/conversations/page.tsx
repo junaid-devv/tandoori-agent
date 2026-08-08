@@ -194,7 +194,9 @@ function getConversationInitials(conversation: ConversationPreview | Conversatio
 function getPreviewMessage(conversation: ConversationPreview) {
   const latest = conversation.messages?.[0];
   if (!latest?.content) return "No messages yet";
-  return latest.content.length > 90 ? `${latest.content.slice(0, 90)}...` : latest.content;
+  let clean = latest.content.replace(/\\n/g, " ").replace(/\n/g, " ");
+  clean = clean.replace(/\*\*/g, "");
+  return clean.length > 90 ? `${clean.slice(0, 90)}...` : clean;
 }
 
 function formatStep(step: string | null | undefined) {
@@ -204,6 +206,18 @@ function formatStep(step: string | null | undefined) {
 
 function formatMessageDay(dateText: string) {
   return format(new Date(dateText), "EEEE, dd MMM");
+}
+
+function renderMessageContent(content: string) {
+  if (!content) return "";
+  const text = content.replace(/\\n/g, "\n");
+  const parts = text.split(/\*\*([^*]+)\*\*/g);
+  return parts.map((part, i) => {
+    if (i % 2 === 1) {
+      return <strong key={i} className="font-extrabold">{part}</strong>;
+    }
+    return part;
+  });
 }
 
 function pickContact(contact?: CustomerProfile | CustomerProfile[] | null): CustomerProfile | null {
@@ -867,7 +881,7 @@ export default function ConversationsPage() {
                         {isSystem ? (
                           <div className="flex justify-center">
                             <div className="max-w-md rounded-xl bg-amber-50 px-4 py-2 text-center text-xs text-amber-800 ring-1 ring-inset ring-amber-200/50">
-                              {message.content}
+                              {renderMessageContent(message.content)}
                             </div>
                           </div>
                         ) : (
@@ -891,7 +905,7 @@ export default function ConversationsPage() {
                                   {format(currentDate, "h:mm a")}
                                 </span>
                               </div>
-                              <div className="whitespace-pre-wrap">{message.content}</div>
+                              <div className="whitespace-pre-wrap">{renderMessageContent(message.content)}</div>
 
                               {/* Interactive WhatsApp Reply Buttons */}
                               {message.replyButtons && message.replyButtons.length > 0 && (

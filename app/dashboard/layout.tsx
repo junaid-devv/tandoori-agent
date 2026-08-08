@@ -3,6 +3,8 @@ import { requireDashboardSession } from "@/lib/auth";
 import { Sidebar } from "@/app/components/Sidebar";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
 
+export const dynamic = "force-dynamic";
+
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const [session, profile] = await Promise.all([
     requireDashboardSession(),
