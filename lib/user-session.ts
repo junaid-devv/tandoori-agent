@@ -256,11 +256,10 @@ export function buildSessionUpdate(input: {
       intent === "order_status_question");
   const remainsBlocked =
     stateBefore.workflow_step === stateAfter.workflow_step && BLOCKING_WORKFLOW_STEPS.has(stateAfter.workflow_step);
-  const invalidStepCount = escalationReason
-    ? 0
-    : remainsBlocked
-      ? Math.min(session.invalid_step_count + 1, 10)
-      : 0;
+  const isInvalidStep = !escalationReason && remainsBlocked;
+  const invalidStepCount = isInvalidStep
+  ? Math.min(session.invalid_step_count + 1, 10)
+  : Math.max(session.invalid_step_count - 1, 0);
 
   return {
     active_node: targetNode,

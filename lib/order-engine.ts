@@ -1741,6 +1741,54 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         quantityPrompt.interactiveList,
       );
     }
+
+    // Escape hatch: if the user is trying to add a NEW item instead of answering
+    // the quantity prompt, auto-pick qty 1 for the pending item and re-process
+    // their message in normal collecting_items mode.
+    // Detect new-item requests via semantic matches or food-related text patterns.
+    const hasSemanticItemMatch = context.semanticMatches && context.semanticMatches.length > 0 &&
+      context.semanticMatches.some((m) => m.similarity != null && m.similarity >= 0.45);
+    const looksLikeNewItemRequest = hasSemanticItemMatch ||
+      /\b(add|aad|bhi|pizza|burger|biryani|karahi|naan|roti|drink|chicken|fries|deal|roll)\b/i.test(rawText);
+    if (looksLikeNewItemRequest && !/^\d{1,2}$/.test(rawText.trim())) {
+      // Default pending item to qty 1 and break out of picker
+      const defaultedItem: DraftCartItem = {
+        name: pendingQtyItem.name,
+        qty: 1,
+        price: pendingQtyItem.price,
+        category: pendingQtyItem.category,
+        size: null,
+        addons: [],
+        item_instructions: null,
+      };
+      const updatedCart = mergeCartItems(state.cart, [defaultedItem]);
+      // Process any remaining queue items at qty 1 too
+      for (const remaining of qtyQueue.slice(1)) {
+        updatedCart.push({
+          name: remaining.name,
+          qty: 1,
+          price: remaining.price,
+          category: remaining.category ?? null,
+          size: null,
+          addons: [],
+          item_instructions: null,
+        });
+      }
+      // Re-enter decideTurn with clean collecting_items state
+      return decideTurn({
+        ...context,
+        messageText: rawText,
+        state: {
+          ...state,
+          cart: updatedCart,
+          preferred_language: preferredLanguage,
+          workflow_step: "collecting_items",
+          last_presented_category: null,
+          last_presented_options: null,
+          last_presented_options_at: null,
+        },
+      });
+    }
   }
 
   // For complex messages, we need full AI processing with menu data
@@ -1760,7 +1808,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     cart: state.cart.map((item) => ({ name: item.name, qty: item.qty })),
     menuItems,
     isOpenNow: context.isOpenNow,
-    semanticMatches: messageType === "complex" ? context.semanticMatches : [], // Skip semantic matches for non-complex messages
+    semanticMatches: context.semanticMatches,
   });
   const trace: TurnTrace = {
     intent: interpretation.intent,

@@ -275,26 +275,17 @@ async function processWebhookEventInBackground(eventId: string) {
   const claimed = await claimWebhookEvent(eventId);
   if (!claimed) return;
 
-  let lastError: Error | null = null;
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    try {
-      await processWebhook(claimed.payload);
-      await markWebhookEventProcessed(eventId);
-      return;
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error("Unknown webhook processing error");
-      console.error(`[webhook] Background processing attempt ${attempt + 1} failed:`, lastError);
-      if (attempt < 2) {
-        await sleep((attempt + 1) * 500);
-      }
-    }
+  try {
+    await processWebhook(claimed.payload);
+    await markWebhookEventProcessed(eventId);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown webhook processing error";
+    console.error("[webhook] Background processing failed:", errorMessage, error);
+    await markWebhookEventFailed(eventId, errorMessage);
+    await alertStaffForFailedWebhook(claimed.payload, eventId, errorMessage).catch((alertError) => {
+      console.error("[webhook] Failed to create webhook processing alert:", alertError);
+    });
   }
-
-  const errorMessage = lastError?.message ?? "Unknown webhook processing error";
-  await markWebhookEventFailed(eventId, errorMessage);
-  await alertStaffForFailedWebhook(claimed.payload, eventId, errorMessage).catch((alertError) => {
-    console.error("[webhook] Failed to create webhook processing alert:", alertError);
-  });
 }
 
 function pickDefaultBranch(branches: BranchRecord[], defaultBranchId: string | null) {
@@ -615,6 +606,8 @@ async function processWebhook(body: unknown) {
           workflowStep: state.workflow_step,
           body: nonTextReply,
         });
+        // Mark processed BEFORE sending to prevent duplicate replies on retry
+        await markMessageProcessed(state, message.id, createdAt, null);
         await sendAndPersistAssistantMessage({
           conversationId: conversation.id,
           phone: message.from,
@@ -623,12 +616,15 @@ async function processWebhook(body: unknown) {
           flowMessage: nonTextFlow,
         });
       }
-      await markMessageProcessed(state, message.id, createdAt, null);
+      if (!state.last_processed_user_message_id || state.last_processed_user_message_id !== message.id) {
+        await markMessageProcessed(state, message.id, createdAt, null);
+      }
       continue;
     }
 
     const content = incomingContent;
-    const persistedMessage = await persistUserMessage(conversation.id, content, message.id, createdAt);
+    const displayContent = resolveInteractiveDisplayText(message, content);
+    const persistedMessage = await persistUserMessage(conversation.id, displayContent, message.id, createdAt);
     const nextLanguage = inferLanguagePreference(content, state.preferred_language);
     const { error: languageUpdateError } = await supabaseAdmin
       .from("contacts")
@@ -1138,6 +1134,61 @@ async function extractIncomingContent(message: IncomingWhatsAppMessage): Promise
   return null;
 }
 
+/**
+ * Maps raw interactive callback IDs to human-readable text for message persistence.
+ * The raw ID (e.g., "menu_item:UUID", "category_option_3") is used internally by
+ * the order engine, but the persisted/displayed message should show what the customer
+ * actually selected, not the internal payload token.
+ */
+function resolveInteractiveDisplayText(
+  message: IncomingWhatsAppMessage,
+  rawContent: string,
+): string {
+  if (message.type === "interactive") {
+    // Prefer human-readable title from interactive replies
+    const listTitle = message.interactive?.list_reply?.title?.trim();
+    const buttonTitle = message.interactive?.button_reply?.title?.trim();
+    if (listTitle) return listTitle;
+    if (buttonTitle) return buttonTitle;
+  }
+
+  // Decode known payload prefixes into readable descriptions
+  if (/^menu[_\s-]?item[:_\s-]/i.test(rawContent)) {
+    return "[Selected menu item]";
+  }
+  if (/^category[_\s-]?option[_\s-]?\d/i.test(rawContent)) {
+    return `[Selected category ${rawContent.match(/\d+/)?.[0] ?? ""}]`;
+  }
+  if (/^category[_\s-]?more[_\s-]?\d/i.test(rawContent)) {
+    return "[More categories]";
+  }
+  if (/^__qty_pick__:/i.test(rawContent)) {
+    const val = rawContent.replace(/^__qty_pick__:/i, "");
+    return val === "custom" ? "[Custom quantity]" : `[Quantity: ${val}]`;
+  }
+  if (/^upsell[_\s-]?yes$/i.test(rawContent)) {
+    return "Yes (add suggested item)";
+  }
+  if (/^upsell[_\s-]?no$/i.test(rawContent)) {
+    return "No thanks";
+  }
+  if (/^order[_\s-]?type[_\s-]?(delivery|pickup|dine[_\s-]?in)$/i.test(rawContent)) {
+    const type = rawContent.replace(/^order[_\s-]?type[_\s-]?/i, "").replace(/[_-]/g, " ");
+    return type.charAt(0).toUpperCase() + type.slice(1);
+  }
+  if (/^branch[_\s-]?(?:continue|change)[_\s-]?saved$/i.test(rawContent)) {
+    return rawContent.toLowerCase().includes("continue") ? "Continue with current branch" : "Change branch";
+  }
+  if (/^city[_\s-]?option[_\s-]?\d/i.test(rawContent)) {
+    return `[Selected city ${rawContent.match(/\d+/)?.[0] ?? ""}]`;
+  }
+  if (/^branch[_\s-]?option[_\s-]?\d/i.test(rawContent)) {
+    return `[Selected branch ${rawContent.match(/\d+/)?.[0] ?? ""}]`;
+  }
+
+  return rawContent;
+}
+
 async function transcribeWhatsAppAudioMessage(mediaId: string, mimeType?: string): Promise<string | null> {
   if (!process.env.GROQ_API_KEY) {
     return null;
@@ -1517,24 +1568,50 @@ async function drainConversationQueue(conversation: ConversationRow) {
         }
 
         if (decision.kind === "fallback") {
-          // For fallback, we need conversation history and menu data
-          const history = await getConversationHistoryUpTo(conversation.id, nextMessage.ingest_seq);
-          const fallbackMenuForAI = await getMenuForAI(conversation.branch_id);
-          reply = await getCustomerSupportReply(
-            history,
-            fallbackMenuForAI,
-            isOpenNow,
-            history.some((entry) => entry.role === "assistant"),
-            settings,
-            (decision.statePatch?.preferred_language ?? state.preferred_language) || "english",
-            {
-              id: branch.id,
-              slug: branch.slug,
-              name: branch.name,
-              city: branch.city,
-              address: branch.address,
-            },
-          );
+          const prefersRomanUrdu = ((decision.statePatch?.preferred_language ?? state.preferred_language) || "english") === "roman_urdu";
+          // When collecting items and we have semantic matches, suggest them
+          // instead of falling to the generic AI which produces canned responses
+          if (
+            state.workflow_step === "collecting_items" &&
+            semanticMatches.length > 0 &&
+            semanticMatches.some((m) => m.similarity != null && m.similarity >= 0.3)
+          ) {
+            const topMatches = semanticMatches
+              .filter((m) => m.similarity != null && m.similarity >= 0.3 && m.is_available)
+              .slice(0, 3);
+            if (topMatches.length > 0) {
+              const matchList = topMatches
+                .map((m) => `• *${m.name}* — Rs. ${Number(m.price)}`)
+                .join("\n");
+              reply = prefersRomanUrdu
+                ? `Kya aap yeh items dhundh rahe hain?\n\n${matchList}\n\nItem ka naam bhej dein ya *menu* likh dein.`
+                : `Did you mean any of these?\n\n${matchList}\n\nSend the item name or type *menu*.`;
+            } else {
+              // Have matches but none available — tell user
+              reply = prefersRomanUrdu
+                ? "Yeh item abhi menu mein available nahi. *menu* likh kar available items dekhein."
+                : "This item doesn't seem available right now. Type *menu* to see what's available.";
+            }
+          } else {
+            // For fallback, we need conversation history and menu data
+            const history = await getConversationHistoryUpTo(conversation.id, nextMessage.ingest_seq);
+            const fallbackMenuForAI = await getMenuForAI(conversation.branch_id);
+            reply = await getCustomerSupportReply(
+              history,
+              fallbackMenuForAI,
+              isOpenNow,
+              history.some((entry) => entry.role === "assistant"),
+              settings,
+              (decision.statePatch?.preferred_language ?? state.preferred_language) || "english",
+              {
+                id: branch.id,
+                slug: branch.slug,
+                name: branch.name,
+                city: branch.city,
+                address: branch.address,
+              },
+            );
+          }
         } else {
           reply = decision.reply;
         }
