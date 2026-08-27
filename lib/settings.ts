@@ -9,7 +9,7 @@ import {
   parseRestaurantClock,
 } from "./restaurant-time";
 
-const SETTINGS_CACHE_TTL_MS = 15 * 60 * 1000;
+const SETTINGS_CACHE_TTL_MS = 1 * 60 * 1000; // 1 minute — invalidateCache() fires on every save, TTL is only a safety net
 
 export interface RestaurantSettings {
   branch_id: string;

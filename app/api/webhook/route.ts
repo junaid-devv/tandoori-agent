@@ -1383,11 +1383,13 @@ async function drainConversationQueue(conversation: ConversationRow) {
         continue;
       }
 
-      if (Date.now() - settingsLoadedAt > 60_000) {
+      if (Date.now() - settingsLoadedAt > 30_000) {
         settings = await getRestaurantSettings(conversation.branch_id);
         settingsLoadedAt = Date.now();
-        isOpenNow = settings.is_accepting_orders && isWithinOperatingHours(settings.opening_time, settings.closing_time, settings.timezone);
       }
+      // Recompute isOpenNow on every turn -- cheap time comparison, ensures timing changes
+      // from the dashboard take effect immediately without waiting for a cache refresh.
+      isOpenNow = settings.is_accepting_orders && isWithinOperatingHours(settings.opening_time, settings.closing_time, settings.timezone);
       // Detect message type for optimization
       const normalizedIncoming = normalizeText(nextMessage.content);
       const messageType = detectMessageType(normalizedIncoming);
