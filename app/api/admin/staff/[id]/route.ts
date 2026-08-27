@@ -11,16 +11,18 @@ type StaffBody = {
   password?: string | null;
 };
 
+type Params = { params: Promise<{ id: string }> };
+
 const STAFF_BODY_LIMIT_BYTES = 16 * 1024;
 
-export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/staff/[id]">) {
+export async function PATCH(req: NextRequest, { params }: Params) {
   const auth = await requireAdminApiSession();
   if (auth.response || !auth.session) {
     return auth.response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const { id } = await context.params;
+    const { id } = await params;
     const body = await readLimitedJsonBody<StaffBody>(req, STAFF_BODY_LIMIT_BYTES);
     await updateStaffAccount(id, {
       fullName: body.full_name ?? "",
@@ -40,14 +42,14 @@ export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/
   }
 }
 
-export async function DELETE(_: NextRequest, context: RouteContext<"/api/admin/staff/[id]">) {
+export async function DELETE(_: NextRequest, { params }: Params) {
   const auth = await requireAdminApiSession();
   if (auth.response || !auth.session) {
     return auth.response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   try {
-    const { id } = await context.params;
+    const { id } = await params;
     if (id === auth.session.userId) {
       return NextResponse.json({ error: "You cannot delete your own admin account." }, { status: 400 });
     }

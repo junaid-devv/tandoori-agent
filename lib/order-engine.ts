@@ -678,17 +678,6 @@ function isChangeAddressRequest(normalizedText: string): boolean {
     /\b(naya|dusra|change)\s+(address|location)\b/.test(normalizedText);
 }
 
-function buildReturningCustomerHint(savedAddress: string | null, romanUrdu: boolean): string {
-  if (savedAddress) {
-    return romanUrdu
-      ? "Tip: Agar last order repeat karna ho to *repeat last order* likhein. Delivery mein saved address use karne ke liye *same address* likh sakte hain."
-      : "Tip: To repeat a previous order, type *repeat last order*. For delivery, you can type *same address* to use your saved address.";
-  }
-
-  return romanUrdu
-    ? "Tip: Agli dafa last order repeat karne ke liye *repeat last order* likh sakte hain."
-    : "Tip: Returning customers can type *repeat last order* to reorder faster.";
-}
 
 function buildAddressChangePrompt(savedAddress: string | null, settings: RestaurantSettings, romanUrdu: boolean): string {
   const areaHint = buildDeliveryAreaHint(settings, romanUrdu);
@@ -1286,12 +1275,10 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
 
   // ULTRA-FAST PATTERN-BASED EARLY EXIT FOR SIMPLE GREETINGS - No AI call, no DB queries
   if (isSimpleGreetingPattern(rawText) && state.cart.length === 0 && isConversationStartStep) {
+    const welcome = getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true);
     if (canOfferFreshMenuOnGreeting) {
-      const welcome = getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true);
       return replyDecision(
-        [welcome, buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
-          .filter(Boolean)
-          .join("\n\n"),
+        welcome,
         withPreferredLanguage(
           {
             workflow_step: "idle",
@@ -1304,9 +1291,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         undefined,
         null,
         {
-          body: prefersRomanUrdu
-            ? "Menu dekhne ya branch change karne ke liye button select karein."
-            : "Use the buttons below to view the menu or change your branch.",
+          body: welcome,
           buttons: [
             { id: "action_view_menu", title: "View Menu" },
             { id: "branch_change_saved", title: "Change Branch" },
@@ -1316,9 +1301,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     }
 
     return replyDecision(
-      [getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true), buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
-        .filter(Boolean)
-        .join("\n\n"),
+      welcome,
       withPreferredLanguage({}, preferredLanguage),
     );
   }
@@ -1335,12 +1318,10 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
 
   // EARLY EXIT FOR DETECTED GREETINGS (fallback to AI-detected greetings)
   if (messageType === "greeting" && state.cart.length === 0 && isConversationStartStep) {
+    const welcome = getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true);
     if (canOfferFreshMenuOnGreeting) {
-      const welcome = getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true);
       return replyDecision(
-        [welcome, buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
-          .filter(Boolean)
-          .join("\n\n"),
+        welcome,
         withPreferredLanguage(
           {
             workflow_step: "idle",
@@ -1353,9 +1334,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         undefined,
         null,
         {
-          body: prefersRomanUrdu
-            ? "Menu dekhne ya branch change karne ke liye button select karein."
-            : "Use the buttons below to view the menu or change your branch.",
+          body: welcome,
           buttons: [
             { id: "action_view_menu", title: "View Menu" },
             { id: "branch_change_saved", title: "Change Branch" },
@@ -1365,9 +1344,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
     }
 
     return replyDecision(
-      [getGreetingReply(rawText, prefersRomanUrdu, context.branch.name, true), buildReturningCustomerHint(context.savedAddress?.address ?? null, prefersRomanUrdu)]
-        .filter(Boolean)
-        .join("\n\n"),
+      welcome,
       withPreferredLanguage({}, preferredLanguage),
     );
   }

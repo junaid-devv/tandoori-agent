@@ -247,7 +247,7 @@ function buildSupportPrompt(
     "If the customer sounds frustrated or asks for a person, acknowledge it briefly and say a manager will reply shortly.",
     hasHistory
       ? "Do not greet again unless the customer greets first."
-      : "If the message is only a greeting, greet them warmly like a friend and ask how you can help today.",
+      : "If the message is only a greeting, keep it very brief (1 line) and warmly ask how you can help or what they would like to order, without adding any unprompted tips or extra explanations.",
   ].join("\n");
 }
 

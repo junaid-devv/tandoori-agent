@@ -11,16 +11,18 @@ type BranchBody = {
   is_active?: boolean;
 };
 
+type Params = { params: Promise<{ id: string }> };
+
 const BRANCH_BODY_LIMIT_BYTES = 8 * 1024;
 
-export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/branches/[id]">) {
+export async function PATCH(req: NextRequest, { params }: Params) {
   const auth = await requireAdminApiSession();
   if (auth.response) {
     return auth.response;
   }
 
   try {
-    const { id } = await context.params;
+    const { id } = await params;
     const body = await readLimitedJsonBody<BranchBody>(req, BRANCH_BODY_LIMIT_BYTES);
     const branch = await updateBranch(id, {
       name: body.name ?? "",
@@ -40,14 +42,14 @@ export async function PATCH(req: NextRequest, context: RouteContext<"/api/admin/
   }
 }
 
-export async function DELETE(_: NextRequest, context: RouteContext<"/api/admin/branches/[id]">) {
+export async function DELETE(_: NextRequest, { params }: Params) {
   const auth = await requireAdminApiSession();
   if (auth.response) {
     return auth.response;
   }
 
   try {
-    const { id } = await context.params;
+    const { id } = await params;
     await deleteBranch(id);
     return NextResponse.json({ success: true });
   } catch (error) {

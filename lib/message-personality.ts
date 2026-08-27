@@ -36,38 +36,27 @@ export function getGreetingReply(
 
   const greetings = {
     salam_en: [
-      `Walaikum Assalam${nameStr}! 🙏 Welcome — what are you craving today?`,
-      `Walaikum Assalam${nameStr}! 👋 Great to have you. What can I get for you?`,
+      `Walaikum Assalam${nameStr}! 👋 What can I get for you today?`,
+      `Walaikum Assalam${nameStr}! 🙏 Welcome, what would you like to order?`,
     ],
     salam_ur: [
-      `Walaikum Assalam${nameStr}! 🙏 Aaj kya khane ka dil hai?`,
-      `Walaikum Assalam${nameStr}! 👋 Kya order karwana chahein ge?`,
+      `Walaikum Assalam${nameStr}! 👋 Batayein kya order karna chahein ge?`,
+      `Walaikum Assalam${nameStr}! 🙏 Aaj kya mangwana chahein ge?`,
     ],
     hello_en: [
-      `Hey there${nameStr}! 👋 What sounds good today?`,
-      `Hello${nameStr}! 🍽️ Ready to order? Just tell me what you'd like.`,
+      `Hello${nameStr}! 👋 What can I get for you today?`,
+      `Hey there${nameStr}! 👋 What would you like to order?`,
     ],
     hello_ur: [
-      `Hello${nameStr}! 👋 Batayein kya order karna hai?`,
-      `Hey${nameStr}! 🍽️ Aaj kya pasand karein ge?`,
+      `Hello${nameStr}! 👋 Batayein kya order karna chahein ge?`,
+      `Hello${nameStr}! 🍽️ Aaj kya mangwana chahein ge?`,
     ],
   };
 
-  let greeting = "";
   if (romanUrdu) {
-    greeting = isSalam ? pickRandom(greetings.salam_ur) : pickRandom(greetings.hello_ur);
-  } else {
-    greeting = isSalam ? pickRandom(greetings.salam_en) : pickRandom(greetings.hello_en);
+    return isSalam ? pickRandom(greetings.salam_ur) : pickRandom(greetings.hello_ur);
   }
-
-  if (branchName) {
-    const branchInfo = romanUrdu
-      ? `\n\n📍 Aap *${branchName}* branch se order kar rahe hain. (Change karne ke liye 'change branch' likhein)`
-      : `\n\n📍 You're ordering from the *${branchName}* branch. (To change, reply 'change branch')`;
-    return greeting + branchInfo;
-  }
-
-  return greeting;
+  return isSalam ? pickRandom(greetings.salam_en) : pickRandom(greetings.hello_en);
 }
 
 export function getAcknowledgmentReply(romanUrdu: boolean): string {
