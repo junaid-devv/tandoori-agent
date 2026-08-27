@@ -257,6 +257,8 @@ create table if not exists order_items (
   created_at timestamptz not null default now()
 );
 
+drop function if exists place_order_from_payload(uuid, uuid, text, text, jsonb, text, text, integer, timestamptz, timestamptz, numeric);
+
 create or replace function place_order_from_payload(
   p_conversation_id uuid,
   p_branch_id uuid,

@@ -2070,6 +2070,18 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         context.semanticMatches,
       );
       if (unknownReply.selectableItems.length > 0) {
+        if (unknownReply.autoAdd) {
+          const autoItem = unknownReply.selectableItems[0];
+          const autoQty = clampQty(extractAnyQuantity(context.messageText) ?? 1);
+          const newCart = mergeCartItems(state.cart, [
+            { name: autoItem.name, qty: autoQty, price: autoItem.price, category: autoItem.category, size: null, addons: [], item_instructions: null },
+          ]);
+          return replyDecision(
+            unknownReply.text,
+            withPreferredLanguage({ ...buildPersistedStatePatch({ ...state, cart: newCart }), workflow_step: "collecting_items", last_presented_options: null, last_presented_options_at: null }, preferredLanguage),
+            trace,
+          );
+        }
         return replyDecision(
           unknownReply.text,
           withPreferredLanguage(
@@ -2559,6 +2571,7 @@ export async function decideTurn(context: TurnContext): Promise<TurnDecision> {
         buildRemovedItemsMessage,
         buildQtyUpdatedItemsMessage,
         buildUnknownItemReplyData,
+        mergeCartItems,
         shouldDeferToContextSwitchFallback,
       },
     });
@@ -3834,7 +3847,7 @@ function buildUnknownItemReplyData(
   menuItems: MenuCatalogItem[],
   romanUrdu: boolean,
   semanticMatches: SemanticMenuMatch[] = [],
-): { text: string; selectableItems: MenuCatalogItem[] } {
+): { text: string; selectableItems: MenuCatalogItem[]; autoAdd: boolean } {
   const unknownQuery = unknown.join(" ").trim();
   const normalizedUnknown = normalizeText(unknownQuery);
   const availableMenuItems = menuItems.filter((item) => item.is_available);
@@ -3866,6 +3879,25 @@ function buildUnknownItemReplyData(
     .slice(0, 10);
 
   if (selectableItems.length > 0) {
+    // When there is exactly one strong match (from semantic or lexical scoring, not just
+    // the fallback nearest pool), auto-add it silently instead of showing a numbered list.
+    const isStrongSingleMatch =
+      selectableItems.length === 1 &&
+      (semanticCandidatePool.length > 0 || lexicalCandidatePool.length > 0);
+    if (isStrongSingleMatch) {
+      const item = selectableItems[0];
+      const qty = clampQty(extractAnyQuantity(unknownQuery) ?? 1);
+      const totalPrice = item.price * qty;
+      const qtySuffix = qty > 1 ? ` x${qty}` : "";
+      return {
+        text: romanUrdu
+          ? `*${item.name}*${qtySuffix} add kar diya — Rs. ${totalPrice}.`
+          : `Added *${item.name}*${qtySuffix} — Rs. ${totalPrice}.`,
+        selectableItems,
+        autoAdd: true,
+      };
+    }
+
     const options = selectableItems
       .map((item, index) => `${index + 1}. ${item.name} - Rs. ${item.price}`)
       .join("\n");
@@ -3874,6 +3906,7 @@ function buildUnknownItemReplyData(
         ? `Mujhe exact item nahi mila: ${unknown.join(", ")}.\nClosest available options ye hain:\n${options}\nNumber bhej dein.`
         : `I couldn't find an exact match for: ${unknown.join(", ")}.\nHere are the closest available options:\n${options}\nReply with a number.`,
       selectableItems,
+      autoAdd: false,
     };
   }
 
@@ -3882,6 +3915,7 @@ function buildUnknownItemReplyData(
       ? `Maazrat, *${unknown.join(", ")}* menu mein available nahi lag raha. Aap menu ya category dekhna chahen to *menu* likh dein.`
       : `Sorry, *${unknown.join(", ")}* does not seem available on the menu right now. Send *menu* to browse categories.`,
     selectableItems: [],
+    autoAdd: false,
   };
 }
 

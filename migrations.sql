@@ -318,6 +318,8 @@ alter table orders add constraint orders_require_delivery_fields check (
 alter table order_items drop constraint if exists order_items_addons_array_check;
 alter table order_items add constraint order_items_addons_array_check check (jsonb_typeof(addons) = 'array') not valid;
 
+drop function if exists place_order_from_payload(uuid, uuid, text, text, jsonb, text, text, integer, timestamptz, timestamptz, numeric);
+
 create or replace function place_order_from_payload(
   p_conversation_id uuid,
   p_branch_id uuid,

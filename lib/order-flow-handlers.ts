@@ -1,5 +1,5 @@
 import type { OrderTurnInterpretation } from "./ai";
-import { parseAddress, parseGuestCount, parseReservationTime } from "./order-input-parsers.ts";
+import { parseAddress, parseGuestCount, parseReservationTime, extractAnyQuantity } from "./order-input-parsers.ts";
 import { normalizeText } from "./order-text-utils.ts";
 import type {
   ConversationState,
@@ -87,7 +87,8 @@ type SharedHelpers = {
     menuItems: MenuCatalogItem[],
     romanUrdu: boolean,
     semanticMatches?: TurnContext["semanticMatches"],
-  ) => { text: string; selectableItems: MenuCatalogItem[] };
+  ) => { text: string; selectableItems: MenuCatalogItem[]; autoAdd: boolean };
+  mergeCartItems: (current: DraftCartItem[], additions: DraftCartItem[]) => DraftCartItem[];
 };
 
 type AwaitingConfirmationHelpers = SharedHelpers & {
@@ -319,6 +320,19 @@ export function handleAwaitingConfirmationFlow(params: {
       prefersRomanUrdu,
       context.semanticMatches,
     );
+
+    if (unknownReply.autoAdd && unknownReply.selectableItems.length === 1) {
+      const autoItem = unknownReply.selectableItems[0];
+      const autoQty = Math.max(1, Math.min(50, extractAnyQuantity(context.messageText) ?? 1));
+      const newCart = helpers.mergeCartItems(state.cart, [
+        { name: autoItem.name, qty: autoQty, price: autoItem.price, category: autoItem.category, size: null, addons: [], item_instructions: null },
+      ]);
+      return helpers.replyDecision(
+        unknownReply.text,
+        helpers.withPreferredLanguage({ cart: newCart, workflow_step: "collecting_items", last_presented_options: null, last_presented_options_at: null, summary_sent_at: null }, preferredLanguage),
+        trace,
+      );
+    }
 
     return helpers.replyDecision(
       unknownReply.text,
@@ -829,6 +843,18 @@ export function handleLogisticsAndFallbackFlow(params: {
   if (matchedAdds.unknown.length > 0 || interpretation.unknown_items.length > 0) {
     const unknown = [...new Set([...matchedAdds.unknown, ...interpretation.unknown_items])].slice(0, 3);
     const unknownReply = helpers.buildUnknownItemReplyData(unknown, context.menuItems, prefersRomanUrdu, context.semanticMatches);
+    if (unknownReply.autoAdd && unknownReply.selectableItems.length === 1) {
+      const autoItem = unknownReply.selectableItems[0];
+      const autoQty = Math.max(1, Math.min(50, extractAnyQuantity(context.messageText) ?? 1));
+      const newCart = helpers.mergeCartItems(state.cart, [
+        { name: autoItem.name, qty: autoQty, price: autoItem.price, category: autoItem.category, size: null, addons: [], item_instructions: null },
+      ]);
+      return helpers.replyDecision(
+        unknownReply.text,
+        helpers.withPreferredLanguage({ cart: newCart, workflow_step: "collecting_items", last_presented_options: null, last_presented_options_at: null }, preferredLanguage),
+        trace,
+      );
+    }
     return helpers.replyDecision(
       unknownReply.text,
       helpers.withPreferredLanguage(

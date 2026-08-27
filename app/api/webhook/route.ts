@@ -1706,11 +1706,18 @@ async function drainConversationQueue(conversation: ConversationRow) {
           throw error;
         }
 
+        const extractedErrMsg =
+          error instanceof Error
+            ? error.message
+            : typeof error === "object" && error !== null && "message" in error && typeof (error as any).message === "string"
+              ? (error as any).message
+              : String(error ?? "Unknown processing error");
+
+        console.error("[webhook] Turn execution failed for message:", nextMessage.id, "error:", extractedErrMsg, error);
+
         const replyLanguage =
           (updatedState.preferred_language ?? state.preferred_language) === "roman_urdu" ? "roman_urdu" : "english";
-        const missingMenuItem = /Menu item no longer exists:\s*(.+)$/i.exec(
-          error instanceof Error ? error.message : "",
-        );
+        const missingMenuItem = /Menu item no longer exists:\s*(.+)$/i.exec(extractedErrMsg);
         const fallback = missingMenuItem
           ? replyLanguage === "roman_urdu"
             ? `Maazrat, *${missingMenuItem[1]}* ab menu mein available nahi hai. Kisi aur item ka naam bhej dein ya *menu* likh dein.`
@@ -1729,7 +1736,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
             last_processed_message_seq: nextMessage.ingest_seq,
             last_processed_user_message_at: nextMessage.created_at,
             last_user_whatsapp_msg_id: nextMessage.whatsapp_msg_id,
-            last_error: error instanceof Error ? error.message : "Unknown processing error",
+            last_error: extractedErrMsg,
           });
           await recordOrderAgentTurn({
             conversationId: conversation.id,
@@ -1741,7 +1748,7 @@ async function drainConversationQueue(conversation: ConversationRow) {
             trace: decision.trace,
             result: "recovered",
             reply: fallback,
-            error: error instanceof Error ? error.message : "Unknown processing error",
+            error: extractedErrMsg,
           });
         } catch (fallbackError) {
           if (fallbackError instanceof OutboundMessageError && fallbackError.messageSent) {
