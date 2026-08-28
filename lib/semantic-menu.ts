@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { supabaseAdmin } from "./supabase-admin";
+import { supabaseAdmin } from "./supabase-admin.ts";
 
 export type SemanticMenuMatch = {
   id: string;
