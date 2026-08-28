@@ -61,6 +61,7 @@ export const INTENTS = [
   "provide_dinein_details",
   "provide_pickup_time",
   "confirm_order",
+  "view_cart",           // customer wants to see current cart contents
   "cancel_order",
   "restart_order",
   "reorder_previous",
@@ -142,9 +143,16 @@ const SYSTEM_RULES = [
   "Do NOT rely on fixed keywords: infer intent from meaning. People are informal, abbreviate heavily, and change their mind mid-order.",
   "A single message can contain MULTIPLE intents (e.g. add an item AND ask the price of another) — capture all in `intents`, and set `primary_intent` to the main action.",
   "",
-  "For items: put the customer's own wording in `query` (do NOT invent or normalize to a menu name — menu resolution happens later via semantic search). Capture qty/size/addons/notes when present. The number next to an item is its quantity. IMPORTANT: capture any special instructions in `notes` — e.g. 'kam masala', 'extra spicy', 'less oil', 'no onions', 'rider ko gate pe bulana', 'garam rakhna' — these are per-item notes for the kitchen/rider.",
+  "QUANTITY RULES — VERY IMPORTANT:",
+  "- '2 aur add karo / 2 or add karo / 2 aur dal do' means ADD 2 MORE (delta), NOT set quantity to 2. Use intent `add_items` with the qty being the additional amount. Add notes='add_delta' so executor knows it's a delta.",
+  "- '3 kar do / quantity 3 kar do / sirf 3 chahiye' means SET quantity TO 3. Use intent `update_quantity`.",
+  "- If the customer says a number with an item name and no context item in cart, default to `add_items`.",
+  "- If the customer just says a number like '2' or '1' after being shown a list, it's a list selection (handled before NLU).",
+  "",
+  "For items: put the customer's own wording in `query` (do NOT invent or normalize to a menu name — menu resolution happens later via semantic search). Capture qty/size/addons/notes when present. Capture any special instructions in `notes` — e.g. 'kam masala', 'extra spicy', 'less oil', 'no onions'.",
+  "ORDER TYPE: if the customer says 'deliver karo / deliver krdo / delivery chahiye / ghar pe bhejo / ye deliver karo' (even without specifying an address), use intent `set_order_type` with `order_type: 'delivery'`. Do NOT use `unknown`.",
   "`info_query`: whenever the customer ASKS anything (menu/item price, what's available, recommendations, delivery, timings, location, payment, halal, or any other question), put the customer's question here (rephrased concisely in English) so we can answer it from restaurant facts. ALWAYS fill this for question-type intents.",
-  "Intent guide: `ask_delivery_info` = they ask whether you deliver / delivery area / fee / time (NOT giving an address). `ask_hours_or_location` = opening/closing time or where you are. `ask_payment` = how to pay. `general_question` = any other genuine question that doesn't fit a specific intent — use it liberally instead of `unknown`, and put the question in `info_query`.",
+  "Intent guide: `ask_delivery_info` = they ask whether you deliver / delivery area / fee / time (NOT giving an address or asking to deliver). `ask_hours_or_location` = opening/closing time or where you are. `ask_payment` = how to pay. `general_question` = any other genuine question that doesn't fit a specific intent — use it liberally instead of `unknown`, and put the question in `info_query`. `view_cart` = they want to see their current cart / order so far.",
   "Prefer a specific question intent + `general_question` over `unknown`. Only use `unknown` when the message is truly meaningless.",
   "`affirm`/`deny`: use for bare yes/no (haan/han/ji/theek hai // nahi/na/nope) where meaning depends on context — do not guess what they're confirming.",
   "Set `wants_human`=true and intent `human_request` if they ask for a person/manager/agent (insaan, banday se baat, staff) or are clearly abusive.",
@@ -332,6 +340,55 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
       items: [{ query: "biryani", qty: 1, size: null, addons: [], notes: null }],
     },
   },
+  // "add more of same item" — delta quantity, NOT set-to
+  {
+    user: "2 aur add krdo",
+    assistant: {
+      intents: ["add_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [{ query: "__last_item__", qty: 2, size: null, addons: [], notes: null }],
+      notes: "add_delta",
+    },
+  },
+  // contextual delivery — "deliver it / deliver these" when cart already has items
+  {
+    user: "acha chalo ye deliver krdo",
+    assistant: {
+      intents: ["set_order_type"],
+      primary_intent: "set_order_type",
+      language: "roman_urdu",
+      order_type: "delivery",
+    },
+  },
+  {
+    user: "deliver kar do",
+    assistant: {
+      intents: ["set_order_type"],
+      primary_intent: "set_order_type",
+      language: "roman_urdu",
+      order_type: "delivery",
+    },
+  },
+  // view cart
+  {
+    user: "cart dikhao",
+    assistant: {
+      intents: ["view_cart"],
+      primary_intent: "view_cart",
+      language: "roman_urdu",
+    },
+  },
+  // "koi aur burger" — asking about another burger, not delivery
+  {
+    user: "koi or burger hai?",
+    assistant: {
+      intents: ["ask_item_info"],
+      primary_intent: "ask_item_info",
+      language: "roman_urdu",
+      info_query: "what other burgers are available",
+    },
+  },
 ];
 
 function buildMessages(input: NluInput): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
@@ -458,8 +515,8 @@ function normalizeIntent(raw: unknown): string | null {
   if (/remove|cancel|hata|rehne/i.test(s)) return "remove_items";
   if (/human|agent|person|staff|manager/i.test(s)) return "human_request";
   if (/status|kahan|tracking/i.test(s)) return "order_status";
-  if (/cart|trolley|basket/i.test(s)) return "view_cart";
-  if (/checkout|bill|final/i.test(s)) return "checkout";
+  if (/cart|trolley|basket|dikhao|show.*cart/i.test(s)) return "view_cart";
+  if (/checkout|bill|finalize/i.test(s)) return "confirm_order";
   if (/greet|salam|hello|hi/i.test(s)) return "greeting";
   if (/yes|haan|han|ji|confirm|theek/i.test(s)) return "affirm";
   if (/no|nahi|na|cancel|nope/i.test(s)) return "deny";

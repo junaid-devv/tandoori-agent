@@ -33,6 +33,7 @@ export type AgentActionKind =
   | "collect_dinein_details"
   | "collect_pickup_time"
   | "show_summary"
+  | "show_cart"            // show cart contents without checkout flow
   | "place_order"
   | "cancel_order"
   | "restart_order"
@@ -99,6 +100,17 @@ function missingCheckoutStage(view: StateView): ConversationStage | null {
 }
 
 /**
+ * Like missingCheckoutStage but for a NEWLY chosen order type (the view hasn't
+ * been patched yet so we check against the known type directly).
+ */
+function missingCheckoutStageForType(orderType: "delivery" | "pickup" | "dine-in", view: StateView): ConversationStage | null {
+  if (orderType === "delivery" && !view.has_address) return "collecting_delivery";
+  if (orderType === "dine-in" && !view.has_dinein_details) return "collecting_dinein";
+  if (orderType === "pickup" && !view.has_pickup_time) return "collecting_pickup";
+  return null;
+}
+
+/**
  * Informational intents that can be answered WITHOUT leaving the current stage
  * (the non-linear "ask a question mid-checkout" case).
  */
@@ -108,17 +120,16 @@ function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null
       return { kind: "show_menu" };
     case "ask_item_info":
     case "ask_recommendation":
-      // Menu-focused: try semantic search first (for buttons/lists), but the
-      // executor falls back to grounded answering on a miss — never "notFound".
       return { kind: "answer_info", payload: { query: u.info_query, items: u.items, intent } };
     case "ask_payment":
     case "ask_hours_or_location":
     case "ask_delivery_info":
     case "general_question":
-      // Non-menu / capability / open-ended: answer from restaurant facts (grounded LLM).
       return { kind: "answer_grounded", payload: { query: u.info_query, intent } };
     case "order_status":
       return { kind: "report_order_status" };
+    case "view_cart":
+      return { kind: "show_cart" };
     case "smalltalk":
       return { kind: "smalltalk" };
     default:
@@ -184,18 +195,47 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   }
 
   // 6) Order-type / logistics slot filling.
-  if (u.order_type) {
-    actions.push({ kind: "ask_order_type", payload: { chosen: u.order_type } });
-    nextStage = stageForOrderType(u.order_type);
+  if (u.order_type || u.intents.includes("set_order_type")) {
+    const chosen = u.order_type;
+    if (chosen) {
+      actions.push({ kind: "ask_order_type", payload: { chosen } });
+      nextStage = stageForOrderType(chosen);
+      // After setting order type, immediately prompt for the next required slot
+      // so the agent doesn't go silent.
+      const missingAfterType = missingCheckoutStageForType(chosen, view);
+      if (missingAfterType) {
+        actions.push(promptForStage(missingAfterType));
+      } else if (view.cart.length > 0) {
+        // All slots filled — show summary
+        actions.push({ kind: "show_summary" });
+        nextStage = "confirming";
+      }
+    } else {
+      // set_order_type intent but no order_type value — ask
+      actions.push({ kind: "ask_order_type" });
+    }
   }
   if (u.address) {
     actions.push({ kind: "collect_delivery_address", payload: { address: u.address } });
+    // After address, show summary if cart is ready
+    if (view.cart.length > 0) {
+      actions.push({ kind: "show_summary" });
+      nextStage = "confirming";
+    }
   }
   if (u.guests || u.reservation_time) {
     actions.push({ kind: "collect_dinein_details", payload: { guests: u.guests, reservation_time: u.reservation_time } });
+    if (view.cart.length > 0) {
+      actions.push({ kind: "show_summary" });
+      nextStage = "confirming";
+    }
   }
   if (u.pickup_time) {
     actions.push({ kind: "collect_pickup_time", payload: { pickup_time: u.pickup_time } });
+    if (view.cart.length > 0) {
+      actions.push({ kind: "show_summary" });
+      nextStage = "confirming";
+    }
   }
 
   // 7) Confirmation.

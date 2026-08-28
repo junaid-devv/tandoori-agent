@@ -72,6 +72,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     !u.notes.startsWith("use_saved_address") &&
     u.notes !== "coercion_failed" &&
     u.notes !== "nlu_error" &&
+    u.notes !== "add_delta" &&
     u.notes.length > 5
   ) {
     patch.customer_instructions = u.notes;
@@ -141,15 +142,21 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       case "add_items": {
         const mentions = (action.payload?.items as TurnUnderstanding["items"]) ?? u.items;
+        const isDelta = u.notes === "add_delta";
         const added: Array<{ name: string; qty: number }> = [];
         for (const m of mentions) {
-          const resolved = await resolveItem(branchId, m.query, ctx.menu);
+          // "add_delta" with __last_item__ placeholder → find last cart item
+          let query = m.query;
+          if (isDelta && query === "__last_item__" && cart.length > 0) {
+            query = cart[cart.length - 1].name;
+          }
+
+          const resolved = await resolveItem(branchId, query, ctx.menu);
           if (resolved?.method === "vector") usedSemantic = true;
           if (!resolved) {
-            const { matches } = await searchMenu(branchId, m.query, 3, ctx.menu);
+            const { matches } = await searchMenu(branchId, query, 3, ctx.menu);
             if (matches.length) {
-              // Offer close matches as a tap-list instead of a flat "not found".
-              replies.push(reply.notFound(lang, m.query, matches.map((x) => x.name)));
+              replies.push(reply.notFound(lang, query, matches.map((x) => x.name)));
               interactive = interactive ?? itemPickList(
                 lang,
                 matches.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })),
@@ -158,26 +165,27 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               patch.last_shown_options = matches.map((x) => ({ id: x.id, name: x.name, price: x.price }));
               patch.last_shown_options_at = new Date().toISOString();
             } else {
-              // Genuinely unknown item → grounded reply (suggests real options).
-              const g = await answerGrounded(`customer wants "${m.query}" — is it available? if not, what similar items do you have?`);
-              replies.push(g ?? reply.notFound(lang, m.query, []));
+              const g = await answerGrounded(`customer wants "${query}" — is it available? if not, what similar items do you have?`);
+              replies.push(g ?? reply.notFound(lang, query, []));
             }
             continue;
           }
+          const qty = m.qty ?? 1;
           cart = addToCart(cart, {
             menu_item_id: resolved.id,
             name: resolved.name,
             unit_price: resolved.price,
-            qty: m.qty ?? 1,
+            qty,
             size: m.size ?? null,
             addons: m.addons ?? [],
             notes: m.notes ?? null,
           });
-          added.push({ name: resolved.name, qty: m.qty ?? 1 });
+          // For display: find new cart total for this item
+          const cartItem = cart.find(ci => ci.menu_item_id === resolved.id);
+          added.push({ name: resolved.name, qty });
         }
         if (added.length) {
           replies.push(reply.itemsAdded(lang, added, cart, currency));
-          // Show tappable cart actions — replaces "type *done*" instruction
           interactive = interactive ?? cartActionButtons(lang);
         }
         break;
@@ -211,7 +219,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "answer_info": {
         const query = (action.payload?.query as string) ?? u.info_query ?? "";
 
-        // 1) Try semantic search to surface concrete items (enables a tap-list).
+        // 1) Semantic search to surface concrete items (enables a tap-list).
         let matches: Awaited<ReturnType<typeof searchMenu>>["matches"] = [];
         if (query) {
           const res = await searchMenu(branchId, query, 6, ctx.menu);
@@ -227,22 +235,34 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           }));
         }
 
-        // 2) Always ANSWER with grounded LLM (natural, never "not on menu"),
-        //    passing the search hits as focus so prices/names stay exact.
+        // 2) Grounded answer — pass matched items so text and buttons show the SAME items.
+        const relevantItems = matches.slice(0, 6).map((mm) => ({
+          name: mm.name, price: mm.price, category: mm.category ?? null,
+          description: null,
+        }));
         const grounded = query
-          ? await answerGrounded(query)
+          ? await groundedAnswer({
+              question: query,
+              language: lang,
+              appName: input.appName,
+              currency,
+              settings: ctx.settings,
+              menu: ctx.menu,
+              isOpenNow: ctx.isOpenNow,
+              relevantItems: relevantItems.length ? relevantItems : undefined,
+            })
           : null;
+
         if (grounded) {
           replies.push(grounded);
         } else if (matches.length) {
           replies.push(reply.info(lang, matches.slice(0, 5).map((mm) => `• ${mm.name} — ${currency} ${mm.price}`)));
         } else {
-          // last resort: still helpful, not a dead end
           const fallbackAns = await answerGrounded(query || "what do you have on the menu");
           replies.push(fallbackAns ?? reply.recommendation(lang, ctx.menu.slice(0, 4), currency));
         }
 
-        // 3) Attach a tap-list of the concrete items we found (if any).
+        // 3) Attach a tap-list only if we have matching items.
         if (matches.length) {
           patch.last_shown_options = matches.slice(0, 10).map((mm) => ({ id: mm.id, name: mm.name, price: mm.price }));
           patch.last_shown_options_at = new Date().toISOString();
@@ -347,6 +367,15 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         else replies.push(reply.askPickupTime(lang));
         break;
       }
+
+      case "show_cart":
+        if (cart.length === 0) {
+          replies.push(reply.emptyCart(lang));
+        } else {
+          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, currency));
+          interactive = interactive ?? cartActionButtons(lang);
+        }
+        break;
 
       case "show_summary":
         if (cart.length === 0) {

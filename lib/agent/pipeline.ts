@@ -102,8 +102,13 @@ function understandingFromInteractiveId(
     case "category":
       return { ...base, intents: ["browse_menu"], primary_intent: "browse_menu", info_query: val };
     case "action":
-      if (val === "checkout" || val === "view_cart") {
+      if (val === "checkout") {
+        // Checkout button → show summary first, then confirm
         return { ...base, intents: ["confirm_order"], primary_intent: "confirm_order" };
+      }
+      if (val === "view_cart") {
+        // Cart button → show cart contents, NOT checkout
+        return { ...base, intents: ["view_cart"], primary_intent: "view_cart" };
       }
       if (val === "add_more") {
         return { ...base, intents: ["browse_menu"], primary_intent: "browse_menu" };

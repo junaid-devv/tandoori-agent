@@ -22,15 +22,20 @@ export const reply = {
     return `${salutation}${name} 😊 Welcome to *${appName}*!\nWhat would you like today?`;
   },
 
-  itemsAdded(l: Lang, added: Array<{ name: string; qty: number }>, cart: CartItem[], currency: string): string {
+  itemsAdded(l: Lang, added: Array<{ name: string; qty: number; cartQty?: number }>, cart: CartItem[], currency: string): string {
     const total = `${currency} ${cartSubtotal(cart)}`;
     if (added.length === 0) {
-      // Called for cart display only (e.g. after quantity update or fallback)
       return ur(l)
         ? `🛒 Ab tak total: ${total}`
         : `🛒 Current total: ${total}`;
     }
-    const list = added.map((i) => `${i.qty}x ${i.name}`).join(", ");
+    // Build a map of current cart quantities for display
+    const cartQtyMap = new Map(cart.map((ci) => [ci.name.toLowerCase(), ci.qty]));
+    const list = added.map((i) => {
+      // Show the current cart quantity for this item (total in cart, not just added delta)
+      const currentQty = cartQtyMap.get(i.name.toLowerCase()) ?? i.qty;
+      return `${currentQty}x ${i.name}`;
+    }).join(", ");
     return ur(l)
       ? `✅ ${list} add ho gaya. Total: ${total}`
       : `✅ Added: ${list}. Total: ${total}`;
