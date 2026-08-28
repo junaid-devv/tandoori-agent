@@ -1,9 +1,18 @@
+/**
+ * scripts/check-parser-regressions.mjs — Phase 9 repoint
+ *
+ * Checks parser and extraction invariants in the rebuilt architecture:
+ * 1) Text utils: Ice-cream alias normalization
+ * 2) NLU schema & rules: structured extraction for items, removals, confirm_order
+ * 3) Menu search: conservative match threshold & resolveItem helper
+ */
 import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const engineTarget = path.join(root, "lib", "order-engine.ts");
 const textUtilsTarget = path.join(root, "lib", "order-text-utils.ts");
+const nluTarget = path.join(root, "lib", "agent", "nlu.ts");
+const searchTarget = path.join(root, "lib", "menu", "search.ts");
 
 function fail(message) {
   console.error(`FAIL: ${message}`);
@@ -23,67 +32,58 @@ function mustInclude(source, token, message) {
   return true;
 }
 
-if (!fs.existsSync(engineTarget)) {
-  fail(`Missing target file: ${engineTarget}`);
-  process.exit();
+for (const target of [textUtilsTarget, nluTarget, searchTarget]) {
+  if (!fs.existsSync(target)) {
+    fail(`Missing target file: ${target}`);
+    process.exit(1);
+  }
 }
 
-if (!fs.existsSync(textUtilsTarget)) {
-  fail(`Missing target file: ${textUtilsTarget}`);
-  process.exit();
-}
-
-const source = fs.readFileSync(engineTarget, "utf8").replace(/\r\n/g, "\n");
 const textUtilsSource = fs.readFileSync(textUtilsTarget, "utf8").replace(/\r\n/g, "\n");
+const nluSource = fs.readFileSync(nluTarget, "utf8").replace(/\r\n/g, "\n");
+const searchSource = fs.readFileSync(searchTarget, "utf8").replace(/\r\n/g, "\n");
 
 // 1) Ice-cream alias normalization should stay in place.
 mustInclude(
   textUtilsSource,
   ".replace(/\\bice[\\s-]?cream\\b/g, \"ice cream\")",
-  "Missing ice-cream alias normalization.",
+  "Missing ice-cream alias normalization in order-text-utils.",
 );
 
-// 2) Confirmation parser should reject modify/remove style phrases.
+// 2) NLU structured schema for items and removals
 mustInclude(
-  source,
-  "if (\n    /\\b(add|remove|delete|without|minus|qty|quantity|change|modify|update|replace|aur|bhi|plus|kam kar|kam kr|kar do|kr do)\\b/.test(",
-  "Missing modify/remove guard in explicit-yes parser.",
+  nluSource,
+  "items: z.array(ItemMentionSchema)",
+  "Missing items schema in NLU layer.",
+);
+mustInclude(
+  nluSource,
+  "removals: z.array(RemovalMentionSchema)",
+  "Missing removals schema in NLU layer.",
+);
+mustInclude(
+  nluSource,
+  "\"confirm_order\"",
+  "Missing confirm_order intent in NLU taxonomy.",
 );
 
-// 3) Inline add extraction must be skipped for remove/edit messages.
+// 3) NLU few-shot examples for modify/remove differentiation
 mustInclude(
-  source,
-  "const shouldSkipInlineAddExtraction = isLikelyRemovalOrEditMessage(rawText);",
-  "Missing skip-inline-add guard for remove/edit messages.",
-);
-mustInclude(
-  source,
-  "function isLikelyRemovalOrEditMessage(rawText: string): boolean {",
-  "Missing remove/edit classifier helper.",
+  nluSource,
+  "primary_intent: \"remove_items\"",
+  "Missing remove_items few-shot handling in NLU.",
 );
 
-// 4) Delivery shortcut must not trigger on charge/price questions.
+// 4) Conservative similarity threshold in menu search
 mustInclude(
-  source,
-  "if (/\\b(price|fee|charges?|cost|kitna|kitne|kya|how much)\\b/.test(normalizedText)) {",
-  "Missing order-type shortcut guard for price/charges questions.",
-);
-
-// 5) Inline item extraction should be conservative single-best match (avoid mass adds).
-mustInclude(
-  source,
-  "if (best.score < 0.74) return [];",
-  "Missing conservative threshold in inline item extraction.",
+  searchSource,
+  "SIMILARITY_THRESHOLD",
+  "Missing SIMILARITY_THRESHOLD in menu search.",
 );
 mustInclude(
-  source,
-  "if (broadQuery && best.score < 0.9) return [];",
-  "Missing broad-query protection for inline item extraction.",
-);
-mustInclude(
-  source,
-  "return [\n    {\n      name: best.item.name,",
-  "Missing single-best-match return shape for inline item extraction.",
+  searchSource,
+  "export async function resolveItem",
+  "Missing resolveItem in menu search.",
 );
 
 if (process.exitCode && process.exitCode !== 0) {

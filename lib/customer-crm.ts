@@ -1,5 +1,20 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { DraftCartItem, OrderType } from "./order-engine";
+import type { OrderType } from "./schema.types";
+
+/**
+ * Reorder cart item — a simplified cart item shape for reorder candidates.
+ * Intentionally separate from CartItem (schema.types) which requires menu_item_id;
+ * reorder items are reconstructed from order_items rows that pre-date the rebuild.
+ */
+export interface ReorderCartItem {
+  name: string;
+  price: number;
+  qty: number;
+  category: string | null;
+  size: string | null;
+  addons: string[];
+  item_instructions: string | null;
+}
 
 export type SavedAddress = {
   id: string;
@@ -14,7 +29,7 @@ export type ReorderCandidate = {
   orderType: OrderType;
   address: string | null;
   customerInstructions: string | null;
-  items: DraftCartItem[];
+  items: ReorderCartItem[];
 };
 
 function normalizeAddressKey(address: string) {
@@ -177,8 +192,8 @@ export async function getLastReorderCandidate(conversationId: string): Promise<R
   if (error || !order) return null;
 
   const rawItems = Array.isArray(order.order_items) ? order.order_items : [];
-  const items: DraftCartItem[] = rawItems
-    .map((item): DraftCartItem | null => {
+  const items: ReorderCartItem[] = rawItems
+    .map((item): ReorderCartItem | null => {
       const name = String(item.name ?? "").trim();
       const qty = Number(item.qty ?? 0);
       const price = Number(item.price ?? 0);
@@ -193,7 +208,7 @@ export async function getLastReorderCandidate(conversationId: string): Promise<R
         item_instructions: typeof item.item_instructions === "string" ? item.item_instructions : null,
       };
     })
-    .filter((item): item is DraftCartItem => item != null);
+    .filter((item): item is ReorderCartItem => item != null);
 
   if (items.length === 0) return null;
 

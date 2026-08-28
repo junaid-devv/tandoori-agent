@@ -13,7 +13,7 @@ import { stateRepo } from "@/lib/data/state.repo";
 import { messageRepo } from "@/lib/data/message.repo";
 import { getMenuCatalog } from "@/lib/menu";
 import { getRestaurantSettings, isWithinOperatingHours } from "@/lib/settings";
-import type { MenuCatalogItem } from "@/lib/order-engine";
+import type { MenuCatalogItem } from "@/lib/menu";
 import type { RestaurantSettings } from "@/lib/settings";
 import type { ConversationStateRow } from "@/lib/schema.types";
 import type { MessageRow } from "@/lib/data/message.repo";

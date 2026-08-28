@@ -1,9 +1,20 @@
+/**
+ * scripts/check-interactive-guards.mjs — Phase 9 repoint
+ *
+ * In the rebuild, interactive payload guards are spread across:
+ *  - lib/branches.ts: UUID guard for branch selection, strict branch number match
+ *  - app/api/webhook/route.ts: city/order-type button routing
+ *  - lib/agent/pipeline.ts: numeric fast-path for presented options
+ *
+ * Assertions match the patterns that exist in the rebuilt files.
+ */
 import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const orderEnginePath = path.join(root, "lib", "order-engine.ts");
 const branchesPath = path.join(root, "lib", "branches.ts");
+const webhookPath = path.join(root, "app", "api", "webhook", "route.ts");
+const pipelinePath = path.join(root, "lib", "agent", "pipeline.ts");
 
 function fail(message) {
   console.error(`FAIL: ${message}`);
@@ -23,42 +34,42 @@ function mustInclude(source, token, message) {
   return true;
 }
 
-if (!fs.existsSync(orderEnginePath)) {
-  fail(`Missing file: ${orderEnginePath}`);
-  process.exit();
+for (const filePath of [branchesPath, webhookPath, pipelinePath]) {
+  if (!fs.existsSync(filePath)) {
+    fail(`Missing required file: ${filePath}`);
+    process.exit(1);
+  }
 }
 
-if (!fs.existsSync(branchesPath)) {
-  fail(`Missing file: ${branchesPath}`);
-  process.exit();
-}
-
-const orderEngine = fs.readFileSync(orderEnginePath, "utf8");
 const branches = fs.readFileSync(branchesPath, "utf8");
+const webhook = fs.readFileSync(webhookPath, "utf8");
+const pipeline = fs.readFileSync(pipelinePath, "utf8");
 
-const staleUuidGuard =
-  "if (isUuidLike(rawText.trim()) && (!state.last_presented_options || state.last_presented_options.length === 0)) {";
-const uuidHelper = "function isUuidLike(value: string): boolean {";
-const controlPayloadGuardFragment = "city[_\\s-]?option";
-const pickupControlPayloadFragment = "order[_\\s-]?type[_\\s-]?(?:delivery|pickup|dine[_\\s-]?in)";
+// branches.ts: UUID guard prevents menu-item UUIDs from matching branch selections
 const branchUuidComment = "Guard against UUID-like payloads from other interactive lists";
-const strictBranchNumberMatch = "const numberMatch = normalized.match(/^(?:branch|option|number)?\\s*(\\d{1,2})$/);";
-const urduQuestionRegex = "if (/[?\\u061F]/.test(rawText)) return true;";
-
-mustInclude(orderEngine, staleUuidGuard, "Missing stale UUID guard in order engine.");
-mustInclude(orderEngine, uuidHelper, "Missing UUID helper in order engine.");
-mustInclude(orderEngine, controlPayloadGuardFragment, "Missing control payload guard for city/branch/category options.");
-mustInclude(orderEngine, pickupControlPayloadFragment, "Missing pickup order-type control payload guard.");
-mustInclude(orderEngine, urduQuestionRegex, "Missing Urdu/English question regex guard.");
-
-if (orderEngine.includes("ØŸ")) {
-  fail("Detected mojibake token 'ØŸ' in order engine.");
-} else {
-  pass("No mojibake token found in order engine.");
-}
-
 mustInclude(branches, branchUuidComment, "Missing UUID guard comment/context in branch parser.");
+
+// branches.ts: strict branch number regex
+const strictBranchNumberMatch = "const numberMatch = normalized.match(/^(?:branch|option|number)?\\s*(\\d{1,2})$/);";
 mustInclude(branches, strictBranchNumberMatch, "Missing strict branch number parser regex.");
+
+// webhook: city selection and order-type interactive routing
+mustInclude(webhook, "handleBranchSelection", "Missing branch selection handler in webhook.");
+mustInclude(webhook, "city", "Missing city-level routing in webhook.");
+
+// pipeline: numeric fast-path guards presented-options selections
+mustInclude(pipeline, "last_shown_options", "Missing last_shown_options numeric fast-path in pipeline.");
+mustInclude(pipeline, "NUMERIC_RE", "Missing NUMERIC_RE pattern for fast-path in pipeline.");
+
+// Webhook handles non-text/voice escalation
+mustInclude(webhook, "handleNonText", "Missing non-text/voice handler in webhook.");
+
+// No mojibake in branches
+if (branches.includes("ØŸ")) {
+  fail("Detected mojibake token 'ØŸ' in branches.ts.");
+} else {
+  pass("No mojibake token found in branches.ts.");
+}
 
 if (process.exitCode && process.exitCode !== 0) {
   process.exit(process.exitCode);

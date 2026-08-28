@@ -30,7 +30,8 @@ type ConversationMode = "agent" | "human";
 type SenderKind = "user" | "ai" | "human" | "system" | string;
 
 interface ConversationState {
-  workflow_step: string | null;
+  stage?: string | null;
+  workflow_step?: string | null;
   order_type: string | null;
   address: string | null;
   guests: number | null;
@@ -38,6 +39,10 @@ interface ConversationState {
   pickup_time: string | null;
   cart: unknown;
   last_error: string | null;
+  is_bot_active?: boolean | null;
+  invalid_step_count?: number | null;
+  escalation_reason?: string | null;
+  escalated_at?: string | null;
 }
 
 interface UserSessionState {
@@ -132,10 +137,21 @@ function pickState(
 }
 
 function pickSession(
-  session?: UserSessionState | UserSessionState[] | null
+  session?: UserSessionState | UserSessionState[] | null,
+  state?: ConversationState | ConversationState[] | null
 ): UserSessionState | null {
-  if (!session) return null;
-  return Array.isArray(session) ? session[0] ?? null : session;
+  if (session) return Array.isArray(session) ? session[0] ?? null : session;
+  const s = pickState(state);
+  if (!s) return null;
+  const isHandoff = s.stage === "human" || Boolean(s.escalation_reason) || s.is_bot_active === false;
+  return {
+    active_node: s.stage ?? "cart_builder",
+    status: isHandoff ? "human_handoff" : s.is_bot_active ? "active" : "paused",
+    is_bot_active: !isHandoff && (s.is_bot_active ?? true),
+    invalid_step_count: s.invalid_step_count ?? 0,
+    escalation_reason: s.escalation_reason ?? null,
+    escalated_at: s.escalated_at ?? null,
+  };
 }
 
 // --- UPDATED TYPING HERE TO FIX TS ERRORS ---
@@ -451,12 +467,13 @@ export default function ConversationsPage() {
   const filteredConversations = useMemo(() => {
     const query = searchTerm.trim().toLowerCase();
     return conversations.filter((item) => {
+      const session = pickSession(item.user_sessions, item.conversation_states);
       if (inboxFilter === "unread" && !item.has_unread) return false;
-      if (inboxFilter === "human" && item.mode !== "human" && pickSession(item.user_sessions)?.status !== "human_handoff") return false;
+      if (inboxFilter === "human" && item.mode !== "human" && session?.status !== "human_handoff") return false;
       if (!query) return true;
 
       const latest = item.messages?.[0]?.content ?? "";
-      const step = pickState(item.conversation_states)?.workflow_step ?? "";
+      const step = pickState(item.conversation_states)?.stage ?? pickState(item.conversation_states)?.workflow_step ?? "";
       return [item.name ?? "", item.phone, latest, step].some((value) => value.toLowerCase().includes(query));
     });
   }, [conversations, inboxFilter, searchTerm]);
@@ -467,7 +484,7 @@ export default function ConversationsPage() {
   );
   const activeConversation = conversation ?? activePreview;
   const activeState = pickState(activeConversation?.conversation_states);
-  const activeSession = pickSession(activeConversation?.user_sessions);
+  const activeSession = pickSession(activeConversation?.user_sessions, activeConversation?.conversation_states);
   const activeContact = pickContact(activeConversation?.contacts);
   const activeTags = getTags(activeContact);
   const activeTagText = activeTags.join(", ");
@@ -506,7 +523,7 @@ export default function ConversationsPage() {
   }, [isDemoContact, demoState, rawDraftLines]);
 
   const displayDraftItemCount = displayDraftLines.reduce((sum: number, item: { qty: number }) => sum + item.qty, 0);
-  const displayWorkflowStep = isDemoContact && demoState ? demoState.workflowStep : activeState?.workflow_step;
+  const displayWorkflowStep = isDemoContact && demoState ? demoState.workflowStep : (activeState?.stage ?? activeState?.workflow_step);
 
   const oldestLoadedIngestSeq = useMemo(() => {
     if (displayMessages.length === 0) return null;
@@ -667,7 +684,8 @@ export default function ConversationsPage() {
             <div className="space-y-1.5">
               {filteredConversations.map((item) => {
                 const state = pickState(item.conversation_states);
-                const session = pickSession(item.user_sessions);
+                const session = pickSession(item.user_sessions, item.conversation_states);
+                const activeStep = state?.stage ?? state?.workflow_step;
                 const isActive = item.id === selectedId;
 
                 return (
@@ -721,11 +739,11 @@ export default function ConversationsPage() {
                             {item.mode === "agent" ? <Bot size={10} /> : <UserRound size={10} />}
                             {item.mode === "agent" ? "AI" : "Human"}
                           </span>
-                          {state?.workflow_step && (
+                          {activeStep && (
                             <span className={clsx("rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider",
                               isActive ? "bg-white/10 text-white/90" : "bg-slate-100 text-slate-500"
                             )}>
-                              {formatStep(state.workflow_step)}
+                              {formatStep(activeStep)}
                             </span>
                           )}
                           {session?.status === "human_handoff" && (

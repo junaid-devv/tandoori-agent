@@ -52,7 +52,7 @@ import {
   sendWhatsAppMessage,
 } from "@/lib/whatsapp";
 import { normalizeText } from "@/lib/order-text-utils";
-import { inferLanguagePreference } from "@/lib/order-engine";
+import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import { downloadWhatsAppMedia, getWhatsAppMediaUrl } from "@/lib/whatsapp";
 
 export const runtime = "nodejs";

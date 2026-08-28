@@ -1,5 +1,5 @@
 import type { BranchSummary } from "./branches";
-import type { MenuCatalogItem } from "./order-engine";
+import type { MenuCatalogItem } from "./menu";
 import { buildMenuItemRowId } from "./order-menu-replies.ts";
 
 type InteractiveListPayload =

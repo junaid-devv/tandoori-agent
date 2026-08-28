@@ -1,8 +1,21 @@
+/**
+ * scripts/check-direct-order-regressions.mjs — Phase 9 repoint
+ *
+ * Verifies direct-order invariants in the rebuilt architecture:
+ * 1) NLU layer extracts structured item adds/removals with queries, quantities, sizes
+ * 2) State machine transitions correctly into cart building and checkout stages
+ * 3) Executor performs menu resolution (searchMenu / resolveItem) and cart mutations
+ * 4) Pipeline executes fast-path numeric and full turn cycles
+ */
 import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const engineTarget = path.join(root, "lib", "order-engine.ts");
+const nluPath = path.join(root, "lib", "agent", "nlu.ts");
+const stateMachinePath = path.join(root, "lib", "agent", "state-machine.ts");
+const executorPath = path.join(root, "lib", "agent", "executor.ts");
+const searchPath = path.join(root, "lib", "menu", "search.ts");
+const pipelinePath = path.join(root, "lib", "agent", "pipeline.ts");
 
 function fail(message) {
   console.error(`FAIL: ${message}`);
@@ -22,210 +35,44 @@ function mustInclude(source, token, message) {
   return true;
 }
 
-if (!fs.existsSync(engineTarget)) {
-  fail(`Missing target file: ${engineTarget}`);
-  process.exit();
+for (const filePath of [nluPath, stateMachinePath, executorPath, searchPath, pipelinePath]) {
+  if (!fs.existsSync(filePath)) {
+    fail(`Missing required file: ${filePath}`);
+    process.exit(1);
+  }
 }
 
-const source = fs.readFileSync(engineTarget, "utf8").replace(/\r\n/g, "\n");
+const nlu = fs.readFileSync(nluPath, "utf8");
+const sm = fs.readFileSync(stateMachinePath, "utf8");
+const executor = fs.readFileSync(executorPath, "utf8");
+const search = fs.readFileSync(searchPath, "utf8");
+const pipeline = fs.readFileSync(pipelinePath, "utf8");
 
-mustInclude(
-  source,
-  "const likelyDirectOrderMessage =\n    forceDirectOrderResolution || isLikelyDirectOrderRequest(rawText, normalizedText, interpretation, menuItems);",
-  "Missing direct-order message gate assignment.",
-);
+// 1) NLU structured output for direct ordering
+mustInclude(nlu, "\"add_items\"", "Missing add_items intent in NLU.");
+mustInclude(nlu, "\"remove_items\"", "Missing remove_items intent in NLU.");
+mustInclude(nlu, "ItemMentionSchema", "Missing ItemMentionSchema in NLU.");
+mustInclude(nlu, "query: z.string()", "Missing query field in ItemMentionSchema.");
+mustInclude(nlu, "qty: z.number()", "Missing qty field in ItemMentionSchema.");
 
-mustInclude(
-  source,
-  "const deterministicDirectHints = resolveRequestedItems([], [], menuItems, rawText, context.semanticMatches);",
-  "Missing deterministic direct-order fallback hints extraction.",
-);
+// 2) State machine stages and actions for direct ordering
+mustInclude(sm, "building_cart", "Missing building_cart stage in state machine.");
+mustInclude(sm, "add_items", "Missing add_items action in state machine.");
+mustInclude(sm, "confirming", "Missing confirming stage in state machine.");
 
-mustInclude(
-  source,
-  "const forceDirectOrderResolution =\n    hasDirectOrderVerb(normalizedText) &&\n    (deterministicDirectHints.matched.length > 0 || deterministicDirectHints.ambiguous.length > 0);",
-  "Missing hard direct-order resolution bypass condition.",
-);
+// 3) Executor handles item resolution and cart mutations
+mustInclude(executor, "resolveItem", "Missing resolveItem in executor.");
+mustInclude(executor, "searchMenu", "Missing searchMenu in executor.");
+mustInclude(executor, "addToCart", "Missing addToCart in executor.");
+mustInclude(executor, "removeFromCart", "Missing removeFromCart in executor.");
+mustInclude(executor, "updateQuantity", "Missing updateQuantity in executor.");
 
-mustInclude(
-  source,
-  "trace.notes = trace.notes ? `${trace.notes} | forced_direct_order` : \"forced_direct_order\";",
-  "Missing forced direct-order trace note for diagnostics.",
-);
+// 4) Hybrid search with vector & lexical fallbacks
+mustInclude(search, "match_menu_items_by_embedding", "Missing match_menu_items_by_embedding RPC in search.");
+mustInclude(search, "resolveItem", "Missing resolveItem helper in search.");
 
-mustInclude(
-  source,
-  "if (state.workflow_step === \"awaiting_delivery_address\") {",
-  "Missing awaiting-delivery-address guard block.",
-);
-
-mustInclude(
-  source,
-  "if (!wantsCartMutation && !explicitMenuBrowse) {",
-  "Missing address-step protection against accidental menu lookup.",
-);
-
-mustInclude(
-  source,
-  "workflow_step: \"awaiting_delivery_address\",",
-  "Missing explicit state persistence for delivery-address guard reply.",
-);
-
-mustInclude(
-  source,
-  "const directLookupQuery =\n    !likelyDirectOrderMessage &&",
-  "Missing direct-order guard before standalone lookup query.",
-);
-
-mustInclude(
-  source,
-  "if (\n    !likelyDirectOrderMessage &&\n    (\n      interpretation.asks_menu ||\n      interpretation.intent === \"browse_menu\" ||\n      isLikelyMenuRequest(normalizedText)\n    )\n  ) {",
-  "Missing guarded menu branch for direct-order messages.",
-);
-
-mustInclude(
-  source,
-  "if (!likelyDirectOrderMessage && (interpretation.intent === \"category_question\" || interpretation.category_query)) {",
-  "Missing guarded category-question branch for direct-order messages.",
-);
-
-mustInclude(
-  source,
-  "if (state.last_presented_category === \"__category_list__\" && !likelyDirectOrderMessage) {",
-  "Missing category-list-context guard for direct-order messages.",
-);
-
-mustInclude(
-  source,
-  "function isLikelyDirectOrderRequest(",
-  "Missing direct-order classifier helper.",
-);
-
-mustInclude(
-  source,
-  "const delimitedInline = findInlineItemsFromDelimitedClauses(rawText, menuItems);",
-  "Missing delimited parser usage in direct-order classifier.",
-);
-
-mustInclude(
-  source,
-  "if (delimitedInline.hasDelimitedInput && (delimitedInline.requests.length > 0 || delimitedInline.ambiguous.length > 0)) {",
-  "Missing ambiguity-aware direct-order classifier condition.",
-);
-
-mustInclude(
-  source,
-  "function findInlineItemsFromDelimitedClauses(",
-  "Missing delimited inline item parser helper.",
-);
-
-mustInclude(
-  source,
-  "const clauseQtyHint = extractClauseQuantityHint(segment);",
-  "Missing per-clause quantity hint extraction for delimited orders.",
-);
-
-mustInclude(
-  source,
-  "qty: clauseQtyHint ?? segmentMatches[0].qty,",
-  "Missing per-clause quantity override when segment item is matched.",
-);
-
-mustInclude(
-  source,
-  "function extractClauseQuantityHint(rawClause: string): number | null {",
-  "Missing clause quantity hint helper.",
-);
-
-mustInclude(
-  source,
-  "/^(?:qty|quantity|x)\\s*(\\d{1,2}|aik|ek|do|teen|char|chaar|panj|paanch|cheh|chay|saat|aath|ath|das)\\b/i",
-  "Missing Roman Urdu quantity-word support in clause quantity helper.",
-);
-
-mustInclude(
-  source,
-  ".split(/\\s*(?:,|&|\\+|\\b(?:and|aur|or)\\b)\\s*/i)",
-  "Missing multi-clause split for and/or/aur-delimited orders.",
-);
-
-mustInclude(
-  source,
-  "const suggestions = findLikelyMenuSuggestions(segment, menuItems, 3);",
-  "Missing per-segment ambiguity suggestion extraction.",
-);
-
-mustInclude(
-  source,
-  "if (\n    matchedAdds.ambiguous.length > 0 &&\n    (matchedAdds.matched.length > 0 || removeRequests.length > 0 || qtyUpdates.length > 0)\n  ) {",
-  "Missing partial-ambiguity handling branch (known items + clarify unknown).",
-);
-
-mustInclude(
-  source,
-  "buildAmbiguousItemReply(firstAmbiguous.query, firstAmbiguous.options, prefersRomanUrdu)",
-  "Missing ambiguous clarification prompt in partial-ambiguity branch.",
-);
-
-mustInclude(
-  source,
-  "last_presented_options: firstAmbiguous.options,",
-  "Missing option-presentation state patch for ambiguous follow-up.",
-);
-
-mustInclude(
-  source,
-  ": inlineParsed.hasDelimitedInput\n          ? inlineParsed.requests\n          : findInlineItems(rawText, menuItems);",
-  "Missing delimited-request priority in item resolution.",
-);
-
-mustInclude(
-  source,
-  "if (forceDirectOrderResolution) {\n    matchedAdds = mergeMatchedItemsResults(matchedAdds, deterministicDirectHints);\n  }",
-  "Missing merge of deterministic hints into final matched adds.",
-);
-
-mustInclude(
-  source,
-  "skipUpsell?: boolean;",
-  "Missing optional skipUpsell flag in logistics/summary builder params.",
-);
-
-mustInclude(
-  source,
-  "!params.skipUpsell &&",
-  "Missing upsell short-circuit for direct mixed-text order path.",
-);
-
-mustInclude(
-  source,
-  "skipUpsell: forceDirectOrderResolution,",
-  "Missing direct-order skipUpsell wiring at cart-mutation reply path.",
-);
-
-mustInclude(
-  source,
-  "function mergeMatchedItemsResults(left: MatchedItemsResult, right: MatchedItemsResult): MatchedItemsResult {",
-  "Missing matched-item results merge helper.",
-);
-
-mustInclude(
-  source,
-  "const matched = left.matched.map((item) => ({ ...item }));",
-  "Missing non-summing matched-item merge initialization.",
-);
-
-mustInclude(
-  source,
-  "qty: candidate.qty,",
-  "Missing quantity override in cross-parser matched-item merge.",
-);
-
-mustInclude(
-  source,
-  "unknown: [...new Set(unknown)].slice(0, 5),\n    ambiguous,",
-  "Missing explicit preservation of ambiguous entries in resolved result.",
-);
+// 5) Pipeline fast-path
+mustInclude(pipeline, "last_shown_options", "Missing last_shown_options fast path in pipeline.");
 
 if (process.exitCode && process.exitCode !== 0) {
   process.exit(process.exitCode);

@@ -5,7 +5,7 @@ import { resumeBotForConversation } from "@/lib/handoff";
 import { persistSystemMessage, sendAndPersistOutboundMessage } from "@/lib/messages";
 import { canAccessConversation } from "@/lib/record-access";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getOrCreateUserSession, updateUserSession } from "@/lib/user-session";
+import { stateRepo } from "@/lib/data/state.repo";
 
 type ConversationPatchBody = {
   mode?: "agent" | "human";
@@ -71,18 +71,14 @@ export async function GET(
         )
       ),
       conversation_states (
-        workflow_step,
+        stage,
         order_type,
         address,
         guests,
         reservation_time,
         pickup_time,
         cart,
-        last_error
-      ),
-      user_sessions (
-        active_node,
-        status,
+        last_error,
         is_bot_active,
         invalid_step_count,
         escalation_reason,
@@ -218,17 +214,14 @@ export async function PATCH(
         console.error("[conversation PATCH] Failed to resume bot session:", sessionError);
       });
     } else {
-      const session = await getOrCreateUserSession(accessibleConversation.id).catch(() => null);
-      if (session) {
-        await updateUserSession(accessibleConversation.id, {
-          active_node: "human_handoff",
-          return_node: null,
-          status: "human_handoff",
-          is_bot_active: false,
-        }).catch((sessionError) => {
-          console.error("[conversation PATCH] Failed to pause bot session:", sessionError);
-        });
-      }
+      await stateRepo.patch(accessibleConversation.id, {
+        stage: "human",
+        is_bot_active: false,
+        escalation_reason: "manual_handoff",
+        escalated_at: new Date().toISOString(),
+      }).catch((sessionError: unknown) => {
+        console.error("[conversation PATCH] Failed to pause bot session:", sessionError);
+      });
     }
   }
 

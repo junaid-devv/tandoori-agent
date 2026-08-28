@@ -1,298 +1,147 @@
+/**
+ * scripts/check-order-flow-handlers.mjs — Phase 9 repoint
+ *
+ * Tests state machine flow transitions & pipeline wiring in the rebuilt architecture.
+ * Pure unit tests: no network or database calls.
+ */
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { handleAwaitingConfirmationFlow, handleLogisticsAndFallbackFlow } from "../lib/order-flow-handlers.ts";
+import { nextTransition } from "../lib/agent/state-machine.ts";
 
 function pass(message) {
   console.log(`PASS: ${message}`);
 }
 
-function baseState(overrides = {}) {
+function baseUnderstanding(overrides = {}) {
   return {
-    conversation_id: "conv_test",
-    workflow_step: "collecting_items",
-    cart: [],
-    preferred_language: "english",
-    resume_workflow_step: null,
-    last_presented_category: null,
-    last_presented_at: null,
-    last_presented_options: null,
-    last_presented_options_at: null,
+    intents: ["add_items"],
+    primary_intent: "add_items",
+    confidence: 0.95,
+    language: "english",
+    items: [],
+    removals: [],
     order_type: null,
     address: null,
     guests: null,
     reservation_time: null,
     pickup_time: null,
-    customer_instructions: null,
-    upsell_item_name: null,
-    upsell_item_price: null,
-    upsell_offered: false,
-    declined_upsells: [],
-    summary_sent_at: null,
-    last_user_whatsapp_msg_id: null,
-    last_processed_user_message_id: null,
-    last_processed_message_seq: null,
-    last_processed_user_message_at: null,
-    processing_token: null,
-    processing_started_at: null,
-    last_error: null,
+    info_query: null,
+    sentiment: "neutral",
+    wants_human: false,
+    notes: null,
     ...overrides,
   };
 }
 
-function makeReplyDecision(reply, statePatch, trace, interactiveList = null) {
+function baseStateView(overrides = {}) {
   return {
-    kind: "reply",
-    reply,
-    statePatch,
-    trace,
-    interactiveList,
-  };
-}
-
-function withPreferredLanguage(patch, preferredLanguage) {
-  return {
-    ...patch,
-    preferred_language: preferredLanguage,
-  };
-}
-
-function createSharedHelpers() {
-  return {
-    extractOrderInstructionCandidate: () => null,
-    buildSummaryReply: ({ state }) => makeReplyDecision("summary", state),
-    replyDecision: makeReplyDecision,
-    withPreferredLanguage,
-    shouldDeferToContextSwitchFallback: () => false,
-    buildUnknownItemReplyData: () => ({ text: "unknown", selectableItems: [] }),
-  };
-}
-
-function testAwaitingConfirmationPlacesOrder() {
-  const state = baseState({
-    workflow_step: "awaiting_confirmation",
-    cart: [{ name: "CHICKEN KARAHI", qty: 1, price: 1395, category: "Pakistani", size: null, addons: [], item_instructions: null }],
-  });
-  const context = {
-    messageText: "yes confirm order",
-    state,
-    menuItems: [],
-    semanticMatches: [],
-    branch: { id: "b1", name: "Main", address: "City" },
-    settings: {
-      delivery_enabled: true,
-      delivery_fee: 0,
-      opening_time: "10:00",
-      closing_time: "23:00",
-      phone_delivery: "000",
-    },
-    isOpenNow: true,
-    recentOrder: null,
-    session: { invalid_step_count: 0 },
-  };
-
-  const helpers = {
-    ...createSharedHelpers(),
-    isExplicitYes: () => true,
-    validateDraftForPlacement: () => ({
-      ok: true,
-      order: {
-        items: state.cart,
-        type: "delivery",
-        subtotal: 1395,
-        delivery_fee: 0,
-        address: null,
-        guests: null,
-        reservation_time: null,
-        pickup_time: null,
-        customer_instructions: null,
-      },
-    }),
-    buildOrderPlacedReply: () => "Order placed OK",
-    resetDraftState: () => ({ workflow_step: "idle", cart: [] }),
-    isExplicitNo: () => false,
-    mutateCart: (currentCart) => ({ cart: currentCart, removed: [] }),
-    applyCartQtyUpdates: (currentCart) => currentCart,
-    applyCheckoutSignalsToState: ({ state: nextState }) => nextState,
-    buildLogisticsOrSummaryReply: ({ state: nextState }) => makeReplyDecision("logistics", nextState),
-    buildRemovedItemsMessage: () => "",
-    buildQtyUpdatedItemsMessage: () => "",
-  };
-
-  const interpretation = {
-    wants_confirmation: true,
-    intent: "confirm_order",
-    add_items: [],
-    unknown_items: [],
-  };
-
-  const result = handleAwaitingConfirmationFlow({
-    context,
-    interpretation,
-    matchedAdds: { matched: [], unknown: [], ambiguous: [] },
-    removeRequests: [],
-    qtyUpdates: [],
-    preferredLanguage: "english",
-    trace: { intent: "confirm_order", confidence: 1, unknownItems: [], notes: null },
-    helpers,
-  });
-
-  assert.equal(result.kind, "place_order");
-  assert.equal(result.reply, "Order placed OK");
-  assert.ok(result.statePatch.summary_sent_at);
-  pass("Awaiting confirmation places order via extracted handler.");
-}
-
-function testLogisticsEmptyCartGuard() {
-  const context = {
-    messageText: "delivery",
-    state: baseState({
-      workflow_step: "awaiting_order_type",
-      cart: [],
-    }),
-    menuItems: [],
-    semanticMatches: [],
-    branch: { id: "b1", name: "Main", address: "City" },
-    settings: {
-      delivery_enabled: true,
-      delivery_fee: 0,
-      opening_time: "10:00",
-      closing_time: "23:00",
-      phone_delivery: "000",
-    },
-    isOpenNow: true,
-    recentOrder: null,
-    session: { invalid_step_count: 0 },
-  };
-
-  const helpers = {
-    ...createSharedHelpers(),
-    isUpsellYes: () => false,
-    isUpsellNo: () => false,
-    mergeCartItems: (cart) => cart,
-    buildOrderTypePrompt: () => "Order type prompt",
-    buildOrderTypeInteractiveList: () => null,
-    buildUpsellInteractiveList: () => ({ body: "upsell", buttonText: "Choose", rows: [] }),
-    handleOrderTypeSelection: () => makeReplyDecision("order type selected", {}),
-    inferGeneralQtyOverride: () => null,
-    applyQtyOverride: (cart) => cart,
-    buildClosedReply: () => "closed",
-    inferLastItemQtyOverride: () => null,
-    applyLastItemQtyOverride: (cart) => cart,
-    parseOrderTypeShortcut: () => null,
-    buildPersistedStatePatch: (state) => state,
-    clampQty: (qty) => qty,
-  };
-
-  const interpretation = {
-    wants_confirmation: null,
-    intent: "set_order_type",
-    add_items: [],
-    unknown_items: [],
+    stage: "building_cart",
+    cart: [{ menu_item_id: "m1", name: "Chicken Karahi", unit_price: 1395, qty: 1 }],
     order_type: "delivery",
+    has_address: true,
+    has_dinein_details: false,
+    has_pickup_time: false,
+    upsell_offered: true,
+    anger_level: 0,
+    consecutive_failures: 0,
+    invalid_step_count: 0,
+    awaiting_selection: false,
+    ...overrides,
   };
+}
 
-  const result = handleLogisticsAndFallbackFlow({
-    context,
-    interpretation,
-    matchedAdds: { matched: [], unknown: [], ambiguous: [] },
-    preferredLanguage: "english",
-    trace: { intent: "set_order_type", confidence: 0.9, unknownItems: [], notes: null },
-    helpers,
+// 1. Confirming stage + confirm_order intent -> place_order action, stage 'placed'
+function testAwaitingConfirmationPlacesOrder() {
+  const view = baseStateView({ stage: "confirming" });
+  const u = baseUnderstanding({
+    intents: ["confirm_order"],
+    primary_intent: "confirm_order",
   });
-
-  assert.equal(result.kind, "reply");
-  assert.match(result.reply.toLowerCase(), /cart is empty|cart empty/);
-  assert.equal(result.statePatch.workflow_step, "collecting_items");
-  pass("Logistics handler enforces empty-cart guard in checkout steps.");
+  const t = nextTransition(view, u);
+  assert.equal(t.nextStage, "placed");
+  assert.ok(t.actions.some((a) => a.kind === "place_order"));
+  pass("Confirmation transition places order and moves stage to 'placed'.");
 }
 
-function testPickupTimeCollection() {
-  const state = baseState({
-    workflow_step: "awaiting_pickup_time",
-    order_type: "pickup",
-    pickup_time: null,
-    cart: [{ name: "CHICKEN KARAHI", qty: 1, price: 1395, category: "Pakistani", size: null, addons: [], item_instructions: null }],
+// 2. Address collection stage -> collect_delivery_address action emitted with address
+function testDeliveryAddressTransition() {
+  const view = baseStateView({
+    stage: "collecting_delivery",
+    has_address: false,
   });
-  const context = {
-    messageText: "pickup at 8 pm",
-    state,
-    menuItems: [],
-    semanticMatches: [],
-    branch: { id: "b1", name: "Main", address: "City" },
-    settings: {
-      delivery_enabled: true,
-      delivery_fee: 0,
-      opening_time: "10:00",
-      closing_time: "23:00",
-      phone_delivery: "000",
-    },
-    isOpenNow: true,
-    recentOrder: null,
-    session: { invalid_step_count: 0 },
-  };
-
-  const helpers = {
-    ...createSharedHelpers(),
-    isUpsellYes: () => false,
-    isUpsellNo: () => false,
-    mergeCartItems: (cart) => cart,
-    buildOrderTypePrompt: () => "Order type prompt",
-    buildOrderTypeInteractiveList: () => null,
-    buildUpsellInteractiveList: () => ({ body: "upsell", buttonText: "Choose", rows: [] }),
-    handleOrderTypeSelection: () => makeReplyDecision("order type selected", {}),
-    inferGeneralQtyOverride: () => null,
-    applyQtyOverride: (cart) => cart,
-    buildClosedReply: () => "closed",
-    inferLastItemQtyOverride: () => null,
-    applyLastItemQtyOverride: (cart) => cart,
-    parseOrderTypeShortcut: () => null,
-    buildPersistedStatePatch: (nextState) => nextState,
-    clampQty: (qty) => qty,
-  };
-
-  const result = handleLogisticsAndFallbackFlow({
-    context,
-    interpretation: {
-      wants_confirmation: null,
-      intent: "unknown",
-      add_items: [],
-      unknown_items: [],
-      order_type: null,
-      reservation_time: null,
-    },
-    matchedAdds: { matched: [], unknown: [], ambiguous: [] },
-    preferredLanguage: "english",
-    trace: { intent: "unknown", confidence: 0.5, unknownItems: [], notes: null },
-    helpers,
+  const u = baseUnderstanding({
+    intents: ["provide_address"],
+    primary_intent: "provide_address",
+    address: "Street 5, F-7, Islamabad",
   });
-
-  assert.equal(result.kind, "reply");
-  assert.equal(result.reply, "summary");
-  assert.equal(result.statePatch.order_type, "pickup");
-  assert.ok(result.statePatch.pickup_time);
-  pass("Logistics handler collects pickup time and moves to summary.");
+  const t = nextTransition(view, u);
+  assert.ok(t.actions.some((a) => a.kind === "collect_delivery_address"));
+  pass("Providing delivery address triggers collect_delivery_address action.");
 }
 
-function testOrderEngineInteractiveWiring() {
-  const enginePath = path.join(process.cwd(), "lib", "order-engine.ts");
-  const source = fs.readFileSync(enginePath, "utf8").replace(/\r\n/g, "\n");
-
-  assert.ok(source.includes("parseOrderSummaryAction(rawText, normalizedText)"));
-  assert.ok(source.includes("handleOrderSummaryAction(context, state, preferredLanguage, summaryAction)"));
-  assert.ok(source.includes("notes: \"order_summary_action\""));
-  assert.ok(source.includes("shouldTreatAsPresentedOptionSelection(rawText, earlyPresentedSelection)"));
-  assert.ok(source.includes("notes: \"interactive_presented_option\""));
-  assert.ok(source.includes("trimmed.toLowerCase().startsWith(MENU_ITEM_ROW_PREFIX)"));
-  pass("Order engine has deterministic summary-action and menu-item selection wiring.");
+// 3. Non-linear flow: Asking info during address collection stays in address stage
+function testNonLinearInfoQuery() {
+  const view = baseStateView({
+    stage: "collecting_delivery",
+    has_address: false,
+  });
+  const u = baseUnderstanding({
+    intents: ["ask_item_info"],
+    primary_intent: "ask_item_info",
+    info_query: "how much is biryani",
+  });
+  const t = nextTransition(view, u);
+  assert.equal(t.nextStage, "collecting_delivery");
+  assert.ok(t.actions.some((a) => a.kind === "answer_info"));
+  pass("Non-linear info question in checkout answers without stage loss.");
 }
 
-try {
-  testAwaitingConfirmationPlacesOrder();
-  testLogisticsEmptyCartGuard();
-  testPickupTimeCollection();
-  testOrderEngineInteractiveWiring();
-} catch (error) {
-  console.error("FAIL:", error instanceof Error ? error.message : error);
-  process.exit(1);
+// 4. Human escalation transition
+function testHumanEscalation() {
+  const view = baseStateView();
+  const u = baseUnderstanding({
+    intents: ["human_request"],
+    primary_intent: "human_request",
+    wants_human: true,
+  });
+  const t = nextTransition(view, u);
+  assert.equal(t.nextStage, "human");
+  assert.equal(t.escalate, true);
+  assert.ok(t.actions.some((a) => a.kind === "escalate_human"));
+  pass("Human request intent sets escalate flag and transitions to 'human' stage.");
 }
+
+// 5. Cancel / restart transition
+function testCancelOrder() {
+  const view = baseStateView();
+  const u = baseUnderstanding({
+    intents: ["cancel_order"],
+    primary_intent: "cancel_order",
+  });
+  const t = nextTransition(view, u);
+  assert.ok(t.actions.some((a) => a.kind === "cancel_order"));
+  pass("Cancel order intent triggers cancel_order action.");
+}
+
+// 6. Verify pipeline wiring files exist
+function testPipelineWiring() {
+  const pipelinePath = path.join(process.cwd(), "lib", "agent", "pipeline.ts");
+  const executorPath = path.join(process.cwd(), "lib", "agent", "executor.ts");
+  assert.ok(fs.existsSync(pipelinePath), "pipeline.ts must exist");
+  assert.ok(fs.existsSync(executorPath), "executor.ts must exist");
+
+  const pipeline = fs.readFileSync(pipelinePath, "utf8");
+  const executor = fs.readFileSync(executorPath, "utf8");
+
+  assert.ok(pipeline.includes("runTurn"), "pipeline must export runTurn");
+  assert.ok(executor.includes("executeTurn"), "executor must export executeTurn");
+  pass("Pipeline and executor wiring files verified.");
+}
+
+testAwaitingConfirmationPlacesOrder();
+testDeliveryAddressTransition();
+testNonLinearInfoQuery();
+testHumanEscalation();
+testCancelOrder();
+testPipelineWiring();

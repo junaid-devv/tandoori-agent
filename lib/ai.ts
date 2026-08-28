@@ -4,7 +4,22 @@ import type { BranchSummary } from "./branches";
 import { getRestaurantProfile } from "./restaurant-profile";
 import type { RestaurantProfile } from "./restaurant-profile-types";
 import type { SemanticMenuMatch } from "./semantic-menu";
-import type { LanguagePreference, MenuCatalogItem, OrderType, WorkflowStep } from "./order-engine";
+import type { LanguagePreference, OrderType } from "./schema.types";
+import type { MenuCatalogItem } from "./menu";
+
+// WorkflowStep: kept locally — ai.ts is only consumed by order-engine.ts (legacy path).
+// After order-engine deletion this type is self-contained here.
+type WorkflowStep =
+  | "idle"
+  | "awaiting_branch_selection"
+  | "collecting_items"
+  | "awaiting_upsell_reply"
+  | "awaiting_order_type"
+  | "awaiting_delivery_address"
+  | "awaiting_dine_in_details"
+  | "awaiting_pickup_time"
+  | "awaiting_confirmation"
+  | "awaiting_resume_decision";
 import type { RestaurantSettings } from "./settings";
 
 const openRouterClient = new OpenAI({

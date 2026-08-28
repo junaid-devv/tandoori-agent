@@ -1,7 +1,7 @@
 import { sendAndPersistOutboundMessage, persistSystemMessage } from "./messages";
 import { createStaffAlert, resolveStaffAlerts } from "./staff-alerts";
 import { supabaseAdmin } from "./supabase-admin";
-import { getOrCreateUserSession, updateUserSession } from "./user-session";
+import { stateRepo } from "./data/state.repo";
 
 function buildHandoffReply(prefersRomanUrdu: boolean): string {
   return prefersRomanUrdu
@@ -16,8 +16,9 @@ export async function escalateToHuman(input: {
   reason: string;
   prefersRomanUrdu: boolean;
 }) {
-  const session = await getOrCreateUserSession(input.conversationId);
-  const alreadyEscalated = session.status === "human_handoff" || session.is_bot_active === false;
+  // Check current state to avoid duplicate escalation
+  const state = await stateRepo.get(input.conversationId);
+  const alreadyEscalated = state?.stage === "human" || state?.is_bot_active === false;
 
   const now = new Date().toISOString();
   const { error: conversationError } = await supabaseAdmin
@@ -31,14 +32,13 @@ export async function escalateToHuman(input: {
 
   if (conversationError) throw conversationError;
 
-  await updateUserSession(input.conversationId, {
-    active_node: "human_handoff",
-    return_node: null,
-    status: "human_handoff",
+  // Persist escalation into the merged state store (replaces user_sessions write)
+  await stateRepo.patch(input.conversationId, {
+    stage: "human",
     is_bot_active: false,
-    invalid_step_count: 0,
     escalation_reason: input.reason,
     escalated_at: now,
+    last_intent: "human_request",
   });
 
   await createStaffAlert({
@@ -68,11 +68,9 @@ export async function escalateToHuman(input: {
 }
 
 export async function resumeBotForConversation(conversationId: string): Promise<void> {
-  await updateUserSession(conversationId, {
-    status: "active",
+  await stateRepo.patch(conversationId, {
+    stage: "browsing",
     is_bot_active: true,
-    active_node: "cart_builder",
-    return_node: null,
     escalation_reason: null,
     escalated_at: null,
   });

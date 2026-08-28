@@ -1,8 +1,22 @@
+/**
+ * scripts/check-category-routing.mjs — Phase 9 repoint
+ *
+ * In the rebuild, category routing & menu browsing are handled by:
+ *  1. NLU taxonomy: browse_menu, ask_item_info, ask_recommendation
+ *  2. Search layer: hybrid vector & lexical menu search (searchMenu)
+ *  3. Executor: show_menu & answer_info actions that set last_shown_options
+ *  4. Pipeline: numeric fast-path for selecting presented category/menu options
+ *  5. Interactive builders: buildInteractiveListForPresentedOptions
+ */
 import fs from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
-const target = path.join(root, "lib", "order-engine.ts");
+const nluPath = path.join(root, "lib", "agent", "nlu.ts");
+const searchPath = path.join(root, "lib", "menu", "search.ts");
+const executorPath = path.join(root, "lib", "agent", "executor.ts");
+const pipelinePath = path.join(root, "lib", "agent", "pipeline.ts");
+const builderPath = path.join(root, "lib", "webhook-interactive-builders.ts");
 
 function fail(message) {
   console.error(`FAIL: ${message}`);
@@ -13,51 +27,47 @@ function pass(message) {
   console.log(`PASS: ${message}`);
 }
 
-if (!fs.existsSync(target)) {
-  fail(`Missing target file: ${target}`);
-  process.exit();
+function mustInclude(source, token, message) {
+  if (!source.includes(token)) {
+    fail(message);
+    return false;
+  }
+  pass(message.replace("Missing", "Found"));
+  return true;
 }
 
-const source = fs.readFileSync(target, "utf8");
-
-const guardOption = "if (/^category\\s+option\\s+\\d{1,2}$/.test(text)) return false;";
-const guardMore = "if (/^category\\s+more\\s+\\d{1,2}$/.test(text)) return false;";
-const genericMatcher =
-  "return /(menu|show.*menu|what.*have|list.*items?|kya.*hai|dikhao|category|categories|price|rates?|kaun si.*(?:item|dish|food|biryani|chicken|karahi|option)|(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert)\\b.*\\bavailable|available.*\\b(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert))/.test(text);";
-
-const optionIndex = source.indexOf(guardOption);
-const moreIndex = source.indexOf(guardMore);
-const genericIndex = source.indexOf(genericMatcher);
-
-if (optionIndex === -1) {
-  fail("Missing guard for category_option_* interactive commands.");
-} else {
-  pass("Found category_option_* guard.");
+for (const filePath of [nluPath, searchPath, executorPath, pipelinePath, builderPath]) {
+  if (!fs.existsSync(filePath)) {
+    fail(`Missing required file: ${filePath}`);
+    process.exit(1);
+  }
 }
 
-if (moreIndex === -1) {
-  fail("Missing guard for category_more_* interactive commands.");
-} else {
-  pass("Found category_more_* guard.");
-}
+const nlu = fs.readFileSync(nluPath, "utf8");
+const search = fs.readFileSync(searchPath, "utf8");
+const executor = fs.readFileSync(executorPath, "utf8");
+const pipeline = fs.readFileSync(pipelinePath, "utf8");
+const builder = fs.readFileSync(builderPath, "utf8");
 
-if (genericIndex === -1) {
-  fail("Missing generic menu request matcher.");
-} else {
-  pass("Found generic menu matcher.");
-}
+// 1) NLU menu & category intents
+mustInclude(nlu, "browse_menu", "Missing browse_menu intent in NLU taxonomy.");
+mustInclude(nlu, "ask_recommendation", "Missing ask_recommendation intent in NLU taxonomy.");
+mustInclude(nlu, "ask_item_info", "Missing ask_item_info intent in NLU taxonomy.");
 
-if (optionIndex !== -1 && genericIndex !== -1 && optionIndex > genericIndex) {
-  fail("category_option_* guard appears after generic matcher and will not work.");
-} else if (optionIndex !== -1 && genericIndex !== -1) {
-  pass("category_option_* guard is ordered before generic matcher.");
-}
+// 2) Search menu supports queries & categories
+mustInclude(search, "export async function searchMenu", "Missing searchMenu in search layer.");
 
-if (moreIndex !== -1 && genericIndex !== -1 && moreIndex > genericIndex) {
-  fail("category_more_* guard appears after generic matcher and will not work.");
-} else if (moreIndex !== -1 && genericIndex !== -1) {
-  pass("category_more_* guard is ordered before generic matcher.");
-}
+// 3) Executor handles show_menu & answer_info actions
+mustInclude(executor, "case \"show_menu\":", "Missing show_menu action in executor.");
+mustInclude(executor, "case \"answer_info\":", "Missing answer_info action in executor.");
+mustInclude(executor, "last_shown_options", "Missing last_shown_options assignment in executor.");
+
+// 4) Pipeline fast-path
+mustInclude(pipeline, "NUMERIC_RE", "Missing numeric fast-path in pipeline.");
+mustInclude(pipeline, "last_shown_options", "Missing last_shown_options fast-path in pipeline.");
+
+// 5) Interactive list builder for presented options
+mustInclude(builder, "buildInteractiveListForPresentedOptions", "Missing buildInteractiveListForPresentedOptions builder.");
 
 if (process.exitCode && process.exitCode !== 0) {
   process.exit(process.exitCode);

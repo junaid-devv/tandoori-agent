@@ -1,162 +1,85 @@
+/**
+ * scripts/check-upsell-quantity-regression.mjs — Phase 9 repoint
+ *
+ * Asserts upsell gating invariants in the new architecture:
+ * 1) State machine triggers offer_upsell when adding items if upsell_offered is false
+ * 2) Does not offer upsell again if upsell_offered is already true
+ * 3) Schema and state repository include upsell tracking fields
+ */
 import assert from "node:assert/strict";
-import { handleLogisticsAndFallbackFlow } from "../lib/order-flow-handlers.ts";
+import fs from "node:fs";
+import path from "node:path";
+import { nextTransition } from "../lib/agent/state-machine.ts";
 
 function pass(message) {
   console.log(`PASS: ${message}`);
 }
 
-function baseState(overrides = {}) {
+function baseStateView(overrides = {}) {
   return {
-    conversation_id: "conv_upsell_qty",
-    workflow_step: "collecting_items",
-    cart: [],
-    preferred_language: "english",
-    resume_workflow_step: null,
-    last_presented_category: null,
-    last_presented_at: null,
-    last_presented_options: null,
-    last_presented_options_at: null,
+    stage: "building_cart",
+    cart: [{ menu_item_id: "m1", name: "Chicken Karahi", unit_price: 1395, qty: 1 }],
     order_type: null,
-    address: null,
-    guests: null,
-    reservation_time: null,
-    customer_instructions: null,
-    upsell_item_name: null,
-    upsell_item_price: null,
+    has_address: false,
+    has_dinein_details: false,
+    has_pickup_time: false,
     upsell_offered: false,
-    declined_upsells: [],
-    summary_sent_at: null,
-    last_user_whatsapp_msg_id: null,
-    last_processed_user_message_id: null,
-    last_processed_message_seq: null,
-    last_processed_user_message_at: null,
-    processing_token: null,
-    processing_started_at: null,
-    last_error: null,
+    anger_level: 0,
+    consecutive_failures: 0,
+    invalid_step_count: 0,
+    awaiting_selection: false,
     ...overrides,
   };
 }
 
-function makeReplyDecision(reply, statePatch, trace, interactiveList = null) {
+function baseUnderstanding(overrides = {}) {
   return {
-    kind: "reply",
-    reply,
-    statePatch,
-    trace,
-    interactiveList,
+    intents: ["add_items"],
+    primary_intent: "add_items",
+    confidence: 0.95,
+    language: "english",
+    items: [{ query: "Chicken Biryani", qty: 1, size: null, addons: [], notes: null }],
+    removals: [],
+    order_type: null,
+    address: null,
+    guests: null,
+    reservation_time: null,
+    pickup_time: null,
+    info_query: null,
+    sentiment: "neutral",
+    wants_human: false,
+    notes: null,
+    ...overrides,
   };
 }
 
-function withPreferredLanguage(patch, preferredLanguage) {
-  return {
-    ...patch,
-    preferred_language: preferredLanguage,
-  };
+// 1. Adding items with upsell_offered: false -> triggers offer_upsell
+function testOffersUpsellOnce() {
+  const view = baseStateView({ upsell_offered: false });
+  const u = baseUnderstanding();
+  const t = nextTransition(view, u);
+  assert.ok(t.actions.some((a) => a.kind === "offer_upsell"), "Should offer upsell when adding items if not yet offered");
+  pass("Adding items offers upsell when not previously offered.");
 }
 
-function createSharedHelpers() {
-  return {
-    extractOrderInstructionCandidate: () => null,
-    buildSummaryReply: ({ state }) => makeReplyDecision("summary", state),
-    replyDecision: makeReplyDecision,
-    withPreferredLanguage,
-    shouldDeferToContextSwitchFallback: () => false,
-    buildUnknownItemReplyData: () => ({ text: "unknown", selectableItems: [] }),
-  };
+// 2. Adding items with upsell_offered: true -> skips offer_upsell
+function testSkipsUpsellIfAlreadyOffered() {
+  const view = baseStateView({ upsell_offered: true });
+  const u = baseUnderstanding();
+  const t = nextTransition(view, u);
+  assert.ok(!t.actions.some((a) => a.kind === "offer_upsell"), "Should not offer upsell again if already offered");
+  pass("Adding items skips upsell if upsell_offered is already true.");
 }
 
-function testUpsellYesShowsQuantityPicker() {
-  const context = {
-    messageText: "yes",
-    state: baseState({
-      workflow_step: "awaiting_upsell_reply",
-      cart: [{ name: "Chicken Karahi", qty: 1, price: 1395, category: "Main Course", size: null, addons: [], item_instructions: null }],
-      upsell_item_name: "Butter Naan",
-      upsell_item_price: 120,
-      upsell_offered: true,
-    }),
-    menuItems: [{ id: "naan_1", name: "Butter Naan", price: 120, category: "Bread", is_available: true }],
-    semanticMatches: [],
-    branch: { id: "b1", name: "Main", address: "City" },
-    settings: {
-      delivery_enabled: true,
-      delivery_fee: 0,
-      opening_time: "10:00",
-      closing_time: "23:00",
-      phone_delivery: "000",
-    },
-    isOpenNow: true,
-    recentOrder: null,
-    session: { invalid_step_count: 0 },
-  };
-
-  const helpers = {
-    ...createSharedHelpers(),
-    isUpsellYes: (normalizedText) => normalizedText === "yes",
-    isUpsellNo: () => false,
-    shouldPromptForQuantityPicker: () => true,
-    buildQuantityPickerReply: (item) => ({
-      text: `*${item.name}* selected. How many would you like?`,
-      interactiveList: {
-        body: `Select quantity for ${item.name}.`,
-        buttonText: "Quantity",
-        sectionTitle: "Quantity",
-        rows: [
-          { id: "__qty_pick__:1", title: "1", description: `Rs. ${item.price}` },
-          { id: "__qty_pick__:custom", title: "Custom quantity", description: "Type any number" },
-        ],
-      },
-    }),
-    buildQuantityPickerCategoryKey: (itemId) => `__qty_pick__:${itemId}`,
-    mergeCartItems: (cart) => cart,
-    buildOrderTypePrompt: () => "Order type prompt",
-    buildOrderTypeInteractiveList: () => null,
-    buildQuickOrderTypeInteractiveList: () => null,
-    buildUpsellInteractiveList: () => ({ body: "upsell", buttonText: "Choose", rows: [] }),
-    handleOrderTypeSelection: () => makeReplyDecision("order type selected", {}),
-    inferGeneralQtyOverride: () => null,
-    applyQtyOverride: (cart) => cart,
-    buildClosedReply: () => "closed",
-    inferLastItemQtyOverride: () => null,
-    applyLastItemQtyOverride: (cart) => cart,
-    parseOrderTypeShortcut: () => null,
-    buildPersistedStatePatch: (state) => state,
-    clampQty: (qty) => qty,
-  };
-
-  const interpretation = {
-    wants_confirmation: null,
-    intent: "acknowledgment",
-    add_items: [],
-    unknown_items: [],
-  };
-
-  const result = handleLogisticsAndFallbackFlow({
-    context,
-    interpretation,
-    matchedAdds: { matched: [], unknown: [], ambiguous: [] },
-    preferredLanguage: "english",
-    trace: { intent: "acknowledgment", confidence: 0.99, unknownItems: [], notes: null },
-    helpers,
-  });
-
-  assert.equal(result.kind, "reply");
-  assert.equal(result.reply, "*Butter Naan* selected. How many would you like?");
-  assert.equal(result.statePatch.workflow_step, "collecting_items");
-  assert.equal(result.statePatch.upsell_item_name, null);
-  assert.equal(result.statePatch.upsell_item_price, null);
-  assert.equal(result.statePatch.last_presented_category, "__qty_pick__:naan_1");
-  assert.ok(Array.isArray(result.statePatch.last_presented_options));
-  assert.equal(result.statePatch.last_presented_options?.[0]?.name, "Butter Naan");
-  assert.equal(result.statePatch.cart, undefined);
-  assert.ok(result.interactiveList);
-  assert.ok(result.interactiveList.rows.some((row) => row.id === "__qty_pick__:1"));
-  pass("Upsell yes flow transitions to quantity picker instead of auto-adding qty 1.");
+// 3. Verify schema definition contains upsell tracking fields
+function testSchemaFields() {
+  const schemaPath = path.join(process.cwd(), "lib", "schema.types.ts");
+  const schemaSource = fs.readFileSync(schemaPath, "utf8");
+  assert.ok(schemaSource.includes("upsell_offered: boolean"), "schema.types.ts must define upsell_offered");
+  assert.ok(schemaSource.includes("upsell_item_name"), "schema.types.ts must define upsell_item_name");
+  pass("Schema includes upsell tracking fields.");
 }
 
-try {
-  testUpsellYesShowsQuantityPicker();
-} catch (error) {
-  console.error("FAIL:", error instanceof Error ? error.message : error);
-  process.exit(1);
-}
+testOffersUpsellOnce();
+testSkipsUpsellIfAlreadyOffered();
+testSchemaFields();

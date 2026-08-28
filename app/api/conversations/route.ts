@@ -78,18 +78,14 @@ export async function GET(req: NextRequest) {
         last_order_at
       ),
       conversation_states (
-        workflow_step,
+        stage,
         order_type,
         address,
         guests,
         reservation_time,
         pickup_time,
         cart,
-        last_error
-      ),
-      user_sessions (
-        active_node,
-        status,
+        last_error,
         is_bot_active,
         invalid_step_count,
         escalation_reason,

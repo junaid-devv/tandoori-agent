@@ -2,7 +2,6 @@ import fs from "node:fs";
 
 const sources = {
   schema: fs.readFileSync("db/schema.sql", "utf8"),
-  orderEngine: fs.readFileSync("lib/order-engine.ts", "utf8"),
   webhook: fs.readFileSync("app/api/webhook/route.ts", "utf8"),
   whatsapp: fs.readFileSync("lib/whatsapp.ts", "utf8"),
   crm: fs.readFileSync("lib/customer-crm.ts", "utf8"),
@@ -21,8 +20,8 @@ function mustInclude(source, needle, message) {
 mustInclude(sources.schema, "customer_addresses", "Missing customer address table in schema.");
 mustInclude(sources.schema, "available_days", "Missing menu schedule columns in schema.");
 mustInclude(sources.menu, "isMenuScheduleAvailable", "Missing menu schedule filtering in menu catalog.");
-mustInclude(sources.orderEngine, "isUseSavedAddressRequest", "Missing saved-address conversation shortcut.");
-mustInclude(sources.orderEngine, "isReorderRequest", "Missing reorder conversation shortcut.");
+mustInclude(sources.crm, "isUseSavedAddressRequest", "Missing saved-address conversation shortcut.");
+mustInclude(sources.crm, "isReorderRequest", "Missing reorder conversation shortcut.");
 mustInclude(sources.webhook, "saveCustomerAddressFromOrder", "Missing saved-address persistence after order placement.");
 if (sources.webhook.includes("promptSavedBranchChoice") || sources.webhook.includes("Continue Same Branch")) {
   throw new Error("Automatic saved-branch choice prompt must not be reintroduced.");

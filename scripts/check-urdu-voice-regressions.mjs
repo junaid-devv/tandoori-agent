@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeText, stripVoiceNotePrefix } from "../lib/order-text-utils.ts";
+import { containsUrduScript, inferLanguagePreference } from "../lib/core/lang-detect.ts";
 
 const root = process.cwd();
-const engineTarget = path.join(root, "lib", "order-engine.ts");
+const langDetectTarget = path.join(root, "lib", "core", "lang-detect.ts");
 const nluTarget = path.join(root, "lib", "agent", "nlu.ts");
 const aiTarget = path.join(root, "lib", "ai.ts");
+const webhookTarget = path.join(root, "app", "api", "webhook", "route.ts");
 
 function fail(message) {
   console.error(`FAIL: ${message}`);
@@ -34,50 +36,52 @@ function testNormalization() {
     normalizeText("[Voice note] بریانی میں اور کوئی آپشن اویلیبل ہے"),
     "biryani mein aur koi option available",
   );
-  pass("Urdu voice-note text normalizes into order-engine tokens.");
+  assert.equal(containsUrduScript("ایک ہاف چکن کڑاہی کر دو"), true);
+  assert.equal(containsUrduScript("one chicken karahi"), false);
+  assert.equal(inferLanguagePreference("ایک ہاف چکن کڑاہی کر دو"), "roman_urdu");
+  assert.equal(inferLanguagePreference("kya haal hai bhai"), "roman_urdu");
+  assert.equal(inferLanguagePreference("hello please deliver"), "english");
+  pass("Urdu voice-note and script normalization functions verified.");
 }
 
-if (!fs.existsSync(engineTarget) || !fs.existsSync(nluTarget) || !fs.existsSync(aiTarget)) {
-  fail("Missing one or more source files required for Urdu voice regression checks.");
-  process.exit();
+for (const target of [langDetectTarget, nluTarget, aiTarget, webhookTarget]) {
+  if (!fs.existsSync(target)) {
+    fail(`Missing required file: ${target}`);
+    process.exit(1);
+  }
 }
 
-const engineSource = fs.readFileSync(engineTarget, "utf8").replace(/\r\n/g, "\n");
+const langDetectSource = fs.readFileSync(langDetectTarget, "utf8").replace(/\r\n/g, "\n");
 const nluSource = fs.readFileSync(nluTarget, "utf8").replace(/\r\n/g, "\n");
 const aiSource = fs.readFileSync(aiTarget, "utf8").replace(/\r\n/g, "\n");
+const webhookSource = fs.readFileSync(webhookTarget, "utf8").replace(/\r\n/g, "\n");
 
 testNormalization();
 
 mustInclude(
-  engineSource,
-  "const rawText = stripVoiceNotePrefix(context.messageText).trim();",
-  "Missing voice-note prefix stripping before order-engine parsing.",
+  langDetectSource,
+  "export function containsUrduScript",
+  "Missing containsUrduScript in lang-detect.",
 );
 
 mustInclude(
-  engineSource,
-  "if (isOrderFlowMessageWhileAwaitingNote(rawText, normalizedText, context.menuItems)) {",
-  "Missing order-note escape for Urdu menu/order messages.",
+  langDetectSource,
+  "export function inferLanguagePreference",
+  "Missing inferLanguagePreference in lang-detect.",
 );
 
-mustInclude(
-  engineSource,
-  "notes: \"deterministic_direct_order\",",
-  "Missing deterministic direct-order trace for Urdu voice orders.",
-);
-
-mustInclude(
-  engineSource,
-  "kaun si.*(?:item|dish|food|biryani|chicken|karahi|option)",
-  "Missing Urdu availability/menu tokens in menu-request classifier.",
-);
-
-// Urdu-aware normalization moved from the webhook into the NLU layer in the rebuild:
-// the single extraction strips voice-note prefixes and normalizes Urdu/Roman-Urdu input.
+// Urdu-aware normalization in NLU
 mustInclude(
   nluSource,
   "stripVoiceNotePrefix(input.messageText)",
   "Missing Urdu-aware voice-note normalization in NLU layer.",
+);
+
+// Voice note handling in webhook
+mustInclude(
+  webhookSource,
+  "handleNonText",
+  "Missing handleNonText in webhook route.",
 );
 
 mustInclude(
