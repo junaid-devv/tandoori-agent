@@ -99,24 +99,36 @@ function toVectorLiteral(embedding: number[]): string {
 }
 
 async function createEmbedding(input: string): Promise<number[] | null> {
+  const vectors = await createBatchEmbeddings([input]);
+  return vectors[0] ?? null;
+}
+
+async function createBatchEmbeddings(inputs: string[]): Promise<(number[] | null)[]> {
   const client = getEmbeddingClient();
-  if (!client || !input.trim()) return null;
+  const trimmed = inputs.map((s) => s.trim());
+  if (!client || trimmed.every((s) => !s)) return inputs.map(() => null);
 
-  const response = await client.embeddings.create({
-    model: DEFAULT_EMBEDDING_MODEL,
-    input,
-    dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
-  });
+  try {
+    const response = await client.embeddings.create({
+      model: DEFAULT_EMBEDDING_MODEL,
+      input: trimmed.map((s) => s || " "),
+      dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
+    });
 
-  const vector = response.data[0]?.embedding;
-  if (!Array.isArray(vector) || vector.length === 0) return null;
-  if (vector.length !== DEFAULT_EMBEDDING_DIMENSIONS) {
-    throw new Error(
-      `[semantic-menu] embedding dim ${vector.length} != expected ${DEFAULT_EMBEDDING_DIMENSIONS}. ` +
-        "Refusing to store a mismatched vector (would corrupt cosine search).",
-    );
+    const result: (number[] | null)[] = new Array(inputs.length).fill(null);
+    for (const entry of response.data) {
+      if (
+        Array.isArray(entry.embedding) &&
+        entry.embedding.length === DEFAULT_EMBEDDING_DIMENSIONS
+      ) {
+        result[entry.index] = entry.embedding;
+      }
+    }
+    return result;
+  } catch (err) {
+    console.error("[semantic-menu] Batch embedding generation failed:", err);
+    return inputs.map(() => null);
   }
-  return vector;
 }
 
 function toSemanticMatch(row: Partial<MenuRow> & { id: string; name: string; price: number | string }): SemanticMenuMatch {
@@ -147,54 +159,86 @@ export async function syncMenuEmbeddingsForBranch(branchId: string): Promise<voi
   const client = getEmbeddingClient();
   if (!client) return;
 
-  const { data, error } = await supabaseAdmin
+  const { data: menuData, error: menuError } = await supabaseAdmin
     .from("menu_items")
     .select("id, branch_id, name, price, category, description, is_available")
     .eq("branch_id", branchId);
 
-  if (error) throw error;
+  if (menuError) throw menuError;
 
-  const rows = (data ?? []) as MenuRow[];
+  const rows = (menuData ?? []) as MenuRow[];
+  if (rows.length === 0) return;
+
+  // Check existing embeddings to avoid redundant re-embedding on unchanged items
+  const { data: existingData } = await supabaseAdmin
+    .from("menu_item_embeddings")
+    .select("menu_item_id, embedding_source, embedding_model")
+    .eq("branch_id", branchId);
+
+  const existingMap = new Map<string, { embedding_source: string; embedding_model: string }>();
+  for (const emb of existingData ?? []) {
+    existingMap.set(emb.menu_item_id, emb);
+  }
+
+  const itemsToSync = rows.filter((row) => {
+    const source = buildEmbeddingSource(row);
+    const existing = existingMap.get(row.id);
+    return !existing || existing.embedding_source !== source || existing.embedding_model !== DEFAULT_EMBEDDING_MODEL;
+  });
+
+  if (itemsToSync.length === 0) {
+    console.info(`[semantic-menu] all ${rows.length} items up-to-date for branch ${branchId}`);
+    return;
+  }
+
+  console.info(`[semantic-menu] syncing ${itemsToSync.length} items (${rows.length - itemsToSync.length} already fresh) for branch ${branchId}`);
+
   let ok = 0;
   let failed = 0;
+  const BATCH_SIZE = 25;
 
-  // Per-item resilience: one bad embedding (HF rate limit, transient 5xx) must
-  // NOT abort the whole menu sync and leave the rest un-embedded.
-  for (const row of rows) {
-    const source = buildEmbeddingSource(row);
+  for (let i = 0; i < itemsToSync.length; i += BATCH_SIZE) {
+    const chunk = itemsToSync.slice(i, i + BATCH_SIZE);
+    const sources = chunk.map((item) => buildEmbeddingSource(item));
+
     try {
-      const embedding = await createEmbedding(source);
-      if (!embedding) {
-        failed += 1;
-        console.warn(`[semantic-menu] no embedding for "${row.name}" (${row.id}); skipped`);
-        continue;
+      const vectors = await createBatchEmbeddings(sources);
+      const upsertRows = [];
+
+      for (let j = 0; j < chunk.length; j++) {
+        const vec = vectors[j];
+        if (vec) {
+          upsertRows.push({
+            menu_item_id: chunk[j].id,
+            branch_id: chunk[j].branch_id,
+            embedding_model: DEFAULT_EMBEDDING_MODEL,
+            embedding_source: sources[j],
+            embedding: toVectorLiteral(vec),
+            updated_at: new Date().toISOString(),
+          });
+          ok += 1;
+        } else {
+          failed += 1;
+          console.warn(`[semantic-menu] skipped item "${chunk[j].name}" (${chunk[j].id}) due to missing embedding`);
+        }
       }
 
-      const { error: upsertError } = await supabaseAdmin.from("menu_item_embeddings").upsert(
-        {
-          menu_item_id: row.id,
-          branch_id: row.branch_id,
-          embedding_model: DEFAULT_EMBEDDING_MODEL,
-          embedding_source: source,
-          embedding: toVectorLiteral(embedding),
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "menu_item_id" },
-      );
+      if (upsertRows.length > 0) {
+        const { error: upsertError } = await supabaseAdmin
+          .from("menu_item_embeddings")
+          .upsert(upsertRows, { onConflict: "menu_item_id" });
 
-      if (upsertError) {
-        failed += 1;
-        console.error(`[semantic-menu] upsert failed for "${row.name}" (${row.id}):`, upsertError);
-        continue;
+        if (upsertError) {
+          console.error("[semantic-menu] batch upsert error:", upsertError);
+        }
       }
-      ok += 1;
-    } catch (err) {
-      failed += 1;
-      console.error(`[semantic-menu] embedding failed for "${row.name}" (${row.id}):`, err);
+    } catch (batchErr) {
+      console.error("[semantic-menu] batch processing failed:", batchErr);
+      failed += chunk.length;
     }
   }
 
-  console.info(`[semantic-menu] sync done for branch ${branchId}: ${ok} embedded, ${failed} failed of ${rows.length}`);
+  console.info(`[semantic-menu] sync complete for branch ${branchId}: ${ok} embedded, ${failed} failed (${rows.length} total items)`);
 }
 
 export async function getSemanticMenuMatches(
