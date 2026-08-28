@@ -5,7 +5,7 @@ import { normalizeText, stripVoiceNotePrefix } from "../lib/order-text-utils.ts"
 
 const root = process.cwd();
 const engineTarget = path.join(root, "lib", "order-engine.ts");
-const webhookTarget = path.join(root, "app", "api", "webhook", "route.ts");
+const nluTarget = path.join(root, "lib", "agent", "nlu.ts");
 const aiTarget = path.join(root, "lib", "ai.ts");
 
 function fail(message) {
@@ -37,13 +37,13 @@ function testNormalization() {
   pass("Urdu voice-note text normalizes into order-engine tokens.");
 }
 
-if (!fs.existsSync(engineTarget) || !fs.existsSync(webhookTarget) || !fs.existsSync(aiTarget)) {
+if (!fs.existsSync(engineTarget) || !fs.existsSync(nluTarget) || !fs.existsSync(aiTarget)) {
   fail("Missing one or more source files required for Urdu voice regression checks.");
   process.exit();
 }
 
 const engineSource = fs.readFileSync(engineTarget, "utf8").replace(/\r\n/g, "\n");
-const webhookSource = fs.readFileSync(webhookTarget, "utf8").replace(/\r\n/g, "\n");
+const nluSource = fs.readFileSync(nluTarget, "utf8").replace(/\r\n/g, "\n");
 const aiSource = fs.readFileSync(aiTarget, "utf8").replace(/\r\n/g, "\n");
 
 testNormalization();
@@ -72,10 +72,12 @@ mustInclude(
   "Missing Urdu availability/menu tokens in menu-request classifier.",
 );
 
+// Urdu-aware normalization moved from the webhook into the NLU layer in the rebuild:
+// the single extraction strips voice-note prefixes and normalizes Urdu/Roman-Urdu input.
 mustInclude(
-  webhookSource,
-  "const normalizedIncoming = normalizeText(nextMessage.content);",
-  "Missing Urdu-aware webhook menu hydration normalization.",
+  nluSource,
+  "stripVoiceNotePrefix(input.messageText)",
+  "Missing Urdu-aware voice-note normalization in NLU layer.",
 );
 
 mustInclude(

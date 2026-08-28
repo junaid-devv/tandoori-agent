@@ -1,12 +1,11 @@
 import {
   deleteUnsentOutboundMessage,
   OutboundMessageError,
-  sendAndPersistOutboundFlowMessage,
   sendAndPersistOutboundInteractiveMessage,
   sendAndPersistOutboundReplyButtonMessage,
   sendAndPersistOutboundMessage,
 } from "./messages";
-import type { WhatsAppInteractiveFlowPayload, WhatsAppInteractiveListPayload, WhatsAppReplyButtonPayload } from "./whatsapp";
+import type { WhatsAppInteractiveListPayload, WhatsAppReplyButtonPayload } from "./whatsapp";
 
 export async function sendAndPersistAssistantMessage({
   conversationId,
@@ -14,36 +13,13 @@ export async function sendAndPersistAssistantMessage({
   content,
   interactiveList,
   replyButtons,
-  flowMessage,
 }: {
   conversationId: string;
   phone: string;
   content: string;
   interactiveList?: WhatsAppInteractiveListPayload | null;
   replyButtons?: WhatsAppReplyButtonPayload | null;
-  flowMessage?: WhatsAppInteractiveFlowPayload | null;
 }) {
-  if (flowMessage) {
-    const flowVisibleBody = flowMessage.body?.trim();
-    const flowPersistedContent = flowVisibleBody && flowVisibleBody.length > 0 ? flowVisibleBody : content;
-    try {
-      await sendAndPersistOutboundFlowMessage({
-        conversationId,
-        phone,
-        content: flowPersistedContent,
-        senderKind: "ai",
-        flow: flowMessage,
-      });
-      return;
-    } catch (error) {
-      if (error instanceof OutboundMessageError && !error.messageSent) {
-        await deleteUnsentOutboundMessage(error.persistedMessageId);
-      } else {
-        throw error;
-      }
-    }
-  }
-
   if (replyButtons && replyButtons.buttons.length > 0) {
     const buttonPayload: WhatsAppReplyButtonPayload = {
       ...replyButtons,

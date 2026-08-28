@@ -1,8 +1,7 @@
 import fs from "node:fs";
 
 const sources = {
-  schema: fs.readFileSync("supabase-schema.sql", "utf8"),
-  migrations: fs.readFileSync("migrations.sql", "utf8"),
+  schema: fs.readFileSync("db/schema.sql", "utf8"),
   orderEngine: fs.readFileSync("lib/order-engine.ts", "utf8"),
   webhook: fs.readFileSync("app/api/webhook/route.ts", "utf8"),
   whatsapp: fs.readFileSync("lib/whatsapp.ts", "utf8"),
@@ -19,10 +18,8 @@ function mustInclude(source, needle, message) {
   console.log(`PASS: ${message.replace(/^Missing /, "Found ").replace(/\.$/, "")}.`);
 }
 
-mustInclude(sources.schema, "customer_addresses", "Missing customer address table in base schema.");
-mustInclude(sources.migrations, "customer_addresses", "Missing customer address migration.");
-mustInclude(sources.schema, "available_days", "Missing menu schedule columns in base schema.");
-mustInclude(sources.migrations, "available_days", "Missing menu schedule migration.");
+mustInclude(sources.schema, "customer_addresses", "Missing customer address table in schema.");
+mustInclude(sources.schema, "available_days", "Missing menu schedule columns in schema.");
 mustInclude(sources.menu, "isMenuScheduleAvailable", "Missing menu schedule filtering in menu catalog.");
 mustInclude(sources.orderEngine, "isUseSavedAddressRequest", "Missing saved-address conversation shortcut.");
 mustInclude(sources.orderEngine, "isReorderRequest", "Missing reorder conversation shortcut.");
@@ -30,10 +27,9 @@ mustInclude(sources.webhook, "saveCustomerAddressFromOrder", "Missing saved-addr
 if (sources.webhook.includes("promptSavedBranchChoice") || sources.webhook.includes("Continue Same Branch")) {
   throw new Error("Automatic saved-branch choice prompt must not be reintroduced.");
 }
-mustInclude(sources.webhook, "deleteUnsentOutboundMessage(error.persistedMessageId)", "Missing cleanup for unsent failed outbound retries.");
-mustInclude(sources.webhook, "transcribeWhatsAppAudioMessage", "Missing WhatsApp voice-note transcription path.");
-mustInclude(sources.webhook, "https://api.groq.com/openai/v1/audio/transcriptions", "Missing Groq audio transcription endpoint.");
-mustInclude(sources.webhook, "whisper-large-v3-turbo", "Missing Groq whisper-large-v3-turbo model.");
+// NOTE: WhatsApp voice-note transcription (Groq/whisper) was intentionally removed in the
+// rebuild; voice notes now escalate to a human with a fallback message. Assert that path instead.
+mustInclude(sources.webhook, "voice_note", "Missing voice-note human-escalation path.");
 mustInclude(sources.whatsapp, "getWhatsAppMediaUrl", "Missing WhatsApp media lookup helper.");
 mustInclude(sources.whatsapp, "downloadWhatsAppMedia", "Missing WhatsApp media download helper.");
 mustInclude(sources.conversationsPage, "Customer Profile", "Missing staff inbox customer profile save action.");

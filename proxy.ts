@@ -7,7 +7,6 @@ const REFRESH_SKEW_SECONDS = 5 * 60;
 const AUTH_REFRESH_TIMEOUT_MS = 4000;
 const REFRESH_SKIP_PATHS = [
   "/api/webhook",
-  "/api/whatsapp/flows",
   "/api/health",
   "/api/auth/login",
   "/api/auth/logout",

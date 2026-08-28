@@ -6,8 +6,6 @@ import {
   findCitySelection,
 } from "../lib/webhook-city-helpers.ts";
 import {
-  buildBranchSelectionFlowMessage,
-  buildFlowMessageForAgentReply,
   buildInteractiveListForBranches,
   buildInteractiveListForPresentedOptions,
 } from "../lib/webhook-interactive-builders.ts";
@@ -81,40 +79,14 @@ function testCategoryItemRowsUseStableItemIds() {
   pass("Category item rows use stable menu item IDs instead of item names.");
 }
 
-function testFlowBuilders() {
-  const previousFlowName = process.env.WHATSAPP_FLOW_NAME;
-  process.env.WHATSAPP_FLOW_NAME = "test_flow";
-
-  const branchFlow = buildBranchSelectionFlowMessage(
-    "923001112233",
-    [{ id: "b1", name: "Main Branch", slug: "main", address: "Mall Road, Lahore" }],
-    false,
-  );
-  assert.ok(branchFlow);
-
-  const checkoutFlow = buildFlowMessageForAgentReply({
-    conversationId: "conv1",
-    prefersRomanUrdu: false,
-    workflowStep: "awaiting_pickup_time",
-    orderType: "pickup",
-    pickupTime: "2026-07-21T15:00:00.000Z",
-    body: "Please choose your order type.",
-  });
-  assert.ok(checkoutFlow);
-  assert.equal(checkoutFlow.body, "Please choose your order type.");
-  assert.equal(checkoutFlow.actionPayload?.data?.order_type, "pickup");
-  assert.equal(checkoutFlow.actionPayload?.data?.pickup_time, "2026-07-21T15:00:00.000Z");
-
-  process.env.WHATSAPP_FLOW_NAME = previousFlowName;
-  pass("Flow payload builders create payloads for branch and checkout contexts.");
-}
+// NOTE: WhatsApp Flow payload builders were removed in the rebuild (dead code, never
+// deployed). Only the interactive list/city/category builders survive and are tested above.
 
 try {
   testCityHelpers();
   testCategoryInteractivePagination();
   testInteractiveBuilders();
   testCategoryItemRowsUseStableItemIds();
-  testFlowBuilders();
 } catch (error) {
   console.error("FAIL:", error instanceof Error ? error.message : error);
   process.exit(1);

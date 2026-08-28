@@ -1,61 +1,46 @@
+/**
+ * app/api/webhook/route.ts — rebuilt Phase 8
+ *
+ * Transport only: verify signature → record event → 200 immediately.
+ * All heavy work runs inside after() via processWebhookEventInBackground.
+ *
+ * Key changes from the old god-route:
+ *  - decideTurn() → runTurn() from lib/agent/pipeline
+ *  - user_sessions table eliminated (merged into conversation_states)
+ *  - order_agent_turns → agent_turns (written by pipeline automatically)
+ *  - WhatsApp Flow code removed entirely
+ *  - state fields: stage/last_shown_options (new schema)
+ */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { after, NextRequest } from "next/server";
-import { getCustomerSupportReply, type OrderTurnIntent } from "@/lib/ai";
-import {
-  findBranchSelection,
-  getActiveBranches,
-  getBranchById,
-  getBranchSelectionPrompt,
-  isBranchChangeRequest,
-  type BranchRecord,
-  type BranchSummary,
-} from "@/lib/branches";
+import { runTurn } from "@/lib/agent/pipeline";
+import { stateRepo, getDefaultState } from "@/lib/data/state.repo";
+import { contactRepo } from "@/lib/data/contact.repo";
+import { conversationRepo } from "@/lib/data/conversation.repo";
+import { messageRepo } from "@/lib/data/message.repo";
+import { getActiveBranches, getBranchById, isBranchChangeRequest, findBranchSelection, getBranchSelectionPrompt, type BranchSummary, type BranchRecord } from "@/lib/branches";
 import { escalateToHuman, resumeBotForConversation } from "@/lib/handoff";
 import { sendAndPersistAssistantMessage } from "@/lib/assistant-dispatcher";
-import { deleteUnsentOutboundMessage, OutboundMessageError, type MessageDeliveryStatus } from "@/lib/messages";
-import {
-  decideTurn,
-  getDefaultConversationState,
-  inferLanguagePreference,
-  parseConversationState,
-  detectMessageType,
-  type MenuCatalogItem,
-  type TurnDecision,
-  type ConversationState,
-  type PlaceableOrderPayload,
-} from "@/lib/order-engine";
-import { getMenuCatalog, getMenuForAI } from "@/lib/menu";
-import { getSemanticMenuMatches } from "@/lib/semantic-menu";
-import { getRestaurantSettings, isWithinOperatingHours } from "@/lib/settings";
+import { getMenuCatalog } from "@/lib/menu";
+import { getRestaurantSettings } from "@/lib/settings";
+import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { createStaffAlert } from "@/lib/staff-alerts";
-import {
-  getLatestSavedAddress,
-  saveCustomerAddressFromOrder,
-  updateCustomerOrderStats,
-} from "@/lib/customer-crm";
+import { saveCustomerAddressFromOrder, updateCustomerOrderStats } from "@/lib/customer-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/lib/rate-limit";
-import { buildSessionUpdate, getDefaultUserSession, getOrCreateUserSession, updateUserSession } from "@/lib/user-session";
 import {
-  buildBranchSelectionFlowMessage,
-  buildFlowMessageForAgentReply,
   buildInteractiveListForBranches,
   buildInteractiveListForPresentedOptions,
 } from "@/lib/webhook-interactive-builders";
 import {
   buildCityBranchGroups,
-  buildInteractiveCategoryUI,
   buildInteractiveListForCities,
+  buildInteractiveCategoryUI,
   findCitySelection,
   getCitySelectionPrompt,
   normalizeCityValue,
   type CityBranchGroup,
 } from "@/lib/webhook-city-helpers";
-import {
-  extractFlowResponseCommand,
-} from "@/lib/whatsapp-flow";
-import { normalizeText } from "@/lib/order-text-utils";
-import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import {
   claimWebhookEvent,
   markWebhookEventFailed,
@@ -63,90 +48,41 @@ import {
   recordWebhookEvent,
 } from "@/lib/webhook-events";
 import {
-  downloadWhatsAppMedia,
-  getWhatsAppMediaUrl,
-  sendWhatsAppInteractiveFlow,
   sendWhatsAppInteractiveList,
   sendWhatsAppMessage,
 } from "@/lib/whatsapp";
+import { normalizeText } from "@/lib/order-text-utils";
+import { inferLanguagePreference } from "@/lib/order-engine";
+import { downloadWhatsAppMedia, getWhatsAppMediaUrl } from "@/lib/whatsapp";
 
-function shouldResumeBotFromHumanMessage(content: string): boolean {
-  const normalized = content.toLowerCase().trim();
-  return (
-    normalized.includes("resume bot") ||
-    normalized.includes("back to bot") ||
-    normalized.includes("switch to bot") ||
-    normalized.includes("bot resume") ||
-    normalized.includes("ai handle") ||
-    normalized.includes("let ai handle") ||
-    normalized.includes("transfer to ai") ||
-    normalized.includes("bot can handle")
-  );
-}
+export const runtime = "nodejs";
+export const maxDuration = 60;
 
-const SAVED_BRANCH_CHOICE_MARKER = "__saved_branch_choice__";
+const ORDER_FRESH_START_AFTER_INACTIVITY_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-function isContinueWithSavedBranchRequest(content: string): boolean {
-  const normalized = content.trim().toLowerCase().replace(/\s+/g, " ");
-  return (
-    normalized === "branch_continue_saved" ||
-    normalized === "branch continue saved" ||
-    /\bcontinue\b/.test(normalized) ||
-    /\b(same|current|previous)\s+branch\b/.test(normalized) ||
-    /\b(use|keep)\s+(same|current|previous)\s+branch\b/.test(normalized)
-  );
-}
-
-function isSelectNewBranchRequest(content: string): boolean {
-  const normalized = content.trim().toLowerCase().replace(/\s+/g, " ");
-  return (
-    normalized === "branch_change_saved" ||
-    normalized === "branch change saved" ||
-    /\b(change|switch|new)\s+branch\b/.test(normalized) ||
-    /\bselect\s+new\s+branch\b/.test(normalized) ||
-    isBranchChangeRequest(content)
-  );
-}
-
-function isBranchAddressLookupRequest(content: string): boolean {
-  const normalized = content.trim().toLowerCase().replace(/\s+/g, " ");
-  return /\b(address|location|where|kahan|kidhar|branch address|map)\b/.test(normalized);
-}
-
-function shouldRunSemanticLookup(content: string): boolean {
-  const normalized = content.toLowerCase().trim();
-  if (normalized.length < 4) return false;
-  if (/^(ok|okay|yes|no|han|haan|nahi|menu|\d{1,2})$/.test(normalized)) return false;
-  return /\p{L}/u.test(normalized);
-}
+// ---------------------------------------------------------------------------
+// Type helpers
+// ---------------------------------------------------------------------------
 type IncomingWhatsAppMessage = {
   id: string;
   from: string;
   type: string;
   timestamp: string;
   text?: { body?: string };
-  audio?: {
-    id?: string;
-    mime_type?: string;
-    voice?: boolean;
-  };
+  audio?: { id?: string; mime_type?: string; voice?: boolean };
   interactive?: {
-    type?: "button_reply" | "list_reply" | "nfm_reply";
-    button_reply?: {
-      id?: string;
-      title?: string;
-    };
-    list_reply?: {
-      id?: string;
-      title?: string;
-      description?: string;
-    };
-    nfm_reply?: {
-      name?: string;
-      body?: string;
-      response_json?: string;
-    };
+    type?: "button_reply" | "list_reply";
+    button_reply?: { id?: string; title?: string };
+    list_reply?: { id?: string; title?: string; description?: string };
   };
+};
+
+type IncomingWhatsAppStatus = {
+  id?: string;
+  recipient_id?: string;
+  status?: string;
+  timestamp?: string;
+  errors?: Array<{ code?: number; title?: string; message?: string; error_data?: { details?: string } }>;
 };
 
 type IncomingEnvelope = {
@@ -161,73 +97,24 @@ type IncomingEnvelope = {
   }>;
 };
 
-type IncomingWhatsAppStatus = {
-  id?: string;
-  recipient_id?: string;
-  status?: string;
-  timestamp?: string;
-  errors?: Array<{
-    code?: number;
-    title?: string;
-    message?: string;
-    error_data?: { details?: string };
-  }>;
-};
-
-type IncomingMessageEvent = {
-  message: IncomingWhatsAppMessage;
-  contactName: string;
-};
-
-type ConversationRow = {
-  id: string;
-  branch_id: string;
-  contact_id: string;
-  phone: string;
-  name: string | null;
-  mode: "agent" | "human";
-};
-
-type ContactRow = {
-  id: string;
-  phone: string;
-  name: string | null;
-  active_branch_id: string | null;
-};
-
-type MessageRow = {
-  id: string;
-  ingest_seq: number;
-  content: string;
-  created_at: string;
-  whatsapp_msg_id: string | null;
-};
-
-type PersistedUserMessage = {
-  message: MessageRow | null;
-};
-
-export const runtime = "nodejs";
-export const maxDuration = 60;
-const ORDER_FRESH_START_AFTER_INACTIVITY_MS = 2 * 60 * 60 * 1000;
-
+// ---------------------------------------------------------------------------
+// GET — Meta webhook verification
+// ---------------------------------------------------------------------------
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
   const mode = searchParams.get("hub.mode");
   const token = searchParams.get("hub.verify_token");
   const challenge = searchParams.get("hub.challenge");
-
   if (mode === "subscribe" && token === process.env.WHATSAPP_VERIFY_TOKEN) {
     return new Response(challenge, { status: 200 });
   }
-
   return new Response("Forbidden", { status: 403 });
 }
 
+// ---------------------------------------------------------------------------
+// POST — ingest + 200 immediately
+// ---------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
-  console.log("[webhook] POST request received. Version: Legacy-V1-Reset");
-  let rawBody = "";
-  let body: unknown;
   const signature = req.headers.get("x-hub-signature-256");
   const rateLimit = await checkRateLimit({
     scope: "whatsapp_webhook",
@@ -237,12 +124,11 @@ export async function POST(req: NextRequest) {
     blockSeconds: Number(process.env.WHATSAPP_WEBHOOK_RATE_LIMIT_BLOCK_SECONDS) || 60,
   });
   if (!rateLimit.allowed) {
-    return new Response("Too Many Requests", {
-      status: 429,
-      headers: buildRateLimitHeaders(rateLimit),
-    });
+    return new Response("Too Many Requests", { status: 429, headers: buildRateLimitHeaders(rateLimit) });
   }
 
+  let rawBody = "";
+  let body: unknown;
   try {
     rawBody = await req.text();
     if (process.env.MOCK_WHATSAPP !== "true" && !isValidWhatsAppSignature(rawBody, signature)) {
@@ -254,2057 +140,516 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const event = await recordWebhookEvent({
-      rawBody,
-      payload: body,
-      signature,
-    });
-
-    after(async () => {
-      await processWebhookEventInBackground(event.id);
-    });
-
+    const event = await recordWebhookEvent({ rawBody, payload: body, signature });
+    after(async () => { await processWebhookEventInBackground(event.id); });
     return new Response("OK", { status: 200 });
   } catch (error) {
-    console.error("[webhook] Failed to persist webhook event:", error);
+    console.error("[webhook] Failed to record event:", error);
     return new Response("Server Error", { status: 500 });
   }
 }
 
+// ---------------------------------------------------------------------------
+// Background processing
+// ---------------------------------------------------------------------------
 async function processWebhookEventInBackground(eventId: string) {
   const claimed = await claimWebhookEvent(eventId);
   if (!claimed) return;
-
   try {
     await processWebhook(claimed.payload);
     await markWebhookEventProcessed(eventId);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : "Unknown webhook processing error";
-    console.error("[webhook] Background processing failed:", errorMessage, error);
-    await markWebhookEventFailed(eventId, errorMessage);
-    await alertStaffForFailedWebhook(claimed.payload, eventId, errorMessage).catch((alertError) => {
-      console.error("[webhook] Failed to create webhook processing alert:", alertError);
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    console.error("[webhook] Background processing failed:", msg, error);
+    await markWebhookEventFailed(eventId, msg);
+    await alertStaffForFailedWebhook(claimed.payload, eventId, msg).catch((e) => {
+      console.error("[webhook] Staff alert failed:", e);
     });
   }
-}
-
-function pickDefaultBranch(branches: BranchRecord[], defaultBranchId: string | null) {
-  if (defaultBranchId) {
-    const configured = branches.find((branch) => branch.id === defaultBranchId);
-    if (configured) return configured;
-  }
-
-  return branches[0] ?? null;
 }
 
 async function processWebhook(body: unknown) {
-  const statusEvents = extractIncomingStatusEvents(body);
+  // 1) Status events (delivery receipts)
+  const statusEvents = extractStatusEvents(body);
   if (statusEvents.length > 0) {
-    await updateOutboundMessageStatuses(statusEvents);
+    await updateDeliveryStatuses(statusEvents);
   }
 
-  const events = extractIncomingMessages(body);
+  const events = extractMessages(body);
   if (events.length === 0) return;
 
-  const [branches, restaurantProfile] = await Promise.all([
-    getActiveBranches(),
-    getRestaurantProfile(),
-  ]);
+  const [branches, profile] = await Promise.all([getActiveBranches(), getRestaurantProfile()]);
   const cityGroups = await buildCityBranchGroups(branches);
-  const agentConversations = new Map<string, ConversationRow>();
 
-  for (const event of events) {
-    const { message, contactName } = event;
-    const contact = await upsertContact(message.from, contactName);
-    const incomingContent = await extractIncomingContent(message);
-    const prefersRomanUrdu = inferLanguagePreference(incomingContent ?? "", "english") !== "english";
-    let activeBranch = contact.active_branch_id
-      ? branches.find((branch) => branch.id === contact.active_branch_id) ?? null
-      : null;
-
-    if ((!contact.active_branch_id || !activeBranch) && restaurantProfile.branch_mode !== "multiple") {
-      const defaultBranch = pickDefaultBranch(branches, restaurantProfile.default_branch_id);
-      if (defaultBranch) {
-        await setActiveBranch(contact.id, defaultBranch.id);
-        contact.active_branch_id = defaultBranch.id;
-        activeBranch = defaultBranch;
-      }
+  for (const { message, contactName } of events) {
+    try {
+      await processOneMessage(message, contactName, branches, cityGroups, profile);
+    } catch (error) {
+      console.error("[webhook] Failed to process message:", { from: message.from, error });
     }
-
-    if (!contact.active_branch_id || !activeBranch) {
-      if (contact.active_branch_id && !activeBranch) {
-        await setActiveBranch(contact.id, null);
-      }
-
-      if (!incomingContent) {
-        if (message.type !== "reaction") {
-          await sendCitySelectionMessage(message.from, cityGroups, prefersRomanUrdu);
-        }
-        continue;
-      }
-
-      // City selection must win over branch fuzzy-matching (branch addresses often include city names).
-      // Otherwise typing "Lahore" could accidentally match a branch and skip the branch list.
-      const selectedCity = findCitySelection(
-        incomingContent,
-        cityGroups.map((group) => group.city),
-      );
-
-      if (selectedCity) {
-        const cityGroup =
-          cityGroups.find((group) => normalizeCityValue(group.city) === normalizeCityValue(selectedCity)) ?? null;
-        const cityBranches = cityGroup?.branches ?? [];
-        if (cityBranches.length === 0) {
-          await sendCitySelectionMessage(message.from, cityGroups, prefersRomanUrdu);
-          continue;
-        }
-
-        if (cityBranches.length === 1) {
-          // Auto-pick single-branch cities.
-          const selectedBranch = cityBranches[0];
-          await setActiveBranch(contact.id, selectedBranch.id);
-          contact.active_branch_id = selectedBranch.id;
-
-          const selectedConversation = await upsertConversation(contact, selectedBranch.id, contactName);
-          const selectedState = await getOrCreateConversationState(selectedConversation.id);
-          const createdAt = toIsoTimestamp(message.timestamp);
-          if (selectedState.last_processed_user_message_id === message.id) {
-            continue;
-          }
-
-          const persistedMessage = await persistUserMessage(
-            selectedConversation.id,
-            incomingContent,
-            message.id,
-            createdAt,
-          );
-
-          const assistantReply = prefersRomanUrdu
-            ? `Theek hai, *${selectedBranch.name}* select ho gayi. Address: ${selectedBranch.address}\n\nAb category select karein ya item name bhej dein.`
-            : `Great, you've selected *${selectedBranch.name}*. Address: ${selectedBranch.address}\n\nNow choose a category or send any item name.`;
-          const selectedMenuItems = await getMenuCatalog(selectedBranch.id);
-          const categoryUI = buildInteractiveCategoryUI(selectedMenuItems, prefersRomanUrdu, 1);
-          await sendAndPersistAssistantMessage({
-            conversationId: selectedConversation.id,
-            phone: message.from,
-            content: assistantReply,
-            interactiveList: categoryUI.interactiveList,
-            replyButtons: categoryUI.replyButtons,
-            flowMessage: null,
-          });
-
-          await markMessageProcessed(
-            selectedState,
-            message.id,
-            createdAt,
-            persistedMessage.message?.ingest_seq ?? null,
-            {
-              workflow_step: "collecting_items",
-              last_presented_category: "__category_list__",
-              last_presented_options: null,
-              last_presented_options_at: null,
-              preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
-            },
-          );
-
-          const selectedSession = await getOrCreateUserSession(selectedConversation.id, {
-            active_node: "cart_builder",
-            status: "active",
-            is_bot_active: true,
-          });
-
-          await updateUserSession(
-            selectedConversation.id,
-            buildSessionUpdate({
-              session: selectedSession,
-              stateBefore: selectedState,
-              stateAfter: parseConversationState({
-                ...selectedState,
-                conversation_id: selectedConversation.id,
-                workflow_step: "collecting_items",
-                last_presented_category: "__category_list__",
-                last_presented_options: null,
-                last_presented_options_at: null,
-                preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
-              }),
-              mode: "agent",
-              intent: null,
-              lastUserMessage: incomingContent,
-              lastAssistantReply: assistantReply,
-            }),
-          );
-
-          continue;
-        }
-
-        await sendBranchSelectionMessage(message.from, cityBranches, prefersRomanUrdu, selectedCity);
-        continue;
-      }
-
-      // If user didn't select a city, allow direct branch selection by typing branch name/number.
-      const selectedBranch = findBranchSelection(incomingContent, branches);
-      if (!selectedBranch) {
-        await sendCitySelectionMessage(message.from, cityGroups, prefersRomanUrdu);
-        continue;
-      }
-
-      // Continue with global branch selection (existing logic below uses selectedBranch).
-
-      await setActiveBranch(contact.id, selectedBranch.id);
-      // Update local contact object so subsequent logic uses the correct branch
-      contact.active_branch_id = selectedBranch.id;
-
-      const selectedConversation = await upsertConversation(contact, selectedBranch.id, contactName);
-      const selectedState = await getOrCreateConversationState(selectedConversation.id);
-      
-      const createdAt = toIsoTimestamp(message.timestamp);
-      if (selectedState.last_processed_user_message_id === message.id) {
-        continue;
-      }
-
-      const persistedMessage = await persistUserMessage(
-        selectedConversation.id,
-        incomingContent,
-        message.id,
-        createdAt,
-      );
-
-      const assistantReply = prefersRomanUrdu
-        ? `Theek hai, *${selectedBranch.name}* select ho gayi. Address: ${selectedBranch.address}\n\nAb category select karein ya item name bhej dein.`
-        : `Great, you've selected *${selectedBranch.name}*. Address: ${selectedBranch.address}\n\nNow choose a category or send any item name.`;
-      const selectedMenuItems = await getMenuCatalog(selectedBranch.id);
-      const categoryUI = buildInteractiveCategoryUI(selectedMenuItems, prefersRomanUrdu, 1);
-
-      await sendAndPersistAssistantMessage({
-        conversationId: selectedConversation.id,
-        phone: message.from,
-        content: assistantReply,
-        interactiveList: categoryUI.interactiveList,
-        replyButtons: categoryUI.replyButtons,
-        flowMessage: null,
-      });
-
-      await markMessageProcessed(
-        selectedState,
-        message.id,
-        createdAt,
-        persistedMessage.message?.ingest_seq ?? null,
-        {
-          workflow_step: "collecting_items",
-          last_presented_category: "__category_list__",
-          last_presented_options: null,
-          last_presented_options_at: null,
-          preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
-        },
-      );
-      
-      const selectedSession = await getOrCreateUserSession(selectedConversation.id, {
-        active_node: "cart_builder",
-        status: "active",
-        is_bot_active: true,
-      });
-
-      await updateUserSession(
-        selectedConversation.id,
-        buildSessionUpdate({
-          session: selectedSession,
-          stateBefore: selectedState,
-          stateAfter: parseConversationState({
-            ...selectedState,
-            conversation_id: selectedConversation.id,
-            workflow_step: "collecting_items",
-            last_presented_category: "__category_list__",
-            last_presented_options: null,
-            last_presented_options_at: null,
-            preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
-          }),
-          mode: "agent",
-          intent: null,
-          lastUserMessage: incomingContent,
-          lastAssistantReply: assistantReply,
-        }),
-      );
-      continue;
-    }
-
-    // Normal processing if branch is already active
-    const conversation = await upsertConversation(contact, contact.active_branch_id, contactName);
-    let state = await getOrCreateConversationState(conversation.id);
-    if (state.last_processed_user_message_id === message.id) {
-      continue;
-    }
-
-    const createdAt = toIsoTimestamp(message.timestamp);
-    if (shouldStartFreshOrderAfterInactivity(state, createdAt)) {
-      const nextLanguage = incomingContent
-        ? inferLanguagePreference(incomingContent, state.preferred_language)
-        : state.preferred_language;
-      const inactivityMs = Math.max(
-        0,
-        new Date(createdAt).getTime() - new Date(state.last_processed_user_message_at ?? createdAt).getTime(),
-      );
-      console.info("[webhook] Fresh-start reset after inactivity", {
-        conversationId: conversation.id,
-        mode: conversation.mode,
-        inactivityMinutes: Math.round(inactivityMs / 60_000),
-        previousWorkflow: state.workflow_step,
-        lastProcessedMessageSeq: state.last_processed_message_seq,
-        lastProcessedAt: state.last_processed_user_message_at,
-        incomingAt: createdAt,
-      });
-      await resetOrderDraftAfterInactivity({
-        conversationId: conversation.id,
-        mode: conversation.mode,
-        preferredLanguage: nextLanguage,
-        previousState: state,
-      });
-      state = await getOrCreateConversationState(conversation.id);
-
-    }
-
-    if (!incomingContent) {
-      if (message.type !== "reaction") {
-        if (message.type === "audio") {
-          const voiceFallback =
-            state.preferred_language === "roman_urdu"
-              ? "Voice note mil gaya hai, lekin is waqt sun kar order lena available nahi. Manager reply karega. Jaldi order karna ho to item text mein bhej dein."
-              : "I received your voice note, but voice ordering is not available right now. A manager will reply. For a faster order, please type the items.";
-          const persistedVoiceMessage = await persistUserMessage(
-            conversation.id,
-            "[Voice note received - transcription unavailable]",
-            message.id,
-            createdAt,
-          );
-          await escalateToHuman({
-            conversationId: conversation.id,
-            branchId: conversation.branch_id,
-            phone: conversation.phone,
-            reason: "voice_note_requires_staff",
-            prefersRomanUrdu: state.preferred_language !== "english",
-          });
-          await sendAndPersistAssistantMessage({
-            conversationId: conversation.id,
-            phone: message.from,
-            content: voiceFallback,
-            interactiveList: null,
-            flowMessage: null,
-          });
-          await markMessageProcessed(state, message.id, createdAt, persistedVoiceMessage.message?.ingest_seq ?? null, {
-            preferred_language: state.preferred_language,
-          });
-          continue;
-        }
-
-        const nonTextReply =
-          state.preferred_language === "roman_urdu"
-            ? "Please text message bhej dein, main menu aur order mein help kar deta hoon."
-            : "Please send a text message and I'll help you with the menu or your order.";
-        const nonTextFlow = buildFlowMessageForAgentReply({
-          context: "menu",
-          conversationId: conversation.id,
-          prefersRomanUrdu: state.preferred_language !== "english",
-          workflowStep: state.workflow_step,
-          body: nonTextReply,
-        });
-        // Mark processed BEFORE sending to prevent duplicate replies on retry
-        await markMessageProcessed(state, message.id, createdAt, null);
-        await sendAndPersistAssistantMessage({
-          conversationId: conversation.id,
-          phone: message.from,
-          content: nonTextReply,
-          interactiveList: null,
-          flowMessage: nonTextFlow,
-        });
-      }
-      if (!state.last_processed_user_message_id || state.last_processed_user_message_id !== message.id) {
-        await markMessageProcessed(state, message.id, createdAt, null);
-      }
-      continue;
-    }
-
-    const content = incomingContent;
-    const displayContent = resolveInteractiveDisplayText(message, content);
-    const persistedMessage = await persistUserMessage(conversation.id, displayContent, message.id, createdAt);
-    const nextLanguage = inferLanguagePreference(content, state.preferred_language);
-    const { error: languageUpdateError } = await supabaseAdmin
-      .from("contacts")
-      .update({ preferred_language: nextLanguage, updated_at: new Date().toISOString() })
-      .eq("id", contact.id);
-    if (languageUpdateError) {
-      console.error("[webhook] Failed to update contact language preference:", languageUpdateError);
-    }
-
-    if (state.last_presented_category === SAVED_BRANCH_CHOICE_MARKER) {
-      if (isContinueWithSavedBranchRequest(content) && activeBranch) {
-        const selectedMenuItems = await getMenuCatalog(activeBranch.id);
-        const categoryUI = buildInteractiveCategoryUI(selectedMenuItems, prefersRomanUrdu, 1);
-        const continueReply = prefersRomanUrdu
-          ? `Theek hai, *${activeBranch.name}* continue karte hain. Ab category select karein ya item name bhej dein.`
-          : `Great, continuing with *${activeBranch.name}*. Now choose a category or send any item name.`;
-
-        await sendAndPersistAssistantMessage({
-          conversationId: conversation.id,
-          phone: message.from,
-          content: continueReply,
-          interactiveList: categoryUI.interactiveList,
-          replyButtons: categoryUI.replyButtons,
-          flowMessage: null,
-        });
-
-        await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
-          workflow_step: "collecting_items",
-          preferred_language: nextLanguage,
-          last_presented_category: "__category_list__",
-          last_presented_options: null,
-          last_presented_options_at: null,
-        });
-
-        const continueSession = await getOrCreateUserSession(conversation.id, {
-          active_node: "cart_builder",
-          status: "active",
-          is_bot_active: true,
-        });
-        await updateUserSession(
-          conversation.id,
-          buildSessionUpdate({
-            session: continueSession,
-            stateBefore: state,
-            stateAfter: parseConversationState({
-              ...state,
-              conversation_id: conversation.id,
-              workflow_step: "collecting_items",
-              preferred_language: nextLanguage,
-              last_presented_category: "__category_list__",
-              last_presented_options: null,
-              last_presented_options_at: null,
-            }),
-            mode: "agent",
-            intent: null,
-            lastUserMessage: content,
-            lastAssistantReply: continueReply,
-            forceNode: "cart_builder",
-          }),
-        );
-        continue;
-      }
-
-      if (activeBranch && isBranchAddressLookupRequest(content)) {
-        const addressReply = activeBranch.address?.trim()
-          ? prefersRomanUrdu
-            ? `${activeBranch.name} ka address: ${activeBranch.address}`
-            : `${activeBranch.name} address: ${activeBranch.address}`
-          : prefersRomanUrdu
-            ? `Maazrat, ${activeBranch.name} ka address abhi update nahi hai.`
-            : `Sorry, ${activeBranch.name} address is not configured yet.`;
-
-        await sendAndPersistAssistantMessage({
-          conversationId: conversation.id,
-          phone: message.from,
-          content: addressReply,
-          interactiveList: null,
-          flowMessage: null,
-        });
-
-        await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
-          preferred_language: nextLanguage,
-        });
-        continue;
-      }
-
-      if (!isSelectNewBranchRequest(content)) {
-        await updateConversationState(state, {
-          last_presented_category: null,
-          last_presented_options: null,
-          last_presented_options_at: null,
-        });
-        state = parseConversationState({
-          ...state,
-          last_presented_category: null,
-          last_presented_options: null,
-          last_presented_options_at: null,
-        });
-      }
-    }
-
-    if (isSelectNewBranchRequest(content)) {
-      if (restaurantProfile.branch_mode !== "multiple") {
-        const branchReply = prefersRomanUrdu
-          ? `${activeBranch.name} is restaurant ka main location hai. Aap yahin se order continue kar sakte hain.`
-          : `${activeBranch.name} is the active location for this restaurant. You can continue ordering here.`;
-        await sendAndPersistAssistantMessage({
-          conversationId: conversation.id,
-          phone: message.from,
-          content: branchReply,
-          interactiveList: null,
-          flowMessage: null,
-        });
-        await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null, {
-          preferred_language: nextLanguage,
-        });
-        continue;
-      }
-
-      const prefersRomanUrduForFlow = state.preferred_language !== "english";
-      const availableCities = cityGroups.map((group) => group.city);
-      const cityInteractiveList = buildInteractiveListForCities(availableCities, prefersRomanUrduForFlow);
-      const cityPrompt = getCitySelectionPrompt(availableCities, prefersRomanUrduForFlow);
-      await updateConversationState(state, {
-        ...getDefaultConversationState(conversation.id),
-        workflow_step: "awaiting_branch_selection",
-        preferred_language: inferLanguagePreference(content, state.preferred_language),
-      });
-      await setActiveBranch(contact.id, null);
-      const branchFlow = buildFlowMessageForAgentReply({
-        context: "branch",
-        conversationId: conversation.id,
-        prefersRomanUrdu: prefersRomanUrduForFlow,
-        workflowStep: "awaiting_branch_selection",
-        branches,
-        body: cityInteractiveList ? cityInteractiveList.body : cityPrompt,
-      });
-      await sendAndPersistAssistantMessage({
-        conversationId: conversation.id,
-        phone: message.from,
-        content: cityInteractiveList ? cityInteractiveList.body : cityPrompt,
-        interactiveList: cityInteractiveList,
-        flowMessage: branchFlow,
-      });
-      const resetState = await getOrCreateConversationState(conversation.id);
-      await markMessageProcessed(resetState, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null);
-      const session = await getOrCreateUserSession(conversation.id);
-      await updateUserSession(
-        conversation.id,
-        buildSessionUpdate({
-          session,
-          stateBefore: state,
-          stateAfter: parseConversationState({
-            ...getDefaultConversationState(conversation.id),
-            workflow_step: "awaiting_branch_selection",
-            preferred_language: inferLanguagePreference(content, state.preferred_language),
-            conversation_id: conversation.id,
-          }),
-          mode: "agent",
-          intent: null,
-          lastUserMessage: content,
-          lastAssistantReply: cityPrompt,
-          forceNode: "branch_selection",
-        }),
-      );
-      continue;
-    }
-
-    if (conversation.mode === "human") {
-      if (incomingContent && shouldResumeBotFromHumanMessage(incomingContent)) {
-        const resumeReply =
-          state.preferred_language === "roman_urdu"
-            ? "Theek hai. Apna order message bhej dein."
-            : "Done. Send your order when ready.";
-
-        await resumeBotForConversation(conversation.id);
-        await supabaseAdmin
-          .from("conversations")
-          .update({
-            mode: "agent",
-            has_unread: false,
-            updated_at: new Date().toISOString(),
-          })
-          .eq("id", conversation.id);
-
-        await sendAndPersistAssistantMessage({
-          conversationId: conversation.id,
-          phone: message.from,
-          content: resumeReply,
-        });
-
-        await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null);
-        await getOrCreateUserSession(conversation.id, {
-          active_node: "cart_builder",
-          status: "active",
-          is_bot_active: true,
-        });
-        await updateUserSession(conversation.id, {
-          active_node: "cart_builder",
-          return_node: null,
-          status: "active",
-          is_bot_active: true,
-          escalation_reason: null,
-          escalated_at: null,
-          last_user_message: content,
-          last_assistant_reply: resumeReply,
-        });
-        continue;
-      }
-
-      await markMessageProcessed(state, message.id, createdAt, persistedMessage.message?.ingest_seq ?? null);
-      const humanSession = await getOrCreateUserSession(conversation.id, {
-        active_node: "human_handoff",
-        status: "human_handoff",
-        is_bot_active: false,
-      });
-      await updateUserSession(conversation.id, {
-        ...buildSessionUpdate({
-          session: humanSession,
-          stateBefore: state,
-          stateAfter: state,
-          mode: "human",
-          intent: null,
-          lastUserMessage: content,
-          lastAssistantReply: null,
-          forceNode: "human_handoff",
-        }),
-        status: "human_handoff",
-        is_bot_active: false,
-      });
-      continue;
-    }
-
-    agentConversations.set(conversation.id, conversation);
-  }
-
-  for (const conversation of agentConversations.values()) {
-    await drainConversationQueue(conversation);
   }
 }
 
-async function alertStaffForFailedWebhook(payload: unknown, eventId: string, errorMessage: string): Promise<void> {
-  const target = await resolveWebhookAlertTarget(payload);
-  if (!target) {
-    console.warn("[webhook] Could not resolve conversation for failed webhook alert", { eventId });
+// ---------------------------------------------------------------------------
+// Per-message processing
+// ---------------------------------------------------------------------------
+async function processOneMessage(
+  message: IncomingWhatsAppMessage,
+  contactName: string,
+  branches: BranchRecord[],
+  cityGroups: CityBranchGroup[],
+  profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
+) {
+  const phone = message.from;
+  const contact = await upsertContact(phone, contactName);
+  const incomingContent = await extractContent(message);
+  const prefersRomanUrdu = inferLanguagePreference(incomingContent ?? "", "english") === "roman_urdu";
+
+  // ---- Branch resolution ----
+  let activeBranch: BranchRecord | null = contact.active_branch_id
+    ? (branches.find((b) => b.id === contact.active_branch_id) ?? null)
+    : null;
+
+  if (!activeBranch && profile.branch_mode !== "multiple") {
+    const def = pickDefaultBranch(branches, profile.default_branch_id ?? null);
+    if (def) {
+      await contactRepo.setActiveBranch(contact.id, def.id);
+      contact.active_branch_id = def.id;
+      activeBranch = def;
+    }
+  }
+
+  // ---- No branch yet: city/branch selection flow ----
+  if (!activeBranch) {
+    if (!incomingContent) {
+      if (message.type !== "reaction") await sendCitySelection(phone, cityGroups, prefersRomanUrdu);
+      return;
+    }
+    await handleBranchSelection(message, contact, incomingContent, branches, cityGroups, prefersRomanUrdu, profile);
     return;
   }
 
-  await createStaffAlert({
-    conversationId: target.conversationId,
-    branchId: target.branchId,
-    kind: "webhook_processing",
-    severity: "high",
-    message: `WhatsApp webhook ${eventId} failed after retries: ${errorMessage.slice(0, 300)}`,
+  // ---- Normal turn processing ----
+  const conversation = await conversationRepo.ensure({
+    contactId: contact.id,
+    branchId: activeBranch.id,
+    phone,
+    name: contactName,
   });
-}
+  let state = await stateRepo.ensure(conversation.id);
 
-async function resolveWebhookAlertTarget(
-  payload: unknown,
-): Promise<{ conversationId: string; branchId: string } | null> {
-  const statusMessageId = extractFirstStatusMessageId(payload);
-  if (statusMessageId) {
-    const { data: messageRow, error: messageError } = await supabaseAdmin
-      .from("messages")
-      .select("conversation_id")
-      .eq("whatsapp_msg_id", statusMessageId)
-      .maybeSingle();
+  // Dedup: already processed this WhatsApp message id
+  if (state.last_user_whatsapp_msg_id === message.id) return;
 
-    if (messageError) throw messageError;
-    if (messageRow?.conversation_id) {
-      return getConversationAlertTarget(messageRow.conversation_id);
-    }
+  const createdAt = toIso(message.timestamp);
+
+  // Inactivity reset: clear cart/draft after 2 h idle
+  if (shouldResetForInactivity(state, createdAt)) {
+    const nextLang = incomingContent ? inferLanguagePreference(incomingContent, state.preferred_language) : state.preferred_language;
+    const fresh = getDefaultState(conversation.id);
+    state = await stateRepo.patch(conversation.id, {
+      ...fresh,
+      preferred_language: nextLang,
+      last_user_whatsapp_msg_id: state.last_user_whatsapp_msg_id,
+      last_processed_user_message_id: state.last_processed_user_message_id,
+      last_processed_message_seq: state.last_processed_message_seq,
+      last_processed_user_message_at: state.last_processed_user_message_at,
+    });
   }
 
-  const phone = extractFirstWebhookPhone(payload);
-  if (!phone) return null;
+  // Human mode: forward to staff, check for bot-resume command
+  if (conversation.mode === "human") {
+    if (incomingContent && shouldResumeBotFromMessage(incomingContent)) {
+      await handleBotResume(conversation, state, message, incomingContent, prefersRomanUrdu);
+    } else if (incomingContent) {
+      await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: incomingContent, whatsappMsgId: message.id });
+      await conversationRepo.setUnread(conversation.id, true);
+    }
+    return;
+  }
 
-  const { data: conversation, error } = await supabaseAdmin
-    .from("conversations")
-    .select("id, branch_id")
-    .eq("phone", phone)
-    .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // Non-text / voice
+  if (!incomingContent) {
+    await handleNonText(message, conversation, state, prefersRomanUrdu);
+    return;
+  }
 
-  if (error) throw error;
-  if (!conversation) return null;
+  // Branch change request
+  if (isBranchChangeRequest(incomingContent) && profile.branch_mode === "multiple") {
+    await handleBranchChange(message, contact, conversation, state, incomingContent, cityGroups, branches, prefersRomanUrdu);
+    return;
+  }
 
-  return {
+  // ---- Main agent turn ----
+  const persistedMsg = await messageRepo.insert({
     conversationId: conversation.id,
-    branchId: conversation.branch_id,
-  };
-}
-
-async function getConversationAlertTarget(
-  conversationId: string,
-): Promise<{ conversationId: string; branchId: string } | null> {
-  const { data: conversation, error } = await supabaseAdmin
-    .from("conversations")
-    .select("id, branch_id")
-    .eq("id", conversationId)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!conversation) return null;
-
-  return {
-    conversationId: conversation.id,
-    branchId: conversation.branch_id,
-  };
-}
-
-function extractFirstWebhookPhone(payload: unknown): string | null {
-  const envelope = payload as IncomingEnvelope;
-  for (const entry of envelope.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      const messageFrom = change.value?.messages?.find((message) => message.from)?.from;
-      if (messageFrom) return messageFrom;
-
-      const statusRecipient = change.value?.statuses?.find((status) => status.recipient_id)?.recipient_id;
-      if (statusRecipient) return statusRecipient;
-    }
-  }
-  return null;
-}
-
-function extractFirstStatusMessageId(payload: unknown): string | null {
-  const envelope = payload as IncomingEnvelope;
-  for (const entry of envelope.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      const statusId = change.value?.statuses?.find((status) => status.id)?.id;
-      if (statusId) return statusId;
-    }
-  }
-  return null;
-}
-
-function extractIncomingMessages(body: unknown): IncomingMessageEvent[] {
-  const payload = body as IncomingEnvelope;
-  const events: IncomingMessageEvent[] = [];
-
-  for (const entry of payload.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      const contactName = change.value?.contacts?.[0]?.profile?.name;
-      for (const message of change.value?.messages ?? []) {
-        if (!message.id || !message.from || !message.timestamp || !message.type) {
-          continue;
-        }
-
-        events.push({
-          message,
-          contactName: contactName ?? message.from,
-        });
-      }
-    }
-  }
-
-  events.sort((left, right) => {
-    const timeDelta = compareMessageTimestamps(left.message.timestamp, right.message.timestamp);
-    if (timeDelta !== 0) return timeDelta;
-    return left.message.id.localeCompare(right.message.id);
+    role: "user",
+    senderKind: "user",
+    content: resolveDisplayContent(message, incomingContent),
+    whatsappMsgId: message.id,
   });
 
-  return events;
-}
+  // Update language on contact
+  const nextLang = inferLanguagePreference(incomingContent, state.preferred_language);
+  void contactRepo.setPreferredLanguage(contact.id, nextLang).catch(() => {});
 
-function extractIncomingStatusEvents(body: unknown): IncomingWhatsAppStatus[] {
-  const payload = body as IncomingEnvelope;
-  const statuses: IncomingWhatsAppStatus[] = [];
-
-  for (const entry of payload.entry ?? []) {
-    for (const change of entry.changes ?? []) {
-      for (const status of change.value?.statuses ?? []) {
-        if (!status.id || !status.status) {
-          continue;
-        }
-        statuses.push(status);
-      }
-    }
-  }
-
-  statuses.sort((left, right) => {
-    const timeDelta = compareMessageTimestamps(left.timestamp ?? "", right.timestamp ?? "");
-    if (timeDelta !== 0) return timeDelta;
-    return String(left.id).localeCompare(String(right.id));
-  });
-
-  return statuses;
-}
-
-async function updateOutboundMessageStatuses(statuses: IncomingWhatsAppStatus[]): Promise<void> {
-  for (const statusEvent of statuses) {
-    const whatsappMessageId = statusEvent.id?.trim();
-    const nextStatus = normalizeWhatsAppDeliveryStatus(statusEvent.status);
-    if (!whatsappMessageId || !nextStatus) {
-      continue;
-    }
-
-    const { data: existing, error: lookupError } = await supabaseAdmin
-      .from("messages")
-      .select("id, delivery_status")
-      .eq("whatsapp_msg_id", whatsappMessageId)
-      .maybeSingle();
-
-    if (lookupError) {
-      throw lookupError;
-    }
-
-    if (!existing) {
-      console.warn("[webhook] Received status for unknown outbound WhatsApp message", {
-        whatsappMessageId,
-        status: statusEvent.status,
-        recipientId: statusEvent.recipient_id ?? null,
-      });
-      continue;
-    }
-
-    const currentStatus = normalizeWhatsAppDeliveryStatus(existing.delivery_status);
-    if (currentStatus && getDeliveryStatusRank(nextStatus) < getDeliveryStatusRank(currentStatus)) {
-      continue;
-    }
-
-    const { error: updateError } = await supabaseAdmin
-      .from("messages")
-      .update({
-        delivery_status: nextStatus,
-        delivery_error: nextStatus === "failed" ? buildWhatsAppStatusError(statusEvent) : null,
-        delivery_status_updated_at: statusEvent.timestamp
-          ? toIsoTimestamp(statusEvent.timestamp)
-          : new Date().toISOString(),
-      })
-      .eq("id", existing.id);
-
-    if (updateError) {
-      throw updateError;
-    }
-  }
-}
-
-function normalizeWhatsAppDeliveryStatus(value: string | null | undefined): MessageDeliveryStatus | null {
-  switch (value) {
-    case "pending":
-    case "sent":
-    case "delivered":
-    case "read":
-    case "failed":
-      return value;
-    default:
-      return null;
-  }
-}
-
-function getDeliveryStatusRank(status: MessageDeliveryStatus): number {
-  const ranks: Record<MessageDeliveryStatus, number> = {
-    pending: 0,
-    sent: 1,
-    delivered: 2,
-    read: 3,
-    failed: 4,
-  };
-  return ranks[status];
-}
-
-function buildWhatsAppStatusError(statusEvent: IncomingWhatsAppStatus): string | null {
-  const errors = statusEvent.errors ?? [];
-  if (errors.length === 0) return "WhatsApp reported delivery failure.";
-
-  return errors
-    .map((error) => {
-      const code = error.code != null ? `#${error.code}` : null;
-      const text = error.message || error.title || error.error_data?.details || "WhatsApp delivery failure";
-      return [code, text].filter(Boolean).join(" ");
-    })
-    .join("; ")
-    .slice(0, 500);
-}
-
-async function extractIncomingContent(message: IncomingWhatsAppMessage): Promise<string | null> {
-  if (message.type === "text") {
-    const text = message.text?.body?.trim() ?? "";
-    return text || null;
-  }
-
-  if (message.type === "audio" && message.audio?.id) {
-    return transcribeWhatsAppAudioMessage(message.audio.id, message.audio.mime_type);
-  }
-
-  if (message.type === "interactive") {
-    const flowReply = message.interactive?.nfm_reply;
-    if (flowReply?.response_json) {
-      const extracted = extractFlowResponseCommand(flowReply.response_json);
-      if (extracted) return extracted.trim();
-
-      const compact = flowReply.response_json.trim();
-      if (compact) return compact;
-    }
-
-    const listReply = message.interactive?.list_reply;
-    if (listReply?.id) return listReply.id.trim();
-    if (listReply?.title) return listReply.title.trim();
-
-    const buttonReply = message.interactive?.button_reply;
-    if (buttonReply?.id) return buttonReply.id.trim();
-    if (buttonReply?.title) return buttonReply.title.trim();
-  }
-
-  return null;
-}
-
-/**
- * Maps raw interactive callback IDs to human-readable text for message persistence.
- * The raw ID (e.g., "menu_item:UUID", "category_option_3") is used internally by
- * the order engine, but the persisted/displayed message should show what the customer
- * actually selected, not the internal payload token.
- */
-function resolveInteractiveDisplayText(
-  message: IncomingWhatsAppMessage,
-  rawContent: string,
-): string {
-  if (message.type === "interactive") {
-    // Prefer human-readable title from interactive replies
-    const listTitle = message.interactive?.list_reply?.title?.trim();
-    const buttonTitle = message.interactive?.button_reply?.title?.trim();
-    if (listTitle) return listTitle;
-    if (buttonTitle) return buttonTitle;
-  }
-
-  // Decode known payload prefixes into readable descriptions
-  if (/^menu[_\s-]?item[:_\s-]/i.test(rawContent)) {
-    return "[Selected menu item]";
-  }
-  if (/^category[_\s-]?option[_\s-]?\d/i.test(rawContent)) {
-    return `[Selected category ${rawContent.match(/\d+/)?.[0] ?? ""}]`;
-  }
-  if (/^category[_\s-]?more[_\s-]?\d/i.test(rawContent)) {
-    return "[More categories]";
-  }
-  if (/^__qty_pick__:/i.test(rawContent)) {
-    const val = rawContent.replace(/^__qty_pick__:/i, "");
-    return val === "custom" ? "[Custom quantity]" : `[Quantity: ${val}]`;
-  }
-  if (/^upsell[_\s-]?yes$/i.test(rawContent)) {
-    return "Yes (add suggested item)";
-  }
-  if (/^upsell[_\s-]?no$/i.test(rawContent)) {
-    return "No thanks";
-  }
-  if (/^order[_\s-]?type[_\s-]?(delivery|pickup|dine[_\s-]?in)$/i.test(rawContent)) {
-    const type = rawContent.replace(/^order[_\s-]?type[_\s-]?/i, "").replace(/[_-]/g, " ");
-    return type.charAt(0).toUpperCase() + type.slice(1);
-  }
-  if (/^branch[_\s-]?(?:continue|change)[_\s-]?saved$/i.test(rawContent)) {
-    return rawContent.toLowerCase().includes("continue") ? "Continue with current branch" : "Change branch";
-  }
-  if (/^city[_\s-]?option[_\s-]?\d/i.test(rawContent)) {
-    return `[Selected city ${rawContent.match(/\d+/)?.[0] ?? ""}]`;
-  }
-  if (/^branch[_\s-]?option[_\s-]?\d/i.test(rawContent)) {
-    return `[Selected branch ${rawContent.match(/\d+/)?.[0] ?? ""}]`;
-  }
-
-  return rawContent;
-}
-
-async function transcribeWhatsAppAudioMessage(mediaId: string, mimeType?: string): Promise<string | null> {
-  if (!process.env.GROQ_API_KEY) {
-    return null;
+  // Processing lock (optimistic — if already held, skip this turn)
+  const lockToken = await acquireLock(conversation.id);
+  if (!lockToken) {
+    console.warn("[webhook] Could not acquire processing lock, skipping turn:", conversation.id);
+    return;
   }
 
   try {
-    const mediaUrl = await getWhatsAppMediaUrl(mediaId);
-    const media = await downloadWhatsAppMedia(mediaUrl);
-    const formData = new FormData();
-    const extension = mimeType?.includes("mpeg")
-      ? "mp3"
-      : mimeType?.includes("wav")
-        ? "wav"
-        : "ogg";
-    formData.append("file", new Blob([media], { type: mimeType || "audio/ogg" }), `voice-note.${extension}`);
-    formData.append("model", process.env.GROQ_AUDIO_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo");
-    // Force Urdu transcription so Arabic-script Urdu is produced (not Hindi/Devanagari)
-    formData.append("language", "ur");
-
-    const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-      },
-      body: formData,
+    const result = await runTurn({
+      conversationId: conversation.id,
+      branchId: activeBranch.id,
+      phone,
+      messageText: incomingContent,
+      sourceUserMessageId: message.id,
+      whatsappMessageId: message.id,
+      messageId: persistedMsg.id,
+      appName: profile.app_name || "Restaurant",
+      currency: profile.currency || "Rs.",
+      trivial: isTrivialMessage(incomingContent),
     });
 
-    const data = (await response.json()) as { text?: string; error?: { message?: string } };
-    if (!response.ok) {
-      throw new Error(data.error?.message || `Groq transcription failed with status ${response.status}`);
+    if (result.escalate) {
+      await escalateToHuman({
+        conversationId: conversation.id,
+        branchId: activeBranch.id,
+        phone,
+        reason: result.intent,
+        prefersRomanUrdu: nextLang === "roman_urdu",
+      });
+      await conversationRepo.setMode(conversation.id, "human");
     }
 
-    const text = data.text?.trim();
-    return text ? `[Voice note] ${text}` : null;
-  } catch (error) {
-    console.error("[webhook] Failed to transcribe WhatsApp voice note:", error);
-    return null;
-  }
-}
-
-async function upsertContact(phone: string, name: string): Promise<ContactRow> {
-  const { data: existing, error: fetchError } = await supabaseAdmin
-    .from("contacts")
-    .select("id, phone, name, active_branch_id")
-    .eq("phone", phone)
-    .maybeSingle();
-
-  if (fetchError) {
-    console.error("[webhook] Error fetching contact:", fetchError);
-  }
-
-  if (existing) {
-    // If name has changed, update it. Otherwise keep the existing record (and its active_branch_id)
-    if (existing.name !== name) {
-      const { data: updated, error: updateError } = await supabaseAdmin
-        .from("contacts")
-        .update({ name, updated_at: new Date().toISOString() })
-        .eq("id", existing.id)
-        .select("id, phone, name, active_branch_id")
-        .single();
-      
-      if (updateError) {
-        console.error("[webhook] Error updating contact name:", updateError);
-        return existing;
-      }
-      return updated;
+    if (result.placeOrder) {
+      void Promise.all([
+        saveCustomerAddressFromOrder({ conversationId: conversation.id, branchId: activeBranch.id, address: state.address }),
+        updateCustomerOrderStats({ conversationId: conversation.id, preferredLanguage: nextLang }),
+      ]).catch((e) => console.error("[webhook] Post-order hooks failed:", e));
     }
-    return existing;
-  }
 
-  const { data, error } = await supabaseAdmin
-    .from("contacts")
-    .insert({ phone, name })
-    .select("id, phone, name, active_branch_id")
-    .single();
+    await sendAndPersistAssistantMessage({
+      conversationId: conversation.id,
+      phone,
+      content: result.replyText,
+    });
 
-  if (error || !data) {
-    throw error ?? new Error("Failed to insert contact.");
-  }
-
-  return data;
-}
-
-async function setActiveBranch(contactId: string, branchId: string | null) {
-  const { error } = await supabaseAdmin
-    .from("contacts")
-    .update({
-      active_branch_id: branchId,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", contactId);
-
-  if (error) {
-    throw error;
+    await conversationRepo.touch(conversation.id);
+  } finally {
+    await releaseLock(conversation.id, lockToken);
   }
 }
 
-async function upsertConversation(contact: ContactRow, branchId: string, name: string): Promise<ConversationRow> {
-  const { data, error } = await supabaseAdmin
-    .from("conversations")
-    .upsert(
-      {
-        contact_id: contact.id,
-        branch_id: branchId,
-        phone: contact.phone,
-        name,
-        has_unread: true,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "contact_id,branch_id" },
-    )
-    .select("id, contact_id, branch_id, phone, name, mode")
-    .single();
-
-  if (error || !data) {
-    throw error ?? new Error("Failed to upsert conversation.");
-  }
-
-  return data;
-}
-
-async function getOrCreateConversationState(conversationId: string): Promise<ConversationState> {
-  const { data, error } = await supabaseAdmin
-    .from("conversation_states")
-    .select("*")
-    .eq("conversation_id", conversationId)
-    .maybeSingle();
-
-  if (error) {
-    throw error;
-  }
-
-  if (data) {
-    return parseConversationState(data as ConversationState);
-  }
-
-  const defaults = getDefaultConversationState(conversationId);
-  const { data: inserted, error: insertError } = await supabaseAdmin
-    .from("conversation_states")
-    .insert(defaults)
-    .select("*")
-    .single();
-
-  if (insertError || !inserted) {
-    throw insertError ?? new Error("Failed to create conversation state.");
-  }
-
-  return parseConversationState(inserted as ConversationState);
-}
-
-async function persistUserMessage(
-  conversationId: string,
+// ---------------------------------------------------------------------------
+// Branch/city selection helpers
+// ---------------------------------------------------------------------------
+async function handleBranchSelection(
+  message: IncomingWhatsAppMessage,
+  contact: Awaited<ReturnType<typeof upsertContact>>,
   content: string,
-  whatsappMessageId: string,
-  createdAt: string,
-): Promise<PersistedUserMessage> {
-  const { data, error } = await supabaseAdmin
-    .from("messages")
-    .insert({
-      conversation_id: conversationId,
-      role: "user",
-      sender_kind: "user",
-      content,
-      whatsapp_msg_id: whatsappMessageId,
-      created_at: createdAt,
-    })
-    .select("id, ingest_seq, content, created_at, whatsapp_msg_id")
-    .maybeSingle();
+  branches: BranchRecord[],
+  cityGroups: CityBranchGroup[],
+  prefersRomanUrdu: boolean,
+  profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
+) {
+  const phone = message.from;
+  const cities = cityGroups.map((g) => g.city);
+  const selectedCity = findCitySelection(content, cities);
 
-  if (!error) {
-    return {
-      message: data
-        ? {
-            id: data.id,
-            ingest_seq: data.ingest_seq,
-            content: data.content,
-            created_at: data.created_at,
-            whatsapp_msg_id: data.whatsapp_msg_id,
-          }
-        : null,
-    };
-  }
-
-  if (String(error.code) !== "23505") {
-    throw error;
-  }
-
-  const { data: existing, error: existingError } = await supabaseAdmin
-    .from("messages")
-    .select("id, ingest_seq, content, created_at, whatsapp_msg_id")
-    .eq("conversation_id", conversationId)
-    .eq("whatsapp_msg_id", whatsappMessageId)
-    .maybeSingle();
-
-  if (existingError) {
-    throw existingError;
-  }
-
-  return {
-    message: existing
-      ? {
-          id: existing.id,
-          ingest_seq: existing.ingest_seq,
-          content: existing.content,
-          created_at: existing.created_at,
-          whatsapp_msg_id: existing.whatsapp_msg_id,
-        }
-      : null,
-  };
-}
-
-async function drainConversationQueue(conversation: ConversationRow) {
-  const token = await acquireConversationLock(conversation.id);
-  if (!token) {
-    console.warn(`[webhook] Skipping queue drain because lock is busy for conversation ${conversation.id}`);
+  if (selectedCity) {
+    const cityGroup = cityGroups.find((g) => normalizeCityValue(g.city) === normalizeCityValue(selectedCity)) ?? null;
+    const cityBranches = cityGroup?.branches ?? [];
+    if (cityBranches.length === 0) { await sendCitySelection(phone, cityGroups, prefersRomanUrdu); return; }
+    if (cityBranches.length === 1) {
+      await assignBranchAndGreet(message, contact, cityBranches[0], content, prefersRomanUrdu, profile);
+      return;
+    }
+    await sendBranchSelection(phone, cityBranches, prefersRomanUrdu, selectedCity);
     return;
   }
 
-  try {
-    const branch = await getBranchById(conversation.branch_id);
-    if (!branch) {
-      throw new Error(`Missing branch ${conversation.branch_id} for conversation ${conversation.id}`);
-    }
-    let settings = await getRestaurantSettings(conversation.branch_id);
-    let settingsLoadedAt = Date.now();
-    let isOpenNow = settings.is_accepting_orders && isWithinOperatingHours(settings.opening_time, settings.closing_time, settings.timezone);
-    let cachedMenuItems: MenuCatalogItem[] | null = null;
-    let menuLoadedAt = 0;
-
-    while (true) {
-      const state = await getOrCreateConversationState(conversation.id);
-      const nextMessage = await getNextPendingUserMessage(
-        conversation.id,
-        state.last_processed_message_seq,
-      );
-      if (!nextMessage) break;
-
-      if (isStaleMessage(nextMessage, state)) {
-        await updateConversationState(state, {
-          last_processed_message_seq: nextMessage.ingest_seq,
-          last_error: null,
-        });
-        continue;
-      }
-
-      if (Date.now() - settingsLoadedAt > 30_000) {
-        settings = await getRestaurantSettings(conversation.branch_id);
-        settingsLoadedAt = Date.now();
-      }
-      // Recompute isOpenNow on every turn -- cheap time comparison, ensures timing changes
-      // from the dashboard take effect immediately without waiting for a cache refresh.
-      isOpenNow = settings.is_accepting_orders && isWithinOperatingHours(settings.opening_time, settings.closing_time, settings.timezone);
-      // Detect message type for optimization
-      const normalizedIncoming = normalizeText(nextMessage.content);
-      const messageType = detectMessageType(normalizedIncoming);
-      const hasDirectMenuSignal = /(menu|show.*menu|list.*items?|category|categories|price|rates?|kya.*hai|dikhao|kaun si.*(?:item|dish|food|biryani|chicken|karahi|option)|(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert)\b.*\bavailable|available.*\b(?:chicken|biryani|karahi|bbq|burger|pizza|roll|fries|naan|roti|rice|drink|dessert))/.test(normalizedIncoming);
-      const shouldPrimeMenuOnGreeting =
-        messageType === "greeting" &&
-        (state.workflow_step === "idle" || state.workflow_step === "collecting_items") &&
-        Array.isArray(state.cart) &&
-        state.cart.length === 0;
-      const shouldKeepMenuHydratedForOrderFlow =
-        state.workflow_step === "collecting_items" ||
-        state.workflow_step === "awaiting_upsell_reply" ||
-        state.workflow_step === "awaiting_order_type";
-
-      // Load menu when direct menu signals exist, even if mixed with greetings like "hi menu".
-      const needsFullProcessing =
-        messageType === "complex" ||
-        messageType === "menu_related" ||
-        hasDirectMenuSignal ||
-        shouldPrimeMenuOnGreeting ||
-        shouldKeepMenuHydratedForOrderFlow;
-      if (needsFullProcessing && (!cachedMenuItems || Date.now() - menuLoadedAt > 5 * 60_000)) {
-        cachedMenuItems = await getMenuCatalog(conversation.branch_id);
-        menuLoadedAt = Date.now();
-      }
-      const shouldHydrateSession = !(messageType === "greeting" || messageType === "acknowledgment");
-      const [
-        menuItems,
-        semanticMatches,
-        session,
-        savedAddress,
-      ] = await Promise.all([
-        needsFullProcessing ? Promise.resolve(cachedMenuItems ?? []) : Promise.resolve([]),
-        needsFullProcessing && shouldRunSemanticLookup(nextMessage.content)
-          ? getSemanticMenuMatches(conversation.branch_id, nextMessage.content, 20)
-          : Promise.resolve([]),
-        shouldHydrateSession
-          ? getOrCreateUserSession(conversation.id, {
-              active_node: conversation.mode === "human" ? "human_handoff" : "cart_builder",
-              status: conversation.mode === "human" ? "human_handoff" : "active",
-              is_bot_active: conversation.mode !== "human",
-            })
-          : Promise.resolve(getDefaultUserSession(conversation.id)),
-        getLatestSavedAddress(conversation.id),
-      ]);
-
-      const decision = await decideTurn({
-        messageText: nextMessage.content,
-        state,
-        menuItems,
-        semanticMatches,
-        branch: {
-          id: branch.id,
-          name: branch.name,
-          address: branch.address ?? null,
-        },
-        settings,
-        isOpenNow,
-        recentOrder: null,
-        savedAddress,
-        session,
-      });
-
-      const updatedState: Partial<ConversationState> = decision.statePatch ?? {};
-      const nextStateSnapshot = parseConversationState({
-        ...state,
-        ...updatedState,
-        conversation_id: state.conversation_id,
-      });
-
-      try {
-        let reply = "";
-
-        if (decision.kind === "escalate_to_human") {
-          reply = decision.reply;
-          await escalateToHuman({
-            conversationId: conversation.id,
-            branchId: conversation.branch_id,
-            phone: conversation.phone,
-            reason: decision.reason,
-            prefersRomanUrdu: (updatedState.preferred_language ?? state.preferred_language) === "roman_urdu",
-          });
-          await updateConversationState(state, {
-            ...updatedState,
-            last_processed_user_message_id: nextMessage.whatsapp_msg_id,
-            last_processed_message_seq: nextMessage.ingest_seq,
-            last_processed_user_message_at: nextMessage.created_at,
-            last_user_whatsapp_msg_id: nextMessage.whatsapp_msg_id,
-            last_error: null,
-          });
-          await updateUserSession(
-            conversation.id,
-            buildSessionUpdate({
-              session,
-              stateBefore: state,
-              stateAfter: nextStateSnapshot,
-              mode: "human",
-              intent: (decision.trace?.intent as OrderTurnIntent | undefined) ?? null,
-              lastUserMessage: nextMessage.content,
-              lastAssistantReply: reply,
-              semanticCandidates: semanticMatches.map((item) => ({
-                id: item.id,
-                name: item.name,
-                price: item.price,
-                category: item.category,
-                similarity: item.similarity,
-              })),
-              forceNode: "human_handoff",
-              escalationReason: decision.reason,
-            }),
-          );
-          await recordOrderAgentTurn({
-            conversationId: conversation.id,
-            messageId: nextMessage.id,
-            whatsappMessageId: nextMessage.whatsapp_msg_id,
-            workflowBefore: state.workflow_step,
-            workflowAfter:
-              (updatedState.workflow_step as ConversationState["workflow_step"] | undefined) ?? state.workflow_step,
-            decisionKind: decision.kind,
-            trace: decision.trace,
-            result: "success",
-            reply,
-          });
-          break;
-        }
-
-        if (decision.kind === "fallback") {
-          const prefersRomanUrdu = ((decision.statePatch?.preferred_language ?? state.preferred_language) || "english") === "roman_urdu";
-          // When collecting items and we have semantic matches, suggest them
-          // instead of falling to the generic AI which produces canned responses
-          if (
-            state.workflow_step === "collecting_items" &&
-            semanticMatches.length > 0 &&
-            semanticMatches.some((m) => m.similarity != null && m.similarity >= 0.3)
-          ) {
-            const topMatches = semanticMatches
-              .filter((m) => m.similarity != null && m.similarity >= 0.3 && m.is_available)
-              .slice(0, 3);
-            if (topMatches.length > 0) {
-              const matchList = topMatches
-                .map((m) => `• *${m.name}* — Rs. ${Number(m.price)}`)
-                .join("\n");
-              reply = prefersRomanUrdu
-                ? `Kya aap yeh items dhundh rahe hain?\n\n${matchList}\n\nItem ka naam bhej dein ya *menu* likh dein.`
-                : `Did you mean any of these?\n\n${matchList}\n\nSend the item name or type *menu*.`;
-            } else {
-              // Have matches but none available — tell user
-              reply = prefersRomanUrdu
-                ? "Yeh item abhi menu mein available nahi. *menu* likh kar available items dekhein."
-                : "This item doesn't seem available right now. Type *menu* to see what's available.";
-            }
-          } else {
-            // For fallback, we need conversation history and menu data
-            const history = await getConversationHistoryUpTo(conversation.id, nextMessage.ingest_seq);
-            const fallbackMenuForAI = await getMenuForAI(conversation.branch_id);
-            reply = await getCustomerSupportReply(
-              history,
-              fallbackMenuForAI,
-              isOpenNow,
-              history.some((entry) => entry.role === "assistant"),
-              settings,
-              (decision.statePatch?.preferred_language ?? state.preferred_language) || "english",
-              {
-                id: branch.id,
-                slug: branch.slug,
-                name: branch.name,
-                city: branch.city,
-                address: branch.address,
-              },
-            );
-          }
-        } else {
-          reply = decision.reply;
-        }
-
-        if (decision.kind === "place_order") {
-          await createOrderFromPayload(
-            conversation.id,
-            conversation.branch_id,
-            nextMessage.whatsapp_msg_id,
-            decision.order,
-            settings,
-          );
-          await Promise.all([
-            saveCustomerAddressFromOrder({
-              conversationId: conversation.id,
-              branchId: conversation.branch_id,
-              address: decision.order.type === "delivery" ? decision.order.address : null,
-            }),
-            updateCustomerOrderStats({
-              conversationId: conversation.id,
-              preferredLanguage: (updatedState.preferred_language ?? state.preferred_language) === "roman_urdu" ? "roman_urdu" : "english",
-            }),
-          ]);
-        }
-
-        const optionsFromState = Array.isArray(updatedState.last_presented_options)
-          ? updatedState.last_presented_options
-          : null;
-        const canAttachPresentedOptions =
-          nextStateSnapshot.workflow_step === "idle" ||
-          nextStateSnapshot.workflow_step === "collecting_items";
-        const interactiveList =
-          ("interactiveList" in decision ? decision.interactiveList : null) ??
-          (canAttachPresentedOptions && optionsFromState && optionsFromState.length > 0
-            ? buildInteractiveListForPresentedOptions(
-              optionsFromState,
-              (updatedState.preferred_language ?? state.preferred_language) === "roman_urdu",
-            )
-            : null);
-
-        const replyButtons = "replyButtons" in decision ? decision.replyButtons : null;
-
-        const flowMessage =
-          decision.kind === "place_order"
-            ? null
-            : buildFlowMessageForAgentReply({
-                conversationId: conversation.id,
-                prefersRomanUrdu: (updatedState.preferred_language ?? state.preferred_language) === "roman_urdu",
-                workflowStep: nextStateSnapshot.workflow_step,
-                branch: {
-                  id: branch.id,
-                  slug: branch.slug,
-                  name: branch.name,
-                  address: branch.address,
-                },
-                menuItems,
-                cart: nextStateSnapshot.cart,
-                customerInstructions: nextStateSnapshot.customer_instructions,
-                orderType: nextStateSnapshot.order_type,
-                address: nextStateSnapshot.address,
-                guests: nextStateSnapshot.guests,
-                reservationTime: nextStateSnapshot.reservation_time,
-                pickupTime: nextStateSnapshot.pickup_time,
-                settings,
-                suggestedUpsell:
-                  typeof nextStateSnapshot.upsell_item_name === "string" &&
-                  nextStateSnapshot.upsell_item_name.trim() &&
-                  typeof nextStateSnapshot.upsell_item_price === "number"
-                    ? {
-                        name: nextStateSnapshot.upsell_item_name,
-                        price: nextStateSnapshot.upsell_item_price,
-                      }
-                    : null,
-                body: reply,
-              });
-
-        await sendAndPersistAssistantMessage({
-          conversationId: conversation.id,
-          phone: conversation.phone,
-          content: reply,
-          interactiveList,
-          replyButtons,
-          flowMessage,
-        });
-        await updateConversationState(state, {
-          ...updatedState,
-          last_processed_user_message_id: nextMessage.whatsapp_msg_id,
-          last_processed_message_seq: nextMessage.ingest_seq,
-          last_processed_user_message_at: nextMessage.created_at,
-          last_user_whatsapp_msg_id: nextMessage.whatsapp_msg_id,
-          last_error: null,
-        });
-        if (shouldHydrateSession) {
-          await updateUserSession(
-            conversation.id,
-            buildSessionUpdate({
-              session,
-              stateBefore: state,
-              stateAfter: nextStateSnapshot,
-              mode: conversation.mode,
-              intent: (decision.trace?.intent as OrderTurnIntent | undefined) ?? null,
-              lastUserMessage: nextMessage.content,
-              lastAssistantReply: reply,
-              semanticCandidates: semanticMatches.map((item) => ({
-                id: item.id,
-                name: item.name,
-                price: item.price,
-                category: item.category,
-                similarity: item.similarity,
-              })),
-            }),
-          );
-        }
-        await recordOrderAgentTurn({
-          conversationId: conversation.id,
-          messageId: nextMessage.id,
-          whatsappMessageId: nextMessage.whatsapp_msg_id,
-          workflowBefore: state.workflow_step,
-          workflowAfter:
-            (updatedState.workflow_step as ConversationState["workflow_step"] | undefined) ?? state.workflow_step,
-          decisionKind: decision.kind,
-          trace: decision.trace,
-          result: "success",
-          reply,
-        });
-      } catch (error) {
-        if (error instanceof OutboundMessageError) {
-          if (error.messageSent) {
-            await updateConversationState(state, {
-              ...updatedState,
-              last_processed_user_message_id: nextMessage.whatsapp_msg_id,
-              last_processed_message_seq: nextMessage.ingest_seq,
-              last_processed_user_message_at: nextMessage.created_at,
-              last_user_whatsapp_msg_id: nextMessage.whatsapp_msg_id,
-              last_error: error.message,
-            });
-            await recordOrderAgentTurn({
-              conversationId: conversation.id,
-              messageId: nextMessage.id,
-              whatsappMessageId: nextMessage.whatsapp_msg_id,
-              workflowBefore: state.workflow_step,
-              workflowAfter:
-                (updatedState.workflow_step as ConversationState["workflow_step"] | undefined) ?? state.workflow_step,
-              decisionKind: decision.kind,
-              trace: decision.trace,
-              result: "partial",
-              reply: null,
-              error: error.message,
-            });
-            continue;
-          }
-
-          await deleteUnsentOutboundMessage(error.persistedMessageId);
-          await updateConversationState(state, {
-            last_error: error.message,
-          });
-          await recordOrderAgentTurn({
-            conversationId: conversation.id,
-            messageId: nextMessage.id,
-            whatsappMessageId: nextMessage.whatsapp_msg_id,
-            workflowBefore: state.workflow_step,
-            workflowAfter: state.workflow_step,
-            decisionKind: decision.kind,
-            trace: decision.trace,
-            result: "failed",
-            reply: null,
-            error: error.message,
-          });
-          throw error;
-        }
-
-        const extractedErrMsg =
-          error instanceof Error
-            ? error.message
-            : typeof error === "object" && error !== null && "message" in error && typeof (error as any).message === "string"
-              ? (error as any).message
-              : String(error ?? "Unknown processing error");
-
-        console.error("[webhook] Turn execution failed for message:", nextMessage.id, "error:", extractedErrMsg, error);
-
-        const replyLanguage =
-          (updatedState.preferred_language ?? state.preferred_language) === "roman_urdu" ? "roman_urdu" : "english";
-        const missingMenuItem = /Menu item no longer exists:\s*(.+)$/i.exec(extractedErrMsg);
-        const fallback = missingMenuItem
-          ? replyLanguage === "roman_urdu"
-            ? `Maazrat, *${missingMenuItem[1]}* ab menu mein available nahi hai. Kisi aur item ka naam bhej dein ya *menu* likh dein.`
-            : `Sorry, *${missingMenuItem[1]}* is no longer available right now. Please send another item name or type *menu*.`
-          : replyLanguage === "roman_urdu"
-            ? "Maazrat, system is waqt thora busy hai. Thori dair mein dubara message bhej dein ya urgent help ke liye call karein."
-            : "Sorry, we're a little busy right now. Please send that again in a moment or call us for urgent help.";
-        try {
-          await sendAndPersistAssistantMessage({
-            conversationId: conversation.id,
-            phone: conversation.phone,
-            content: fallback,
-          });
-          await updateConversationState(state, {
-            last_processed_user_message_id: nextMessage.whatsapp_msg_id,
-            last_processed_message_seq: nextMessage.ingest_seq,
-            last_processed_user_message_at: nextMessage.created_at,
-            last_user_whatsapp_msg_id: nextMessage.whatsapp_msg_id,
-            last_error: extractedErrMsg,
-          });
-          await recordOrderAgentTurn({
-            conversationId: conversation.id,
-            messageId: nextMessage.id,
-            whatsappMessageId: nextMessage.whatsapp_msg_id,
-            workflowBefore: state.workflow_step,
-            workflowAfter: state.workflow_step,
-            decisionKind: decision.kind,
-            trace: decision.trace,
-            result: "recovered",
-            reply: fallback,
-            error: extractedErrMsg,
-          });
-        } catch (fallbackError) {
-          if (fallbackError instanceof OutboundMessageError && fallbackError.messageSent) {
-            await updateConversationState(state, {
-              last_processed_user_message_id: nextMessage.whatsapp_msg_id,
-              last_processed_message_seq: nextMessage.ingest_seq,
-              last_processed_user_message_at: nextMessage.created_at,
-              last_user_whatsapp_msg_id: nextMessage.whatsapp_msg_id,
-              last_error: fallbackError.message,
-            });
-            await recordOrderAgentTurn({
-              conversationId: conversation.id,
-              messageId: nextMessage.id,
-              whatsappMessageId: nextMessage.whatsapp_msg_id,
-              workflowBefore: state.workflow_step,
-              workflowAfter: state.workflow_step,
-              decisionKind: decision.kind,
-              trace: decision.trace,
-              result: "partial",
-              reply: null,
-              error: fallbackError.message,
-            });
-            continue;
-          }
-
-          await updateConversationState(state, {
-            last_error:
-              error instanceof Error
-                ? `${error.message} | Fallback failed: ${fallbackError instanceof Error ? fallbackError.message : "Unknown error"}`
-                : "Unknown processing error",
-          });
-          await recordOrderAgentTurn({
-            conversationId: conversation.id,
-            messageId: nextMessage.id,
-            whatsappMessageId: nextMessage.whatsapp_msg_id,
-            workflowBefore: state.workflow_step,
-            workflowAfter: state.workflow_step,
-            decisionKind: decision.kind,
-            trace: decision.trace,
-            result: "failed",
-            reply: null,
-            error:
-              fallbackError instanceof Error
-                ? fallbackError.message
-                : "Fallback failed with unknown error",
-          });
-          throw fallbackError;
-        }
-      }
-    }
-  } finally {
-    await releaseConversationLock(conversation.id, token);
-  }
+  const selectedBranch = findBranchSelection(content, branches);
+  if (!selectedBranch) { await sendCitySelection(phone, cityGroups, prefersRomanUrdu); return; }
+  await assignBranchAndGreet(message, contact, selectedBranch, content, prefersRomanUrdu, profile);
 }
 
-async function getNextPendingUserMessage(
-  conversationId: string,
-  lastProcessedMessageSeq: number | null,
-): Promise<MessageRow | null> {
-  let query = supabaseAdmin
-    .from("messages")
-    .select("id, ingest_seq, content, created_at, whatsapp_msg_id")
-    .eq("conversation_id", conversationId)
-    .eq("role", "user")
-    .order("ingest_seq", { ascending: true })
-    .limit(1);
-
-  if (lastProcessedMessageSeq != null) {
-    query = query.gt("ingest_seq", lastProcessedMessageSeq);
-  }
-
-  const { data, error } = await query.maybeSingle();
-  if (error) throw error;
-  if (!data) return null;
-
-  return {
-    id: data.id,
-    ingest_seq: data.ingest_seq,
-    content: data.content,
-    created_at: data.created_at,
-    whatsapp_msg_id: data.whatsapp_msg_id,
-  };
-}
-
-async function getConversationHistoryUpTo(conversationId: string, ingestSeq: number) {
-  const { data, error } = await supabaseAdmin
-    .from("messages")
-    .select("role, content, ingest_seq")
-    .eq("conversation_id", conversationId)
-    .lte("ingest_seq", ingestSeq)
-    .order("ingest_seq", { ascending: false })
-    .limit(20);
-
-  if (error) throw error;
-  return (data ?? []).reverse().map((row) => ({
-    role: row.role,
-    content: row.content,
-  }));
-}
-
-async function markMessageProcessed(
-  state: ConversationState,
-  whatsappMessageId: string,
-  createdAt: string,
-  ingestSeq: number | null,
-  extraPatch?: Partial<ConversationState>,
+async function assignBranchAndGreet(
+  message: IncomingWhatsAppMessage,
+  contact: Awaited<ReturnType<typeof upsertContact>>,
+  branch: BranchSummary,
+  content: string,
+  prefersRomanUrdu: boolean,
+  profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
 ) {
-  await updateConversationState(state, {
-    ...extraPatch,
-    last_processed_user_message_id: whatsappMessageId,
-    ...(ingestSeq != null ? { last_processed_message_seq: ingestSeq } : {}),
-    last_processed_user_message_at: createdAt,
-    last_user_whatsapp_msg_id: whatsappMessageId,
-    last_error: null,
+  await contactRepo.setActiveBranch(contact.id, branch.id);
+  const conversation = await conversationRepo.ensure({ contactId: contact.id, branchId: branch.id, phone: message.from });
+  const state = await stateRepo.ensure(conversation.id);
+  if (state.last_user_whatsapp_msg_id === message.id) return;
+
+  const menuItems = await getMenuCatalog(branch.id);
+  const categoryUI = buildInteractiveCategoryUI(menuItems, prefersRomanUrdu, 1);
+  const greetReply = prefersRomanUrdu
+    ? `Theek hai, *${branch.name}* select ho gayi. Address: ${branch.address}\n\nAb category select karein ya item name bhej dein.`
+    : `Got it — you've selected *${branch.name}*. Address: ${branch.address}\n\nChoose a category or send any item name.`;
+
+  await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content, whatsappMsgId: message.id });
+  await sendAndPersistAssistantMessage({
+    conversationId: conversation.id,
+    phone: message.from,
+    content: greetReply,
+    interactiveList: categoryUI.interactiveList,
+    replyButtons: categoryUI.replyButtons,
+  });
+  await stateRepo.patch(conversation.id, {
+    stage: "building_cart",
+    preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
+    last_user_whatsapp_msg_id: message.id,
+    last_processed_user_message_at: toIso(message.timestamp),
   });
 }
 
-async function updateConversationState(state: ConversationState, patch: Partial<ConversationState>) {
-  const nextState = {
-    ...state,
-    ...patch,
-    updated_at: new Date().toISOString(),
-  };
+async function handleBranchChange(
+  message: IncomingWhatsAppMessage,
+  contact: Awaited<ReturnType<typeof upsertContact>>,
+  conversation: Awaited<ReturnType<typeof conversationRepo.ensure>>,
+  state: Awaited<ReturnType<typeof stateRepo.ensure>>,
+  content: string,
+  cityGroups: CityBranchGroup[],
+  branches: BranchRecord[],
+  prefersRomanUrdu: boolean,
+) {
+  const cities = cityGroups.map((g) => g.city);
+  const prompt = getCitySelectionPrompt(cities, prefersRomanUrdu);
+  const interactiveList = buildInteractiveListForCities(cities, prefersRomanUrdu);
+  await contactRepo.setActiveBranch(contact.id, null);
+  await stateRepo.patch(conversation.id, { stage: "greeting", preferred_language: prefersRomanUrdu ? "roman_urdu" : "english", last_user_whatsapp_msg_id: message.id });
+  await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: prompt, interactiveList });
+}
 
-  const { error } = await supabaseAdmin
-    .from("conversation_states")
-    .update(nextState)
-    .eq("conversation_id", state.conversation_id);
+// ---------------------------------------------------------------------------
+// Human mode / bot resume
+// ---------------------------------------------------------------------------
+function shouldResumeBotFromMessage(content: string): boolean {
+  const n = content.toLowerCase().trim();
+  return n.includes("resume bot") || n.includes("back to bot") || n.includes("bot can handle") || n.includes("let ai handle") || n.includes("transfer to ai");
+}
 
-  if (error) {
-    throw error;
+async function handleBotResume(
+  conversation: Awaited<ReturnType<typeof conversationRepo.ensure>>,
+  state: Awaited<ReturnType<typeof stateRepo.ensure>>,
+  message: IncomingWhatsAppMessage,
+  content: string,
+  prefersRomanUrdu: boolean,
+) {
+  await resumeBotForConversation(conversation.id);
+  await conversationRepo.setMode(conversation.id, "agent");
+  const resumeReply = prefersRomanUrdu ? "Theek hai. Apna order message bhej dein." : "Done. Send your order when ready.";
+  await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: resumeReply });
+  await stateRepo.patch(conversation.id, { is_bot_active: true, escalation_reason: null, escalated_at: null, last_user_whatsapp_msg_id: message.id });
+}
+
+// ---------------------------------------------------------------------------
+// Non-text / voice
+// ---------------------------------------------------------------------------
+async function handleNonText(
+  message: IncomingWhatsAppMessage,
+  conversation: Awaited<ReturnType<typeof conversationRepo.ensure>>,
+  state: Awaited<ReturnType<typeof stateRepo.ensure>>,
+  prefersRomanUrdu: boolean,
+) {
+  if (message.type === "reaction") return;
+
+  if (message.type === "audio") {
+    const voiceFallback = prefersRomanUrdu
+      ? "Voice note mil gaya, lekin abhi voice ordering available nahi. Item text mein bhej dein."
+      : "Got your voice note, but voice ordering isn't available yet. Please type your item.";
+    await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: "[Voice note received]", whatsappMsgId: message.id });
+    await escalateToHuman({ conversationId: conversation.id, branchId: conversation.branch_id, phone: conversation.phone, reason: "voice_note", prefersRomanUrdu });
+    await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: conversation.phone, content: voiceFallback });
+    return;
+  }
+
+  const fallback = prefersRomanUrdu
+    ? "Please text message bhej dein, main order mein help karta hoon."
+    : "Please send a text message and I'll help with your order.";
+  await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: conversation.phone, content: fallback });
+}
+
+// ---------------------------------------------------------------------------
+// Delivery status updates
+// ---------------------------------------------------------------------------
+async function updateDeliveryStatuses(statuses: IncomingWhatsAppStatus[]) {
+  for (const s of statuses) {
+    if (!s.id || !s.status) continue;
+    const nextStatus = normalizeDeliveryStatus(s.status);
+    if (!nextStatus) continue;
+    const errText = s.errors?.[0] ? `${s.errors[0].title ?? ""}: ${s.errors[0].error_data?.details ?? s.errors[0].message ?? ""}`.trim() : null;
+    await messageRepo.applyDeliveryStatus(s.id, nextStatus, { error: errText, atIso: s.timestamp ? toIso(s.timestamp) : null }).catch((e) => {
+      console.error("[webhook] Delivery status update failed:", e);
+    });
   }
 }
 
-async function acquireConversationLock(conversationId: string): Promise<string | null> {
-  const token = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const staleBefore = new Date(Date.now() - 90 * 1000).toISOString();
-
-  for (let attempt = 0; attempt < 10; attempt += 1) {
-    const { data: unlockedRow, error: unlockedError } = await supabaseAdmin
-      .from("conversation_states")
-      .update({
-        processing_token: token,
-        processing_started_at: now,
-      })
-      .eq("conversation_id", conversationId)
-      .is("processing_token", null)
-      .select("conversation_id")
-      .maybeSingle();
-
-    if (unlockedError) throw unlockedError;
-    if (unlockedRow) return token;
-
-    const { data: staleRow, error: staleError } = await supabaseAdmin
-      .from("conversation_states")
-      .update({
-        processing_token: token,
-        processing_started_at: now,
-      })
-      .eq("conversation_id", conversationId)
-      .lt("processing_started_at", staleBefore)
-      .select("conversation_id")
-      .maybeSingle();
-
-    if (staleError) throw staleError;
-    if (staleRow) return token;
-
-    await sleep(150 * (attempt + 1));
-  }
-
+function normalizeDeliveryStatus(v: string): import("@/lib/schema.types").MessageDeliveryStatus | null {
+  if (v === "pending" || v === "sent" || v === "delivered" || v === "read" || v === "failed") return v;
   return null;
 }
 
-async function releaseConversationLock(conversationId: string, token: string) {
-  const { error } = await supabaseAdmin
-    .from("conversation_states")
-    .update({
-      processing_token: null,
-      processing_started_at: null,
-    })
-    .eq("conversation_id", conversationId)
-    .eq("processing_token", token);
-
-  if (error) {
-    console.error("[webhook] Failed to release lock:", error);
-  }
+// ---------------------------------------------------------------------------
+// Contact / conversation upsert (thin wrappers)
+// ---------------------------------------------------------------------------
+async function upsertContact(phone: string, name: string | null) {
+  return contactRepo.upsertByPhone({ phone, name });
 }
 
-async function createOrderFromPayload(
-  conversationId: string,
-  branchId: string,
-  sourceUserMessageId: string | null,
-  payload: PlaceableOrderPayload,
-  settings: Awaited<ReturnType<typeof getRestaurantSettings>>,
-) {
-  if (!sourceUserMessageId) {
-    throw new Error("Missing source user message id for order placement.");
+// ---------------------------------------------------------------------------
+// Envelope parsing
+// ---------------------------------------------------------------------------
+function extractMessages(body: unknown): Array<{ message: IncomingWhatsAppMessage; contactName: string }> {
+  const envelope = body as IncomingEnvelope;
+  const out: Array<{ message: IncomingWhatsAppMessage; contactName: string }> = [];
+  for (const entry of envelope.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const value = change.value;
+      const contactName = value?.contacts?.[0]?.profile?.name ?? "";
+      for (const msg of value?.messages ?? []) {
+        out.push({ message: msg, contactName });
+      }
+    }
   }
-
-  const deliveryFee =
-    payload.type === "delivery" && settings.delivery_enabled && settings.delivery_fee > 0
-      ? Number(settings.delivery_fee)
-      : 0;
-
-  const orderItems = payload.items.map((item) => ({
-    name: item.name,
-    qty: item.qty,
-    size: item.size ?? null,
-    addons: Array.isArray(item.addons) ? item.addons.slice(0, 8) : [],
-    item_instructions: item.item_instructions ?? null,
-  }));
-
-  const { data, error } = await supabaseAdmin.rpc("place_order_from_payload", {
-    p_conversation_id: conversationId,
-    p_branch_id: branchId,
-    p_source_user_message_id: sourceUserMessageId,
-    p_type: payload.type,
-    p_items: orderItems,
-    p_customer_instructions: payload.customer_instructions ?? null,
-    p_address: payload.type === "delivery" ? payload.address : null,
-    p_guests: payload.type === "dine-in" ? payload.guests : null,
-    p_reservation_time: payload.type === "dine-in" ? payload.reservation_time : null,
-    p_pickup_time: payload.type === "pickup" ? payload.pickup_time : null,
-    p_delivery_fee: deliveryFee,
-  });
-
-  if (error) {
-    throw error;
-  }
-
-  const order = Array.isArray(data) ? data[0] : data;
-  if (!order?.id) {
-    throw new Error("Failed to create order.");
-  }
-
-  return order;
+  return out;
 }
 
-async function sendBranchSelectionMessage(
-  phone: string,
-  branches: BranchSummary[],
-  prefersRomanUrdu: boolean,
-  selectedCity?: string,
-) {
-  const interactiveList = buildInteractiveListForBranches(branches, prefersRomanUrdu, selectedCity);
-  if (interactiveList) {
-    try {
-      await sendWhatsAppInteractiveList(phone, interactiveList);
-      return;
-    } catch (error) {
-      console.warn("[webhook] Interactive branch list failed, falling back to text:", error);
+function extractStatusEvents(body: unknown): IncomingWhatsAppStatus[] {
+  const envelope = body as IncomingEnvelope;
+  const out: IncomingWhatsAppStatus[] = [];
+  for (const entry of envelope.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      for (const s of (change.value as { statuses?: IncomingWhatsAppStatus[] })?.statuses ?? []) {
+        out.push(s);
+      }
     }
   }
-
-  const flowMessage = buildBranchSelectionFlowMessage(phone, branches, prefersRomanUrdu);
-  if (flowMessage) {
-    try {
-      await sendWhatsAppInteractiveFlow(phone, flowMessage);
-      return;
-    } catch (error) {
-      console.warn("[webhook] Flow branch selector failed, falling back to text:", error);
-    }
-  }
-
-  await sendWhatsAppMessage(phone, getBranchSelectionPromptForCity(branches, prefersRomanUrdu, selectedCity));
+  return out;
 }
 
-async function sendCitySelectionMessage(
-  phone: string,
-  cityGroups: CityBranchGroup[],
-  prefersRomanUrdu: boolean,
-) {
-  const cities = cityGroups.map((group) => group.city);
-  const interactiveList = buildInteractiveListForCities(cities, prefersRomanUrdu);
-  if (interactiveList) {
-    try {
-      await sendWhatsAppInteractiveList(phone, interactiveList);
-      return;
-    } catch (error) {
-      console.warn("[webhook] Interactive city list failed, falling back to text:", error);
-    }
+async function extractContent(message: IncomingWhatsAppMessage): Promise<string | null> {
+  if (message.type === "text") return message.text?.body?.trim() || null;
+  if (message.type === "interactive") {
+    const ir = message.interactive;
+    if (ir?.type === "button_reply") return ir.button_reply?.id || ir.button_reply?.title || null;
+    if (ir?.type === "list_reply") return ir.list_reply?.id || ir.list_reply?.title || null;
   }
+  if (message.type === "audio") return null;
+  return null;
+}
 
+function resolveDisplayContent(message: IncomingWhatsAppMessage, content: string): string {
+  if (message.type === "interactive") {
+    const ir = message.interactive;
+    if (ir?.type === "button_reply") return ir.button_reply?.title || content;
+    if (ir?.type === "list_reply") return ir.list_reply?.title || content;
+  }
+  return content;
+}
+
+// ---------------------------------------------------------------------------
+// Small helpers
+// ---------------------------------------------------------------------------
+function pickDefaultBranch(branches: BranchRecord[], defaultId: string | null): BranchRecord | null {
+  if (defaultId) { const f = branches.find((b) => b.id === defaultId); if (f) return f; }
+  return branches[0] ?? null;
+}
+
+function shouldResetForInactivity(state: Awaited<ReturnType<typeof stateRepo.ensure>>, incomingAt: string): boolean {
+  if (!state.last_processed_user_message_at) return false;
+  const last = new Date(state.last_processed_user_message_at).getTime();
+  const now = new Date(incomingAt).getTime();
+  return Number.isFinite(last) && Number.isFinite(now) && now - last >= ORDER_FRESH_START_AFTER_INACTIVITY_MS;
+}
+
+function isTrivialMessage(content: string): boolean {
+  const n = content.trim().toLowerCase();
+  return n.length < 10 && /^(ok|okay|yes|no|hi|hey|salam|haan|han|na|acha|k|thk)$/.test(n);
+}
+
+function toIso(timestamp: string): string {
+  const n = Number.parseInt(timestamp, 10);
+  if (!Number.isFinite(n) || n <= 0) return new Date().toISOString();
+  const d = new Date(n * 1000);
+  return Number.isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
+function isValidWhatsAppSignature(rawBody: string, sig: string | null): boolean {
+  const secret = process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET;
+  if (!secret) { console.error("[webhook] Missing WHATSAPP_APP_SECRET"); return false; }
+  if (!sig?.startsWith("sha256=")) { console.error("[webhook] Missing signature header"); return false; }
+  const expected = `sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`;
+  const eb = Buffer.from(expected), rb = Buffer.from(sig.trim());
+  return eb.length === rb.length && timingSafeEqual(eb, rb);
+}
+
+// ---------------------------------------------------------------------------
+// Conversation processing lock (prevents double-processing concurrent messages)
+// ---------------------------------------------------------------------------
+async function acquireLock(conversationId: string): Promise<string | null> {
+  const token = crypto.randomUUID();
+  const now = new Date().toISOString();
+  const stale = new Date(Date.now() - 90_000).toISOString();
+  for (let i = 0; i < 8; i++) {
+    const { data } = await supabaseAdmin.from("conversation_states").update({ processing_token: token, processing_started_at: now }).eq("conversation_id", conversationId).is("processing_token", null).select("conversation_id").maybeSingle();
+    if (data) return token;
+    const { data: staleData } = await supabaseAdmin.from("conversation_states").update({ processing_token: token, processing_started_at: now }).eq("conversation_id", conversationId).lt("processing_started_at", stale).select("conversation_id").maybeSingle();
+    if (staleData) return token;
+    await new Promise((r) => setTimeout(r, 150 * (i + 1)));
+  }
+  return null;
+}
+
+async function releaseLock(conversationId: string, token: string) {
+  await supabaseAdmin.from("conversation_states").update({ processing_token: null, processing_started_at: null }).eq("conversation_id", conversationId).eq("processing_token", token);
+}
+
+// ---------------------------------------------------------------------------
+// Messaging helpers
+// ---------------------------------------------------------------------------
+async function sendCitySelection(phone: string, cityGroups: CityBranchGroup[], prefersRomanUrdu: boolean) {
+  const cities = cityGroups.map((g) => g.city);
+  const list = buildInteractiveListForCities(cities, prefersRomanUrdu);
+  if (list) { try { await sendWhatsAppInteractiveList(phone, list); return; } catch { /* fall through */ } }
   await sendWhatsAppMessage(phone, getCitySelectionPrompt(cities, prefersRomanUrdu));
 }
 
-function getBranchSelectionPromptForCity(
-  branches: BranchSummary[],
-  prefersRomanUrdu: boolean,
-  selectedCity?: string,
-): string {
-  if (!selectedCity) {
-    return getBranchSelectionPrompt(branches, prefersRomanUrdu);
-  }
-
-  if (branches.length === 0) {
-    return prefersRomanUrdu
-      ? `Maazrat, ${selectedCity} mein koi branch available nahi hai.`
-      : `Sorry, no branches are available in ${selectedCity}.`;
-  }
-
-  const intro = prefersRomanUrdu
-    ? `${selectedCity} mein apni branch select karein:`
-    : `Please choose your branch in ${selectedCity}:`;
-  const closing = prefersRomanUrdu
-    ? "Reply mein branch ka naam bhej dein."
-    : "Reply with your branch name.";
-
-  return [
-    intro,
-    ...branches.map((branch, index) => `${index + 1}. ${branch.name}${branch.address ? ` - ${branch.address}` : ""}`),
-    closing,
-  ].join("\n");
+async function sendBranchSelection(phone: string, branches: BranchSummary[], prefersRomanUrdu: boolean, city?: string) {
+  const list = buildInteractiveListForBranches(branches, prefersRomanUrdu, city);
+  if (list) { try { await sendWhatsAppInteractiveList(phone, list); return; } catch { /* fall through */ } }
+  await sendWhatsAppMessage(phone, getBranchSelectionPrompt(branches, prefersRomanUrdu));
 }
 
-function shouldStartFreshOrderAfterInactivity(state: ConversationState, incomingCreatedAt: string): boolean {
-  if (!state.last_processed_user_message_at) return false;
-
-  const lastProcessedAtMs = new Date(state.last_processed_user_message_at).getTime();
-  const incomingAtMs = new Date(incomingCreatedAt).getTime();
-  if (!Number.isFinite(lastProcessedAtMs) || !Number.isFinite(incomingAtMs)) return false;
-
-  return incomingAtMs - lastProcessedAtMs >= ORDER_FRESH_START_AFTER_INACTIVITY_MS;
-}
-
-async function resetOrderDraftAfterInactivity(params: {
-  conversationId: string;
-  mode: ConversationRow["mode"];
-  preferredLanguage: ConversationState["preferred_language"];
-  previousState: ConversationState;
-}) {
-  const { conversationId, mode, preferredLanguage, previousState } = params;
-  const resetState = {
-    ...getDefaultConversationState(conversationId),
-    preferred_language: preferredLanguage,
-    // Keep processed-message pointers so old queued user messages are not replayed.
-    last_processed_user_message_id: previousState.last_processed_user_message_id,
-    last_processed_message_seq: previousState.last_processed_message_seq,
-    last_processed_user_message_at: previousState.last_processed_user_message_at,
-    last_user_whatsapp_msg_id: previousState.last_user_whatsapp_msg_id,
-  };
-
-  const { error: stateError } = await supabaseAdmin
-    .from("conversation_states")
-    .update({
-      ...resetState,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("conversation_id", conversationId);
-
-  if (stateError) {
-    throw stateError;
-  }
-
-  if (mode === "human") {
-    return;
-  }
-
-  await getOrCreateUserSession(conversationId, {
-    active_node: "cart_builder",
-    status: "active",
-    is_bot_active: true,
-  });
-
-  await updateUserSession(conversationId, {
-    active_node: "cart_builder",
-    return_node: null,
-    status: "active",
-    is_bot_active: true,
-    invalid_step_count: 0,
-    consecutive_tool_failures: 0,
-    anger_level: 0,
-    last_intent: null,
-    last_tool_name: null,
-    last_tool_error: null,
-    last_user_message: null,
-    last_assistant_reply: null,
-    last_semantic_candidates: [],
-    escalation_reason: null,
-    escalated_at: null,
-  });
-}
-
-function toIsoTimestamp(timestamp: string): string {
-  const parsed = Number.parseInt(timestamp, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    return new Date().toISOString();
-  }
-
-  const date = new Date(parsed * 1000);
-  return Number.isNaN(date.getTime()) ? new Date().toISOString() : date.toISOString();
-}
-
-function compareMessageTimestamps(left: string, right: string): number {
-  const leftValue = Number.parseInt(left, 10);
-  const rightValue = Number.parseInt(right, 10);
-
-  const leftValid = Number.isFinite(leftValue);
-  const rightValid = Number.isFinite(rightValue);
-  if (leftValid && rightValid) return leftValue - rightValue;
-  if (leftValid) return -1;
-  if (rightValid) return 1;
-  return 0;
-}
-
-function isStaleMessage(message: MessageRow, state: ConversationState): boolean {
-  if (!state.last_processed_user_message_at) {
-    return false;
-  }
-
-  const nextTime = new Date(message.created_at).getTime();
-  const lastProcessedTime = new Date(state.last_processed_user_message_at).getTime();
-
-  if (Number.isNaN(nextTime) || Number.isNaN(lastProcessedTime)) {
-    return false;
-  }
-
-  return nextTime < lastProcessedTime;
-}
-
-function isValidWhatsAppSignature(rawBody: string, signatureHeader: string | null): boolean {
-  const appSecret = process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET;
-  if (!appSecret) {
-    console.error("[webhook] Missing WHATSAPP_APP_SECRET for signature validation.");
-    return false;
-  }
-
-  if (!signatureHeader?.startsWith("sha256=")) {
-    console.error("[webhook] Missing x-hub-signature-256 header.");
-    return false;
-  }
-
-  const expected = `sha256=${createHmac("sha256", appSecret).update(rawBody).digest("hex")}`;
-  const received = signatureHeader.trim();
-  const expectedBuffer = Buffer.from(expected);
-  const receivedBuffer = Buffer.from(received);
-
-  if (expectedBuffer.length !== receivedBuffer.length) {
-    return false;
-  }
-
-  return timingSafeEqual(expectedBuffer, receivedBuffer);
-}
-
-async function sleep(ms: number) {
-  await new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function recordOrderAgentTurn(input: {
-  conversationId: string;
-  messageId: string;
-  whatsappMessageId: string | null;
-  workflowBefore: ConversationState["workflow_step"];
-  workflowAfter: ConversationState["workflow_step"];
-  decisionKind: TurnDecision["kind"];
-  trace?: TurnDecision["trace"];
-  result: "success" | "partial" | "recovered" | "failed";
-  reply: string | null;
-  error?: string;
-}) {
+// ---------------------------------------------------------------------------
+// Staff alert for failed webhook
+// ---------------------------------------------------------------------------
+async function alertStaffForFailedWebhook(payload: unknown, eventId: string, error: string) {
   try {
-    await supabaseAdmin.from("order_agent_turns").insert({
-      conversation_id: input.conversationId,
-      message_id: input.messageId,
-      whatsapp_message_id: input.whatsappMessageId,
-      workflow_before: input.workflowBefore,
-      workflow_after: input.workflowAfter,
-      decision_kind: input.decisionKind,
-      nlu_intent: input.trace?.intent ?? null,
-      nlu_confidence: input.trace?.confidence ?? null,
-      nlu_unknown_items: input.trace?.unknownItems ?? [],
-      nlu_notes: input.trace?.notes ?? null,
-      processing_result: input.result,
-      assistant_reply: input.reply,
-      error_message: input.error ?? null,
+    const envelope = payload as IncomingEnvelope;
+    const phone = envelope.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from;
+    if (!phone) return;
+    const contact = await contactRepo.getByPhone(phone);
+    if (!contact?.active_branch_id) return;
+    const conv = await supabaseAdmin.from("conversations").select("id").eq("contact_id", contact.id).eq("branch_id", contact.active_branch_id).maybeSingle();
+    if (!conv.data?.id) return;
+    await createStaffAlert({
+      conversationId: conv.data.id,
+      branchId: contact.active_branch_id,
+      kind: "webhook_processing",
+      severity: "high",
+      message: `Webhook event ${eventId} failed: ${error}`,
     });
-  } catch (error) {
-    console.error("[webhook] Failed to record order agent turn:", error);
+  } catch (e) {
+    console.error("[webhook] alertStaffForFailedWebhook failed:", e);
   }
 }
-

@@ -61,7 +61,6 @@ const supabaseAdmin = read("lib/supabase-admin.ts");
 const loginRoute = read("app/api/auth/login/route.ts");
 const webhookRoute = read("app/api/webhook/route.ts");
 const webhookEvents = read("lib/webhook-events.ts");
-const flowRoute = read("app/api/whatsapp/flows/route.ts");
 const healthRoute = read("app/api/health/route.ts");
 const adminResetRoute = read("app/api/admin/reset/route.ts");
 const adminHelpers = read("lib/admin.ts");
@@ -103,8 +102,6 @@ mustInclude(loginRoute, "scope: \"dashboard_login\"", "Missing dashboard login r
 mustInclude(webhookRoute, "scope: \"whatsapp_webhook\"", "Missing WhatsApp webhook rate limit.");
 mustInclude(webhookRoute, "alertStaffForFailedWebhook", "Missing failed webhook staff alert path.");
 mustInclude(webhookRoute, "kind: \"webhook_processing\"", "Missing webhook_processing staff alert kind usage.");
-mustInclude(flowRoute, "scope: \"whatsapp_flow\"", "Missing WhatsApp Flow rate limit.");
-mustInclude(flowRoute, "WHATSAPP_ALLOW_UNSIGNED_FLOW_ENDPOINT", "Missing explicit dev-only unsigned Flow override.");
 mustInclude(healthRoute, "HEALTHCHECK_SECRET", "Missing optional healthcheck secret enforcement.");
 mustInclude(healthRoute, "supabaseAdmin.from(\"branches\")", "Missing healthcheck database connectivity check.");
 mustInclude(healthRoute, "databaseSchema", "Missing healthcheck database schema-shape check.");

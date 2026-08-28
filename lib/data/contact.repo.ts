@@ -63,7 +63,7 @@ export const contactRepo = {
     return data as ContactRow;
   },
 
-  async setActiveBranch(contactId: string, branchId: string): Promise<void> {
+  async setActiveBranch(contactId: string, branchId: string | null): Promise<void> {
     const { error } = await supabaseAdmin
       .from("contacts")
       .update({ active_branch_id: branchId })

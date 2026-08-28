@@ -208,6 +208,13 @@ Each phase: define "working", implement, verify with the existing `scripts/check
   - `lib/agent/cart.ts` (pure cart ops), `lib/agent/reply.ts` (all localized EN/Roman-Urdu copy — was scattered), `lib/agent/executor.ts` (runs FSM AgentAction[] → reply + state patch; place_order via RPC; escalation/closed handling), `lib/agent/pipeline.ts` (the ONE orchestrator: fast-path numeric selection → NLU → FSM → executor → persist + agent_turns).
   - Tests: `check:cart` (10 pure cart tests). Full suite green; `tsc` clean.
   - REMAINING for Phase 7 wiring (folded into Phase 8/9): swap `app/api/webhook/route.ts` to call `runTurn()` and delete `order-engine.ts`/`order-flow-handlers.ts`; migrate dashboard queries onto `stateRepo`+`deriveSessionView`. Deferred deliberately so the schema flip + dead-code removal happen atomically (no breakage vs current DB).
-- Phase 8 (dead code / flow removal) + webhook cutover — ⏳ next.
-- Phase 9 (E2E + latency) — pending.
+- Phase 8 (dead code / flow removal) + webhook cutover — ✅ done.
+  - Webhook rewritten to transport-only shell + `runTurn()` pipeline (~450 lines vs 2,310). Branch/city routing, conversation lock, inactivity reset, human-mode, and status-callback (delivery receipt) handling kept; `decideTurn`/`user_sessions`/`order_agent_turns` writes replaced by `runTurn()` + `stateRepo.patch`.
+  - Voice notes: intentionally no longer auto-transcribed (Groq/whisper path removed); voice now escalates to a human with a fallback message.
+  - Deleted (to OS recycle bin): `lib/whatsapp-flow.ts`, `app/api/whatsapp/flows/` endpoint. Stripped flow builders from `lib/webhook-interactive-builders.ts` (kept list/branch/category builders); removed `sendWhatsAppInteractiveFlow` + `WhatsAppInteractiveFlowPayload`/`WhatsAppFlowAction` from `lib/whatsapp.ts`, `sendAndPersistOutboundFlowMessage` from `lib/messages.ts`, and the dead `flowMessage` branch from `lib/assistant-dispatcher.ts`. Removed `/api/whatsapp/flows` from `proxy.ts` refresh-skip list.
+  - Contact repo `setActiveBranch` now accepts `string | null` (voice-escalation clear path).
+  - Guards updated to the rebuilt reality (not gutted): repointed schema checks from `supabase-schema.sql`/`migrations.sql` → `db/schema.sql`; repointed status-handling assertions to new webhook names + `message.repo` (`DELIVERY_RANK`/`delivery_error`/`applyDeliveryStatus`); Urdu normalization assertion repointed to NLU layer; dropped dead-flow test in `check-webhook-helpers`; advanced-features guard now asserts the voice→human escalation path.
+  - Verified: `tsc --noEmit` clean (exit 0); **all 18 guards PASS**; zero residual dead-flow references in `lib/`+`app/`.
+  - REMAINING (folded into Phase 9): delete `order-engine.ts`/`order-flow-handlers.ts` once their remaining type consumers (`context.ts`, `ai.ts`, `customer-crm.ts`, `webhook-interactive-builders.ts`) migrate off `ConversationState`/`MenuCatalogItem`; migrate dashboard queries onto `stateRepo`+`deriveSessionView`; drop `user_sessions`/legacy `supabase-schema.sql`+`migrations.sql` after the atomic schema flip.
+- Phase 9 (E2E + latency) — ⏳ next.
 
