@@ -58,11 +58,12 @@ Extract every menu item visible in this image.
 
 Rules:
 1. Strip numbering from the item name.
-2. Keep portion or size details when present.
-3. Preserve the visible category heading when possible, but keep category names concise (under 24 characters when possible).
-4. Return price as a plain number with no currency symbol.
-5. If price is unreadable, return null. Never guess.
-6. Return JSON only in this shape: { "items": [ { "name": "...", "price": 850, "category": "..." } ] }`;
+2. If an item has MULTIPLE sizes/prices (e.g. M/L, S/M/L/XL, or "05 Pcs / 10 Pcs"), create ONE separate entry per size, appending the size to the name (e.g. "Chicken Tikka Pizza Large", "Nuggets (10 Pcs)").
+3. Extract items from EVERY column and section of the image — do not stop early.
+4. Preserve the visible category heading when possible, but keep category names concise (under 24 characters when possible).
+5. Return price as a plain number with no currency symbol.
+6. If price is unreadable, return null. Never guess.
+7. Return JSON only in this shape: { "items": [ { "name": "...", "price": 850, "category": "..." } ] }`;
 }
 
 async function geminiExtractMenu(imageUrl: string, systemPrompt: string): Promise<string | null> {
@@ -96,7 +97,9 @@ async function geminiExtractMenu(imageUrl: string, systemPrompt: string): Promis
         ],
       },
     ],
-    generationConfig: { responseMimeType: "application/json", maxOutputTokens: 4000 },
+    // Large menus (100+ items with size variants) produce a lot of JSON; 8000
+    // avoids truncation mid-array (a 141-item menu needed ~6k).
+    generationConfig: { responseMimeType: "application/json", maxOutputTokens: 8000 },
   };
 
   let lastErr = "";
@@ -814,21 +817,11 @@ async function createMenuCompletion(client: OpenAI, model: string, imageUrl: str
       const completion = await withTimeout(
         currentClient.chat.completions.create({
           model: currentModel,
-          max_tokens: 4000, // Increased from 2000 to handle larger responses
+          max_tokens: 8000, // large menus (100+ items w/ size variants) need headroom
           messages: [
             {
               role: "system",
-              content: `You are a professional menu digitizer for ${profile.app_name || "the restaurant"}.
-
-Extract every menu item visible in this image.
-
-Rules:
-1. Strip numbering from the item name.
-2. Keep portion or size details when present.
-3. Preserve the visible category heading when possible, but keep category names concise (under 24 characters when possible).
-4. Return price as a plain number with no currency symbol.
-5. If price is unreadable, return null. Never guess.
-6. Return JSON only in this shape: { "items": [ { "name": "...", "price": 850, "category": "..." } ] }`,
+              content: buildMenuSystemPrompt(profile.app_name || "the restaurant"),
             },
             {
               role: "user",
