@@ -21,17 +21,27 @@ import type { LanguagePreference } from "@/lib/schema.types";
 // ---------------------------------------------------------------------
 // Config
 // ---------------------------------------------------------------------
-const NLU_MODEL = process.env.ORDER_AGENT_NLU_MODEL || "openrouter/auto";
+function getNluModel(): string {
+  return process.env.ORDER_AGENT_NLU_MODEL || process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
+}
 const NLU_MAX_TOKENS = Number(process.env.ORDER_AGENT_NLU_MAX_TOKENS) || 400;
-const NLU_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 15_000;
+const NLU_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 25_000;
 const NLU_CACHE_TTL_MS = Number(process.env.NLU_CACHE_TTL_MS) || 5 * 60_000;
 
 let client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (client) return client;
+  const baseURL =
+    process.env.ORDER_AGENT_NLU_BASE_URL ||
+    (process.env.DEEPSEEK_API_KEY ? "https://seekai.cc/v1" : "https://openrouter.ai/api/v1");
+  const apiKey =
+    process.env.DEEPSEEK_API_KEY ||
+    process.env.OPENROUTER_API_KEY ||
+    "dummy_key_to_prevent_build_crash";
+
   client = new OpenAI({
-    baseURL: process.env.ORDER_AGENT_NLU_BASE_URL || "https://openrouter.ai/api/v1",
-    apiKey: process.env.OPENROUTER_API_KEY || "dummy_key_to_prevent_build_crash",
+    baseURL,
+    apiKey,
   });
   return client;
 }
@@ -122,8 +132,9 @@ export interface NluInput {
 // Prompt — compact rules + small curated few-shot (NOT phrase tables)
 // ---------------------------------------------------------------------
 const SYSTEM_RULES = [
-  "You are the language-understanding module for a Pakistani restaurant's WhatsApp ordering assistant.",
-  "Extract structured meaning from ONE customer message. Return STRICT JSON only — no prose, no markdown.",
+  "You are the language-understanding parser for a Pakistani restaurant's WhatsApp ordering assistant.",
+  "Extract structured meaning from ONE customer message. Return STRICT JSON only.",
+  "CRITICAL: Do NOT converse with the customer, do NOT answer their questions, and do NOT write advice or prose. You are an extraction engine ONLY.",
   "",
   "The customer may write in English, Roman Urdu, Urdu (Arabic script), or a mix within one message. Understand all of them.",
   "Do NOT rely on fixed keywords: infer intent from meaning. People are informal, abbreviate heavily, and change their mind mid-order.",
@@ -195,6 +206,30 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
     },
   },
   {
+    user: "aoa",
+    assistant: {
+      intents: ["greeting"],
+      primary_intent: "greeting",
+      language: "roman_urdu",
+    },
+  },
+  {
+    user: "menu dikhao kya kya hai",
+    assistant: {
+      intents: ["browse_menu"],
+      primary_intent: "browse_menu",
+      language: "roman_urdu",
+    },
+  },
+  {
+    user: "menu",
+    assistant: {
+      intents: ["browse_menu"],
+      primary_intent: "browse_menu",
+      language: "english",
+    },
+  },
+  {
     user: "kisi banday se baat karwao, ye theek nahi chal raha",
     assistant: {
       intents: ["human_request"],
@@ -255,12 +290,36 @@ function fillDefaults(partial: Partial<TurnUnderstanding>): TurnUnderstanding {
 }
 
 function parseJsonObject(raw: string): Record<string, unknown> | null {
+  if (!raw || typeof raw !== "string") return null;
+
+  // Strip reasoning / <think> tags if present
+  const clean = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
+
+  // 1. Direct JSON parse
   try {
-    const v = JSON.parse(raw) as unknown;
-    return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : null;
-  } catch {
-    return null;
+    const v = JSON.parse(clean) as unknown;
+    if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+  } catch {}
+
+  // 2. Extract JSON from markdown code fences
+  const fenceMatch = clean.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (fenceMatch && fenceMatch[1]) {
+    try {
+      const v = JSON.parse(fenceMatch[1].trim()) as unknown;
+      if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+    } catch {}
   }
+
+  // 3. Extract JSON from outer curly braces
+  const braceMatch = clean.match(/(\{[\s\S]*\})/);
+  if (braceMatch && braceMatch[1]) {
+    try {
+      const v = JSON.parse(braceMatch[1].trim()) as unknown;
+      if (v && typeof v === "object" && !Array.isArray(v)) return v as Record<string, unknown>;
+    } catch {}
+  }
+
+  return null;
 }
 
 async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
@@ -284,20 +343,102 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
  * Normalize a raw LLM object into a valid TurnUnderstanding, or return null if
  * it cannot be coerced. Exposed for unit testing without network.
  */
+function normalizeIntent(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const s = raw.trim().toLowerCase();
+  if ((INTENTS as readonly string[]).includes(s)) return s;
+
+  // Synonyms and variations
+  if (/price|cost|rate|kitne|kya rate|inquiry|item_info/i.test(s)) return "ask_item_info";
+  if (/reservation|table|booking|dine/i.test(s)) return "provide_dinein_details";
+  if (/recommend|suggestion|mashwara/i.test(s)) return "ask_recommendation";
+  if (/deal|special|discount|browse|list|category/i.test(s)) return "browse_menu";
+  if (/order|add|buy|kar do|mangwa/i.test(s)) return "add_items";
+  if (/remove|cancel|hata|rehne/i.test(s)) return "remove_items";
+  if (/human|agent|person|staff|manager/i.test(s)) return "human_request";
+  if (/status|kahan|tracking/i.test(s)) return "order_status";
+  if (/cart|trolley|basket/i.test(s)) return "view_cart";
+  if (/checkout|bill|final/i.test(s)) return "checkout";
+  if (/greet|salam|hello|hi/i.test(s)) return "greeting";
+  if (/yes|haan|han|ji|confirm|theek/i.test(s)) return "affirm";
+  if (/no|nahi|na|cancel|nope/i.test(s)) return "deny";
+
+  return raw; // pass-through so Zod rejects unrecognized values
+}
+
 export function coerceUnderstanding(
   raw: unknown,
   fallbackLanguage: LanguagePreference,
 ): TurnUnderstanding | null {
   if (!raw || typeof raw !== "object") return null;
-  const obj = raw as Record<string, unknown>;
+  const obj = { ...(raw as Record<string, unknown>) };
 
-  // Backfill primary_intent / intents if only one side is present.
-  if (!obj.intents && obj.primary_intent) obj.intents = [obj.primary_intent];
-  if (!obj.primary_intent && Array.isArray(obj.intents) && obj.intents.length) {
-    obj.primary_intent = obj.intents[0];
+  // 1. Language normalization
+  const rawLang = String(obj.language || fallbackLanguage).toLowerCase();
+  obj.language = rawLang.includes("urdu") || rawLang.includes("roman") ? "roman_urdu" : "english";
+
+  // 2. Intents normalization
+  const rawIntents = Array.isArray(obj.intents)
+    ? obj.intents
+    : obj.primary_intent
+      ? [obj.primary_intent]
+      : [];
+  const normalizedIntents = rawIntents.map(normalizeIntent).filter(Boolean) as string[];
+  let primary = normalizeIntent(obj.primary_intent);
+  if (!primary && normalizedIntents.length) primary = normalizedIntents[0];
+  if ((!primary || primary === "unknown") && obj.info_query) primary = "ask_item_info";
+  obj.primary_intent = primary ?? "unknown";
+  obj.intents = normalizedIntents.length ? normalizedIntents : [obj.primary_intent];
+
+  // 3. Items normalization
+  if (Array.isArray(obj.items)) {
+    obj.items = obj.items
+      .map((it: unknown) => {
+        if (!it || typeof it !== "object") return null;
+        const itemObj = it as Record<string, unknown>;
+        const query = String(itemObj.query || itemObj.name || itemObj.item || "").trim();
+        if (!query) return null;
+        const qtyRaw = itemObj.qty ?? itemObj.quantity;
+        const qty = typeof qtyRaw === "number" ? qtyRaw : (qtyRaw === null ? null : 1);
+        const size = typeof itemObj.size === "string" && itemObj.size.trim() ? itemObj.size.trim() : null;
+        const addons = Array.isArray(itemObj.addons)
+          ? itemObj.addons.map((a) => String(a).trim()).filter(Boolean)
+          : Array.isArray(itemObj.customizations)
+            ? itemObj.customizations.map((c) => String(c).trim()).filter(Boolean)
+            : [];
+        const notes = typeof itemObj.notes === "string" && itemObj.notes.trim() ? itemObj.notes.trim() : null;
+        return { query, qty, size, addons, notes };
+      })
+      .filter(Boolean);
+  } else {
+    obj.items = [];
   }
+
+  // 4. Removals normalization
+  if (Array.isArray(obj.removals)) {
+    obj.removals = obj.removals
+      .map((rm: unknown) => {
+        if (!rm || typeof rm !== "object") return null;
+        const rmObj = rm as Record<string, unknown>;
+        const query = String(rmObj.query || rmObj.name || "").trim();
+        if (!query) return null;
+        const qtyRaw = rmObj.qty ?? rmObj.quantity;
+        const qty = qtyRaw === "all" ? "all" : typeof qtyRaw === "number" && qtyRaw >= 1 ? Math.floor(qtyRaw) : "all";
+        return { query, qty };
+      })
+      .filter(Boolean);
+  } else {
+    obj.removals = [];
+  }
+
+  // 5. Numeric slot normalization
+  if (obj.guests !== undefined && obj.guests !== null) {
+    const num = Number(obj.guests);
+    obj.guests = Number.isInteger(num) && num >= 1 && num <= 50 ? num : null;
+  }
+
   // Fill required-but-omitted fields with defaults before validation.
-  const merged = { ...baseDefaults(fallbackLanguage), ...obj };
+  const merged = { ...baseDefaults(obj.language as LanguagePreference), ...obj };
   const parsed = TurnUnderstandingSchema.safeParse(merged);
   return parsed.success ? parsed.data : null;
 }
@@ -317,7 +458,7 @@ export async function understandTurn(input: NluInput): Promise<TurnUnderstanding
   try {
     const completion = await withTimeout(
       getClient().chat.completions.create({
-        model: NLU_MODEL,
+        model: getNluModel(),
         temperature: 0,
         max_tokens: NLU_MAX_TOKENS,
         response_format: { type: "json_object" },
