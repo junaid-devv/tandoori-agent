@@ -136,7 +136,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   const ctx = await loadTurnContext({
     conversationId: input.conversationId,
     branchId: input.branchId,
-    needsMenu: !input.trivial,
+    needsMenu: true,
   });
   t.ctx = Date.now() - startedAt;
 

@@ -125,9 +125,15 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         replies.push(reply.greeting(lang, input.appName, input.customerName ?? null, wasSalam));
         // Show category/menu list so first action is a tap, not a typed command
         const greetCats = Array.from(new Set(ctx.menu.map((m) => m.category).filter(Boolean))) as string[];
-        if (greetCats.length > 1) {
+        if (greetCats.length > 0) {
           interactive = interactive ?? categoryList(lang, greetCats,
             lang === "roman_urdu" ? "Kaunsi cheez chahiye?" : "What would you like?",
+          );
+        } else if (ctx.menu.length > 0) {
+          interactive = interactive ?? itemPickList(
+            lang,
+            ctx.menu.slice(0, 10).map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })),
+            input.currency,
           );
         }
         break;
