@@ -54,6 +54,9 @@ export interface GroundedAnswerInput {
   isOpenNow: boolean;
 }
 
+// Keywords that signal a non-menu question — we send only restaurant facts, not full menu.
+const NON_MENU_KEYWORDS = /\b(deliver|delivery|timing|hours|open|close|location|address|payment|cod|cash|pickup|dine.?in|halal|phone|number|contact|area|zone|charge|fee|minimum|min order|eta|time|available)\b/i;
+
 function buildFacts(input: GroundedAnswerInput): string {
   const s = input.settings;
   const cur = input.currency;
@@ -80,24 +83,37 @@ function buildFacts(input: GroundedAnswerInput): string {
   if (s.phone_delivery) lines.push(`PHONE_DELIVERY: ${s.phone_delivery}`);
   if (s.phone_dine_in) lines.push(`PHONE_DINEIN: ${s.phone_dine_in}`);
 
-  // Menu — categories + items. Small; safe to include fully.
-  const focus = input.relevantItems?.length ? input.relevantItems : input.menu;
-  const byCat = new Map<string, string[]>();
-  for (const it of focus) {
-    const cat = it.category || "Other";
-    const desc = "description" in it ? (it as { description?: string | null }).description : null;
-    const line = `${it.name} — ${cur} ${it.price}${desc ? ` (${desc})` : ""}`;
-    if (!byCat.has(cat)) byCat.set(cat, []);
-    byCat.get(cat)!.push(line);
-  }
-  if (byCat.size) {
-    lines.push("", "MENU:");
-    for (const [cat, items] of byCat) {
-      lines.push(`  [${cat}]`);
-      for (const it of items.slice(0, 40)) lines.push(`   - ${it}`);
-    }
+  // Smart context trimming: non-menu questions don't need the full item list.
+  // For logistics/policy questions send only category names to keep tokens low.
+  const isNonMenuQuestion = NON_MENU_KEYWORDS.test(input.question) && !input.relevantItems?.length;
+  const focus = input.relevantItems?.length
+    ? input.relevantItems
+    : isNonMenuQuestion
+      ? [] // skip full menu for delivery/hours/payment questions
+      : input.menu;
+
+  if (isNonMenuQuestion && input.menu.length > 0) {
+    // Send just the category names so the LLM knows what food is served
+    const cats = [...new Set(input.menu.map((m) => m.category).filter(Boolean))];
+    if (cats.length) lines.push("", `MENU_CATEGORIES: ${cats.join(", ")}`);
   } else {
-    lines.push("", "MENU: (no items loaded yet)");
+    const byCat = new Map<string, string[]>();
+    for (const it of focus) {
+      const cat = it.category || "Other";
+      const desc = "description" in it ? (it as { description?: string | null }).description : null;
+      const line = `${it.name} — ${cur} ${it.price}${desc ? ` (${desc})` : ""}`;
+      if (!byCat.has(cat)) byCat.set(cat, []);
+      byCat.get(cat)!.push(line);
+    }
+    if (byCat.size) {
+      lines.push("", "MENU:");
+      for (const [cat, items] of byCat) {
+        lines.push(`  [${cat}]`);
+        for (const it of items.slice(0, 40)) lines.push(`   - ${it}`);
+      }
+    } else if (!isNonMenuQuestion) {
+      lines.push("", "MENU: (no items loaded yet)");
+    }
   }
 
   return lines.join("\n");

@@ -144,7 +144,8 @@ async function embedQuery(text: string): Promise<number[] | null> {
 }
 
 // ---------------------------------------------------------------------
-// Lexical fallback (branch-scoped, availability-filtered)
+// Lexical fallback — works on an in-memory menu slice to avoid a DB round trip.
+// The caller passes menuItems if available (always true when called from executor).
 // ---------------------------------------------------------------------
 interface MenuRow {
   id: string;
@@ -155,7 +156,34 @@ interface MenuRow {
   is_available: boolean;
 }
 
-async function lexicalSearch(branchId: string, query: string, limit: number): Promise<ResolvedMenuItem[]> {
+function lexicalScore(query: string, row: MenuRow): number {
+  return overlapScore(query, [row.name, row.category, row.description].filter(Boolean).join(" "));
+}
+
+function lexicalRank(query: string, rows: MenuRow[], limit: number): ResolvedMenuItem[] {
+  return rows
+    .map((row) => ({
+      id: row.id,
+      name: row.name,
+      price: Number(row.price),
+      category: row.category,
+      description: row.description,
+      is_available: row.is_available,
+      similarity: lexicalScore(query, row),
+      method: "lexical" as ResolutionMethod,
+    }))
+    .filter((r) => (r.similarity ?? 0) >= 0.2)
+    .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
+    .slice(0, limit);
+}
+
+/** Lexical fallback that uses pre-loaded in-memory menu (no DB round trip). */
+function lexicalSearchInMemory(query: string, menuItems: MenuRow[], limit: number): ResolvedMenuItem[] {
+  return lexicalRank(query, menuItems.filter((r) => r.is_available), limit);
+}
+
+/** Lexical fallback that fetches from DB (used only when menu not pre-loaded). */
+async function lexicalSearchFromDb(branchId: string, query: string, limit: number): Promise<ResolvedMenuItem[]> {
   const { data, error } = await supabaseAdmin
     .from("menu_items")
     .select("id, name, price, category, description, is_available")
@@ -165,39 +193,38 @@ async function lexicalSearch(branchId: string, query: string, limit: number): Pr
     if (error) console.error("[menu/search] lexical load failed:", error);
     return [];
   }
-  return (data as MenuRow[])
-    .map((row) => ({
-      id: row.id,
-      name: row.name,
-      price: Number(row.price),
-      category: row.category,
-      description: row.description,
-      is_available: row.is_available,
-      similarity: overlapScore(query, [row.name, row.category, row.description].filter(Boolean).join(" ")),
-      method: "lexical" as ResolutionMethod,
-    }))
-    .filter((r) => (r.similarity ?? 0) >= 0.2)
-    .sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0))
-    .slice(0, limit);
+  return lexicalRank(query, data as MenuRow[], limit);
 }
 
 // ---------------------------------------------------------------------
-// Public: search
+// Public: search — accepts optional in-memory menu to skip DB on lexical fallback
 // ---------------------------------------------------------------------
-export async function searchMenu(branchId: string, query: string, limit = 5): Promise<MenuSearchResult> {
+export async function searchMenu(
+  branchId: string,
+  query: string,
+  limit = 5,
+  /** Pass ctx.menu here to avoid a DB round trip on lexical fallback */
+  inMemoryMenu?: Array<{ id: string; name: string; price: number; category: string | null; description?: string | null; is_available: boolean }>,
+): Promise<MenuSearchResult> {
   const trimmed = query.trim();
   if (!trimmed) return { matches: [], method: "none", usedEmbedding: false };
 
+  const lexicalFallback = async (): Promise<ResolvedMenuItem[]> => {
+    if (inMemoryMenu && inMemoryMenu.length > 0) {
+      return lexicalSearchInMemory(trimmed, inMemoryMenu as MenuRow[], limit);
+    }
+    return lexicalSearchFromDb(branchId, trimmed, limit);
+  };
+
   // Genuinely un-embeddable (too short) -> lexical is the correct path.
   if (trimmed.length < MIN_EMBEDDABLE_LEN) {
-    const matches = await lexicalSearch(branchId, trimmed, limit);
+    const matches = await lexicalFallback();
     return { matches, method: matches.length ? "lexical" : "none", usedEmbedding: false };
   }
 
   const embedding = await embedQuery(trimmed);
   if (!embedding) {
-    // No key or embedding failure -> lexical fallback (flagged).
-    const matches = await lexicalSearch(branchId, trimmed, limit);
+    const matches = await lexicalFallback();
     return { matches, method: matches.length ? "lexical" : "none", usedEmbedding: false };
   }
 
@@ -210,15 +237,14 @@ export async function searchMenu(branchId: string, query: string, limit = 5): Pr
 
   if (error) {
     console.error("[menu/search] vector RPC failed, falling back to lexical:", error);
-    const matches = await lexicalSearch(branchId, trimmed, limit);
+    const matches = await lexicalFallback();
     return { matches, method: matches.length ? "lexical" : "none", usedEmbedding: false };
   }
 
   const rows = Array.isArray(data) ? data : [];
   if (rows.length === 0) {
-    // Vector ran but nothing cleared the threshold — try lexical as a safety net
-    // (handles brand-new items not yet embedded).
-    const matches = await lexicalSearch(branchId, trimmed, limit);
+    // Vector cleared threshold with nothing — lexical safety net for brand-new items.
+    const matches = await lexicalFallback();
     return { matches, method: matches.length ? "lexical" : "none", usedEmbedding: true };
   }
 
@@ -249,9 +275,13 @@ export async function searchMenu(branchId: string, query: string, limit = 5): Pr
 
 /**
  * Resolve a single free-text item mention to the best menu item, or null.
- * This is what add_items uses so cart resolution goes through embeddings.
+ * Pass inMemoryMenu (ctx.menu) to skip DB on lexical fallback.
  */
-export async function resolveItem(branchId: string, query: string): Promise<ResolvedMenuItem | null> {
-  const { matches } = await searchMenu(branchId, query, 3);
+export async function resolveItem(
+  branchId: string,
+  query: string,
+  inMemoryMenu?: Parameters<typeof searchMenu>[3],
+): Promise<ResolvedMenuItem | null> {
+  const { matches } = await searchMenu(branchId, query, 3, inMemoryMenu);
   return matches[0] ?? null;
 }

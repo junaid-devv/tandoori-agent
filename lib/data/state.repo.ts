@@ -79,19 +79,15 @@ export const stateRepo = {
   },
 
   async ensure(conversationId: string, seed?: Partial<ConversationStateRow>): Promise<ConversationStateRow> {
-    const existing = await this.get(conversationId);
-    if (existing) return existing;
-
+    // Single upsert — avoids a SELECT + INSERT round trip on new conversations.
+    // `ignoreDuplicates: false` returns the existing row on conflict.
     const row = { ...defaults(conversationId), ...seed, conversation_id: conversationId };
-    const { data, error } = await supabaseAdmin.from(TABLE).insert(row).select("*").single();
-    if (error) {
-      // race: another concurrent insert won
-      if (String((error as { code?: string }).code) === "23505") {
-        const raced = await this.get(conversationId);
-        if (raced) return raced;
-      }
-      throw error;
-    }
+    const { data, error } = await supabaseAdmin
+      .from(TABLE)
+      .upsert(row, { onConflict: "conversation_id", ignoreDuplicates: true })
+      .select("*")
+      .single();
+    if (error) throw error;
     return parseState(data as Partial<ConversationStateRow> & { conversation_id: string });
   },
 

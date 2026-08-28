@@ -57,57 +57,31 @@ export async function recordWebhookEvent(input: {
   signature: string | null;
 }): Promise<WebhookEventRecord> {
   const deliveryKey = getWebhookDeliveryKey(input.rawBody);
-  const fetchExisting = async () => {
-    const { data: existing, error: lookupError } = await supabaseAdmin
-      .from("webhook_events")
-      .select("*")
-      .eq("delivery_key", deliveryKey)
-      .maybeSingle();
+  const now = new Date().toISOString();
 
-    if (lookupError) throw lookupError;
-    if (!existing) return null;
-
-    const parsed = parseWebhookEventRecord(existing as Record<string, unknown>);
-    const { data: updated, error: updateError } = await supabaseAdmin
-      .from("webhook_events")
-      .update({
-        received_count: parsed.received_count + 1,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", parsed.id)
-      .select("*")
-      .single();
-
-    if (updateError || !updated) {
-      throw updateError ?? new Error("Failed to update webhook event.");
-    }
-
-    return parseWebhookEventRecord(updated as Record<string, unknown>);
-  };
-
-  const existing = await fetchExisting();
-  if (existing) return existing;
-
+  // Single-trip upsert: insert on first delivery, increment received_count on retries.
+  // Supabase upsert with ignoreDuplicates:false returns the existing row on conflict.
   const { data, error } = await supabaseAdmin
     .from("webhook_events")
-    .insert({
-      provider: "meta_whatsapp",
-      delivery_key: deliveryKey,
-      raw_body: shouldStoreRawWebhookBody() ? input.rawBody : "[redacted]",
-      payload: input.payload,
-      signature: input.signature,
-      status: "received",
-      attempt_count: 0,
-      received_count: 1,
-    })
+    .upsert(
+      {
+        provider: "meta_whatsapp",
+        delivery_key: deliveryKey,
+        raw_body: shouldStoreRawWebhookBody() ? input.rawBody : "[redacted]",
+        payload: input.payload,
+        signature: input.signature,
+        status: "received",
+        attempt_count: 0,
+        received_count: 1,
+        created_at: now,
+        updated_at: now,
+      },
+      { onConflict: "delivery_key", ignoreDuplicates: false },
+    )
     .select("*")
     .single();
 
   if (error || !data) {
-    if (String((error as { code?: string } | null)?.code) === "23505") {
-      const raced = await fetchExisting();
-      if (raced) return raced;
-    }
     throw error ?? new Error("Failed to persist webhook event.");
   }
 

@@ -140,7 +140,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   let understanding: TurnUnderstanding | null = null;
 
   // ---- 1a) Deterministic fast-path: interactive tap (button/list id) ----
-  if (/^(ordertype|confirm|item|category):/.test(input.messageText.trim())) {
+  if (/^(ordertype|confirm|item|category|action|addr):/.test(input.messageText.trim())) {
     understanding = understandingFromInteractiveId(
       input.messageText.trim(),
       ctx.state.preferred_language,
@@ -148,7 +148,29 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     );
   }
 
-  // ---- 1b) Deterministic fast-path: bare numeric selection of last-shown option ----
+  // ---- 1b) Deterministic fast-path: pure greeting with empty cart — skip LLM ----
+  if (!understanding && input.trivial && ctx.state.cart.length === 0 &&
+      /^(hi|hello|hey|salam|aoa|assalam|hola|hi there|hello there)$/i.test(input.messageText.trim())) {
+    understanding = {
+      intents: ["greeting"],
+      primary_intent: "greeting",
+      confidence: 1,
+      language: ctx.state.preferred_language,
+      items: [],
+      removals: [],
+      order_type: null,
+      address: null,
+      guests: null,
+      reservation_time: null,
+      pickup_time: null,
+      info_query: null,
+      sentiment: "neutral",
+      wants_human: false,
+      notes: "fast_path_greeting",
+    };
+  }
+
+  // ---- 1c) Deterministic fast-path: bare numeric selection of last-shown option ----
   const numeric = input.messageText.match(NUMERIC_RE);
   if (!understanding && numeric && ctx.view.awaiting_selection && ctx.state.last_shown_options.length > 0) {
     const idx = Number(numeric[1]) - 1;

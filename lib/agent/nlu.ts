@@ -335,13 +335,18 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
 ];
 
 function buildMessages(input: NluInput): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
+  // Compact context: keep tokens small. Cart: just name+qty. Options: max 8 names, truncated.
+  const cartStr = input.cart.length
+    ? input.cart.map((c) => `${c.qty}x${c.name}`).join(",")
+    : "empty";
+  const optStr = input.lastShownOptions?.length
+    ? input.lastShownOptions.slice(0, 8).map((o) => o.slice(0, 24)).join("|")
+    : "";
+
   const ctx = [
-    `CONTEXT_STAGE: ${input.stage}`,
-    `CONTEXT_CART: ${input.cart.length ? input.cart.map((c) => `${c.name} x${c.qty}`).join(", ") : "empty"}`,
-    input.lastShownOptions?.length ? `LAST_SHOWN_OPTIONS: ${input.lastShownOptions.join(" | ")}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
+    `STAGE:${input.stage} CART:${cartStr}`,
+    optStr ? `OPTIONS:${optStr}` : "",
+  ].filter(Boolean).join(" ");
 
   const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: `${SYSTEM_RULES}\n\n${ctx}` },

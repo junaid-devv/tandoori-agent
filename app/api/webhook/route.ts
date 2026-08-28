@@ -157,12 +157,14 @@ async function processWebhookEventInBackground(eventId: string) {
   if (!claimed) return;
   try {
     await processWebhook(claimed.payload);
-    await markWebhookEventProcessed(eventId);
+    // Fire-and-forget: marking processed doesn't affect customer experience
+    void markWebhookEventProcessed(eventId).catch((e) => console.error("[webhook] mark-processed failed:", e));
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[webhook] Background processing failed:", msg, error);
-    await markWebhookEventFailed(eventId, msg);
-    await alertStaffForFailedWebhook(claimed.payload, eventId, msg).catch((e) => {
+    // Fire-and-forget: don't let bookkeeping errors mask the original failure
+    void markWebhookEventFailed(eventId, msg).catch((e) => console.error("[webhook] mark-failed failed:", e));
+    void alertStaffForFailedWebhook(claimed.payload, eventId, msg).catch((e) => {
       console.error("[webhook] Staff alert failed:", e);
     });
   }
@@ -341,7 +343,8 @@ async function processOneMessage(
       replyButtons: result.interactive?.kind === "buttons" ? result.interactive.payload : null,
     });
 
-    await conversationRepo.touch(conversation.id);
+    // Fire-and-forget: touch is low priority, don't block reply delivery
+    void conversationRepo.touch(conversation.id).catch((e) => console.error("[webhook] touch failed:", e));
   } finally {
     await releaseLock(conversation.id, lockToken);
   }
@@ -515,10 +518,11 @@ async function handleNonText(
           whatsappMsgId: message.id,
         });
 
-        // Update language from transcript
+        // Update language from transcript — fire-and-forget, don't block the turn
         const transcriptLang = inferLanguagePreference(transcript, state.preferred_language);
-        const contact = await contactRepo.getByPhone(message.from);
-        if (contact) void contactRepo.setPreferredLanguage(contact.id, transcriptLang).catch(() => {});
+        void contactRepo.getByPhone(message.from).then((c) => {
+          if (c) void contactRepo.setPreferredLanguage(c.id, transcriptLang).catch(() => {});
+        }).catch(() => {});
 
         // Feed transcript into same pipeline as text
         const lockToken = await acquireLock(conversation.id);
@@ -549,7 +553,7 @@ async function handleNonText(
             interactiveList: result.interactive?.kind === "list" ? result.interactive.payload : null,
             replyButtons: result.interactive?.kind === "buttons" ? result.interactive.payload : null,
           });
-          await conversationRepo.touch(conversation.id);
+          void conversationRepo.touch(conversation.id).catch((e) => console.error("[voice] touch failed:", e));
         } finally {
           await releaseLock(conversation.id, lockToken);
         }

@@ -25,7 +25,6 @@ import {
 } from "./interactive";
 import type { TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
-import { getLatestSavedAddress } from "@/lib/customer-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export interface ExecutionResult {
@@ -138,10 +137,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const mentions = (action.payload?.items as TurnUnderstanding["items"]) ?? u.items;
         const added: Array<{ name: string; qty: number }> = [];
         for (const m of mentions) {
-          const resolved = await resolveItem(branchId, m.query);
+          const resolved = await resolveItem(branchId, m.query, ctx.menu);
           if (resolved?.method === "vector") usedSemantic = true;
           if (!resolved) {
-            const { matches } = await searchMenu(branchId, m.query, 3);
+            const { matches } = await searchMenu(branchId, m.query, 3, ctx.menu);
             if (matches.length) {
               // Offer close matches as a tap-list instead of a flat "not found".
               replies.push(reply.notFound(lang, m.query, matches.map((x) => x.name)));
@@ -181,7 +180,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "remove_items": {
         const removals = (action.payload?.removals as TurnUnderstanding["removals"]) ?? u.removals;
         for (const r of removals) {
-          const resolved = await resolveItem(branchId, r.query);
+          const resolved = await resolveItem(branchId, r.query, ctx.menu);
           cart = removeFromCart(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? r.query, qty: r.qty });
         }
         replies.push(reply.itemsRemoved(lang, cart, currency));
@@ -193,7 +192,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "update_quantity": {
         const items = (action.payload?.items as TurnUnderstanding["items"]) ?? u.items;
         for (const m of items) {
-          const resolved = await resolveItem(branchId, m.query);
+          const resolved = await resolveItem(branchId, m.query, ctx.menu);
           cart = updateQuantity(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? m.query, qty: m.qty ?? 1 });
         }
         replies.push(reply.itemsAdded(lang, [], cart, currency));
@@ -209,7 +208,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         // 1) Try semantic search to surface concrete items (enables a tap-list).
         let matches: Awaited<ReturnType<typeof searchMenu>>["matches"] = [];
         if (query) {
-          const res = await searchMenu(branchId, query, 6);
+          const res = await searchMenu(branchId, query, 6, ctx.menu);
           usedSemantic = usedSemantic || res.usedEmbedding;
           matches = res.matches;
         } else if (ctx.menu.length) {
@@ -306,8 +305,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           patch.address = address;
           patch.order_type = patch.order_type ?? "delivery";
         } else {
-          // Check if customer has a saved address — offer it as a one-tap option
-          const saved = await getLatestSavedAddress(input.conversationId);
+          // Use pre-loaded saved address from context (no extra DB call)
+          const saved = ctx.savedAddress;
           if (saved) {
             replies.push(reply.askAddressWithSaved(lang, saved.label));
             interactive = interactive ?? {

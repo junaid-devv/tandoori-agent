@@ -10,13 +10,12 @@
  */
 import { cache } from "@/lib/core/cache";
 import { stateRepo } from "@/lib/data/state.repo";
-import { messageRepo } from "@/lib/data/message.repo";
 import { getMenuCatalog } from "@/lib/menu";
 import { getRestaurantSettings, isWithinOperatingHours } from "@/lib/settings";
+import { getLatestSavedAddress, type SavedAddress } from "@/lib/customer-crm";
 import type { MenuCatalogItem } from "@/lib/menu";
 import type { RestaurantSettings } from "@/lib/settings";
 import type { ConversationStateRow } from "@/lib/schema.types";
-import type { MessageRow } from "@/lib/data/message.repo";
 import type { StateView } from "./state-machine";
 
 const MENU_TTL_MS = Number(process.env.MENU_CACHE_TTL_MS) || 5 * 60_000;
@@ -27,7 +26,8 @@ export interface TurnContext {
   menu: MenuCatalogItem[];
   settings: RestaurantSettings;
   isOpenNow: boolean;
-  history: MessageRow[];
+  /** Pre-loaded saved delivery address for this conversation (avoids a DB call in executor). */
+  savedAddress: SavedAddress | null;
   view: StateView;
 }
 
@@ -36,7 +36,8 @@ export interface LoadContextInput {
   branchId: string;
   /** Skip menu load for trivial turns (greeting/ack) to save latency. */
   needsMenu?: boolean;
-  historyLimit?: number;
+  /** Skip saved-address pre-load when we know it won't be needed (e.g. pickup/dine-in). */
+  needsSavedAddress?: boolean;
 }
 
 async function loadMenuCached(branchId: string): Promise<MenuCatalogItem[]> {
@@ -68,20 +69,26 @@ export function buildStateView(state: ConversationStateRow): StateView {
 
 export async function loadTurnContext(input: LoadContextInput): Promise<TurnContext> {
   const needsMenu = input.needsMenu !== false;
-  const historyLimit = input.historyLimit ?? 20;
+  // Pre-load saved address in parallel — only skip when we already know the order type
+  // won't be delivery (determined by state after load, so we load it speculatively).
+  const needsSavedAddress = input.needsSavedAddress !== false;
 
-  const [state, menu, settings, history] = await Promise.all([
+  const [state, menu, settings] = await Promise.all([
     stateRepo.ensure(input.conversationId),
     needsMenu ? loadMenuCached(input.branchId) : Promise.resolve<MenuCatalogItem[]>([]),
     loadSettingsCached(input.branchId),
-    messageRepo.recentHistory(input.conversationId, historyLimit),
   ]);
+
+  // Load saved address in parallel only if delivery is plausible (order type not set or delivery)
+  const savedAddress = needsSavedAddress && (state.order_type === null || state.order_type === "delivery")
+    ? await getLatestSavedAddress(input.conversationId).catch(() => null)
+    : null;
 
   const isOpenNow =
     settings.is_accepting_orders &&
     isWithinOperatingHours(settings.opening_time, settings.closing_time, settings.timezone);
 
-  return { state, menu, settings, isOpenNow, history, view: buildStateView(state) };
+  return { state, menu, settings, isOpenNow, savedAddress, view: buildStateView(state) };
 }
 
 /** Invalidate cached menu after a menu edit (call from menu save path). */
