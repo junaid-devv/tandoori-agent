@@ -171,9 +171,20 @@ Each phase: define "working", implement, verify with the existing `scripts/check
 
 ---
 
-## Open questions for you (before Phase 2)
-1. **Shared cache**: OK to add Upstash/Redis (or a Supabase cache table) for cross-instance caching, or keep in-memory only?
-2. **Embedding provider**: confirm OpenAI `text-embedding-3-small` is available/keyed in prod (vector path depends on it).
-3. **Audit trail**: keep an `order_agent_turns`-style table for observability, or rely on structured logs only?
-4. **Menu OCR history** (`menu_uploads`): keep or drop?
-5. **Deployment target** (Vercel serverless vs long-running Node) — affects the caching/queue choices in Phase 8.
+## Decisions (locked 2026-08-28)
+1. **Cache**: in-memory LRU now, behind a `CacheStore` interface (`lib/core/cache.ts`) so Upstash/Redis is a later drop-in with no call-site changes.
+2. **Embeddings**: OpenAI `text-embedding-3-small` (1536-dim; matches schema vector size).
+3. **Audit trail**: KEEP `agent_turns` (append-only, written in `after()`, off the reply path).
+4. **Menu OCR history** (`menu_uploads`): KEEP (dashboard uses it).
+5. **Deployment**: Vercel serverless (Next.js 16 `after()` already assumes it).
+
+### Phase status
+- Phase 1 (audit) — ✅ done.
+- Phase 2 (schema consolidation) — ✅ done. `db/schema.sql` + `lib/schema.types.ts`; `tsc` clean. DB apply on fresh Supabase deferred to user (accepted as DoD).
+- Phase 3 (data/repository layer + cache foundation) — ✅ done.
+  - `lib/core/cache.ts`: `CacheStore` interface + `InMemoryCacheStore` (LRU+TTL, stampede-safe `getOrSet`) + `setCacheStore()` for later Redis swap.
+  - `lib/data/`: `contact.repo`, `conversation.repo`, `message.repo`, `order.repo` (+ barrel `index.ts`). Order placement via `orderRepo.place` → `place_order_from_payload` RPC.
+  - Call-site migration is done **per consumer in its own phase** to avoid double-work / breakage: state-store consumers → Phase 5; menu/search & `customer-crm` (coupled to order-engine types) → Phase 6–7. New agent code (Phases 4–7) uses these repos from the start.
+  - Verified: `tsc --noEmit` clean; `@/*` alias resolves for `lib/data` + `lib/core`.
+- Phase 4 (NLU/intent layer) — ⏳ next.
+
