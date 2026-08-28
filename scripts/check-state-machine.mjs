@@ -165,7 +165,7 @@ console.log("\n== state-machine FSM tests ==");
 // 13) Unknown with info_query → answer via search, not canned fallback.
 {
   const t = nextTransition(view(), u({ primary_intent: "unknown", info_query: "something spicy" }));
-  check(hasAction(t, "answer_info"), "unknown with info_query routes to answer_info");
+  check(hasAction(t, "answer_grounded"), "unknown with info_query routes to grounded answer");
 }
 
 console.log("");

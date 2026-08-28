@@ -187,7 +187,9 @@ function scenarioNonLinearCheckout() {
   });
   const t = nextTransition(view, u);
   assert.equal(t.nextStage, "collecting_delivery");
-  assert.ok(t.actions.some((a) => a.kind === "answer_hours_location"));
+  // Hours/location now flow through the grounded answer layer (facts-based),
+  // still WITHOUT leaving the checkout stage.
+  assert.ok(t.actions.some((a) => a.kind === "answer_grounded"));
   pass("Scenario 4: Non-linear question in checkout maintains current stage.");
 }
 

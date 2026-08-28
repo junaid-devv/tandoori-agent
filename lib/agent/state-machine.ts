@@ -23,6 +23,7 @@ export type AgentActionKind =
   | "greet"
   | "show_menu"
   | "answer_info"          // menu/item info or recommendation via vector search
+  | "answer_grounded"      // any question answered from restaurant facts (LLM, grounded)
   | "add_items"
   | "remove_items"
   | "update_quantity"
@@ -107,11 +108,15 @@ function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null
       return { kind: "show_menu" };
     case "ask_item_info":
     case "ask_recommendation":
-      return { kind: "answer_info", payload: { query: u.info_query, items: u.items } };
+      // Menu-focused: try semantic search first (for buttons/lists), but the
+      // executor falls back to grounded answering on a miss — never "notFound".
+      return { kind: "answer_info", payload: { query: u.info_query, items: u.items, intent } };
     case "ask_payment":
-      return { kind: "answer_payment" };
     case "ask_hours_or_location":
-      return { kind: "answer_hours_location" };
+    case "ask_delivery_info":
+    case "general_question":
+      // Non-menu / capability / open-ended: answer from restaurant facts (grounded LLM).
+      return { kind: "answer_grounded", payload: { query: u.info_query, intent } };
     case "order_status":
       return { kind: "report_order_status" };
     case "smalltalk":
@@ -252,8 +257,11 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   // 10) Nothing matched → fallback (never a generic canned reply; executor uses info_query/vector).
   if (actions.length === 0) {
     if (u.info_query) {
-      actions.push({ kind: "answer_info", payload: { query: u.info_query } });
+      // Any leftover question → grounded answer (menu + facts), never a dead end.
+      actions.push({ kind: "answer_grounded", payload: { query: u.info_query, intent: "general_question" } });
     } else {
+      // Truly empty/meaningless: grounded answer on the raw message beats a canned
+      // "I didn't get that" — the LLM can still greet/steer helpfully.
       actions.push({ kind: "fallback", payload: { primary_intent: u.primary_intent } });
     }
   }

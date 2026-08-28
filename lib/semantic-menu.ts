@@ -30,6 +30,8 @@ const DEFAULT_EMBEDDING_API_KEY =
   process.env.MENU_EMBEDDING_API_KEY ||
   process.env.OPENAI_API_KEY ||
   "";
+// Must match lib/menu/search.ts and the vector(1536) column exactly.
+const DEFAULT_EMBEDDING_DIMENSIONS = Number(process.env.MENU_EMBEDDING_DIMENSIONS) || 1536;
 
 let embeddingClient: OpenAI | null = null;
 
@@ -103,10 +105,18 @@ async function createEmbedding(input: string): Promise<number[] | null> {
   const response = await client.embeddings.create({
     model: DEFAULT_EMBEDDING_MODEL,
     input,
+    dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
   });
 
   const vector = response.data[0]?.embedding;
-  return Array.isArray(vector) && vector.length > 0 ? vector : null;
+  if (!Array.isArray(vector) || vector.length === 0) return null;
+  if (vector.length !== DEFAULT_EMBEDDING_DIMENSIONS) {
+    throw new Error(
+      `[semantic-menu] embedding dim ${vector.length} != expected ${DEFAULT_EMBEDDING_DIMENSIONS}. ` +
+        "Refusing to store a mismatched vector (would corrupt cosine search).",
+    );
+  }
+  return vector;
 }
 
 function toSemanticMatch(row: Partial<MenuRow> & { id: string; name: string; price: number | string }): SemanticMenuMatch {
@@ -144,27 +154,47 @@ export async function syncMenuEmbeddingsForBranch(branchId: string): Promise<voi
 
   if (error) throw error;
 
-  for (const row of (data ?? []) as MenuRow[]) {
+  const rows = (data ?? []) as MenuRow[];
+  let ok = 0;
+  let failed = 0;
+
+  // Per-item resilience: one bad embedding (HF rate limit, transient 5xx) must
+  // NOT abort the whole menu sync and leave the rest un-embedded.
+  for (const row of rows) {
     const source = buildEmbeddingSource(row);
-    const embedding = await createEmbedding(source);
-    if (!embedding) continue;
+    try {
+      const embedding = await createEmbedding(source);
+      if (!embedding) {
+        failed += 1;
+        console.warn(`[semantic-menu] no embedding for "${row.name}" (${row.id}); skipped`);
+        continue;
+      }
 
-    const { error: upsertError } = await supabaseAdmin.from("menu_item_embeddings").upsert(
-      {
-        menu_item_id: row.id,
-        branch_id: row.branch_id,
-        embedding_model: DEFAULT_EMBEDDING_MODEL,
-        embedding_source: source,
-        embedding: toVectorLiteral(embedding),
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "menu_item_id" },
-    );
+      const { error: upsertError } = await supabaseAdmin.from("menu_item_embeddings").upsert(
+        {
+          menu_item_id: row.id,
+          branch_id: row.branch_id,
+          embedding_model: DEFAULT_EMBEDDING_MODEL,
+          embedding_source: source,
+          embedding: toVectorLiteral(embedding),
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "menu_item_id" },
+      );
 
-    if (upsertError) {
-      throw upsertError;
+      if (upsertError) {
+        failed += 1;
+        console.error(`[semantic-menu] upsert failed for "${row.name}" (${row.id}):`, upsertError);
+        continue;
+      }
+      ok += 1;
+    } catch (err) {
+      failed += 1;
+      console.error(`[semantic-menu] embedding failed for "${row.name}" (${row.id}):`, err);
     }
   }
+
+  console.info(`[semantic-menu] sync done for branch ${branchId}: ${ok} embedded, ${failed} failed of ${rows.length}`);
 }
 
 export async function getSemanticMenuMatches(

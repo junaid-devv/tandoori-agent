@@ -42,6 +42,10 @@ const EMBEDDING_MODEL = process.env.MENU_EMBEDDING_MODEL || "text-embedding-3-sm
 const EMBEDDING_BASE_URL =
   process.env.MENU_EMBEDDING_BASE_URL || process.env.OPENAI_BASE_URL || "https://api.openai.com/v1";
 const EMBEDDING_API_KEY = process.env.MENU_EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || "";
+// Qwen3-Embedding-8B (and text-embedding-3-*) support Matryoshka dimension
+// reduction. We MUST request the same dimensionality used to store menu
+// embeddings AND the DB column (vector(1536)), or cosine similarity is invalid.
+const EMBEDDING_DIMENSIONS = Number(process.env.MENU_EMBEDDING_DIMENSIONS) || 1536;
 const SIMILARITY_THRESHOLD = Number(process.env.MENU_MATCH_THRESHOLD) || 0.45;
 const QUERY_EMBEDDING_TTL_MS = Number(process.env.MENU_QUERY_EMBEDDING_TTL_MS) || 10 * 60_000;
 const MIN_EMBEDDABLE_LEN = 3; // shorter than this -> lexical fallback
@@ -117,9 +121,20 @@ async function embedQuery(text: string): Promise<number[] | null> {
   if (cached) return cached;
 
   try {
-    const res = await client.embeddings.create({ model: EMBEDDING_MODEL, input: text });
+    const res = await client.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: text,
+      dimensions: EMBEDDING_DIMENSIONS,
+    });
     const vector = res.data[0]?.embedding;
     if (!Array.isArray(vector) || vector.length === 0) return null;
+    if (vector.length !== EMBEDDING_DIMENSIONS) {
+      console.error(
+        `[menu/search] query embedding dim ${vector.length} != expected ${EMBEDDING_DIMENSIONS}; ` +
+          "vector search would be invalid. Falling back to lexical.",
+      );
+      return null;
+    }
     await cache.set(key, vector, QUERY_EMBEDDING_TTL_MS);
     return vector;
   } catch (error) {

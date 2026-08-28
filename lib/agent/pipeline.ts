@@ -14,6 +14,7 @@
 import { understandTurn, type TurnUnderstanding } from "./nlu";
 import { nextTransition } from "./state-machine";
 import { executeTurn } from "./executor";
+import type { InteractivePayload } from "./interactive";
 import { loadTurnContext } from "./context";
 import { stateRepo } from "@/lib/data/state.repo";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -27,6 +28,7 @@ export interface TurnResult {
   intent: string;
   usedSemanticSearch: boolean;
   latencyMs: number;
+  interactive?: InteractivePayload | null;
 }
 
 export interface RunTurnInput {
@@ -45,6 +47,63 @@ export interface RunTurnInput {
 
 const NUMERIC_RE = /^\s*(\d{1,2})\s*$/;
 
+/**
+ * Deterministic interpretation of an interactive tap id (ordertype:*, confirm:*,
+ * item:*, category:*). Returns a synthesized understanding so we skip the LLM.
+ */
+function understandingFromInteractiveId(
+  id: string,
+  language: TurnUnderstanding["language"],
+  lastShownOptions: Array<{ id: string; name: string; price: number }>,
+): TurnUnderstanding | null {
+  const base: TurnUnderstanding = {
+    intents: ["unknown"],
+    primary_intent: "unknown",
+    confidence: 1,
+    language,
+    items: [],
+    removals: [],
+    order_type: null,
+    address: null,
+    guests: null,
+    reservation_time: null,
+    pickup_time: null,
+    info_query: null,
+    sentiment: "neutral",
+    wants_human: false,
+    notes: "fast_path_interactive",
+  };
+
+  const [ns, ...rest] = id.split(":");
+  const val = rest.join(":");
+
+  switch (ns) {
+    case "ordertype":
+      if (val === "delivery" || val === "pickup" || val === "dine-in") {
+        return { ...base, intents: ["set_order_type"], primary_intent: "set_order_type", order_type: val };
+      }
+      return null;
+    case "confirm":
+      return val === "yes"
+        ? { ...base, intents: ["confirm_order"], primary_intent: "confirm_order" }
+        : { ...base, intents: ["deny"], primary_intent: "deny" };
+    case "item": {
+      const chosen = lastShownOptions.find((o) => o.id === val);
+      const name = chosen?.name ?? val;
+      return {
+        ...base,
+        intents: ["add_items"],
+        primary_intent: "add_items",
+        items: [{ query: name, qty: 1, size: null, addons: [], notes: null }],
+      };
+    }
+    case "category":
+      return { ...base, intents: ["browse_menu"], primary_intent: "browse_menu", info_query: val };
+    default:
+      return null;
+  }
+}
+
 export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   const startedAt = Date.now();
   const ctx = await loadTurnContext({
@@ -53,10 +112,20 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     needsMenu: !input.trivial,
   });
 
-  // ---- 1) Deterministic fast-path: bare numeric selection of last-shown option ----
-  const numeric = input.messageText.match(NUMERIC_RE);
   let understanding: TurnUnderstanding | null = null;
-  if (numeric && ctx.view.awaiting_selection && ctx.state.last_shown_options.length > 0) {
+
+  // ---- 1a) Deterministic fast-path: interactive tap (button/list id) ----
+  if (/^(ordertype|confirm|item|category):/.test(input.messageText.trim())) {
+    understanding = understandingFromInteractiveId(
+      input.messageText.trim(),
+      ctx.state.preferred_language,
+      ctx.state.last_shown_options,
+    );
+  }
+
+  // ---- 1b) Deterministic fast-path: bare numeric selection of last-shown option ----
+  const numeric = input.messageText.match(NUMERIC_RE);
+  if (!understanding && numeric && ctx.view.awaiting_selection && ctx.state.last_shown_options.length > 0) {
     const idx = Number(numeric[1]) - 1;
     const chosen = ctx.state.last_shown_options[idx];
     if (chosen) {
@@ -105,6 +174,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     sourceUserMessageId: input.sourceUserMessageId,
     appName: input.appName,
     currency: input.currency,
+    messageTextForFallback: input.messageText,
   });
 
   // ---- 5) Persist state ----
@@ -141,6 +211,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     intent: understanding.primary_intent,
     usedSemanticSearch: exec.usedSemanticSearch,
     latencyMs,
+    interactive: exec.interactive ?? null,
   };
 }
 

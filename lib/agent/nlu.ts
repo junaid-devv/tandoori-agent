@@ -68,6 +68,8 @@ export const INTENTS = [
   "ask_recommendation",
   "ask_payment",
   "ask_hours_or_location",
+  "ask_delivery_info",   // delivery capability/area/fee/time question (NOT an address)
+  "general_question",    // any other real question we should answer from restaurant facts
   "smalltalk",
   "affirm",              // generic yes / haan / ok (context resolves meaning)
   "deny",               // generic no / nahi
@@ -141,7 +143,9 @@ const SYSTEM_RULES = [
   "A single message can contain MULTIPLE intents (e.g. add an item AND ask the price of another) — capture all in `intents`, and set `primary_intent` to the main action.",
   "",
   "For items: put the customer's own wording in `query` (do NOT invent or normalize to a menu name — menu resolution happens later via semantic search). Capture qty/size/addons/notes when present. The number next to an item is its quantity.",
-  "`info_query`: when the customer asks about the menu/an item generally (price, what's available, recommendations), put a concise search phrase here for semantic lookup.",
+  "`info_query`: whenever the customer ASKS anything (menu/item price, what's available, recommendations, delivery, timings, location, payment, halal, or any other question), put the customer's question here (rephrased concisely in English) so we can answer it from restaurant facts. ALWAYS fill this for question-type intents.",
+  "Intent guide: `ask_delivery_info` = they ask whether you deliver / delivery area / fee / time (NOT giving an address). `ask_hours_or_location` = opening/closing time or where you are. `ask_payment` = how to pay. `general_question` = any other genuine question that doesn't fit a specific intent — use it liberally instead of `unknown`, and put the question in `info_query`.",
+  "Prefer a specific question intent + `general_question` over `unknown`. Only use `unknown` when the message is truly meaningless.",
   "`affirm`/`deny`: use for bare yes/no (haan/han/ji/theek hai // nahi/na/nope) where meaning depends on context — do not guess what they're confirming.",
   "Set `wants_human`=true and intent `human_request` if they ask for a person/manager/agent (insaan, banday se baat, staff) or are clearly abusive.",
   "`sentiment`: reflect frustration/anger honestly; it drives escalation.",
@@ -227,6 +231,51 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
       intents: ["browse_menu"],
       primary_intent: "browse_menu",
       language: "english",
+    },
+  },
+  {
+    user: "delivery available hai?",
+    assistant: {
+      intents: ["ask_delivery_info"],
+      primary_intent: "ask_delivery_info",
+      language: "roman_urdu",
+      info_query: "do you offer delivery, and where / any fee",
+    },
+  },
+  {
+    user: "restaurant open kb hota hai",
+    assistant: {
+      intents: ["ask_hours_or_location"],
+      primary_intent: "ask_hours_or_location",
+      language: "roman_urdu",
+      info_query: "what are your opening hours",
+    },
+  },
+  {
+    user: "meethe main kya hai",
+    assistant: {
+      intents: ["ask_item_info"],
+      primary_intent: "ask_item_info",
+      language: "roman_urdu",
+      info_query: "what desserts / sweet items are available",
+    },
+  },
+  {
+    user: "best item konsa available hai",
+    assistant: {
+      intents: ["ask_recommendation"],
+      primary_intent: "ask_recommendation",
+      language: "roman_urdu",
+      info_query: "what is your best / most popular item",
+    },
+  },
+  {
+    user: "khana halal hai na? aur kitni der me ata hai",
+    assistant: {
+      intents: ["general_question", "ask_delivery_info"],
+      primary_intent: "general_question",
+      language: "roman_urdu",
+      info_query: "is the food halal, and how long does delivery/preparation take",
     },
   },
   {
@@ -351,7 +400,10 @@ function normalizeIntent(raw: unknown): string | null {
   // Synonyms and variations
   if (/price|cost|rate|kitne|kya rate|inquiry|item_info/i.test(s)) return "ask_item_info";
   if (/reservation|table|booking|dine/i.test(s)) return "provide_dinein_details";
-  if (/recommend|suggestion|mashwara/i.test(s)) return "ask_recommendation";
+  if (/delivery|deliver|home.?deliver|bhijwa|ghar/i.test(s)) return "ask_delivery_info";
+  if (/hours|timing|open|close|khul|band|location|address|kahan|where/i.test(s)) return "ask_hours_or_location";
+  if (/recommend|suggestion|mashwara|best|popular|acha/i.test(s)) return "ask_recommendation";
+  if (/general|other|misc|question|halal|info/i.test(s)) return "general_question";
   if (/deal|special|discount|browse|list|category/i.test(s)) return "browse_menu";
   if (/order|add|buy|kar do|mangwa/i.test(s)) return "add_items";
   if (/remove|cancel|hata|rehne/i.test(s)) return "remove_items";

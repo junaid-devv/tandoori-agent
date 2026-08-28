@@ -336,6 +336,8 @@ async function processOneMessage(
       conversationId: conversation.id,
       phone,
       content: result.replyText,
+      interactiveList: result.interactive?.kind === "list" ? result.interactive.payload : null,
+      replyButtons: result.interactive?.kind === "buttons" ? result.interactive.payload : null,
     });
 
     await conversationRepo.touch(conversation.id);
