@@ -170,6 +170,28 @@ async function processWebhookEventInBackground(eventId: string) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Short-TTL process-level cache for branches/profile (fetched on EVERY webhook)
+// These rarely change and are safe to cache for a few seconds across concurrent
+// requests. Full invalidation on admin save handles correctness.
+// ---------------------------------------------------------------------------
+let _branchesCache: { data: BranchRecord[]; at: number } | null = null;
+let _profileCache: { data: Awaited<ReturnType<typeof getRestaurantProfile>>; at: number } | null = null;
+const BRANCH_CACHE_MS = 10_000; // 10 seconds
+
+async function getCachedBranches(): Promise<BranchRecord[]> {
+  if (_branchesCache && Date.now() - _branchesCache.at < BRANCH_CACHE_MS) return _branchesCache.data;
+  const data = await getActiveBranches();
+  _branchesCache = { data, at: Date.now() };
+  return data;
+}
+async function getCachedProfile(): Promise<Awaited<ReturnType<typeof getRestaurantProfile>>> {
+  if (_profileCache && Date.now() - _profileCache.at < BRANCH_CACHE_MS) return _profileCache.data;
+  const data = await getRestaurantProfile();
+  _profileCache = { data, at: Date.now() };
+  return data;
+}
+
 async function processWebhook(body: unknown) {
   // 1) Status events (delivery receipts)
   const statusEvents = extractStatusEvents(body);
@@ -180,7 +202,8 @@ async function processWebhook(body: unknown) {
   const events = extractMessages(body);
   if (events.length === 0) return;
 
-  const [branches, profile] = await Promise.all([getActiveBranches(), getRestaurantProfile()]);
+  // Fetch branches + profile in parallel with short process-level cache
+  const [branches, profile] = await Promise.all([getCachedBranches(), getCachedProfile()]);
   const cityGroups = await buildCityBranchGroups(branches);
 
   for (const { message, contactName } of events) {
@@ -231,13 +254,14 @@ async function processOneMessage(
     return;
   }
 
-  // ---- Normal turn processing ----
+  // ---- Normal turn processing — ensure conversation first, then state (sequential by necessity) ----
   const conversation = await conversationRepo.ensure({
     contactId: contact.id,
     branchId: activeBranch.id,
     phone,
     name: contactName,
   });
+  // State ensure is now a single-trip upsert, so this is fast
   let state = await stateRepo.ensure(conversation.id);
 
   // Dedup: already processed this WhatsApp message id
@@ -264,8 +288,11 @@ async function processOneMessage(
     if (incomingContent && shouldResumeBotFromMessage(incomingContent)) {
       await handleBotResume(conversation, state, message, incomingContent, prefersRomanUrdu);
     } else if (incomingContent) {
-      await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: incomingContent, whatsappMsgId: message.id });
-      await conversationRepo.setUnread(conversation.id, true);
+      // Persist message and mark unread in parallel
+      await Promise.all([
+        messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: incomingContent, whatsappMsgId: message.id }),
+        conversationRepo.setUnread(conversation.id, true),
+      ]);
     }
     return;
   }
@@ -591,15 +618,21 @@ async function handleNonText(
 // Delivery status updates
 // ---------------------------------------------------------------------------
 async function updateDeliveryStatuses(statuses: IncomingWhatsAppStatus[]) {
-  for (const s of statuses) {
-    if (!s.id || !s.status) continue;
-    const nextStatus = normalizeDeliveryStatus(s.status);
-    if (!nextStatus) continue;
-    const errText = s.errors?.[0] ? `${s.errors[0].title ?? ""}: ${s.errors[0].error_data?.details ?? s.errors[0].message ?? ""}`.trim() : null;
-    await messageRepo.applyDeliveryStatus(s.id, nextStatus, { error: errText, atIso: s.timestamp ? toIso(s.timestamp) : null }).catch((e) => {
-      console.error("[webhook] Delivery status update failed:", e);
-    });
-  }
+  // Fan out all delivery-status updates in parallel — no ordering requirement
+  await Promise.allSettled(
+    statuses
+      .filter((s) => s.id && s.status)
+      .map((s) => {
+        const nextStatus = normalizeDeliveryStatus(s.status!);
+        if (!nextStatus) return Promise.resolve();
+        const errText = s.errors?.[0]
+          ? `${s.errors[0].title ?? ""}: ${s.errors[0].error_data?.details ?? s.errors[0].message ?? ""}`.trim()
+          : null;
+        return messageRepo
+          .applyDeliveryStatus(s.id!, nextStatus, { error: errText, atIso: s.timestamp ? toIso(s.timestamp) : null })
+          .catch((e) => console.error("[webhook] Delivery status update failed:", e));
+      }),
+  );
 }
 
 function normalizeDeliveryStatus(v: string): import("@/lib/schema.types").MessageDeliveryStatus | null {
@@ -680,9 +713,11 @@ function shouldResetForInactivity(state: Awaited<ReturnType<typeof stateRepo.ens
   return Number.isFinite(last) && Number.isFinite(now) && now - last >= ORDER_FRESH_START_AFTER_INACTIVITY_MS;
 }
 
+// Trivial = greeting/ack that needs no menu. Skips menu load in loadTurnContext.
+const TRIVIAL_RE = /^(ok|okay|yes|no|hi|hey|salam|aoa|a\.o\.a|assalam|hola|hello|haan|han|na|nahin|nahi|acha|k|thk|ji|nope|yep|yup|sure|done|thanks|shukriya|shukria|ty)$/i;
 function isTrivialMessage(content: string): boolean {
-  const n = content.trim().toLowerCase();
-  return n.length < 10 && /^(ok|okay|yes|no|hi|hey|salam|haan|han|na|acha|k|thk)$/.test(n);
+  const n = content.trim();
+  return n.length <= 15 && TRIVIAL_RE.test(n);
 }
 
 function toIso(timestamp: string): string {
@@ -706,14 +741,31 @@ function isValidWhatsAppSignature(rawBody: string, sig: string | null): boolean 
 // ---------------------------------------------------------------------------
 async function acquireLock(conversationId: string): Promise<string | null> {
   const token = crypto.randomUUID();
-  const now = new Date().toISOString();
-  const stale = new Date(Date.now() - 90_000).toISOString();
-  for (let i = 0; i < 8; i++) {
-    const { data } = await supabaseAdmin.from("conversation_states").update({ processing_token: token, processing_started_at: now }).eq("conversation_id", conversationId).is("processing_token", null).select("conversation_id").maybeSingle();
+  const staleThresholdMs = 90_000;
+  // Exponential backoff: 80ms, 160ms, 320ms, 640ms — 4 attempts, max ~1.2s total wait
+  const delays = [80, 160, 320, 640];
+  for (let i = 0; i <= delays.length; i++) {
+    const now = new Date().toISOString();
+    const stale = new Date(Date.now() - staleThresholdMs).toISOString();
+    // Try: lock is null (free)
+    const { data } = await supabaseAdmin
+      .from("conversation_states")
+      .update({ processing_token: token, processing_started_at: now })
+      .eq("conversation_id", conversationId)
+      .is("processing_token", null)
+      .select("conversation_id")
+      .maybeSingle();
     if (data) return token;
-    const { data: staleData } = await supabaseAdmin.from("conversation_states").update({ processing_token: token, processing_started_at: now }).eq("conversation_id", conversationId).lt("processing_started_at", stale).select("conversation_id").maybeSingle();
+    // Try: lock is stale (previous holder crashed)
+    const { data: staleData } = await supabaseAdmin
+      .from("conversation_states")
+      .update({ processing_token: token, processing_started_at: now })
+      .eq("conversation_id", conversationId)
+      .lt("processing_started_at", stale)
+      .select("conversation_id")
+      .maybeSingle();
     if (staleData) return token;
-    await new Promise((r) => setTimeout(r, 150 * (i + 1)));
+    if (i < delays.length) await new Promise((r) => setTimeout(r, delays[i]));
   }
   return null;
 }

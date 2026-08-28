@@ -48,12 +48,12 @@ export const reply = {
     if (suggestions.length > 0) {
       const opts = suggestions.slice(0, 3).join(", ");
       return ur(l)
-        ? `"${query}" to nahi mila. Ye milte-julte hain: ${opts}. Kaunsa chahiye?`
-        : `Couldn't find "${query}". Did you mean: ${opts}? Which one?`;
+        ? `"${query}" to nahi mila — ye milte-julte hain: ${opts}. Kaunsa chahiye?`
+        : `Couldn't find "${query}". Closest matches: ${opts}. Which one?`;
     }
     return ur(l)
-      ? `"${query}" menu me nahi hai. *menu* likh kar dekh lein ya koi aur item batayein.`
-      : `"${query}" isn't on our menu. Try a different item name or browse by category.`;
+      ? `"${query}" abhi available nahi. Koi aur item batayein ya menu dekhein.`
+      : `"${query}" isn't available. Try another item or browse the menu.`;
   },
 
   info(l: Lang, lines: string[]): string {
@@ -103,10 +103,13 @@ export const reply = {
   },
 
   summary(l: Lang, cart: CartItem[], orderType: OrderType | null, currency: string): string {
-    const lines = cart.map((i) => `  • ${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}`);
+    const lines = cart.map((i) => {
+      const noteLine = i.notes ? ` _(${i.notes})_` : "";
+      return `  • ${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}${noteLine}`;
+    });
     const total = `${currency} ${cartSubtotal(cart)}`;
     const typeLabel = orderType
-      ? `\n📦 ${orderType === "delivery" ? (ur(l) ? "Delivery" : "Delivery") : orderType === "pickup" ? "Pickup" : (ur(l) ? "Dine-in" : "Dine-in")}`
+      ? `\n📦 ${orderType === "delivery" ? "Delivery" : orderType === "pickup" ? "Pickup" : "Dine-in"}`
       : "";
     const head = ur(l) ? "🛒 Aap ka order:" : "🛒 Your order:";
     return [head, ...lines, typeLabel, `\n💰 Total: ${total}`].filter(Boolean).join("\n");
@@ -147,8 +150,8 @@ export const reply = {
 
   closed(l: Lang, opening: string): string {
     return ur(l)
-      ? `Hum abhi band hain. ${opening} se orders shuru karte hain. *menu* dekh sakte hain.`
-      : `We're closed right now. We start taking orders at ${opening}. You can still browse the *menu*.`;
+      ? `Hum abhi band hain. ${opening} se orders shuru karte hain. Menu zaroor dekh sakte hain 😊`
+      : `We're closed right now — orders start at ${opening}. Feel free to browse the menu 😊`;
   },
 
   escalated(l: Lang): string {

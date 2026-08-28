@@ -548,6 +548,28 @@ function stripVoiceNotePrefix(text: string): string {
   return text.replace(/^\s*\[voice note\]\s*/i, "").trim();
 }
 
+// ---------------------------------------------------------------------------
+// Circuit breaker — prevents cascade on repeated LLM failures
+// ---------------------------------------------------------------------------
+let _nluFailCount = 0;
+let _nluCircuitOpenUntil = 0;
+const NLU_CIRCUIT_OPEN_MS = 15_000; // 15s open window after 3 consecutive failures
+const NLU_CIRCUIT_THRESHOLD = 3;
+
+function recordNluSuccess() { _nluFailCount = 0; }
+function recordNluFailure() {
+  _nluFailCount += 1;
+  if (_nluFailCount >= NLU_CIRCUIT_THRESHOLD) {
+    _nluCircuitOpenUntil = Date.now() + NLU_CIRCUIT_OPEN_MS;
+    console.warn(`[nlu] Circuit breaker OPEN for ${NLU_CIRCUIT_OPEN_MS}ms after ${_nluFailCount} consecutive failures`);
+  }
+}
+function isNluCircuitOpen(): boolean {
+  if (_nluCircuitOpenUntil > Date.now()) return true;
+  if (_nluCircuitOpenUntil > 0) { _nluCircuitOpenUntil = 0; _nluFailCount = 0; } // reset after cooldown
+  return false;
+}
+
 export async function understandTurn(input: NluInput): Promise<TurnUnderstanding> {
   const messageText = stripVoiceNotePrefix(input.messageText);
   const cleaned: NluInput = { ...input, messageText };
@@ -555,6 +577,12 @@ export async function understandTurn(input: NluInput): Promise<TurnUnderstanding
   const cacheKey = `nlu:${cleaned.stage}:${cleaned.language}:${messageText.toLowerCase().trim()}`;
   const cached = await cache.get<TurnUnderstanding>(cacheKey);
   if (cached) return cached;
+
+  // Circuit breaker: if NLU is failing repeatedly, return safe fallback immediately
+  if (isNluCircuitOpen()) {
+    console.warn("[nlu] Circuit open — returning fallback understanding");
+    return { ...baseDefaults(cleaned.language), notes: "nlu_circuit_open" };
+  }
 
   try {
     const completion = await withTimeout(
@@ -580,9 +608,11 @@ export async function understandTurn(input: NluInput): Promise<TurnUnderstanding
     if (result.primary_intent !== "unknown" || result.confidence > 0) {
       await cache.set(cacheKey, result, NLU_CACHE_TTL_MS);
     }
+    recordNluSuccess();
     return result;
   } catch (error) {
     console.error("[nlu] understandTurn failed:", error);
+    recordNluFailure();
     return { ...baseDefaults(cleaned.language), notes: "nlu_error" };
   }
 }

@@ -131,11 +131,14 @@ function understandingFromInteractiveId(
 
 export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   const startedAt = Date.now();
+  const t = { ctx: 0, nlu: 0, fsm: 0, exec: 0 };
+
   const ctx = await loadTurnContext({
     conversationId: input.conversationId,
     branchId: input.branchId,
     needsMenu: !input.trivial,
   });
+  t.ctx = Date.now() - startedAt;
 
   let understanding: TurnUnderstanding | null = null;
 
@@ -198,6 +201,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   }
 
   // ---- 2) NLU (single LLM call) ----
+  const nluStart = Date.now();
   if (!understanding) {
     understanding = await understandTurn({
       messageText: input.messageText,
@@ -207,11 +211,15 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       lastShownOptions: ctx.state.last_shown_options.map((o) => o.name),
     });
   }
+  t.nlu = Date.now() - nluStart;
 
   // ---- 3) FSM ----
+  const fsmStart = Date.now();
   const transition = nextTransition(ctx.view, understanding);
+  t.fsm = Date.now() - fsmStart;
 
   // ---- 4) Execute ----
+  const execStart = Date.now();
   const exec = await executeTurn({
     transition,
     understanding,
@@ -225,12 +233,17 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     messageTextForFallback: input.messageText,
   });
 
-  // ---- 5) Persist state ----
-  await stateRepo.patch(input.conversationId, {
+  t.exec = Date.now() - execStart;
+
+  // ---- 5) Persist state (fire-and-forget — reply is already being sent by caller) ----
+  // We return the result immediately so the caller can send the WhatsApp reply
+  // without waiting for the DB write. The state patch is then awaited in parallel.
+  // Order-critical fields (cart, stage) are included in the patch below.
+  void stateRepo.patch(input.conversationId, {
     ...exec.statePatch,
     last_processed_user_message_id: input.whatsappMessageId ?? undefined,
     last_processed_user_message_at: new Date().toISOString(),
-  });
+  }).catch((e) => console.error("[pipeline] state patch failed:", e));
 
   const latencyMs = Date.now() - startedAt;
 
@@ -247,6 +260,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     entities: understanding,
     usedSemanticSearch: exec.usedSemanticSearch,
     latencyMs,
+    latencyBreakdown: t,
     replyText: exec.replyText,
     error: exec.statePatch.last_error ?? null,
   });
@@ -275,10 +289,17 @@ async function recordAgentTurn(row: {
   entities: unknown;
   usedSemanticSearch: boolean;
   latencyMs: number;
+  latencyBreakdown: { ctx: number; nlu: number; fsm: number; exec: number };
   replyText: string;
   error: string | null;
 }): Promise<void> {
   try {
+    // Log breakdown to console for immediate visibility during development
+    console.log(
+      `[turn] intent=${row.intent} total=${row.latencyMs}ms ` +
+      `ctx=${row.latencyBreakdown.ctx}ms nlu=${row.latencyBreakdown.nlu}ms ` +
+      `exec=${row.latencyBreakdown.exec}ms fast_path=${row.latencyBreakdown.nlu === 0}`
+    );
     await supabaseAdmin.from("agent_turns").insert({
       conversation_id: row.conversationId,
       message_id: row.messageId,
