@@ -5,12 +5,19 @@
  * `place_order_from_payload` RPC (via orderRepo.place).
  *
  * Deferred to later phases (migrated atomically with their call sites):
- *   - state.repo.ts (conversation_states + user_sessions merge) -> Phase 5
  *   - menu/search + catalog repos -> Phase 6
  */
 export { contactRepo, type ContactRow } from "./contact.repo";
 export { conversationRepo, type ConversationRow } from "./conversation.repo";
 export { messageRepo, type MessageRow } from "./message.repo";
+export {
+  stateRepo,
+  getDefaultState,
+  parseState,
+  deriveSessionView,
+  type LegacySessionView,
+  type LegacySessionNode,
+} from "./state.repo";
 export {
   orderRepo,
   type OrderRow,

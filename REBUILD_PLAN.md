@@ -192,5 +192,12 @@ Each phase: define "working", implement, verify with the existing `scripts/check
   - Test harness: `scripts/alias-register.mjs` + `alias-hooks.mjs` (maps `@/` for node strip-types runs). `scripts/check-nlu.mjs` = 12 offline contract tests (always) + live golden set gated on `OPENROUTER_API_KEY` (EN/Roman-Urdu/Urdu-script/code-mixed/non-linear/escalation). Wired as `npm run check:nlu` + added to `check:all-guards`.
   - Verified: `check:nlu` 12/12 PASS; `tsc --noEmit` clean. Live golden set to be run once keys are configured.
   - NOTE: `lib/core/cache.ts` constructor changed to explicit field assignment (strip-types compatibility). No behavior change.
-- Phase 5 (state/context handling) — ⏳ next.
+- Phase 5 (state/context handling) — ✅ done.
+  - `lib/agent/state-machine.ts`: PURE FSM `nextTransition(view, understanding) → {nextStage, actions[], escalate}`. Non-linear (mid-checkout questions stay in stage), multi-intent, confirmation-slot gating, bare affirm/deny resolved against context, escalation short-circuit. No regex/keywords.
+  - `lib/data/state.repo.ts`: the SINGLE merged state store on new schema (`conversation_states` absorbing `user_sessions`). `get/ensure/patch` + `parseState`/`getDefaultState`. `deriveSessionView()` reconstructs the legacy `active_node`/`status` shape so the dashboard needs no rewrite when it flips (Phase 7).
+  - `lib/agent/context.ts`: `loadTurnContext()` — parallel load (state/menu/settings/history) with cached menu+settings via `lib/core/cache`; `buildStateView()`; cache invalidation helpers.
+  - Tests: `scripts/check-state-machine.mjs` — 18 pure FSM tests (multi-intent, non-linear, gating, affirm/deny, mind-change, upsell-once, restart, escalation). `npm run check:state-machine`, added to `check:all-guards`.
+  - Verified: FSM 18/18 PASS; NLU 12/12 still PASS; `tsc --noEmit` clean.
+  - Scoping (same discipline as Phase 3): live dashboard/webhook query rewrite deferred to Phase 7 (atomic schema flip). Phase 5 ships the target modules + the compat view they migrate onto; nothing live is rewired yet, so no breakage against the current DB.
+- Phase 6 (vector menu search) — ⏳ next.
 
