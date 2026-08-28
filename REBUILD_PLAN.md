@@ -186,5 +186,11 @@ Each phase: define "working", implement, verify with the existing `scripts/check
   - `lib/data/`: `contact.repo`, `conversation.repo`, `message.repo`, `order.repo` (+ barrel `index.ts`). Order placement via `orderRepo.place` → `place_order_from_payload` RPC.
   - Call-site migration is done **per consumer in its own phase** to avoid double-work / breakage: state-store consumers → Phase 5; menu/search & `customer-crm` (coupled to order-engine types) → Phase 6–7. New agent code (Phases 4–7) uses these repos from the start.
   - Verified: `tsc --noEmit` clean; `@/*` alias resolves for `lib/data` + `lib/core`.
-- Phase 4 (NLU/intent layer) — ⏳ next.
+- Phase 4 (NLU/intent layer) — ✅ done.
+  - `lib/agent/nlu.ts`: single LLM extraction → `TurnUnderstanding` (multi-intent, entities, language, sentiment, wants_human). Behavior-oriented intent taxonomy (24 intents incl. `affirm`/`deny`/`ask_recommendation`/`human_request`). Small curated Pakistani-WhatsApp few-shot instead of phrase tables. zod-validated; `coerceUnderstanding()` normalizes/backfills. Cache-aware via `lib/core/cache`.
+  - Design goal met: output is self-sufficient so the state machine (Phase 5) needs no post-hoc regex overrides (replaces the `parseOrderTypeShortcut`/`RESTART_WORDS`/`CANCEL_WORDS`/human-regex second-guessing in old order-engine).
+  - Test harness: `scripts/alias-register.mjs` + `alias-hooks.mjs` (maps `@/` for node strip-types runs). `scripts/check-nlu.mjs` = 12 offline contract tests (always) + live golden set gated on `OPENROUTER_API_KEY` (EN/Roman-Urdu/Urdu-script/code-mixed/non-linear/escalation). Wired as `npm run check:nlu` + added to `check:all-guards`.
+  - Verified: `check:nlu` 12/12 PASS; `tsc --noEmit` clean. Live golden set to be run once keys are configured.
+  - NOTE: `lib/core/cache.ts` constructor changed to explicit field assignment (strip-types compatibility). No behavior change.
+- Phase 5 (state/context handling) — ⏳ next.
 

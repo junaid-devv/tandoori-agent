@@ -36,8 +36,11 @@ interface Entry<T> {
 export class InMemoryCacheStore implements CacheStore {
   private store = new Map<string, Entry<unknown>>();
   private inflight = new Map<string, Promise<unknown>>();
+  private readonly maxEntries: number;
 
-  constructor(private readonly maxEntries = 5000) {}
+  constructor(maxEntries = 5000) {
+    this.maxEntries = maxEntries;
+  }
 
   async get<T>(key: string): Promise<T | null> {
     const entry = this.store.get(key);
