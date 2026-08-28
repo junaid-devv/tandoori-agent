@@ -41,6 +41,8 @@ export interface RunTurnInput {
   messageId?: string | null;
   appName: string;
   currency: string;
+  /** Customer's name from WhatsApp contact profile, for personalised greetings. */
+  customerName?: string | null;
   /** True for greeting/ack turns where menu load can be skipped. */
   trivial?: boolean;
 }
@@ -99,6 +101,29 @@ function understandingFromInteractiveId(
     }
     case "category":
       return { ...base, intents: ["browse_menu"], primary_intent: "browse_menu", info_query: val };
+    case "action":
+      if (val === "checkout" || val === "view_cart") {
+        return { ...base, intents: ["confirm_order"], primary_intent: "confirm_order" };
+      }
+      if (val === "add_more") {
+        return { ...base, intents: ["browse_menu"], primary_intent: "browse_menu" };
+      }
+      return null;
+    case "addr":
+      if (val === "new") {
+        // User wants to type a new address — prompt them
+        return { ...base, intents: ["provide_address"], primary_intent: "provide_address" };
+      }
+      if (val.startsWith("saved:")) {
+        // Saved address selected — the executor resolves it from the saved record
+        return {
+          ...base,
+          intents: ["provide_address"],
+          primary_intent: "provide_address",
+          notes: `use_saved_address:${val.replace("saved:", "")}`,
+        };
+      }
+      return null;
     default:
       return null;
   }
@@ -174,6 +199,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     sourceUserMessageId: input.sourceUserMessageId,
     appName: input.appName,
     currency: input.currency,
+    customerName: input.customerName ?? null,
     messageTextForFallback: input.messageText,
   });
 

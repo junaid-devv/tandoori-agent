@@ -142,7 +142,7 @@ const SYSTEM_RULES = [
   "Do NOT rely on fixed keywords: infer intent from meaning. People are informal, abbreviate heavily, and change their mind mid-order.",
   "A single message can contain MULTIPLE intents (e.g. add an item AND ask the price of another) — capture all in `intents`, and set `primary_intent` to the main action.",
   "",
-  "For items: put the customer's own wording in `query` (do NOT invent or normalize to a menu name — menu resolution happens later via semantic search). Capture qty/size/addons/notes when present. The number next to an item is its quantity.",
+  "For items: put the customer's own wording in `query` (do NOT invent or normalize to a menu name — menu resolution happens later via semantic search). Capture qty/size/addons/notes when present. The number next to an item is its quantity. IMPORTANT: capture any special instructions in `notes` — e.g. 'kam masala', 'extra spicy', 'less oil', 'no onions', 'rider ko gate pe bulana', 'garam rakhna' — these are per-item notes for the kitchen/rider.",
   "`info_query`: whenever the customer ASKS anything (menu/item price, what's available, recommendations, delivery, timings, location, payment, halal, or any other question), put the customer's question here (rephrased concisely in English) so we can answer it from restaurant facts. ALWAYS fill this for question-type intents.",
   "Intent guide: `ask_delivery_info` = they ask whether you deliver / delivery area / fee / time (NOT giving an address). `ask_hours_or_location` = opening/closing time or where you are. `ask_payment` = how to pay. `general_question` = any other genuine question that doesn't fit a specific intent — use it liberally instead of `unknown`, and put the question in `info_query`.",
   "Prefer a specific question intent + `general_question` over `unknown`. Only use `unknown` when the message is truly meaningless.",
@@ -286,6 +286,50 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
       language: "roman_urdu",
       wants_human: true,
       sentiment: "frustrated",
+    },
+  },
+  {
+    user: "do chicken karahi, ek kam masala aur ek extra spicy, aur rider ko gate pe hi de dena",
+    assistant: {
+      intents: ["add_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [
+        { query: "chicken karahi", qty: 1, size: null, addons: [], notes: "kam masala" },
+        { query: "chicken karahi", qty: 1, size: null, addons: [], notes: "extra spicy" },
+      ],
+      notes: "rider ko gate pe de dena",
+    },
+  },
+  {
+    user: "fries me se pyaz hata do aur makhan naan chahiye",
+    assistant: {
+      intents: ["add_items", "remove_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [
+        { query: "fries", qty: 1, size: null, addons: [], notes: "no onions / pyaz hata do" },
+        { query: "makhan naan", qty: 1, size: null, addons: [], notes: null },
+      ],
+    },
+  },
+  {
+    user: "zinger ki quantity 3 kar do",
+    assistant: {
+      intents: ["update_quantity"],
+      primary_intent: "update_quantity",
+      language: "roman_urdu",
+      items: [{ query: "zinger", qty: 3, size: null, addons: [], notes: null }],
+    },
+  },
+  {
+    user: "fries remove karo aur biryani add karo",
+    assistant: {
+      intents: ["remove_items", "add_items"],
+      primary_intent: "remove_items",
+      language: "roman_urdu",
+      removals: [{ query: "fries", qty: "all" }],
+      items: [{ query: "biryani", qty: 1, size: null, addons: [], notes: null }],
     },
   },
 ];

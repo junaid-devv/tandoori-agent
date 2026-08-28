@@ -270,7 +270,7 @@ async function processOneMessage(
 
   // Non-text / voice
   if (!incomingContent) {
-    await handleNonText(message, conversation, state, prefersRomanUrdu);
+    await handleNonText(message, conversation, state, prefersRomanUrdu, profile, activeBranch);
     return;
   }
 
@@ -311,6 +311,7 @@ async function processOneMessage(
       messageId: persistedMsg.id,
       appName: profile.app_name || "Restaurant",
       currency: profile.currency || "Rs.",
+      customerName: contactName || contact.name || null,
       trivial: isTrivialMessage(incomingContent),
     });
 
@@ -457,25 +458,126 @@ async function handleBotResume(
 // ---------------------------------------------------------------------------
 // Non-text / voice
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Language helper — uses stable conversation state, not single-message snap
+// ---------------------------------------------------------------------------
+function stateLang(state: { preferred_language: string }): import("@/lib/schema.types").LanguagePreference {
+  return state.preferred_language === "roman_urdu" ? "roman_urdu" : "english";
+}
+
 async function handleNonText(
   message: IncomingWhatsAppMessage,
   conversation: Awaited<ReturnType<typeof conversationRepo.ensure>>,
   state: Awaited<ReturnType<typeof stateRepo.ensure>>,
   prefersRomanUrdu: boolean,
+  profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
+  activeBranch: { id: string; name?: string },
 ) {
   if (message.type === "reaction") return;
 
   if (message.type === "audio") {
-    const voiceFallback = prefersRomanUrdu
-      ? "Voice note mil gaya, lekin abhi voice ordering available nahi. Item text mein bhej dein."
-      : "Got your voice note, but voice ordering isn't available yet. Please type your item.";
+    const lang = stateLang(state);
+    const isRomanUrdu = lang === "roman_urdu";
+    const audioId = message.audio?.id;
+
+    // --- Real voice pipeline ---
+    if (audioId && process.env.OPENAI_API_KEY) {
+      try {
+        console.log(`[voice] Processing voice note from ${message.from}, audioId=${audioId}`);
+        const mediaUrl = await getWhatsAppMediaUrl(audioId);
+        const audioBuffer = await downloadWhatsAppMedia(mediaUrl);
+
+        // Transcribe via OpenAI Whisper
+        const OpenAI = (await import("openai")).default;
+        const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+        const audioBlob = new Blob([audioBuffer], { type: message.audio?.mime_type || "audio/ogg" });
+        const audioFile = new File([audioBlob], "voice.ogg", { type: audioBlob.type });
+
+        const transcription = await openaiClient.audio.transcriptions.create({
+          model: "whisper-1",
+          file: audioFile,
+          language: "ur",
+          prompt: "Pakistani restaurant order. May contain Urdu, Roman Urdu, English, food names, quantities, delivery address.",
+        });
+
+        const transcript = transcription.text?.trim();
+        if (!transcript) throw new Error("Empty transcription");
+
+        console.log(`[voice] Transcribed: "${transcript}"`);
+
+        // Store with transcript visible in conversation history
+        const persistedMsg = await messageRepo.insert({
+          conversationId: conversation.id,
+          role: "user",
+          senderKind: "user",
+          content: `🎤 ${transcript}`,
+          whatsappMsgId: message.id,
+        });
+
+        // Update language from transcript
+        const transcriptLang = inferLanguagePreference(transcript, state.preferred_language);
+        const contact = await contactRepo.getByPhone(message.from);
+        if (contact) void contactRepo.setPreferredLanguage(contact.id, transcriptLang).catch(() => {});
+
+        // Feed transcript into same pipeline as text
+        const lockToken = await acquireLock(conversation.id);
+        if (!lockToken) {
+          console.warn("[voice] Could not acquire lock:", conversation.id);
+          return;
+        }
+        try {
+          const result = await runTurn({
+            conversationId: conversation.id,
+            branchId: activeBranch.id,
+            phone: message.from,
+            messageText: transcript,
+            sourceUserMessageId: message.id,
+            whatsappMessageId: message.id,
+            messageId: persistedMsg.id,
+            appName: profile.app_name || "Restaurant",
+            currency: profile.currency || "Rs.",
+          });
+          if (result.escalate) {
+            await escalateToHuman({ conversationId: conversation.id, branchId: activeBranch.id, phone: message.from, reason: result.intent, prefersRomanUrdu: transcriptLang === "roman_urdu" });
+            await conversationRepo.setMode(conversation.id, "human");
+          }
+          await sendAndPersistAssistantMessage({
+            conversationId: conversation.id,
+            phone: message.from,
+            content: result.replyText,
+            interactiveList: result.interactive?.kind === "list" ? result.interactive.payload : null,
+            replyButtons: result.interactive?.kind === "buttons" ? result.interactive.payload : null,
+          });
+          await conversationRepo.touch(conversation.id);
+        } finally {
+          await releaseLock(conversation.id, lockToken);
+        }
+        return;
+      } catch (err) {
+        console.error("[voice] Voice pipeline failed:", err);
+        // Graceful degradation — language-consistent, no escalation
+        const fallbackMsg = isRomanUrdu
+          ? "🎤 Voice note mil gaya, lekin samajhne mein mushkil hua. Apna order text mein bhej dein!"
+          : "🎤 Got your voice note, but had trouble understanding it. Please type your order!";
+        await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: "[Voice note - transcription failed]", whatsappMsgId: message.id });
+        await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: fallbackMsg });
+        return;
+      }
+    }
+
+    // No OPENAI_API_KEY — graceful degradation, language-consistent
+    const voiceFallback = isRomanUrdu
+      ? "🎤 Voice note mil gaya! Apna order text mein bhej dein, main turant help karunga."
+      : "🎤 Got your voice note! Please type your order and I'll help right away.";
     await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: "[Voice note received]", whatsappMsgId: message.id });
-    await escalateToHuman({ conversationId: conversation.id, branchId: conversation.branch_id, phone: conversation.phone, reason: "voice_note", prefersRomanUrdu });
-    await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: conversation.phone, content: voiceFallback });
+    await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: voiceFallback });
     return;
   }
 
-  const fallback = prefersRomanUrdu
+  // Other unsupported media types
+  const lang = stateLang(state);
+  const fallback = lang === "roman_urdu"
     ? "Please text message bhej dein, main order mein help karta hoon."
     : "Please send a text message and I'll help with your order.";
   await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: conversation.phone, content: fallback });

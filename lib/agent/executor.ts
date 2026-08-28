@@ -20,10 +20,13 @@ import {
   confirmButtons,
   itemPickList,
   categoryList,
+  cartActionButtons,
   type InteractivePayload,
 } from "./interactive";
 import type { TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
+import { getLatestSavedAddress } from "@/lib/customer-crm";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export interface ExecutionResult {
   replyText: string;
@@ -44,6 +47,8 @@ interface ExecInput {
   sourceUserMessageId: string;
   appName: string;
   currency: string;
+  /** Customer's WhatsApp display name for personalised greetings. */
+  customerName?: string | null;
   /** Raw message text, used as a last-resort grounded-answer query. */
   messageTextForFallback?: string;
 }
@@ -59,6 +64,19 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     preferred_language: lang,
     last_intent: u.primary_intent,
   };
+
+  // Capture top-level rider/delivery instructions from NLU notes (if they look like
+  // real instructions rather than internal fast-path markers)
+  if (
+    u.notes &&
+    !u.notes.startsWith("fast_path") &&
+    !u.notes.startsWith("use_saved_address") &&
+    u.notes !== "coercion_failed" &&
+    u.notes !== "nlu_error" &&
+    u.notes.length > 5
+  ) {
+    patch.customer_instructions = u.notes;
+  }
   const replies: string[] = [];
   let placeOrder = false;
   let usedSemantic = false;
@@ -103,9 +121,18 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
   for (const action of transition.actions) {
     switch (action.kind) {
-      case "greet":
-        replies.push(reply.greeting(lang, input.appName));
+      case "greet": {
+        const wasSalam = /^(aoa|a\.?o\.?a|assalam|salam)\b/i.test(input.messageTextForFallback?.trim() ?? "");
+        replies.push(reply.greeting(lang, input.appName, input.customerName ?? null, wasSalam));
+        // Show category/menu list so first action is a tap, not a typed command
+        const greetCats = Array.from(new Set(ctx.menu.map((m) => m.category).filter(Boolean))) as string[];
+        if (greetCats.length > 1) {
+          interactive = interactive ?? categoryList(lang, greetCats,
+            lang === "roman_urdu" ? "Kaunsi cheez chahiye?" : "What would you like?",
+          );
+        }
         break;
+      }
 
       case "add_items": {
         const mentions = (action.payload?.items as TurnUnderstanding["items"]) ?? u.items;
@@ -143,7 +170,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           });
           added.push({ name: resolved.name, qty: m.qty ?? 1 });
         }
-        if (added.length) replies.push(reply.itemsAdded(lang, added, cart, currency));
+        if (added.length) {
+          replies.push(reply.itemsAdded(lang, added, cart, currency));
+          // Show tappable cart actions — replaces "type *done*" instruction
+          interactive = interactive ?? cartActionButtons(lang);
+        }
         break;
       }
 
@@ -154,6 +185,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           cart = removeFromCart(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? r.query, qty: r.qty });
         }
         replies.push(reply.itemsRemoved(lang, cart, currency));
+        // Show cart actions after removal so customer can continue or checkout
+        if (cart.length > 0) interactive = interactive ?? cartActionButtons(lang);
         break;
       }
 
@@ -164,6 +197,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           cart = updateQuantity(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? m.query, qty: m.qty ?? 1 });
         }
         replies.push(reply.itemsAdded(lang, [], cart, currency));
+        // Show cart actions after quantity update
+        if (cart.length > 0) interactive = interactive ?? cartActionButtons(lang);
         break;
       }
 
@@ -251,11 +286,43 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       case "collect_delivery_address": {
         const address = action.payload?.address as string | undefined;
-        if (address) {
+        // Check if fast-path selected a saved address (notes: "use_saved_address:<id>")
+        const savedAddrNote = u.notes?.match(/^use_saved_address:(.+)$/);
+        if (savedAddrNote) {
+          const savedId = savedAddrNote[1];
+          const { data: savedRow } = await supabaseAdmin
+            .from("customer_addresses")
+            .select("address")
+            .eq("id", savedId)
+            .maybeSingle();
+          if (savedRow?.address) {
+            patch.address = savedRow.address;
+            patch.order_type = patch.order_type ?? "delivery";
+            replies.push(reply.savedAddressConfirmed(lang, savedRow.address));
+          } else {
+            replies.push(reply.askAddress(lang));
+          }
+        } else if (address) {
           patch.address = address;
           patch.order_type = patch.order_type ?? "delivery";
         } else {
-          replies.push(reply.askAddress(lang));
+          // Check if customer has a saved address — offer it as a one-tap option
+          const saved = await getLatestSavedAddress(input.conversationId);
+          if (saved) {
+            replies.push(reply.askAddressWithSaved(lang, saved.label));
+            interactive = interactive ?? {
+              kind: "buttons",
+              payload: {
+                body: lang === "roman_urdu" ? "Delivery address?" : "Delivery address?",
+                buttons: [
+                  { id: `addr:saved:${saved.id}`, title: lang === "roman_urdu" ? "Pichla Address" : "Use Saved" },
+                  { id: "addr:new", title: lang === "roman_urdu" ? "Naya Address" : "New Address" },
+                ],
+              },
+            };
+          } else {
+            replies.push(reply.askAddress(lang));
+          }
         }
         break;
       }
@@ -371,10 +438,20 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "fallback":
       default:
         if (!replies.length) {
-          // Even on true fallback, try a grounded reply on the raw message before
-          // giving the generic "didn't get that".
+          // Try grounded answer first (context-aware, never a dead end)
           const g = await answerGrounded(input.messageTextForFallback || "help me order");
-          replies.push(g ?? reply.clarify(lang, "fallback"));
+          if (g) {
+            replies.push(g);
+          } else if (ctx.state.cart.length > 0) {
+            // Customer has items in cart — show them cart status + actions
+            replies.push(reply.itemsAdded(lang, [], ctx.state.cart, currency));
+            interactive = interactive ?? cartActionButtons(lang);
+          } else {
+            replies.push(reply.clarify(lang, "fallback"));
+            // Give them something to tap — category list
+            const fbCats = Array.from(new Set(ctx.menu.map((m) => m.category).filter(Boolean))) as string[];
+            if (fbCats.length) interactive = interactive ?? categoryList(lang, fbCats);
+          }
         }
         break;
     }

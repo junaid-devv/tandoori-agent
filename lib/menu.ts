@@ -244,6 +244,36 @@ export async function applyMenuCatalog(branchId: string, items: MenuItem[], repl
     existingByName.set(getMenuNameKey(row.name), row);
   }
 
+  // Sync relational menu_categories
+  const distinctCategories = Array.from(
+    new Set(sanitized.items.map((it) => it.category?.trim()).filter(Boolean)),
+  ) as string[];
+
+  const { data: existingCategories } = await supabaseAdmin
+    .from("menu_categories")
+    .select("id, name")
+    .eq("branch_id", branchId);
+
+  const categoryMap = new Map((existingCategories ?? []).map((c) => [c.name, c.id]));
+
+  let catOrder = (existingCategories ?? []).length;
+  for (const catName of distinctCategories) {
+    if (!categoryMap.has(catName)) {
+      catOrder += 1;
+      const { data: newCat } = await supabaseAdmin
+        .from("menu_categories")
+        .insert({
+          branch_id: branchId,
+          name: catName,
+          sort_order: catOrder,
+          is_active: true,
+        })
+        .select("id")
+        .single();
+      if (newCat) categoryMap.set(catName, newCat.id);
+    }
+  }
+
   for (const item of sanitized.items) {
     const normalizedName = getMenuNameKey(item.name);
     const existing = existingByName.get(normalizedName);
@@ -280,6 +310,14 @@ export async function applyMenuCatalog(branchId: string, items: MenuItem[], repl
     if (idsToDelete.length > 0) {
       const { error: deleteError } = await supabaseAdmin.from("menu_items").delete().in("id", idsToDelete);
       if (deleteError) throw deleteError;
+    }
+
+    const incomingCategories = new Set(distinctCategories);
+    const catIdsToDelete = (existingCategories ?? [])
+      .filter((c) => !incomingCategories.has(c.name))
+      .map((c) => c.id);
+    if (catIdsToDelete.length > 0) {
+      await supabaseAdmin.from("menu_categories").delete().in("id", catIdsToDelete);
     }
   }
 

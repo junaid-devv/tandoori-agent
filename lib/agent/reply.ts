@@ -12,18 +12,28 @@ type Lang = LanguagePreference;
 const ur = (l: Lang) => l === "roman_urdu";
 
 export const reply = {
-  greeting(l: Lang, appName: string): string {
-    return ur(l)
-      ? `Assalam o Alaikum! ${appName} me khush aamdeed 😊 Kya order karna pasand karenge? *menu* likh kar items dekh sakte hain.`
-      : `Hello! Welcome to ${appName} 😊 What would you like to order? Type *menu* to see our items.`;
+  greeting(l: Lang, appName: string, customerName?: string | null, wasSalam?: boolean): string {
+    const name = customerName ? ` ${customerName.split(" ")[0]}` : "";
+    if (ur(l)) {
+      const salutation = wasSalam ? "Walaikum Assalam!" : "Assalam o Alaikum!";
+      return `${salutation}${name} 😊 *${appName}* mein khush aamdeed!\nAaj kya order karein ge?`;
+    }
+    const salutation = wasSalam ? "Walaikum Assalam!" : "Hello!";
+    return `${salutation}${name} 😊 Welcome to *${appName}*!\nWhat would you like today?`;
   },
 
   itemsAdded(l: Lang, added: Array<{ name: string; qty: number }>, cart: CartItem[], currency: string): string {
-    const list = added.map((i) => `${i.qty}x ${i.name}`).join(", ");
     const total = `${currency} ${cartSubtotal(cart)}`;
+    if (added.length === 0) {
+      // Called for cart display only (e.g. after quantity update or fallback)
+      return ur(l)
+        ? `🛒 Ab tak total: ${total}`
+        : `🛒 Current total: ${total}`;
+    }
+    const list = added.map((i) => `${i.qty}x ${i.name}`).join(", ");
     return ur(l)
-      ? `Add kar diya: ${list}. Ab tak total ${total}. Aur kuch? Warna checkout ke liye *done* likh dein.`
-      : `Added: ${list}. Running total ${total}. Anything else? Or type *done* to check out.`;
+      ? `✅ ${list} add ho gaya. Total: ${total}`
+      : `✅ Added: ${list}. Total: ${total}`;
   },
 
   itemsRemoved(l: Lang, cart: CartItem[], currency: string): string {
@@ -43,7 +53,7 @@ export const reply = {
     }
     return ur(l)
       ? `"${query}" menu me nahi hai. *menu* likh kar dekh lein ya koi aur item batayein.`
-      : `"${query}" isn't on the menu. Type *menu* to browse, or tell me another item.`;
+      : `"${query}" isn't on our menu. Try a different item name or browse by category.`;
   },
 
   info(l: Lang, lines: string[]): string {
@@ -65,7 +75,21 @@ export const reply = {
   },
 
   askAddress(l: Lang): string {
-    return ur(l) ? "Delivery ke liye apna poora address bhej dein." : "Please share your full delivery address.";
+    return ur(l)
+      ? "📍 Delivery ke liye apna poora address bhej dein."
+      : "📍 Please share your full delivery address.";
+  },
+
+  askAddressWithSaved(l: Lang, savedLabel: string): string {
+    return ur(l)
+      ? `📍 Delivery address chahiye. Pichli dafa *${savedLabel}* use kiya tha — wahi chahiye ya naya dein?`
+      : `📍 Where should we deliver? Last time we sent to *${savedLabel}* — use that again or enter a new address?`;
+  },
+
+  savedAddressConfirmed(l: Lang, address: string): string {
+    return ur(l)
+      ? `✅ Theek hai, *${address}* pe deliver karein ge.`
+      : `✅ Got it — delivering to *${address}*.`;
   },
 
   askDineIn(l: Lang): string {
@@ -79,12 +103,13 @@ export const reply = {
   },
 
   summary(l: Lang, cart: CartItem[], orderType: OrderType | null, currency: string): string {
-    const lines = cart.map((i) => `${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}`);
+    const lines = cart.map((i) => `  • ${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}`);
     const total = `${currency} ${cartSubtotal(cart)}`;
-    const head = ur(l) ? "Aap ka order:" : "Your order:";
-    const typeLine = orderType ? (ur(l) ? `Type: ${orderType}` : `Type: ${orderType}`) : "";
-    const confirm = ur(l) ? "Confirm karne ke liye *haan* likh dein." : "Type *yes* to confirm.";
-    return [head, ...lines, typeLine, `Total: ${total}`, "", confirm].filter(Boolean).join("\n");
+    const typeLabel = orderType
+      ? `\n📦 ${orderType === "delivery" ? (ur(l) ? "Delivery" : "Delivery") : orderType === "pickup" ? "Pickup" : (ur(l) ? "Dine-in" : "Dine-in")}`
+      : "";
+    const head = ur(l) ? "🛒 Aap ka order:" : "🛒 Your order:";
+    return [head, ...lines, typeLabel, `\n💰 Total: ${total}`].filter(Boolean).join("\n");
   },
 
   orderPlaced(l: Lang, orderNumber: number, currency: string, total: number): string {

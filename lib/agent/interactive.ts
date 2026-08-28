@@ -39,15 +39,31 @@ export function orderTypeButtons(l: LanguagePreference): InteractivePayload {
   };
 }
 
-/** Confirm / cancel as reply buttons. */
+/** Confirm / cancel / add-more as reply buttons (3 max). */
 export function confirmButtons(l: LanguagePreference): InteractivePayload {
   return {
     kind: "buttons",
     payload: {
       body: ur(l) ? "Order confirm karein?" : "Confirm your order?",
       buttons: [
-        { id: "confirm:yes", title: ur(l) ? "Haan, confirm" : "Yes, confirm" },
-        { id: "confirm:no", title: ur(l) ? "Abhi nahi" : "Not yet" },
+        { id: "confirm:yes", title: "Confirm ✓" },
+        { id: "confirm:no", title: ur(l) ? "Wapas Jao" : "Go Back" },
+        { id: "action:add_more", title: ur(l) ? "Aur Dalein" : "Add More" },
+      ],
+    },
+  };
+}
+
+/** Cart action buttons shown after adding an item. */
+export function cartActionButtons(l: LanguagePreference): InteractivePayload {
+  return {
+    kind: "buttons",
+    payload: {
+      body: ur(l) ? "Aur kuch add karein ya checkout karein?" : "Add more or check out?",
+      buttons: [
+        { id: "action:add_more", title: ur(l) ? "Aur Add Karein" : "Add More" },
+        { id: "action:view_cart", title: ur(l) ? "Cart Dekhein" : "View Cart" },
+        { id: "action:checkout", title: "Checkout" },
       ],
     },
   };
@@ -91,8 +107,8 @@ export function categoryList(
   return {
     kind: "list",
     payload: {
-      body: bodyText || (ur(l) ? "Kaunsi category dekhni hai?" : "Which category?"),
-      buttonText: ur(l) ? "Categories" : "Categories",
+      body: bodyText || (ur(l) ? "Kaunsi cheez chahiye?" : "What would you like?"),
+      buttonText: ur(l) ? "Menu Dekhein" : "View Menu",
       sectionTitle: ur(l) ? "Menu" : "Menu",
       rows,
     },

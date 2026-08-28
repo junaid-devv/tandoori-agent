@@ -105,6 +105,15 @@ export function inferLanguagePreference(
 
   if (romanScore === 0 && englishScore === 0) return previous;
   if (romanScore >= englishScore + 1) return "roman_urdu";
-  if (englishScore >= romanScore + 1) return "english";
+
+  // Only switch TO english if there is a meaningful English signal advantage AND
+  // the previous preference was not roman_urdu from a strong signal (e.g. user
+  // typed "hello" once but has been in Roman Urdu the whole conversation).
+  // Require a score of 2+ to flip from roman_urdu → english (prevents "hello"/"hi"
+  // from permanently switching the conversation language).
+  if (englishScore >= romanScore + 1) {
+    if (previous === "roman_urdu" && englishScore < 2) return "roman_urdu";
+    return "english";
+  }
   return previous;
 }
