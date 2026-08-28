@@ -33,6 +33,109 @@ const googleClient = process.env.GOOGLE_AI_API_KEY ? new OpenAI({
   apiKey: process.env.GOOGLE_AI_API_KEY,
 }) : null;
 
+// ---------------------------------------------------------------------------
+// Menu OCR via Google Gemini NATIVE REST (generateContent).
+//
+// Why native REST and not the OpenAI-compat client?  The Google OpenAI-compat
+// endpoint (/v1beta/openai/) returns 404 for chat on this account, and the
+// seekai.cc gateway does NOT reliably pass real-sized images to Claude (it saw a
+// 446 KB image as raw text). The native REST path with gemini-3.6-flash was
+// verified to extract a full menu correctly. Comma-separated model fallback list
+// handles transient 503 "high demand" by trying the next model.
+// ---------------------------------------------------------------------------
+const GEMINI_VISION_MODELS = (
+  process.env.MENU_VISION_MODELS ||
+  "gemini-3.6-flash,gemini-flash-latest,gemini-flash-lite-latest,gemini-3.5-flash"
+)
+  .split(",")
+  .map((m) => m.trim())
+  .filter(Boolean);
+
+function buildMenuSystemPrompt(appName: string): string {
+  return `You are a professional menu digitizer for ${appName}.
+
+Extract every menu item visible in this image.
+
+Rules:
+1. Strip numbering from the item name.
+2. Keep portion or size details when present.
+3. Preserve the visible category heading when possible, but keep category names concise (under 24 characters when possible).
+4. Return price as a plain number with no currency symbol.
+5. If price is unreadable, return null. Never guess.
+6. Return JSON only in this shape: { "items": [ { "name": "...", "price": 850, "category": "..." } ] }`;
+}
+
+async function geminiExtractMenu(imageUrl: string, systemPrompt: string): Promise<string | null> {
+  const key = process.env.GOOGLE_AI_API_KEY;
+  if (!key) return null;
+
+  // Accept data URLs or http(s) URLs. For http(s) we fetch and inline the bytes
+  // (native REST needs inline_data or a Files API ref; inlining is simplest).
+  let mimeType = "image/jpeg";
+  let base64: string;
+  if (imageUrl.startsWith("data:")) {
+    const comma = imageUrl.indexOf(",");
+    const header = imageUrl.slice(5, comma); // after "data:"
+    if (comma < 0 || !/;base64$/i.test(header)) return null;
+    mimeType = header.replace(/;base64$/i, "") || "image/jpeg";
+    base64 = imageUrl.slice(comma + 1);
+  } else {
+    const resp = await fetch(imageUrl);
+    if (!resp.ok) return null;
+    mimeType = resp.headers.get("content-type")?.split(";")[0] || "image/jpeg";
+    base64 = Buffer.from(await resp.arrayBuffer()).toString("base64");
+  }
+
+  const payload = {
+    system_instruction: { parts: [{ text: systemPrompt }] },
+    contents: [
+      {
+        parts: [
+          { text: "Parse this menu image into JSON." },
+          { inline_data: { mime_type: mimeType, data: base64 } },
+        ],
+      },
+    ],
+    generationConfig: { responseMimeType: "application/json", maxOutputTokens: 4000 },
+  };
+
+  let lastErr = "";
+  for (const model of GEMINI_VISION_MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${key}`;
+    try {
+      const r = await withTimeout(
+        fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }),
+        MENU_AI_REQUEST_TIMEOUT_MS,
+        `gemini menu (${model})`,
+      );
+      const j = (await r.json()) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+        error?: { message?: string };
+      };
+      if (r.status !== 200) {
+        lastErr = `${r.status} ${(j.error?.message || "").slice(0, 80)}`;
+        console.warn(`[menu/process] gemini ${model} failed: ${lastErr}`);
+        continue; // try next model (handles 503 high-demand, per-account gating)
+      }
+      const text = j.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (text && text.trim()) {
+        console.log(`[menu/process] gemini ${model} succeeded`);
+        return text;
+      }
+      lastErr = "empty response";
+    } catch (e) {
+      lastErr = e instanceof Error ? e.message : String(e);
+      console.warn(`[menu/process] gemini ${model} error: ${lastErr}`);
+    }
+  }
+  console.error(`[menu/process] all gemini models failed. last: ${lastErr}`);
+  return null;
+}
+
 
 // Simple in-memory cache for AI interpretations
 const interpretationCache = new Map<string, { result: OrderTurnInterpretation; expires: number }>();
@@ -592,13 +695,23 @@ export async function getCustomerSupportReply(
 }
 
 export async function processMenuImage(imageUrl: string) {
-  // Use Google AI Studio directly if available to bypass OpenRouter credit limits
-  const targetClient = googleClient || openRouterClient;
-  const targetModel = googleClient ? "gemini-2.0-flash" : "google/gemini-2.0-flash-001";
+  const profile = await getRestaurantProfile();
+  const systemPrompt = buildMenuSystemPrompt(profile.app_name || "the restaurant");
 
-  const completion = await createMenuCompletion(targetClient, targetModel, imageUrl);
+  // Primary: Google Gemini native REST (verified reliable for real images).
+  let raw: string | null = null;
+  if (process.env.GOOGLE_AI_API_KEY) {
+    raw = await geminiExtractMenu(imageUrl, systemPrompt);
+  }
 
-  const raw = completion.choices[0]?.message?.content ?? "{}";
+  // Fallback: OpenAI-SDK client chain (OpenRouter etc.) if the native path
+  // produced nothing (e.g. no Google key, or every Gemini model was down).
+  if (!raw) {
+    const targetClient = openRouterClient;
+    const targetModel = process.env.MENU_VISION_OPENROUTER_MODEL || "google/gemini-2.0-flash-001";
+    const completion = await createMenuCompletion(targetClient, targetModel, imageUrl);
+    raw = completion.choices[0]?.message?.content ?? "{}";
+  }
 
   // Robust JSON parsing with error handling
   let parsed;
@@ -686,13 +799,16 @@ async function createMenuCompletion(client: OpenAI, model: string, imageUrl: str
   const profile = await getRestaurantProfile();
   const clients = [
     { client, model, name: "primary" },
-    { client: googleClient, model: "gemini-2.0-flash", name: "google" },
-    { client: openRouterClient, model: "google/gemini-2.0-flash-001", name: "openrouter" },
-  ].filter(
-    (candidate): candidate is { client: OpenAI; model: string; name: string } => Boolean(candidate.client),
-  ); // Only include clients that exist
+    { client: openRouterClient, model: process.env.MENU_VISION_OPENROUTER_MODEL || "google/gemini-2.0-flash-001", name: "openrouter" },
+  ]
+    .filter(
+      (candidate): candidate is { client: OpenAI; model: string; name: string } => Boolean(candidate.client),
+    )
+    .filter((c, i, arr) => arr.findIndex((x) => x.client === c.client && x.model === c.model) === i);
 
-  for (const { client: currentClient, model: currentModel, name } of clients) {
+  for (let ci = 0; ci < clients.length; ci++) {
+    const { client: currentClient, model: currentModel, name } = clients[ci];
+    const isLast = ci === clients.length - 1;
     try {
       console.log(`[menu/process] Trying ${name} client with model ${currentModel}`);
       const completion = await withTimeout(
@@ -732,8 +848,8 @@ Rules:
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown AI client error";
       console.warn(`[menu/process] ${name} client failed:`, errorMessage);
-      if (name === "openrouter" && clients.length === 1) {
-        // If this is the last client, rethrow the error
+      if (isLast) {
+        // Last client in the chain failed — rethrow so the caller surfaces it.
         throw error;
       }
       // Continue to next client
