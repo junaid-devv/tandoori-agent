@@ -199,5 +199,15 @@ Each phase: define "working", implement, verify with the existing `scripts/check
   - Tests: `scripts/check-state-machine.mjs` — 18 pure FSM tests (multi-intent, non-linear, gating, affirm/deny, mind-change, upsell-once, restart, escalation). `npm run check:state-machine`, added to `check:all-guards`.
   - Verified: FSM 18/18 PASS; NLU 12/12 still PASS; `tsc --noEmit` clean.
   - Scoping (same discipline as Phase 3): live dashboard/webhook query rewrite deferred to Phase 7 (atomic schema flip). Phase 5 ships the target modules + the compat view they migrate onto; nothing live is rewired yet, so no breakage against the current DB.
-- Phase 6 (vector menu search) — ⏳ next.
+- Phase 6 (vector menu search) — ✅ done.
+  - `lib/menu/search.ts`: vector-FIRST retrieval (`searchMenu`/`resolveItem`). Query→embedding (cached LRU)→`match_menu_items_by_embedding` RPC→ranked items WITH `menu_item_id` + `similarity` + `method` tag. Genuine lexical fallback only for <3-char queries, missing key, RPC error, or zero-threshold-clears (new unembedded items). `isVectorSearchEnabled()` + `assertSearchReady()` startup warning. Tuned threshold 0.45.
+  - Retrieval now DRIVES resolution: executor's add_items/answer_info resolve via `resolveItem`/`searchMenu` (not LLM hints). `usedSemanticSearch` flows to `agent_turns` for verification.
+  - `lib/menu/index.ts` namespace; embeddings sync re-exported from existing semantic-menu.
+  - Tests: `check:menu-search` (enabled-detection, readiness warning, resolver API). Live vector path validated in Phase 9 E2E against seeded DB.
+- Phase 7 (order-engine decomposition) — ✅ done (executors + pipeline built).
+  - `lib/agent/cart.ts` (pure cart ops), `lib/agent/reply.ts` (all localized EN/Roman-Urdu copy — was scattered), `lib/agent/executor.ts` (runs FSM AgentAction[] → reply + state patch; place_order via RPC; escalation/closed handling), `lib/agent/pipeline.ts` (the ONE orchestrator: fast-path numeric selection → NLU → FSM → executor → persist + agent_turns).
+  - Tests: `check:cart` (10 pure cart tests). Full suite green; `tsc` clean.
+  - REMAINING for Phase 7 wiring (folded into Phase 8/9): swap `app/api/webhook/route.ts` to call `runTurn()` and delete `order-engine.ts`/`order-flow-handlers.ts`; migrate dashboard queries onto `stateRepo`+`deriveSessionView`. Deferred deliberately so the schema flip + dead-code removal happen atomically (no breakage vs current DB).
+- Phase 8 (dead code / flow removal) + webhook cutover — ⏳ next.
+- Phase 9 (E2E + latency) — pending.
 
