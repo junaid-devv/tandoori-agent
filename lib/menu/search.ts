@@ -276,6 +276,9 @@ export async function searchMenu(
 /**
  * Resolve a single free-text item mention to the best menu item, or null.
  * Pass inMemoryMenu (ctx.menu) to skip DB on lexical fallback.
+ *
+ * Only returns items where is_available === true so that an out-of-stock /
+ * unavailable hit is never silently added to the cart.
  */
 export async function resolveItem(
   branchId: string,
@@ -283,5 +286,8 @@ export async function resolveItem(
   inMemoryMenu?: Parameters<typeof searchMenu>[3],
 ): Promise<ResolvedMenuItem | null> {
   const { matches } = await searchMenu(branchId, query, 3, inMemoryMenu);
-  return matches[0] ?? null;
+  // Never resolve to an unavailable item — treat it as not found so the
+  // executor can show proper "not available" suggestions to the customer.
+  const available = matches.filter((m) => m.is_available !== false);
+  return available[0] ?? null;
 }

@@ -151,6 +151,7 @@ const SYSTEM_RULES = [
   "",
   "For items: put the customer's own wording in `query` (do NOT invent or normalize to a menu name — menu resolution happens later via semantic search). Capture qty/size/addons/notes when present. Capture any special instructions in `notes` — e.g. 'kam masala', 'extra spicy', 'less oil', 'no onions'.",
   "ORDER TYPE: if the customer says 'deliver karo / deliver krdo / delivery chahiye / ghar pe bhejo / ye deliver karo' (even without specifying an address), use intent `set_order_type` with `order_type: 'delivery'`. Do NOT use `unknown`.",
+  "CORRECTION PATTERN — VERY IMPORTANT: When the customer says 'X not Y', 'X chahiye Y nahi', 'Y nahi X chahiye', 'not Y, X chahiye', or any variant meaning they want X and NOT Y — X is the item they WANT (add_items) and Y is the item they do NOT want (remove_items). The FIRST-named correction is typically what they WANT. Example: 'Pizza not french fries' = add_items(pizza) + remove_items(french_fries). Example: 'Zinger nahi biryani chahiye' = add_items(biryani) + remove_items(zinger). Never confuse the direction.",
   "`info_query`: whenever the customer ASKS anything (menu/item price, what's available, recommendations, delivery, timings, location, payment, halal, or any other question), put the customer's question here (rephrased concisely in English) so we can answer it from restaurant facts. ALWAYS fill this for question-type intents.",
   "Intent guide: `ask_delivery_info` = they ask whether you deliver / delivery area / fee / time (NOT giving an address or asking to deliver). `ask_hours_or_location` = opening/closing time or where you are. `ask_payment` = how to pay. `general_question` = any other genuine question that doesn't fit a specific intent — use it liberally instead of `unknown`, and put the question in `info_query`. `view_cart` = they want to see their current cart / order so far.",
   "Prefer a specific question intent + `general_question` over `unknown`. Only use `unknown` when the message is truly meaningless.",
@@ -338,6 +339,29 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
       language: "roman_urdu",
       removals: [{ query: "fries", qty: "all" }],
       items: [{ query: "biryani", qty: 1, size: null, addons: [], notes: null }],
+    },
+  },
+  // "X not Y" correction — customer says what they WANT first, then what they DON'T want
+  // Primary intent: add the wanted item (pizza); secondary: remove the unwanted one (french fries)
+  {
+    user: "Pizza not french fries",
+    assistant: {
+      intents: ["add_items", "remove_items"],
+      primary_intent: "add_items",
+      language: "english",
+      items: [{ query: "pizza", qty: 1, size: null, addons: [], notes: null }],
+      removals: [{ query: "french fries", qty: "all" }],
+    },
+  },
+  // Roman Urdu variant of the same pattern
+  {
+    user: "zinger nahi biryani chahiye",
+    assistant: {
+      intents: ["add_items", "remove_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [{ query: "biryani", qty: 1, size: null, addons: [], notes: null }],
+      removals: [{ query: "zinger", qty: "all" }],
     },
   },
   // "add more of same item" — delta quantity, NOT set-to

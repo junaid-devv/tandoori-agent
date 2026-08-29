@@ -190,6 +190,30 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     }
   }
 
+  // ── 1d) Name match against last-shown options ──────────────────────────────
+  // When options were recently shown (e.g. after category browse or "Add More"),
+  // a message that closely matches one of them should add it — not ask about it.
+  if (!understanding && ctx.state.last_shown_options.length > 0 && ctx.state.last_shown_options_at) {
+    const ageMs = Date.now() - new Date(ctx.state.last_shown_options_at).getTime();
+    const OPTION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
+    if (ageMs < OPTION_WINDOW_MS) {
+      const text = input.messageText.trim().toLowerCase();
+      const match = ctx.state.last_shown_options.find((o) => {
+        const oName = o.name.toLowerCase();
+        return oName === text || oName.includes(text) || text.includes(oName);
+      });
+      if (match) {
+        understanding = {
+          ...makeBase(ctx.state.preferred_language),
+          intents: ["add_items"],
+          primary_intent: "add_items",
+          items: [{ query: match.name, qty: 1, size: null, addons: [], notes: null }],
+          notes: "fast_path_name_match",
+        };
+      }
+    }
+  }
+
   // ── 2) NLU ─────────────────────────────────────────────────────────────────
   const nluStart = Date.now();
   if (!understanding) {

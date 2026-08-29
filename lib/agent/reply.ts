@@ -113,7 +113,7 @@ export const reply = {
     return ur(l) ? "Pickup kis waqt karenge?" : "What time will you pick up?";
   },
 
-  summary(l: Lang, cart: CartItem[], orderType: OrderType | null, currency: string): string {
+  summary(l: Lang, cart: CartItem[], orderType: OrderType | null, currency: string, address?: string | null): string {
     const itemLines = cart.map((i) => {
       const note = i.notes ? ` (${i.notes})` : "";
       return `• ${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}${note}`;
@@ -125,6 +125,7 @@ export const reply = {
     const head = ur(l) ? "🛒 Aap ka order:" : "🛒 Your order:";
     const lines = [head, ...itemLines];
     if (typeLabel) lines.push(typeLabel);
+    if (address?.trim()) lines.push(`📍 ${address.trim()}`);
     lines.push(`💰 Total: ${total}`);
     return lines.join("\n");
   },

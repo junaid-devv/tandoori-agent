@@ -15,6 +15,7 @@ export type AgentActionKind =
   | "answer_hours_location"  // deterministic — reads settings, no LLM
   | "answer_payment"         // deterministic — reads settings, no LLM
   | "answer_delivery_info"   // deterministic — reads settings, no LLM
+  | "offer_upsell"
   | "add_items"
   | "remove_items"
   | "update_quantity"
@@ -170,6 +171,9 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   // 4) Cart mutations (non-linear — can happen from any stage)
   if (u.intents.includes("add_items") && u.items.length > 0) {
     actions.push({ kind: "add_items", payload: { items: u.items } });
+    if (!view.upsell_offered) {
+      actions.push({ kind: "offer_upsell" });
+    }
     nextStage = "building_cart";
   }
   if (u.intents.includes("remove_items") && u.removals.length > 0) {
@@ -217,9 +221,10 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   }
 
   // 7) Address / slot collection
+  const orderTypeAlreadySet = Boolean(view.order_type && !u.order_type);
   if (u.address) {
     actions.push({ kind: "collect_delivery_address", payload: { address: u.address } });
-    if (view.cart.length > 0) {
+    if (orderTypeAlreadySet && view.cart.length > 0) {
       actions.push({ kind: "show_summary" });
       nextStage = "confirming";
     }
@@ -232,14 +237,14 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   }
   if (u.guests || u.reservation_time) {
     actions.push({ kind: "collect_dinein_details", payload: { guests: u.guests, reservation_time: u.reservation_time } });
-    if (view.cart.length > 0) {
+    if (orderTypeAlreadySet && view.cart.length > 0) {
       actions.push({ kind: "show_summary" });
       nextStage = "confirming";
     }
   }
   if (u.pickup_time) {
     actions.push({ kind: "collect_pickup_time", payload: { pickup_time: u.pickup_time } });
-    if (view.cart.length > 0) {
+    if (orderTypeAlreadySet && view.cart.length > 0) {
       actions.push({ kind: "show_summary" });
       nextStage = "confirming";
     }
@@ -272,6 +277,8 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
         actions.push({ kind: "place_order" });
         nextStage = "placed";
       }
+    } else if (view.stage === "building_cart" && view.upsell_offered) {
+      actions.push({ kind: "add_items", payload: { upsell: true } });
     } else if (view.awaiting_selection) {
       actions.push({ kind: "ask_clarification", payload: { reason: "which_option" } });
     } else {
@@ -281,7 +288,10 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
 
   // 10) Bare deny — go back to cart view
   if (u.primary_intent === "deny" && actions.length === 0) {
-    if (view.cart.length > 0) {
+    if (view.stage === "building_cart" && view.upsell_offered) {
+      nextStage = "choosing_order_type";
+      actions.push({ kind: "ask_order_type" });
+    } else if (view.cart.length > 0) {
       actions.push({ kind: "show_cart" });
       nextStage = "building_cart";
     } else {

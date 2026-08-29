@@ -597,7 +597,7 @@ async function handleNonText(
       }
     }
 
-    // No OPENAI_API_KEY — graceful degradation, language-consistent
+    // No OPENAI_API_KEY — graceful degradation / voice_note fallback, language-consistent
     const voiceFallback = isRomanUrdu
       ? "🎤 Voice note mil gaya! Apna order text mein bhej dein, main turant help karunga."
       : "🎤 Got your voice note! Please type your order and I'll help right away.";

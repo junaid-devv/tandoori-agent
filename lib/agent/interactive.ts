@@ -54,17 +54,22 @@ export function confirmButtons(l: LanguagePreference): InteractivePayload {
   };
 }
 
-/** Cart action buttons shown after adding an item. */
-export function cartActionButtons(l: LanguagePreference): InteractivePayload {
+/** Cart action buttons shown after adding an item or viewing cart.
+ *  hideViewCart: true → omit the "View Cart" button (used when cart is already displayed). */
+export function cartActionButtons(l: LanguagePreference, opts?: { hideViewCart?: boolean }): InteractivePayload {
+  const buttons: Array<{ id: string; title: string }> = [
+    { id: "action:add_more", title: ur(l) ? "Aur Add Karein" : "Add More" },
+    { id: "action:checkout", title: "Checkout" },
+  ];
+  if (!opts?.hideViewCart) {
+    // Insert View Cart between Add More and Checkout (WhatsApp max 3 buttons)
+    buttons.splice(1, 0, { id: "action:view_cart", title: ur(l) ? "Cart Dekhein" : "View Cart" });
+  }
   return {
     kind: "buttons",
     payload: {
-      body: ur(l) ? "Aur kuch add karein ya checkout karein?" : "Add more or check out?",
-      buttons: [
-        { id: "action:add_more", title: ur(l) ? "Aur Add Karein" : "Add More" },
-        { id: "action:view_cart", title: ur(l) ? "Cart Dekhein" : "View Cart" },
-        { id: "action:checkout", title: "Checkout" },
-      ],
+      body: ur(l) ? "Kya karna hai?" : "What would you like to do?",
+      buttons,
     },
   };
 }

@@ -182,14 +182,29 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           if (resolved?.method === "vector") usedSemantic = true;
           if (!resolved) {
             const { matches } = await searchMenu(branchId, query, 4, ctx.menu);
-            if (matches.length) {
-              replies.push(reply.notFound(lang, query, matches.map((x) => x.name)));
-              patch.last_shown_options = matches.map((x) => ({ id: x.id, name: x.name, price: x.price }));
+            // Only show available items as suggestions
+            const availMatches = matches.filter((x) => x.is_available !== false);
+            if (availMatches.length) {
+              replies.push(reply.notFound(lang, query, availMatches.map((x) => x.name)));
+              patch.last_shown_options = availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price }));
               patch.last_shown_options_at = new Date().toISOString();
-              setInteractive(itemPickList(lang, matches.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
+              setInteractive(itemPickList(lang, availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
             } else {
               const ans = await grounded(`customer wants "${query}" — is it available? suggest similar items if not`);
               replies.push(ans ?? reply.notFound(lang, query, []));
+            }
+            continue;
+          }
+          // Defence-in-depth: resolveItem already filters unavailable items, but
+          // guard here too so we never silently add an out-of-stock item.
+          if (resolved.is_available === false) {
+            const { matches } = await searchMenu(branchId, query, 4, ctx.menu);
+            const availMatches = matches.filter((x) => x.is_available !== false);
+            replies.push(reply.notFound(lang, query, availMatches.map((x) => x.name)));
+            if (availMatches.length) {
+              patch.last_shown_options = availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price }));
+              patch.last_shown_options_at = new Date().toISOString();
+              setInteractive(itemPickList(lang, availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
             }
             continue;
           }
@@ -213,6 +228,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         break;
       }
 
+      // ── Offer upsell ─────────────────────────────────────────────────────
+      case "offer_upsell": {
+        patch.upsell_offered = true;
+        break;
+      }
+
       // ── Remove items ─────────────────────────────────────────────────────
       case "remove_items": {
         const removals = (action.payload?.removals as TurnUnderstanding["removals"]) ?? u.removals;
@@ -220,8 +241,15 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           const resolved = await resolveItem(branchId, r.query, ctx.menu);
           cart = removeFromCart(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? r.query, qty: r.qty });
         }
-        replies.push(reply.itemsRemoved(lang, cart, cur));
-        if (cart.length > 0) setInteractive(cartActionButtons(lang));
+        // Suppress the itemsRemoved reply when an add_items action is also running
+        // in this same turn (e.g. "Pizza not french fries"). Emitting "Cart is now
+        // empty" followed immediately by "Added: X" produces a contradictory message.
+        // The add_items reply that follows will reflect the final cart state.
+        const hasAddItems = transition.actions.some((a) => a.kind === "add_items");
+        if (!hasAddItems) {
+          replies.push(reply.itemsRemoved(lang, cart, cur));
+          if (cart.length > 0) setInteractive(cartActionButtons(lang));
+        }
         break;
       }
 
@@ -374,23 +402,28 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       }
 
       // ── Cart / summary ───────────────────────────────────────────────────
-      case "show_cart":
+      case "show_cart": {
+        const addr = patch.address ?? ctx.state.address;
         if (cart.length === 0) {
           replies.push(reply.emptyCart(lang));
         } else {
-          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur));
-          setInteractive(cartActionButtons(lang));
+          // show_cart: omit "View Cart" button since we're already showing the cart
+          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null));
+          setInteractive(cartActionButtons(lang, { hideViewCart: true }));
         }
         break;
+      }
 
-      case "show_summary":
+      case "show_summary": {
+        const addr = patch.address ?? ctx.state.address;
         if (cart.length === 0) {
           replies.push(reply.emptyCart(lang));
         } else {
-          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur));
+          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null));
           setInteractive(confirmButtons(lang));
         }
         break;
+      }
 
       // ── Place order ──────────────────────────────────────────────────────
       case "place_order": {
@@ -402,6 +435,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           setInteractive(orderTypeButtons(lang));
           break;
         }
+        const deliveryAddr = patch.address ?? ctx.state.address;
+        // Client-side guard: catch missing address before the expensive RPC call
+        if (orderType === "delivery" && !deliveryAddr?.trim()) {
+          replies.push(reply.askAddress(lang));
+          patch.stage = "collecting_delivery";
+          break;
+        }
         try {
           const orderId = await orderRepo.place({
             conversationId: input.conversationId,
@@ -410,7 +450,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             type: orderType,
             items: cart.map((i) => ({ name: i.name, qty: i.qty, size: i.size, addons: i.addons, item_instructions: i.notes })),
             customerInstructions: ctx.state.customer_instructions,
-            address: patch.address ?? ctx.state.address,
+            address: deliveryAddr,
             guests: patch.guests ?? ctx.state.guests,
             reservationTime: patch.reservation_time ?? ctx.state.reservation_time,
             pickupTime: patch.pickup_time ?? ctx.state.pickup_time,
@@ -423,7 +463,46 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         } catch (err) {
           const msg = err instanceof Error ? err.message : "order failed";
           console.error("[executor] place_order failed:", msg);
-          replies.push(lang === "roman_urdu" ? "Order mein kuch masla hua. Dobara try karein ya staff se baat karein." : "Something went wrong placing your order. Please try again or contact staff.");
+          // Parse RPC error and give actionable reply; reset stage cleanly
+          if (/delivery.*area|outside.*area|area.*outside/i.test(msg)) {
+            const areas = ctx.settings.delivery_areas;
+            const areaList = areas.length ? areas.join(", ") : "";
+            replies.push(
+              lang === "roman_urdu"
+                ? `Maafi — ye address hamare delivery area mein nahi hai.${areaList ? `\nHum deliver karte hain: ${areaList}` : ""}\nDoosra address bhejein ya Pickup choose karein.`
+                : `Sorry — that address isn't in our delivery zone.${areaList ? `\nWe deliver to: ${areaList}` : ""}\nSend a different address or choose Pickup.`,
+            );
+            patch.stage = "collecting_delivery";
+            patch.address = null;
+          } else if (/delivery.*not available|not.*available.*delivery/i.test(msg)) {
+            replies.push(
+              lang === "roman_urdu"
+                ? "Delivery abhi available nahi. Pickup ya Dine-in choose karein."
+                : "Delivery isn't available right now. Please choose Pickup or Dine-in.",
+            );
+            patch.stage = "choosing_order_type";
+            patch.order_type = null;
+            setInteractive(orderTypeButtons(lang));
+          } else if (/address.*required|required.*address/i.test(msg)) {
+            replies.push(reply.askAddress(lang));
+            patch.stage = "collecting_delivery";
+          } else if (/pickup.*time.*required|required.*pickup.*time/i.test(msg)) {
+            replies.push(reply.askPickupTime(lang));
+            patch.stage = "collecting_pickup";
+          } else if (/guest.*required|reservation.*required/i.test(msg)) {
+            replies.push(reply.askDineIn(lang));
+            patch.stage = "collecting_dinein";
+          } else {
+            replies.push(
+              lang === "roman_urdu"
+                ? "Order place nahi ho saka. Thori der baad try karein."
+                : "Couldn't place the order. Please try again shortly.",
+            );
+            patch.stage = "confirming";
+            // Re-show summary so they can retry immediately
+            replies.push(reply.summary(lang, cart, orderType, cur, deliveryAddr ?? null));
+            setInteractive(confirmButtons(lang));
+          }
           patch.last_error = msg;
         }
         break;
@@ -476,8 +555,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       default:
         if (replies.length === 0) {
           if (cart.length > 0) {
-            replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur));
-            setInteractive(cartActionButtons(lang));
+            const addr = patch.address ?? ctx.state.address;
+            replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null));
+            setInteractive(cartActionButtons(lang, { hideViewCart: true }));
           } else {
             const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
             replies.push(reply.clarify(lang, "fallback"));
