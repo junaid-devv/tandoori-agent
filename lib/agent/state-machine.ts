@@ -1,20 +1,8 @@
 /**
- * lib/agent/state-machine.ts — Phase 5
+ * lib/agent/state-machine.ts
  *
- * PURE finite-state machine. Given the current stage, the NLU understanding, and
- * the cart, it decides the next stage and the ordered list of ACTIONS to run.
- *
- * Key properties (fixing the old god-switch):
- *  - Non-linear: transitions are driven by INTENT, not strictly by position. A
- *    price question during address collection answers the question and STAYS in
- *    the address stage.
- *  - Multi-intent aware: a single message ("add fries and what's the biryani price")
- *    yields multiple actions in one turn.
- *  - No regex / keyword logic. It consumes the structured `TurnUnderstanding`.
- *  - Pure & synchronous: trivially unit-testable with no network/DB.
- *
- * The pipeline (Phase 7) executes the returned actions (which do the async work:
- * vector search, cart mutation, order placement) and renders the reply.
+ * Pure FSM: (StateView, TurnUnderstanding) → Transition.
+ * No IO, no network — trivially unit-testable.
  */
 import type { Intent, TurnUnderstanding } from "./nlu";
 import type { CartItem, ConversationStage, OrderType } from "@/lib/schema.types";
@@ -22,33 +10,32 @@ import type { CartItem, ConversationStage, OrderType } from "@/lib/schema.types"
 export type AgentActionKind =
   | "greet"
   | "show_menu"
-  | "answer_info"          // menu/item info or recommendation via vector search
-  | "answer_grounded"      // any question answered from restaurant facts (LLM, grounded)
+  | "answer_info"
+  | "answer_grounded"
+  | "answer_hours_location"  // deterministic — reads settings, no LLM
+  | "answer_payment"         // deterministic — reads settings, no LLM
+  | "answer_delivery_info"   // deterministic — reads settings, no LLM
   | "add_items"
   | "remove_items"
   | "update_quantity"
-  | "offer_upsell"
   | "ask_order_type"
   | "collect_delivery_address"
   | "collect_dinein_details"
   | "collect_pickup_time"
+  | "show_cart"
   | "show_summary"
-  | "show_cart"            // show cart contents without checkout flow
   | "place_order"
   | "cancel_order"
   | "restart_order"
   | "reorder_previous"
   | "report_order_status"
-  | "answer_payment"
-  | "answer_hours_location"
   | "smalltalk"
-  | "ask_clarification"    // ambiguous affirm/deny or unresolved reference
+  | "ask_clarification"
   | "escalate_human"
   | "fallback";
 
 export interface AgentAction {
   kind: AgentActionKind;
-  /** Carries the relevant slice of understanding for the executor. */
   payload?: Record<string, unknown>;
 }
 
@@ -60,14 +47,12 @@ export interface StateView {
   has_dinein_details: boolean;
   has_pickup_time: boolean;
   upsell_offered: boolean;
-  /** True when we just showed a list/options and a bare affirm/number is meaningful. */
   awaiting_selection: boolean;
 }
 
 export interface Transition {
   nextStage: ConversationStage;
   actions: AgentAction[];
-  /** Escalation short-circuits everything. */
   escalate: boolean;
 }
 
@@ -80,18 +65,13 @@ const CHECKOUT_STAGES: ConversationStage[] = [
 ];
 
 function stageForOrderType(orderType: OrderType): ConversationStage {
-  switch (orderType) {
-    case "delivery":
-      return "collecting_delivery";
-    case "dine-in":
-      return "collecting_dinein";
-    case "pickup":
-      return "collecting_pickup";
-  }
+  if (orderType === "delivery") return "collecting_delivery";
+  if (orderType === "dine-in") return "collecting_dinein";
+  return "collecting_pickup";
 }
 
-/** Which slot is still missing for the chosen order type? null = ready to confirm. */
-function missingCheckoutStage(view: StateView): ConversationStage | null {
+/** Next missing slot for the current view. null = all slots filled. */
+function missingSlot(view: StateView): ConversationStage | null {
   if (!view.order_type) return "choosing_order_type";
   if (view.order_type === "delivery" && !view.has_address) return "collecting_delivery";
   if (view.order_type === "dine-in" && !view.has_dinein_details) return "collecting_dinein";
@@ -99,20 +79,28 @@ function missingCheckoutStage(view: StateView): ConversationStage | null {
   return null;
 }
 
-/**
- * Like missingCheckoutStage but for a NEWLY chosen order type (the view hasn't
- * been patched yet so we check against the known type directly).
- */
-function missingCheckoutStageForType(orderType: "delivery" | "pickup" | "dine-in", view: StateView): ConversationStage | null {
+/** Next missing slot after a newly chosen order type (view not patched yet). */
+function missingSlotForType(orderType: OrderType, view: StateView): ConversationStage | null {
   if (orderType === "delivery" && !view.has_address) return "collecting_delivery";
   if (orderType === "dine-in" && !view.has_dinein_details) return "collecting_dinein";
   if (orderType === "pickup" && !view.has_pickup_time) return "collecting_pickup";
   return null;
 }
 
+function promptForStage(stage: ConversationStage): AgentAction {
+  switch (stage) {
+    case "choosing_order_type": return { kind: "ask_order_type" };
+    case "collecting_delivery":  return { kind: "collect_delivery_address" };
+    case "collecting_dinein":    return { kind: "collect_dinein_details" };
+    case "collecting_pickup":    return { kind: "collect_pickup_time" };
+    case "confirming":           return { kind: "show_summary" };
+    default:                     return { kind: "fallback" };
+  }
+}
+
 /**
- * Informational intents that can be answered WITHOUT leaving the current stage
- * (the non-linear "ask a question mid-checkout" case).
+ * Informational intents that never advance the checkout stage.
+ * Returns a single action or null if the intent is not informational.
  */
 function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null {
   switch (intent) {
@@ -120,12 +108,15 @@ function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null
       return { kind: "show_menu" };
     case "ask_item_info":
     case "ask_recommendation":
-      return { kind: "answer_info", payload: { query: u.info_query, items: u.items, intent } };
-    case "ask_payment":
+      return { kind: "answer_info", payload: { query: u.info_query ?? "", intent } };
     case "ask_hours_or_location":
+      return { kind: "answer_hours_location" };
+    case "ask_payment":
+      return { kind: "answer_payment" };
     case "ask_delivery_info":
+      return { kind: "answer_delivery_info" };
     case "general_question":
-      return { kind: "answer_grounded", payload: { query: u.info_query, intent } };
+      return { kind: "answer_grounded", payload: { query: u.info_query ?? "", intent } };
     case "order_status":
       return { kind: "report_order_status" };
     case "view_cart":
@@ -137,19 +128,25 @@ function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null
   }
 }
 
-/**
- * Compute the transition. Pure function of (view, understanding).
- */
 export function nextTransition(view: StateView, u: TurnUnderstanding): Transition {
-  // 1) Escalation always wins.
-  if (u.wants_human || u.intents.includes("human_request") || u.sentiment === "angry" || u.intents.includes("complaint")) {
-    return { nextStage: "human", actions: [{ kind: "escalate_human", payload: { reason: u.intents.includes("complaint") ? "complaint" : "requested" } }], escalate: true };
+  // 1) Escalation always wins
+  if (
+    u.wants_human ||
+    u.intents.includes("human_request") ||
+    u.sentiment === "angry" ||
+    u.intents.includes("complaint")
+  ) {
+    return {
+      nextStage: "human",
+      actions: [{ kind: "escalate_human", payload: { reason: u.intents.includes("complaint") ? "complaint" : "requested" } }],
+      escalate: true,
+    };
   }
 
   const actions: AgentAction[] = [];
   let nextStage: ConversationStage = view.stage;
 
-  // 2) Hard resets.
+  // 2) Hard resets
   if (u.intents.includes("restart_order")) {
     return { nextStage: "browsing", actions: [{ kind: "restart_order" }], escalate: false };
   }
@@ -160,67 +157,77 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
     return { nextStage: "confirming", actions: [{ kind: "reorder_previous" }], escalate: false };
   }
 
-  // 3) Greeting (only meaningful when we have no cart / at start).
-  if (u.intents.includes("greeting") && view.cart.length === 0 && (view.stage === "greeting" || view.stage === "browsing")) {
+  // 3) Greeting — only at the start / empty cart
+  if (
+    u.intents.includes("greeting") &&
+    view.cart.length === 0 &&
+    (view.stage === "greeting" || view.stage === "browsing")
+  ) {
     actions.push({ kind: "greet" });
     nextStage = "browsing";
   }
 
-  // 4) Cart mutations (can happen from almost any stage — non-linear).
+  // 4) Cart mutations (non-linear — can happen from any stage)
   if (u.intents.includes("add_items") && u.items.length > 0) {
     actions.push({ kind: "add_items", payload: { items: u.items } });
     nextStage = "building_cart";
   }
   if (u.intents.includes("remove_items") && u.removals.length > 0) {
     actions.push({ kind: "remove_items", payload: { removals: u.removals } });
-    nextStage = view.cart.length > 0 ? "building_cart" : nextStage;
+    if (view.cart.length > 1) nextStage = "building_cart";
   }
   if (u.intents.includes("update_quantity") && u.items.length > 0) {
     actions.push({ kind: "update_quantity", payload: { items: u.items } });
     nextStage = "building_cart";
   }
 
-  // 5) Informational intents — answered WITHOUT changing checkout stage if we're
-  //    mid-checkout (the key non-linear behavior).
+  // 5) Informational intents — always answered, never change checkout stage
   const inCheckout = CHECKOUT_STAGES.includes(view.stage);
   for (const intent of u.intents) {
-    const infoAction = infoActionFor(intent, u);
-    if (infoAction) {
-      actions.push(infoAction);
-      // Stay where we are if in checkout; otherwise drift to browsing for menu/info.
-      if (!inCheckout && (infoAction.kind === "show_menu" || infoAction.kind === "answer_info")) {
+    const ia = infoActionFor(intent, u);
+    if (ia) {
+      // Avoid duplicate info actions in the same turn
+      if (!actions.some((a) => a.kind === ia.kind)) {
+        actions.push(ia);
+      }
+      if (!inCheckout && (ia.kind === "show_menu" || ia.kind === "answer_info")) {
         nextStage = view.cart.length > 0 ? "building_cart" : "browsing";
       }
     }
   }
 
-  // 6) Order-type / logistics slot filling.
-  if (u.order_type || u.intents.includes("set_order_type")) {
+  // 6) Order type selection
+  if (u.intents.includes("set_order_type") || u.order_type) {
     const chosen = u.order_type;
     if (chosen) {
       actions.push({ kind: "ask_order_type", payload: { chosen } });
       nextStage = stageForOrderType(chosen);
-      // After setting order type, immediately prompt for the next required slot
-      // so the agent doesn't go silent.
-      const missingAfterType = missingCheckoutStageForType(chosen, view);
-      if (missingAfterType) {
-        actions.push(promptForStage(missingAfterType));
+      const missing = missingSlotForType(chosen, view);
+      if (missing) {
+        actions.push(promptForStage(missing));
+        nextStage = missing;
       } else if (view.cart.length > 0) {
-        // All slots filled — show summary
         actions.push({ kind: "show_summary" });
         nextStage = "confirming";
       }
     } else {
-      // set_order_type intent but no order_type value — ask
       actions.push({ kind: "ask_order_type" });
+      nextStage = "choosing_order_type";
     }
   }
+
+  // 7) Address / slot collection
   if (u.address) {
     actions.push({ kind: "collect_delivery_address", payload: { address: u.address } });
-    // After address, show summary if cart is ready
     if (view.cart.length > 0) {
       actions.push({ kind: "show_summary" });
       nextStage = "confirming";
+    }
+  }
+  if (u.intents.includes("provide_address") && !u.address) {
+    // Tap on "New Address" button — just prompt
+    if (!actions.some((a) => a.kind === "collect_delivery_address")) {
+      actions.push({ kind: "collect_delivery_address" });
     }
   }
   if (u.guests || u.reservation_time) {
@@ -238,35 +245,32 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
     }
   }
 
-  // 7) Confirmation.
+  // 8) Confirm / checkout
   if (u.intents.includes("confirm_order")) {
-    const missing = missingCheckoutStage(view);
     if (view.cart.length === 0) {
       actions.push({ kind: "ask_clarification", payload: { reason: "empty_cart" } });
-    } else if (missing) {
-      // They said "confirm" but a slot is missing — advance to the missing slot.
-      nextStage = missing;
-      actions.push(promptForStage(missing));
     } else {
-      actions.push({ kind: "place_order" });
-      nextStage = "placed";
+      const missing = missingSlot(view);
+      if (missing) {
+        nextStage = missing;
+        actions.push(promptForStage(missing));
+      } else {
+        actions.push({ kind: "place_order" });
+        nextStage = "placed";
+      }
     }
   }
 
-  // 8) Bare affirm / deny — resolve against context.
+  // 9) Bare affirm — resolve by stage context
   if (u.primary_intent === "affirm" && actions.length === 0) {
-    if (view.upsell_offered) {
-      // Treat as accepting the upsell — executor decides item.
-      actions.push({ kind: "add_items", payload: { fromUpsell: true } });
-      nextStage = "building_cart";
-    } else if (view.stage === "confirming") {
-      const missing = missingCheckoutStage(view);
-      if (!missing && view.cart.length > 0) {
-        actions.push({ kind: "place_order" });
-        nextStage = "placed";
-      } else if (missing) {
+    if (view.stage === "confirming") {
+      const missing = missingSlot(view);
+      if (missing) {
         nextStage = missing;
         actions.push(promptForStage(missing));
+      } else if (view.cart.length > 0) {
+        actions.push({ kind: "place_order" });
+        nextStage = "placed";
       }
     } else if (view.awaiting_selection) {
       actions.push({ kind: "ask_clarification", payload: { reason: "which_option" } });
@@ -274,54 +278,26 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
       actions.push({ kind: "ask_clarification", payload: { reason: "affirm_no_context" } });
     }
   }
+
+  // 10) Bare deny — go back to cart view
   if (u.primary_intent === "deny" && actions.length === 0) {
-    if (view.upsell_offered) {
-      // Declined upsell — proceed toward checkout.
-      const missing = missingCheckoutStage(view);
-      nextStage = missing ?? "confirming";
-      actions.push(missing ? promptForStage(missing) : { kind: "show_summary" });
+    if (view.cart.length > 0) {
+      actions.push({ kind: "show_cart" });
+      nextStage = "building_cart";
     } else {
-      actions.push({ kind: "smalltalk", payload: { deny: true } });
+      actions.push({ kind: "show_menu" });
+      nextStage = "browsing";
     }
   }
 
-  // 9) After adding items, decide whether to move the flow forward.
-  const addedItems = actions.some((a) => a.kind === "add_items");
-  if (addedItems && !u.intents.includes("confirm_order")) {
-    // Offer upsell once, else surface summary/next-step. Executor may no-op upsell.
-    if (!view.upsell_offered) {
-      actions.push({ kind: "offer_upsell" });
-    }
-  }
-
-  // 10) Nothing matched → fallback (never a generic canned reply; executor uses info_query/vector).
+  // 11) Fallback
   if (actions.length === 0) {
     if (u.info_query) {
-      // Any leftover question → grounded answer (menu + facts), never a dead end.
-      actions.push({ kind: "answer_grounded", payload: { query: u.info_query, intent: "general_question" } });
+      actions.push({ kind: "answer_grounded", payload: { query: u.info_query } });
     } else {
-      // Truly empty/meaningless: grounded answer on the raw message beats a canned
-      // "I didn't get that" — the LLM can still greet/steer helpfully.
-      actions.push({ kind: "fallback", payload: { primary_intent: u.primary_intent } });
+      actions.push({ kind: "fallback" });
     }
   }
 
   return { nextStage, actions, escalate: false };
-}
-
-function promptForStage(stage: ConversationStage): AgentAction {
-  switch (stage) {
-    case "choosing_order_type":
-      return { kind: "ask_order_type" };
-    case "collecting_delivery":
-      return { kind: "collect_delivery_address" };
-    case "collecting_dinein":
-      return { kind: "collect_dinein_details" };
-    case "collecting_pickup":
-      return { kind: "collect_pickup_time" };
-    case "confirming":
-      return { kind: "show_summary" };
-    default:
-      return { kind: "fallback" };
-  }
 }

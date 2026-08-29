@@ -94,13 +94,14 @@ function buildInteractiveVisibleBody(content: string, interactiveBody: string): 
   if (!contentText) return bodyText;
   if (!bodyText) return contentText;
 
-  const normalizedContent = normalizeForDedup(contentText);
-  const normalizedBody = normalizeForDedup(bodyText);
-  if (normalizedContent === normalizedBody || normalizedContent.includes(normalizedBody)) {
-    return contentText;
-  }
+  // If the interactive body is already contained within the content (or is the
+  // same) just use the content — avoids duplicated text blocks.
+  const nc = normalizeForDedup(contentText);
+  const nb = normalizeForDedup(bodyText);
+  if (nc === nb || nc.includes(nb)) return contentText;
 
-  return `${contentText}\n\n${bodyText}`;
+  // Otherwise attach body on a single newline — not two — so there's no blank gap.
+  return `${contentText}\n${bodyText}`;
 }
 
 function normalizeForDedup(value: string): string {

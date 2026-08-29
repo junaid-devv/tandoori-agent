@@ -1,15 +1,12 @@
 /**
- * lib/agent/pipeline.ts — Phase 7
+ * lib/agent/pipeline.ts
  *
- * The ONE place that sequences a turn:
- *   1. deterministic fast-path (interactive button / bare numeric selection) — no LLM
- *   2. understandTurn() — single LLM extraction
+ * Sequences a single turn:
+ *   1. Deterministic fast-path (interactive tap / bare numeric) — no LLM
+ *   2. understandTurn() — single NLU extraction
  *   3. nextTransition() — pure FSM
- *   4. executeTurn() — actions -> reply + state patch
- *   5. persist state (+ agent_turns observability)
- *
- * Returns the reply text + metadata; the webhook (Phase 7 wiring / caller) is
- * responsible only for transport (dispatch via assistant-dispatcher) and dedup.
+ *   4. executeTurn() — actions → reply + state patch
+ *   5. Persist state (awaited before returning — prevents race with confirm/address taps)
  */
 import { understandTurn, type TurnUnderstanding } from "./nlu";
 import { nextTransition } from "./state-machine";
@@ -41,24 +38,14 @@ export interface RunTurnInput {
   messageId?: string | null;
   appName: string;
   currency: string;
-  /** Customer's name from WhatsApp contact profile, for personalised greetings. */
   customerName?: string | null;
-  /** True for greeting/ack turns where menu load can be skipped. */
   trivial?: boolean;
 }
 
 const NUMERIC_RE = /^\s*(\d{1,2})\s*$/;
 
-/**
- * Deterministic interpretation of an interactive tap id (ordertype:*, confirm:*,
- * item:*, category:*). Returns a synthesized understanding so we skip the LLM.
- */
-function understandingFromInteractiveId(
-  id: string,
-  language: TurnUnderstanding["language"],
-  lastShownOptions: Array<{ id: string; name: string; price: number }>,
-): TurnUnderstanding | null {
-  const base: TurnUnderstanding = {
+function makeBase(language: TurnUnderstanding["language"]): TurnUnderstanding {
+  return {
     intents: ["unknown"],
     primary_intent: "unknown",
     confidence: 1,
@@ -75,7 +62,18 @@ function understandingFromInteractiveId(
     wants_human: false,
     notes: "fast_path_interactive",
   };
+}
 
+/**
+ * Deterministic interpretation of an interactive tap id.
+ * Returns a synthesized understanding so we skip the NLU LLM call entirely.
+ */
+function understandingFromInteractiveId(
+  id: string,
+  language: TurnUnderstanding["language"],
+  lastShownOptions: Array<{ id: string; name: string; price: number }>,
+): TurnUnderstanding | null {
+  const base = makeBase(language);
   const [ns, ...rest] = id.split(":");
   const val = rest.join(":");
 
@@ -85,10 +83,14 @@ function understandingFromInteractiveId(
         return { ...base, intents: ["set_order_type"], primary_intent: "set_order_type", order_type: val };
       }
       return null;
+
     case "confirm":
-      return val === "yes"
-        ? { ...base, intents: ["confirm_order"], primary_intent: "confirm_order" }
-        : { ...base, intents: ["deny"], primary_intent: "deny" };
+      if (val === "yes") {
+        return { ...base, intents: ["confirm_order"], primary_intent: "confirm_order" };
+      }
+      // "Go Back" / "Wapas Jao" — show cart, don't cancel
+      return { ...base, intents: ["view_cart"], primary_intent: "view_cart" };
+
     case "item": {
       const chosen = lastShownOptions.find((o) => o.id === val);
       const name = chosen?.name ?? val;
@@ -99,28 +101,28 @@ function understandingFromInteractiveId(
         items: [{ query: name, qty: 1, size: null, addons: [], notes: null }],
       };
     }
+
     case "category":
       return { ...base, intents: ["browse_menu"], primary_intent: "browse_menu", info_query: val };
+
     case "action":
       if (val === "checkout") {
-        // Checkout button → show summary first, then confirm
         return { ...base, intents: ["confirm_order"], primary_intent: "confirm_order" };
       }
       if (val === "view_cart") {
-        // Cart button → show cart contents, NOT checkout
         return { ...base, intents: ["view_cart"], primary_intent: "view_cart" };
       }
       if (val === "add_more") {
         return { ...base, intents: ["browse_menu"], primary_intent: "browse_menu" };
       }
       return null;
+
     case "addr":
       if (val === "new") {
-        // User wants to type a new address — prompt them
+        // User wants to type a new address — tell FSM to prompt for it
         return { ...base, intents: ["provide_address"], primary_intent: "provide_address" };
       }
       if (val.startsWith("saved:")) {
-        // Saved address selected — the executor resolves it from the saved record
         return {
           ...base,
           intents: ["provide_address"],
@@ -129,6 +131,7 @@ function understandingFromInteractiveId(
         };
       }
       return null;
+
     default:
       return null;
   }
@@ -147,7 +150,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
 
   let understanding: TurnUnderstanding | null = null;
 
-  // ---- 1a) Deterministic fast-path: interactive tap (button/list id) ----
+  // ── 1a) Interactive tap (button / list id) ──────────────────────────────────
   if (/^(ordertype|confirm|item|category|action|addr):/.test(input.messageText.trim())) {
     understanding = understandingFromInteractiveId(
       input.messageText.trim(),
@@ -156,56 +159,38 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     );
   }
 
-  // ---- 1b) Deterministic fast-path: pure greeting with empty cart — skip LLM ----
-  if (!understanding && input.trivial && ctx.state.cart.length === 0 &&
-      /^(hi|hello|hey|salam|aoa|assalam|hola|hi there|hello there)$/i.test(input.messageText.trim())) {
+  // ── 1b) Pure greeting with empty cart ──────────────────────────────────────
+  if (
+    !understanding &&
+    input.trivial &&
+    ctx.state.cart.length === 0 &&
+    /^(hi|hello|hey|salam|aoa|assalam|hola|hi there|hello there)$/i.test(input.messageText.trim())
+  ) {
     understanding = {
+      ...makeBase(ctx.state.preferred_language),
       intents: ["greeting"],
       primary_intent: "greeting",
-      confidence: 1,
-      language: ctx.state.preferred_language,
-      items: [],
-      removals: [],
-      order_type: null,
-      address: null,
-      guests: null,
-      reservation_time: null,
-      pickup_time: null,
-      info_query: null,
-      sentiment: "neutral",
-      wants_human: false,
       notes: "fast_path_greeting",
     };
   }
 
-  // ---- 1c) Deterministic fast-path: bare numeric selection of last-shown option ----
+  // ── 1c) Bare numeric selection of last-shown option ────────────────────────
   const numeric = input.messageText.match(NUMERIC_RE);
   if (!understanding && numeric && ctx.view.awaiting_selection && ctx.state.last_shown_options.length > 0) {
     const idx = Number(numeric[1]) - 1;
     const chosen = ctx.state.last_shown_options[idx];
     if (chosen) {
-      // Synthesize an add_items understanding for the chosen option (no LLM call).
       understanding = {
+        ...makeBase(ctx.state.preferred_language),
         intents: ["add_items"],
         primary_intent: "add_items",
-        confidence: 1,
-        language: ctx.state.preferred_language,
         items: [{ query: chosen.name, qty: 1, size: null, addons: [], notes: null }],
-        removals: [],
-        order_type: null,
-        address: null,
-        guests: null,
-        reservation_time: null,
-        pickup_time: null,
-        info_query: null,
-        sentiment: "neutral",
-        wants_human: false,
         notes: "fast_path_numeric_selection",
       };
     }
   }
 
-  // ---- 2) NLU (single LLM call) ----
+  // ── 2) NLU ─────────────────────────────────────────────────────────────────
   const nluStart = Date.now();
   if (!understanding) {
     understanding = await understandTurn({
@@ -218,12 +203,12 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   }
   t.nlu = Date.now() - nluStart;
 
-  // ---- 3) FSM ----
+  // ── 3) FSM ─────────────────────────────────────────────────────────────────
   const fsmStart = Date.now();
   const transition = nextTransition(ctx.view, understanding);
   t.fsm = Date.now() - fsmStart;
 
-  // ---- 4) Execute ----
+  // ── 4) Execute ────────────────────────────────────────────────────────────
   const execStart = Date.now();
   const exec = await executeTurn({
     transition,
@@ -237,22 +222,27 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     customerName: input.customerName ?? null,
     messageTextForFallback: input.messageText,
   });
-
   t.exec = Date.now() - execStart;
 
-  // ---- 5) Persist state (fire-and-forget — reply is already being sent by caller) ----
-  // We return the result immediately so the caller can send the WhatsApp reply
-  // without waiting for the DB write. The state patch is then awaited in parallel.
-  // Order-critical fields (cart, stage) are included in the patch below.
-  void stateRepo.patch(input.conversationId, {
-    ...exec.statePatch,
-    last_processed_user_message_id: input.whatsappMessageId ?? undefined,
-    last_processed_user_message_at: new Date().toISOString(),
-  }).catch((e) => console.error("[pipeline] state patch failed:", e));
+  // ── 5) Persist state — AWAITED before returning ───────────────────────────
+  // This is intentionally awaited (not fire-and-forget) so that the next turn
+  // (e.g. confirm button tap arriving within milliseconds) always sees the
+  // updated order_type / address / cart. The ~30–50 ms overhead is worth the
+  // correctness guarantee.
+  try {
+    await stateRepo.patch(input.conversationId, {
+      ...exec.statePatch,
+      last_processed_user_message_id: input.whatsappMessageId ?? undefined,
+      last_user_whatsapp_msg_id: input.whatsappMessageId ?? undefined,
+      last_processed_user_message_at: new Date().toISOString(),
+    });
+  } catch (e) {
+    console.error("[pipeline] state patch failed:", e);
+  }
 
   const latencyMs = Date.now() - startedAt;
 
-  // Observability (best-effort; never blocks the reply).
+  // Observability — best-effort, never blocks reply
   void recordAgentTurn({
     conversationId: input.conversationId,
     messageId: input.messageId ?? null,
@@ -299,11 +289,10 @@ async function recordAgentTurn(row: {
   error: string | null;
 }): Promise<void> {
   try {
-    // Log breakdown to console for immediate visibility during development
     console.log(
       `[turn] intent=${row.intent} total=${row.latencyMs}ms ` +
       `ctx=${row.latencyBreakdown.ctx}ms nlu=${row.latencyBreakdown.nlu}ms ` +
-      `exec=${row.latencyBreakdown.exec}ms fast_path=${row.latencyBreakdown.nlu === 0}`
+      `exec=${row.latencyBreakdown.exec}ms fast=${row.latencyBreakdown.nlu === 0}`,
     );
     await supabaseAdmin.from("agent_turns").insert({
       conversation_id: row.conversationId,

@@ -1,9 +1,8 @@
 /**
- * lib/agent/reply.ts — Phase 7
+ * lib/agent/reply.ts
  *
- * Renders localized WhatsApp replies (English / Roman Urdu) from action results.
- * Tone: friendly Pakistani restaurant staff — short, natural, one clear next step.
- * All customer-facing copy lives here (was scattered across order-engine).
+ * All customer-facing copy. One clear next step per reply. No double blank lines.
+ * Tone: friendly Pakistani restaurant staff — short, warm, never robotic.
  */
 import type { CartItem, LanguagePreference, OrderType } from "@/lib/schema.types";
 import { cartSubtotal } from "./cart";
@@ -12,95 +11,102 @@ type Lang = LanguagePreference;
 const ur = (l: Lang) => l === "roman_urdu";
 
 export const reply = {
+
   greeting(l: Lang, appName: string, customerName?: string | null, wasSalam?: boolean): string {
     const name = customerName ? ` ${customerName.split(" ")[0]}` : "";
     if (ur(l)) {
-      const salutation = wasSalam ? "Walaikum Assalam!" : "Assalam o Alaikum!";
-      return `${salutation}${name} 😊 *${appName}* mein khush aamdeed!\nAaj kya order karein ge?`;
+      const sal = wasSalam ? "Walaikum Assalam!" : "Assalam o Alaikum!";
+      return `${sal}${name} 😊 *${appName}* mein khush aamdeed!\nAaj kya order karein ge?`;
     }
-    const salutation = wasSalam ? "Walaikum Assalam!" : "Hello!";
-    return `${salutation}${name} 😊 Welcome to *${appName}*!\nWhat would you like today?`;
+    const sal = wasSalam ? "Walaikum Assalam!" : "Hello!";
+    return `${sal}${name} 😊 Welcome to *${appName}*!\nWhat would you like today?`;
   },
 
-  itemsAdded(l: Lang, added: Array<{ name: string; qty: number; cartQty?: number }>, cart: CartItem[], currency: string): string {
+  itemsAdded(l: Lang, added: Array<{ name: string; newCartQty: number }>, cart: CartItem[], currency: string): string {
     const total = `${currency} ${cartSubtotal(cart)}`;
     if (added.length === 0) {
-      return ur(l)
-        ? `🛒 Ab tak total: ${total}`
-        : `🛒 Current total: ${total}`;
+      return ur(l) ? `🛒 Total: ${total}` : `🛒 Total: ${total}`;
     }
-    // Build a map of current cart quantities for display
-    const cartQtyMap = new Map(cart.map((ci) => [ci.name.toLowerCase(), ci.qty]));
-    const list = added.map((i) => {
-      // Show the current cart quantity for this item (total in cart, not just added delta)
-      const currentQty = cartQtyMap.get(i.name.toLowerCase()) ?? i.qty;
-      return `${currentQty}x ${i.name}`;
-    }).join(", ");
+    const list = added.map((i) => `${i.newCartQty}x ${i.name}`).join(", ");
     return ur(l)
       ? `✅ ${list} add ho gaya. Total: ${total}`
       : `✅ Added: ${list}. Total: ${total}`;
   },
 
+  cartUpdated(l: Lang, cart: CartItem[], currency: string): string {
+    const total = `${currency} ${cartSubtotal(cart)}`;
+    return ur(l)
+      ? `✅ Cart update ho gaya. Total: ${total}`
+      : `✅ Cart updated. Total: ${total}`;
+  },
+
   itemsRemoved(l: Lang, cart: CartItem[], currency: string): string {
     if (cart.length === 0) {
-      return ur(l) ? "Cart khali ho gaya. Kya add karna chahenge?" : "Your cart is empty now. What would you like to add?";
+      return ur(l) ? "Cart khali ho gaya. Kya add karna chahenge?" : "Cart is now empty. Add something?";
     }
     const total = `${currency} ${cartSubtotal(cart)}`;
-    return ur(l) ? `Theek hai, update kar diya. Naya total ${total}.` : `Done, updated. New total ${total}.`;
+    return ur(l) ? `Theek hai, remove ho gaya. Total: ${total}` : `Done. Total: ${total}`;
   },
 
   notFound(l: Lang, query: string, suggestions: string[]): string {
     if (suggestions.length > 0) {
       const opts = suggestions.slice(0, 3).join(", ");
       return ur(l)
-        ? `"${query}" to nahi mila — ye milte-julte hain: ${opts}. Kaunsa chahiye?`
-        : `Couldn't find "${query}". Closest matches: ${opts}. Which one?`;
+        ? `"${query}" nahi mila. Ye try karein: ${opts}`
+        : `"${query}" not found. Try: ${opts}`;
     }
     return ur(l)
-      ? `"${query}" abhi available nahi. Koi aur item batayein ya menu dekhein.`
-      : `"${query}" isn't available. Try another item or browse the menu.`;
+      ? `"${query}" available nahi. Koi aur item batayein.`
+      : `"${query}" isn't available. Try another item.`;
   },
 
-  info(l: Lang, lines: string[]): string {
+  itemList(l: Lang, items: Array<{ name: string; price: number }>, currency: string): string {
+    if (items.length === 0) {
+      return ur(l) ? "Menu abhi available nahi." : "Menu not available right now.";
+    }
+    return items.slice(0, 6).map((i) => `• ${i.name} — ${currency} ${i.price}`).join("\n");
+  },
+
+  info(_l: Lang, lines: string[]): string {
     return lines.join("\n");
   },
 
   recommendation(l: Lang, items: Array<{ name: string; price: number }>, currency: string): string {
     if (items.length === 0) {
-      return ur(l) ? "Aap ko kis tarah ka khana pasand hai? Main suggest karta hoon." : "What kind of food do you feel like? I'll suggest something.";
+      return ur(l) ? "Kya pasand hai aap ko? Main suggest karta hoon." : "What are you in the mood for? I'll suggest something.";
     }
     const list = items.slice(0, 4).map((i) => `• ${i.name} — ${currency} ${i.price}`).join("\n");
-    return ur(l) ? `Ye kaafi popular hain:\n${list}\n\nKoi try karna chahenge?` : `These are popular picks:\n${list}\n\nWant to try any?`;
+    return ur(l) ? `Popular picks:\n${list}` : `Popular picks:\n${list}`;
   },
 
   askOrderType(l: Lang): string {
     return ur(l)
-      ? "Order kaise chahiye — *delivery*, *pickup* ya *dine-in*?"
-      : "How would you like your order — *delivery*, *pickup*, or *dine-in*?";
+      ? "Order kaise chahiye — Delivery, Pickup ya Dine-in?"
+      : "How would you like your order — Delivery, Pickup, or Dine-in?";
   },
 
   askAddress(l: Lang): string {
     return ur(l)
-      ? "📍 Delivery ke liye apna poora address bhej dein."
-      : "📍 Please share your full delivery address.";
+      ? "📍 Delivery address bhej dein (gali, area, city)."
+      : "📍 Please send your delivery address (street, area, city).";
   },
 
   askAddressWithSaved(l: Lang, savedLabel: string): string {
     return ur(l)
-      ? `📍 Delivery address chahiye. Pichli dafa *${savedLabel}* use kiya tha — wahi chahiye ya naya dein?`
-      : `📍 Where should we deliver? Last time we sent to *${savedLabel}* — use that again or enter a new address?`;
+      ? `📍 Pichli dafa *${savedLabel}* use kiya tha — wahi chahiye ya naya?`
+      : `📍 Last time you used *${savedLabel}* — same address or new one?`;
   },
 
   savedAddressConfirmed(l: Lang, address: string): string {
     return ur(l)
-      ? `✅ Theek hai, *${address}* pe deliver karein ge.`
-      : `✅ Got it — delivering to *${address}*.`;
+      ? `📍 *${address}* pe deliver karein ge.`
+      : `📍 Delivering to *${address}*.`;
   },
 
   askDineIn(l: Lang): string {
     return ur(l)
-      ? "Kitne log aa rahe hain aur kis waqt? (e.g. 4 log, 8pm)"
-      : "How many guests, and at what time? (e.g. 4 people, 8pm)";
+      ? "Kitne log aur kis waqt? (misaal: 4 log, 8pm)"
+      : "How many guests and what time? (e.g. 4 people, 8pm)";
   },
 
   askPickupTime(l: Lang): string {
@@ -108,66 +114,76 @@ export const reply = {
   },
 
   summary(l: Lang, cart: CartItem[], orderType: OrderType | null, currency: string): string {
-    const lines = cart.map((i) => {
-      const noteLine = i.notes ? ` _(${i.notes})_` : "";
-      return `  • ${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}${noteLine}`;
+    const itemLines = cart.map((i) => {
+      const note = i.notes ? ` (${i.notes})` : "";
+      return `• ${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}${note}`;
     });
     const total = `${currency} ${cartSubtotal(cart)}`;
     const typeLabel = orderType
-      ? `\n📦 ${orderType === "delivery" ? "Delivery" : orderType === "pickup" ? "Pickup" : "Dine-in"}`
+      ? (orderType === "delivery" ? "🚚 Delivery" : orderType === "pickup" ? "🏃 Pickup" : "🍽️ Dine-in")
       : "";
     const head = ur(l) ? "🛒 Aap ka order:" : "🛒 Your order:";
-    return [head, ...lines, typeLabel, `\n💰 Total: ${total}`].filter(Boolean).join("\n");
+    const lines = [head, ...itemLines];
+    if (typeLabel) lines.push(typeLabel);
+    lines.push(`💰 Total: ${total}`);
+    return lines.join("\n");
   },
 
   orderPlaced(l: Lang, orderNumber: number, currency: string, total: number): string {
     return ur(l)
-      ? `Shukriya! Aap ka order #${orderNumber} confirm ho gaya hai. Total ${currency} ${total} (COD). Jaldi taiyar ho jayega 🙏`
-      : `Thank you! Order #${orderNumber} is confirmed. Total ${currency} ${total} (Cash on Delivery). It'll be ready soon 🙏`;
+      ? `✅ Order #${orderNumber} confirm ho gaya!\n💰 Total: ${currency} ${total} (COD)\nJaldi taiyar ho jayega 🙏`
+      : `✅ Order #${orderNumber} confirmed!\n💰 Total: ${currency} ${total} (Cash on Delivery)\nWe'll have it ready soon 🙏`;
   },
 
   orderCancelled(l: Lang): string {
-    return ur(l) ? "Aap ka order cancel kar diya gaya hai." : "Your order has been cancelled.";
+    return ur(l) ? "Order cancel ho gaya." : "Your order has been cancelled.";
   },
 
   restarted(l: Lang): string {
-    return ur(l) ? "Theek hai, naya order shuru karte hain. Kya chahiye?" : "Okay, let's start a fresh order. What would you like?";
+    return ur(l) ? "Theek hai, naya order shuru karte hain. Kya chahiye?" : "Fresh start! What would you like?";
   },
 
   emptyCart(l: Lang): string {
-    return ur(l) ? "Aap ka cart abhi khali hai. Pehle kuch add kar lein." : "Your cart is empty. Add something first.";
+    return ur(l) ? "Cart abhi khali hai. Kuch add karein pehle." : "Your cart is empty. Add something first.";
   },
 
   clarify(l: Lang, reason: string): string {
     if (reason === "which_option") {
-      return ur(l) ? "Kaunsa wala? Number ya naam bata dein." : "Which one? Tell me the number or name.";
+      return ur(l) ? "Kaunsa wala chahiye? Number ya naam batayein." : "Which one? Give me the number or name.";
+    }
+    if (reason === "empty_cart") {
+      return ur(l) ? "Cart khali hai — pehle kuch add karein." : "Nothing in cart yet — add something first.";
     }
     return ur(l)
-      ? "Maazrat, samajh nahi paya. Thora wazahat se bata dein?"
-      : "Sorry, I didn't quite get that. Could you say it a bit more clearly?";
-  },
-
-  payment(l: Lang): string {
-    return ur(l)
-      ? "Filhaal Cash on Delivery (COD) available hai. Online payment nahi lete."
-      : "We currently accept Cash on Delivery (COD). No online payment needed.";
+      ? "Samajh nahi paya — thora aur wazahat se bata dein?"
+      : "I didn't quite catch that — could you rephrase?";
   },
 
   closed(l: Lang, opening: string): string {
     return ur(l)
-      ? `Hum abhi band hain. ${opening} se orders shuru karte hain. Menu zaroor dekh sakte hain 😊`
-      : `We're closed right now — orders start at ${opening}. Feel free to browse the menu 😊`;
+      ? `Hum abhi band hain. ${opening} ko khulein ge. Menu zaroor dekh saktay hain 😊`
+      : `We're closed right now — we open at ${opening}. Feel free to browse the menu 😊`;
   },
 
   escalated(l: Lang): string {
-    return ur(l) ? "Main aap ko hamare staff se connect kar raha hoon, thori der me reply aayega." : "I'm connecting you with our staff — you'll hear back shortly.";
+    return ur(l)
+      ? "Aap ko hamare staff se connect kar raha hoon — thori der mein jawab milega."
+      : "Connecting you with our staff — someone will reply shortly.";
   },
 
   orderStatus(l: Lang, orderNumber: number, status: string): string {
-    return ur(l) ? `Order #${orderNumber} ka status: ${status}.` : `Order #${orderNumber} status: ${status}.`;
+    return ur(l)
+      ? `Order #${orderNumber}: ${status}`
+      : `Order #${orderNumber}: ${status}`;
   },
 
   noRecentOrder(l: Lang): string {
-    return ur(l) ? "Koi recent order nahi mila." : "I couldn't find a recent order.";
+    return ur(l) ? "Koi recent order nahi mila." : "No recent order found.";
+  },
+
+  payment(l: Lang): string {
+    return ur(l)
+      ? "💵 Sirf Cash on Delivery (COD) available hai."
+      : "💵 We only accept Cash on Delivery (COD).";
   },
 };
