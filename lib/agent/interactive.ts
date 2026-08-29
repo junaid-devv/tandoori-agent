@@ -11,6 +11,7 @@
  * interactive handler) can recognize taps unambiguously.
  */
 import type { LanguagePreference } from "@/lib/schema.types";
+import type { RestaurantSettings } from "@/lib/settings";
 import { extractBaseItemName } from "@/lib/menu/search";
 import type {
   WhatsAppInteractiveListPayload,
@@ -48,19 +49,22 @@ export function variantButtons(
   };
 }
 
-/** Order type as 3 quick-reply buttons. */
-export function orderTypeButtons(l: LanguagePreference): InteractivePayload {
+/** Order type quick-reply buttons (hides Delivery button if delivery_enabled is false). */
+export function orderTypeButtons(l: LanguagePreference, settings?: RestaurantSettings | null): InteractivePayload {
+  const buttons: Array<{ id: string; title: string }> = [];
+  if (settings?.delivery_enabled !== false) {
+    buttons.push({ id: "ordertype:delivery", title: ur(l) ? "Delivery" : "Delivery" });
+  }
+  buttons.push({ id: "ordertype:pickup", title: ur(l) ? "Pickup" : "Pickup" });
+  buttons.push({ id: "ordertype:dine-in", title: ur(l) ? "Dine-in" : "Dine-in" });
+
   return {
     kind: "buttons",
     payload: {
       body: ur(l)
         ? "Order kaise chahiye?"
         : "How would you like your order?",
-      buttons: [
-        { id: "ordertype:delivery", title: ur(l) ? "Delivery" : "Delivery" },
-        { id: "ordertype:pickup", title: ur(l) ? "Pickup" : "Pickup" },
-        { id: "ordertype:dine-in", title: ur(l) ? "Dine-in" : "Dine-in" },
-      ],
+      buttons,
     },
   };
 }

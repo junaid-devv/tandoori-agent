@@ -214,6 +214,49 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     }
   }
 
+  // ── 1e) Order type, Checkout, Confirm & Navigation button text fast-paths ───
+  if (!understanding) {
+    const trimmed = input.messageText.trim();
+    if (ctx.view.stage === "confirming" && /^(confirm\s*✓?|confirm order|place order|order confirm|haan confirm|yes confirm)$/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["confirm_order"],
+        primary_intent: "confirm_order",
+        notes: "fast_path_confirm",
+      };
+    } else if (/^(wapas jao|go back|back|cart dekhein|view cart)$/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["view_cart"],
+        primary_intent: "view_cart",
+        notes: "fast_path_view_cart",
+      };
+    } else if (/^(aur dalein|aur add karein|add more|aur kuch)$/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["browse_menu"],
+        primary_intent: "browse_menu",
+        notes: "fast_path_add_more",
+      };
+    } else if (/^(checkout|proceed to checkout|bill)$/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["confirm_order"],
+        primary_intent: "confirm_order",
+        notes: "fast_path_checkout",
+      };
+    } else if (ctx.view.stage === "choosing_order_type" && /^(delivery|pickup|dine-in|dine in)$/i.test(trimmed)) {
+      const raw = trimmed.toLowerCase().replace(" ", "-");
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["set_order_type"],
+        primary_intent: "set_order_type",
+        order_type: raw === "delivery" || raw === "pickup" || raw === "dine-in" ? raw : null,
+        notes: "fast_path_order_type",
+      };
+    }
+  }
+
   // ── 2) NLU ─────────────────────────────────────────────────────────────────
   const nluStart = Date.now();
   if (!understanding) {

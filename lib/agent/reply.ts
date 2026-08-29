@@ -67,6 +67,12 @@ export const reply = {
       : `"${query}" isn't on our menu. Would you like to view the menu?`;
   },
 
+  itemUnavailable(l: Lang, name: string): string {
+    return ur(l)
+      ? `Maaf kijiyega, *${name}* abhi available nahi hai (out of stock).`
+      : `Sorry, *${name}* is currently out of stock.`;
+  },
+
   itemVariants(l: Lang, baseName: string, variants: Array<{ name: string; price: number }>, currency: string): string {
     const list = variants.map((v) => `• ${v.name} — ${currency} ${v.price}`).join("\n");
     return ur(l)
@@ -86,6 +92,13 @@ export const reply = {
       return ur(l) ? "Menu abhi available nahi." : "Menu not available right now.";
     }
     return items.slice(0, 6).map((i) => `• ${i.name} — ${currency} ${i.price}`).join("\n");
+  },
+
+  categoryList(l: Lang, categories: string[]): string {
+    const list = categories.map((c) => `• ${c}`).join("\n");
+    return ur(l)
+      ? `Hamare menu categories:\n${list}\nKaunsi category dekhna chahenge?`
+      : `Our menu categories:\n${list}\nWhich category would you like to explore?`;
   },
 
   info(_l: Lang, lines: string[]): string {

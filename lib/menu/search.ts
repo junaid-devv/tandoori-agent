@@ -46,7 +46,7 @@ const EMBEDDING_API_KEY = process.env.MENU_EMBEDDING_API_KEY || process.env.OPEN
 // reduction. We MUST request the same dimensionality used to store menu
 // embeddings AND the DB column (vector(1536)), or cosine similarity is invalid.
 const EMBEDDING_DIMENSIONS = Number(process.env.MENU_EMBEDDING_DIMENSIONS) || 1536;
-const SIMILARITY_THRESHOLD = Number(process.env.MENU_MATCH_THRESHOLD) || 0.45;
+const SIMILARITY_THRESHOLD = Number(process.env.MENU_MATCH_THRESHOLD) || 0.60;
 const QUERY_EMBEDDING_TTL_MS = Number(process.env.MENU_QUERY_EMBEDDING_TTL_MS) || 10 * 60_000;
 const MIN_EMBEDDABLE_LEN = 3; // shorter than this -> lexical fallback
 
@@ -307,9 +307,33 @@ export type ItemResolutionResult =
   | { kind: "ambiguous"; query: string; matches: ResolvedMenuItem[] }
   | { kind: "not_found"; query: string; suggestions: ResolvedMenuItem[] };
 
+function isCandidateRelevant(query: string, candidate: ResolvedMenuItem): boolean {
+  const sim = candidate.similarity ?? 0;
+  if (sim >= 0.72) return true;
+
+  const qTokens = normalize(query).split(" ").filter((t) => t.length >= 3);
+  const nameNorm = normalize(candidate.name);
+  const catNorm = normalize(candidate.category || "");
+  const descNorm = normalize(candidate.description || "");
+
+  // Substring check
+  const qCompact = compact(query);
+  const nameCompact = compact(candidate.name);
+  if (qCompact.length >= 4 && (nameCompact.includes(qCompact) || qCompact.includes(nameCompact))) {
+    return true;
+  }
+
+  // Token overlap in name or category
+  const matchesToken = qTokens.some((t) => nameNorm.includes(t) || catNorm.includes(t) || descNorm.includes(t));
+  if (matchesToken && sim >= 0.30) return true;
+
+  return false;
+}
+
 /**
  * Detailed item resolution that detects size variants (Half/Full) and ambiguity.
  * Prevents blindly adding Full when Half/Full options exist and no size was specified.
+ * Accurately classifies items not on the menu as not_found rather than suggesting unrelated food.
  */
 export async function resolveItemDetailed(
   branchId: string,
@@ -344,15 +368,21 @@ export async function resolveItemDetailed(
     return { kind: "not_found", query: trimmed, suggestions: [] };
   }
 
-  const top = available[0];
+  // Filter available candidates by semantic relevance to prevent unrelated suggestions
+  const relevantCandidates = available.filter((m) => isCandidateRelevant(trimmed, m));
+  if (relevantCandidates.length === 0) {
+    return { kind: "not_found", query: trimmed, suggestions: [] };
+  }
+
+  const top = relevantCandidates[0];
   const topSim = top.similarity ?? 0;
-  if (topSim < 0.25) {
-    return { kind: "not_found", query: trimmed, suggestions: available.slice(0, 3) };
+  if (topSim < 0.30) {
+    return { kind: "not_found", query: trimmed, suggestions: [] };
   }
 
   // 1) If user specified a size (e.g. "half", "full"), find the candidate matching that size
   if (requestedSize) {
-    const sizeMatch = available.find((c) => {
+    const sizeMatch = relevantCandidates.find((c) => {
       const { variant } = extractBaseItemName(c.name);
       return (
         (variant && variant.toLowerCase() === requestedSize) ||
@@ -366,7 +396,7 @@ export async function resolveItemDetailed(
 
   // 2) Check if top candidates share the same base name with multiple size variants
   const topBase = extractBaseItemName(top.name);
-  const sameBaseVariants = available.filter((c) => {
+  const sameBaseVariants = relevantCandidates.filter((c) => {
     const cBase = extractBaseItemName(c.name);
     return cBase.baseName.toLowerCase() === topBase.baseName.toLowerCase() && cBase.variant !== null;
   });
@@ -380,10 +410,10 @@ export async function resolveItemDetailed(
   }
 
   // 3) Check for broad/ambiguous query matching multiple distinct dishes
-  const distinctBases = [...new Set(available.slice(0, 5).map((c) => extractBaseItemName(c.name).baseName.toLowerCase()))];
+  const distinctBases = [...new Set(relevantCandidates.slice(0, 5).map((c) => extractBaseItemName(c.name).baseName.toLowerCase()))];
   const isBroadSingleWord = /^(karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|juice|dessert|fish|boti)$/i.test(trimmed);
-  if ((distinctBases.length > 1 && isBroadSingleWord) || (distinctBases.length > 2 && topSim < 0.85)) {
-    return { kind: "ambiguous", query: trimmed, matches: available.slice(0, 5) };
+  if ((distinctBases.length > 1 && isBroadSingleWord) || (distinctBases.length > 1 && topSim < 0.85)) {
+    return { kind: "ambiguous", query: trimmed, matches: relevantCandidates.slice(0, 5) };
   }
 
   // 4) Single exact / clear best match

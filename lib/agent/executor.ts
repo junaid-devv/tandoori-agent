@@ -31,6 +31,7 @@ import {
 import type { TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
 import { findMatchingDeliveryArea, buildDeliveryAreaHint } from "./delivery";
+import { parseCustomerTimeToIso } from "@/lib/restaurant-time";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export interface ExecutionResult {
@@ -76,6 +77,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   const replies: string[] = [];
   let placeOrder = false;
   let usedSemantic = false;
+  let hasDisambiguation = false;
   let interactive: InteractivePayload | null = null;
 
   // ── Helpers ──────────────────────────────────────────────────────────────
@@ -177,24 +179,18 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
 
         for (const m of mentions) {
-          let query = m.query;
+          let query = m.query || "";
           if (isDelta && query === "__last_item__" && cart.length > 0) {
             query = cart[cart.length - 1].name;
           }
-          const res = await resolveItemDetailed(branchId, query, m.size ?? undefined, ctx.menu);
+          if (!query.trim()) continue;
 
+          const res = await resolveItemDetailed(branchId, query, m.size, ctx.menu);
           if (res.kind === "exact") {
             const resolved = res.item;
             if (resolved.method === "vector") usedSemantic = true;
             if (resolved.is_available === false) {
-              const { matches } = await searchMenu(branchId, query, 4, ctx.menu);
-              const availMatches = matches.filter((x) => x.is_available !== false);
-              replies.push(reply.notFound(lang, query, availMatches.map((x) => x.name), cats));
-              if (availMatches.length) {
-                patch.last_shown_options = availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price }));
-                patch.last_shown_options_at = new Date().toISOString();
-                setInteractive(itemPickList(lang, availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
-              }
+              replies.push(reply.itemUnavailable(lang, resolved.name));
               continue;
             }
             cart = addToCart(cart, {
@@ -210,6 +206,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1) });
           } else if (res.kind === "variants") {
             // Item has multiple sizes (e.g. Half / Full) and user did not specify size
+            hasDisambiguation = true;
             patch.last_shown_options = res.variants.map((v) => ({ id: v.id, name: v.name, price: v.price }));
             patch.last_shown_options_at = new Date().toISOString();
             replies.push(reply.itemVariants(lang, res.baseName, res.variants, cur));
@@ -221,12 +218,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             }
           } else if (res.kind === "ambiguous") {
             // Broad query matches multiple distinct items (e.g. "Karahi" -> Chicken Karahi, Mutton Karahi, etc.)
+            hasDisambiguation = true;
             patch.last_shown_options = res.matches.map((m) => ({ id: m.id, name: m.name, price: m.price }));
             patch.last_shown_options_at = new Date().toISOString();
             replies.push(reply.ambiguousMatches(lang, res.query, res.matches, cur));
             setInteractive(itemPickList(lang, res.matches.map((m) => ({ id: m.id, name: m.name, price: m.price, category: m.category })), cur));
           } else {
-            // not_found (e.g. "Pizza")
+            // not_found (e.g. "Pizza", "Milkshake")
             if (res.suggestions.length > 0) {
               patch.last_shown_options = res.suggestions.map((x) => ({ id: x.id, name: x.name, price: x.price }));
               patch.last_shown_options_at = new Date().toISOString();
@@ -249,23 +247,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         break;
       }
 
-      // ── Offer upsell ─────────────────────────────────────────────────────
-      case "offer_upsell": {
-        patch.upsell_offered = true;
-        break;
-      }
-
-      // ── Remove items ─────────────────────────────────────────────────────
       case "remove_items": {
         const removals = (action.payload?.removals as TurnUnderstanding["removals"]) ?? u.removals;
         for (const r of removals) {
           const resolved = await resolveItem(branchId, r.query, ctx.menu);
           cart = removeFromCart(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? r.query, qty: r.qty });
         }
-        // Suppress the itemsRemoved reply when an add_items action is also running
-        // in this same turn (e.g. "Pizza not french fries"). Emitting "Cart is now
-        // empty" followed immediately by "Added: X" produces a contradictory message.
-        // The add_items reply that follows will reflect the final cart state.
         const hasAddItems = transition.actions.some((a) => a.kind === "add_items");
         if (!hasAddItems) {
           replies.push(reply.itemsRemoved(lang, cart, cur));
@@ -274,7 +261,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         break;
       }
 
-      // ── Update quantity ──────────────────────────────────────────────────
       case "update_quantity": {
         const items = (action.payload?.items as TurnUnderstanding["items"]) ?? u.items;
         for (const m of items) {
@@ -286,94 +272,83 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         break;
       }
 
-      // ── Menu browse / item info ──────────────────────────────────────────
-      case "show_menu":
+      case "offer_upsell": {
+        patch.upsell_offered = true;
+        break;
+      }
+
+      // ── Information ───────────────────────────────────────────────────────
       case "answer_info": {
-        const query = (action.payload?.query as string) ?? u.info_query ?? "";
-        const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
-
-        if (query) {
-          const res = await resolveItemDetailed(branchId, query, undefined, ctx.menu);
-          if (res.kind === "not_found") {
-            if (res.suggestions.length > 0) {
-              patch.last_shown_options = res.suggestions.map((x) => ({ id: x.id, name: x.name, price: x.price }));
-              patch.last_shown_options_at = new Date().toISOString();
-              replies.push(reply.notFound(lang, query, res.suggestions.map((x) => x.name), cats));
-              setInteractive(itemPickList(lang, res.suggestions.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
-            } else {
-              const ans = await groundedAnswer({
-                question: `customer asked about "${query}" — state it's not on the menu and suggest available items from our categories`,
-                language: lang,
-                appName: input.appName,
-                currency: cur,
-                settings: ctx.settings,
-                menu: ctx.menu,
-                isOpenNow: ctx.isOpenNow,
-              });
-              replies.push(ans ?? reply.notFound(lang, query, [], cats));
-              if (cats.length > 0) setInteractive(categoryList(lang, cats));
-            }
-            break;
-          }
-
-          if (res.kind === "variants") {
-            patch.last_shown_options = res.variants.map((v) => ({ id: v.id, name: v.name, price: v.price }));
-            patch.last_shown_options_at = new Date().toISOString();
-            replies.push(reply.itemVariants(lang, res.baseName, res.variants, cur));
-            const vb = variantButtons(lang, res.variants, cur);
-            setInteractive(vb || itemPickList(lang, res.variants.map((v) => ({ id: v.id, name: v.name, price: v.price, category: v.category })), cur));
-            break;
-          }
-
-          if (res.kind === "ambiguous") {
-            patch.last_shown_options = res.matches.map((m) => ({ id: m.id, name: m.name, price: m.price }));
-            patch.last_shown_options_at = new Date().toISOString();
-            replies.push(reply.ambiguousMatches(lang, res.query, res.matches, cur));
-            setInteractive(itemPickList(lang, res.matches.map((m) => ({ id: m.id, name: m.name, price: m.price, category: m.category })), cur));
-            break;
-          }
-
-          // Exact single item inquiry
-          if (res.kind === "exact") {
-            patch.last_shown_options = [{ id: res.item.id, name: res.item.name, price: res.item.price }];
-            patch.last_shown_options_at = new Date().toISOString();
-            replies.push(`• ${res.item.name} — ${cur} ${res.item.price}`);
-            setInteractive(itemPickList(lang, [{ id: res.item.id, name: res.item.name, price: res.item.price, category: res.item.category }], cur));
-            break;
-          }
+        const q = String(action.payload?.info_query ?? u.info_query ?? "").trim();
+        if (/delivery|deliver|ghar/i.test(q) && !/karahi|burger|biryani|tikka|kabab/i.test(q)) {
+          replies.push(deliveryInfoAnswer());
+          break;
+        }
+        if (/hours|timing|open|close|kahan|location|address/i.test(q)) {
+          replies.push(hoursAnswer());
+          break;
+        }
+        if (/payment|cod|cash|card|online/i.test(q)) {
+          replies.push(paymentAnswer());
+          break;
+        }
+        // Menu item / general question:
+        const ans = await grounded(q || "what are your popular items?");
+        if (ans) {
+          replies.push(ans);
         } else {
-          // Bare "menu" — show categories
-          if (cats.length > 1) setInteractive(categoryList(lang, cats));
-          const matches = ctx.menu.slice(0, 6).map((m) => ({
-            id: m.id, name: m.name, price: m.price, category: m.category,
-            description: null, is_available: true, similarity: null, method: "lexical" as const,
-          }));
-          patch.last_shown_options = matches.map((mm) => ({ id: mm.id, name: mm.name, price: mm.price }));
-          patch.last_shown_options_at = new Date().toISOString();
-          replies.push(reply.itemList(lang, matches.map((mm) => ({ name: mm.name, price: mm.price })), cur));
+          // Fallback to searching the menu
+          const searchRes = await resolveItemDetailed(branchId, q, undefined, ctx.menu);
+          if (searchRes.kind === "exact") {
+            const { matches } = await searchMenu(branchId, q, 3, ctx.menu);
+            if (matches.length) {
+              replies.push(reply.itemList(lang, matches, cur));
+              setInteractive(itemPickList(lang, matches, cur));
+            } else {
+              replies.push(hoursAnswer());
+            }
+          } else if (searchRes.kind === "variants") {
+            replies.push(reply.itemVariants(lang, searchRes.baseName, searchRes.variants, cur));
+            setInteractive(itemPickList(lang, searchRes.variants, cur));
+          } else if (searchRes.kind === "ambiguous") {
+            replies.push(reply.ambiguousMatches(lang, searchRes.query, searchRes.matches, cur));
+            setInteractive(itemPickList(lang, searchRes.matches, cur));
+          } else {
+            const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
+            replies.push(reply.notFound(lang, q, [], cats));
+            if (cats.length > 0) {
+              setInteractive(categoryList(lang, cats));
+            }
+          }
         }
         break;
       }
 
-      // ── Deterministic factual answers ────────────────────────────────────
-      case "answer_hours_location":
-        replies.push(hoursAnswer());
-        break;
+      case "show_menu": {
+        const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
+        const categoryQuery = action.payload?.category as string | undefined;
 
-      case "answer_payment":
-        replies.push(paymentAnswer());
-        break;
+        if (categoryQuery) {
+          const categoryItems = ctx.menu.filter((m) =>
+            m.category && m.category.toLowerCase().includes(categoryQuery.toLowerCase())
+          );
+          if (categoryItems.length > 0) {
+            patch.last_shown_options = categoryItems.map((m) => ({ id: m.id, name: m.name, price: m.price }));
+            patch.last_shown_options_at = new Date().toISOString();
+            patch.last_shown_category = categoryQuery;
+            replies.push(reply.itemList(lang, categoryItems, cur));
+            setInteractive(itemPickList(lang, categoryItems, cur));
+            break;
+          }
+        }
 
-      case "answer_delivery_info":
-        replies.push(deliveryInfoAnswer());
-        break;
-
-      // ── General grounded answer (non-menu question) ───────────────────────
-      case "answer_grounded": {
-        const question = (action.payload?.query as string) ?? u.info_query ?? input.messageTextForFallback ?? "";
-        if (!question) break;
-        const ans = await grounded(question);
-        if (ans) replies.push(ans);
+        // Generic category list
+        if (cats.length > 0) {
+          replies.push(reply.categoryList(lang, cats));
+          setInteractive(categoryList(lang, cats));
+        } else {
+          replies.push(hoursAnswer());
+        }
         break;
       }
 
@@ -385,20 +360,28 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             replies.push(reply.deliveryDisabled(lang));
             patch.order_type = null;
             patch.stage = "choosing_order_type";
-            setInteractive(orderTypeButtons(lang));
+            setInteractive(orderTypeButtons(lang, ctx.settings));
           } else {
             patch.order_type = chosen;
-            // No text reply here — the next action (promptForStage) will reply
           }
         } else {
           replies.push(reply.askOrderType(lang));
-          setInteractive(orderTypeButtons(lang));
+          setInteractive(orderTypeButtons(lang, ctx.settings));
         }
         break;
       }
 
       // ── Collect delivery address ─────────────────────────────────────────
       case "collect_delivery_address": {
+        if (ctx.settings.delivery_enabled === false) {
+          if (!replies.some((r) => r.includes("delivery") || r.includes("Delivery"))) {
+            replies.push(reply.deliveryDisabled(lang));
+          }
+          patch.order_type = null;
+          patch.stage = "choosing_order_type";
+          setInteractive(orderTypeButtons(lang, ctx.settings));
+          break;
+        }
         const address = action.payload?.address as string | undefined;
         const savedAddrNote = u.notes?.match(/^use_saved_address:(.+)$/);
         if (savedAddrNote) {
@@ -456,7 +439,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const guests = action.payload?.guests as number | null | undefined;
         const rtime = action.payload?.reservation_time as string | null | undefined;
         if (guests) patch.guests = guests;
-        if (rtime) patch.reservation_time = rtime;
+        if (rtime) patch.reservation_time = parseCustomerTimeToIso(rtime, ctx.settings.timezone);
         if (!guests && !rtime) replies.push(reply.askDineIn(lang));
         break;
       }
@@ -464,8 +447,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       // ── Collect pickup time ──────────────────────────────────────────────
       case "collect_pickup_time": {
         const ptime = action.payload?.pickup_time as string | undefined;
-        if (ptime) patch.pickup_time = ptime;
-        else replies.push(reply.askPickupTime(lang));
+        if (ptime) {
+          patch.pickup_time = parseCustomerTimeToIso(ptime, ctx.settings.timezone);
+        } else {
+          replies.push(reply.askPickupTime(lang));
+        }
         break;
       }
 
@@ -475,7 +461,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (cart.length === 0) {
           replies.push(reply.emptyCart(lang));
         } else {
-          // show_cart: omit "View Cart" button since we're already showing the cart
           replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null, ctx.settings));
           setInteractive(cartActionButtons(lang, { hideViewCart: true }));
         }
@@ -500,7 +485,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (!orderType) {
           replies.push(reply.askOrderType(lang));
           patch.stage = "choosing_order_type";
-          setInteractive(orderTypeButtons(lang));
+          setInteractive(orderTypeButtons(lang, ctx.settings));
           break;
         }
         const deliveryAddr = patch.address ?? ctx.state.address;
@@ -510,7 +495,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             replies.push(reply.deliveryDisabled(lang));
             patch.stage = "choosing_order_type";
             patch.order_type = null;
-            setInteractive(orderTypeButtons(lang));
+            setInteractive(orderTypeButtons(lang, ctx.settings));
             break;
           }
           if (!deliveryAddr?.trim()) {
@@ -539,6 +524,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               ? Number(ctx.settings.delivery_fee) || 0
               : 0;
 
+          const pTime = patch.pickup_time ?? ctx.state.pickup_time;
+          const finalPickupTime = pTime ? parseCustomerTimeToIso(pTime, ctx.settings.timezone) : null;
+          const rTime = patch.reservation_time ?? ctx.state.reservation_time;
+          const finalReservationTime = rTime ? parseCustomerTimeToIso(rTime, ctx.settings.timezone) : null;
+
           const orderId = await orderRepo.place({
             conversationId: input.conversationId,
             branchId,
@@ -548,8 +538,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             customerInstructions: ctx.state.customer_instructions,
             address: deliveryAddr,
             guests: patch.guests ?? ctx.state.guests,
-            reservationTime: patch.reservation_time ?? ctx.state.reservation_time,
-            pickupTime: patch.pickup_time ?? ctx.state.pickup_time,
+            reservationTime: finalReservationTime,
+            pickupTime: finalPickupTime,
             deliveryFee,
           });
           const placed = await orderRepo.getById(orderId);
@@ -569,7 +559,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         } catch (err) {
           const msg = err instanceof Error ? err.message : "order failed";
           console.error("[executor] place_order failed:", msg);
-          // Parse RPC error and give actionable reply; reset stage cleanly
           if (/min.*delivery|minimum.*delivery/i.test(msg)) {
             const sub = cartSubtotal(cart);
             replies.push(reply.minDeliveryNotMet(lang, sub, ctx.settings.min_delivery_amount, cur));
@@ -584,7 +573,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             replies.push(reply.deliveryDisabled(lang));
             patch.stage = "choosing_order_type";
             patch.order_type = null;
-            setInteractive(orderTypeButtons(lang));
+            setInteractive(orderTypeButtons(lang, ctx.settings));
           } else if (/address.*required|required.*address/i.test(msg)) {
             replies.push(reply.askAddress(lang));
             patch.stage = "collecting_delivery";
@@ -601,7 +590,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
                 : "Couldn't place the order. Please try again shortly.",
             );
             patch.stage = "confirming";
-            // Re-show summary so they can retry immediately
             replies.push(reply.summary(lang, cart, orderType, cur, deliveryAddr ?? null, ctx.settings));
             setInteractive(confirmButtons(lang));
           }
@@ -630,10 +618,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         replies.push(reply.restarted(lang));
         break;
 
-      case "reorder_previous":
-        replies.push(reply.noRecentOrder(lang));
-        break;
-
       // ── Status ───────────────────────────────────────────────────────────
       case "report_order_status": {
         const recent = await orderRepo.getLatestForConversation(input.conversationId);
@@ -641,6 +625,20 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         else replies.push(reply.noRecentOrder(lang));
         break;
       }
+
+      // ── Escalate ──────────────────────────────────────────────────────────
+      case "escalate_human":
+        patch.is_bot_active = false;
+        patch.escalation_reason = "customer_requested";
+        patch.escalated_at = new Date().toISOString();
+        replies.push(reply.escalated(lang));
+        return {
+          replyText: replies.filter(Boolean).join("\n").trim() || reply.escalated(lang),
+          statePatch: patch,
+          placeOrder: false,
+          escalate: true,
+          usedSemanticSearch: usedSemantic,
+        };
 
       // ── Smalltalk ────────────────────────────────────────────────────────
       case "smalltalk":
@@ -672,8 +670,22 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
   patch.cart = cart;
 
+  // Filter replies: If size disambiguation is active (variantButtons), do not ask for delivery address or pickup time in the same message
+  let finalReplies = replies.filter(Boolean);
+  if (hasDisambiguation) {
+    finalReplies = finalReplies.filter((r) => {
+      if (r.includes("Delivery address bhej") || r.includes("Please send your delivery address")) return false;
+      if (r.includes("Pickup kis waqt") || r.includes("What time will you pick up")) return false;
+      if (r.includes("Kitne log") || r.includes("How many guests")) return false;
+      return true;
+    });
+  }
+
+  // De-duplicate identical consecutive lines
+  finalReplies = finalReplies.filter((line, idx, arr) => idx === 0 || line !== arr[idx - 1]);
+
   return {
-    replyText: replies.filter(Boolean).join("\n").trim() || reply.clarify(lang, "fallback"),
+    replyText: finalReplies.join("\n").trim() || reply.clarify(lang, "fallback"),
     statePatch: patch,
     placeOrder,
     escalate: false,

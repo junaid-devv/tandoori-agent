@@ -146,9 +146,10 @@ function scenarioRomanUrduDineIn() {
     language: "roman_urdu",
   });
   const t = nextTransition(view, u);
-  assert.equal(t.nextStage, "collecting_dinein");
+  assert.equal(t.nextStage, "confirming");
   assert.ok(t.actions.some((a) => a.kind === "ask_order_type"));
   assert.ok(t.actions.some((a) => a.kind === "collect_dinein_details"));
+  assert.ok(t.actions.some((a) => a.kind === "show_summary"));
 
   pass("Scenario 2: Roman Urdu Dine-in multi-intent selection verified.");
 }

@@ -206,11 +206,16 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
     if (chosen) {
       actions.push({ kind: "ask_order_type", payload: { chosen } });
       nextStage = stageForOrderType(chosen);
+      const hasSlotInThisTurn =
+        (chosen === "delivery" && Boolean(u.address || view.has_address)) ||
+        (chosen === "pickup" && Boolean(u.pickup_time || view.has_pickup_time)) ||
+        (chosen === "dine-in" && Boolean((u.guests || u.reservation_time) || view.has_dinein_details));
+
       const missing = missingSlotForType(chosen, view);
-      if (missing) {
+      if (missing && !hasSlotInThisTurn) {
         actions.push(promptForStage(missing));
         nextStage = missing;
-      } else if (view.cart.length > 0) {
+      } else if (view.cart.length > 0 && hasSlotInThisTurn) {
         actions.push({ kind: "show_summary" });
         nextStage = "confirming";
       }
@@ -221,7 +226,7 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   }
 
   // 7) Address / slot collection
-  const orderTypeAlreadySet = Boolean(view.order_type && !u.order_type);
+  const orderTypeAlreadySet = Boolean(view.order_type || u.order_type);
   if (u.address) {
     actions.push({ kind: "collect_delivery_address", payload: { address: u.address } });
     if (orderTypeAlreadySet && view.cart.length > 0) {
@@ -256,7 +261,7 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
       actions.push({ kind: "ask_clarification", payload: { reason: "empty_cart" } });
     } else {
       const missing = missingSlot(view);
-      if (missing) {
+      if (missing && view.stage !== "confirming") {
         nextStage = missing;
         actions.push(promptForStage(missing));
       } else {
@@ -269,14 +274,8 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   // 9) Bare affirm — resolve by stage context
   if (u.primary_intent === "affirm" && actions.length === 0) {
     if (view.stage === "confirming") {
-      const missing = missingSlot(view);
-      if (missing) {
-        nextStage = missing;
-        actions.push(promptForStage(missing));
-      } else if (view.cart.length > 0) {
-        actions.push({ kind: "place_order" });
-        nextStage = "placed";
-      }
+      actions.push({ kind: "place_order" });
+      nextStage = "placed";
     } else if (view.stage === "building_cart" && view.upsell_offered) {
       actions.push({ kind: "add_items", payload: { upsell: true } });
     } else if (view.awaiting_selection) {
