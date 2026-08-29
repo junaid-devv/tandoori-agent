@@ -1,8 +1,4 @@
-/**
- * scripts/alias-hooks.mjs — ESM resolve hook that maps "@/..." to the repo root.
- * Loaded via: node --import ./scripts/alias-register.mjs ...
- */
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, fileURLToPath } from "node:url";
 import path from "node:path";
 import fs from "node:fs";
 
@@ -36,5 +32,11 @@ export async function resolve(specifier, context, nextResolve) {
     const target = resolveWithExt(path.join(ROOT, specifier.slice(2)));
     return nextResolve(pathToFileURL(target).href, context);
   }
+  if ((specifier.startsWith("./") || specifier.startsWith("../")) && context.parentURL?.startsWith("file:")) {
+    const parentDir = path.dirname(fileURLToPath(context.parentURL));
+    const target = resolveWithExt(path.resolve(parentDir, specifier));
+    return nextResolve(pathToFileURL(target).href, context);
+  }
   return nextResolve(specifier, context);
 }
+

@@ -11,7 +11,7 @@
     "check:interactive-guards": "node scripts/check-interactive-guards.mjs",
     "check:parser-regressions": "node scripts/check-parser-regressions.mjs",
     "check:intent-phrase-table": "node scripts/check-intent-phrase-table.mjs",
-    "check:flow-handlers": "node --no-warnings --experimental-strip-types scripts/check-order-flow-handlers.mjs",
+    "check:flow-handlers": "node --no-warnings --import ./scripts/alias-register.mjs --experimental-strip-types scripts/check-order-flow-handlers.mjs",
     "check:upsell-qty-regression": "node --no-warnings --experimental-strip-types scripts/check-upsell-quantity-regression.mjs",
     "check:webhook-helpers": "node --no-warnings --experimental-strip-types scripts/check-webhook-helpers.mjs",
     "check:urdu-voice-regressions": "node --no-warnings --experimental-strip-types scripts/check-urdu-voice-regressions.mjs",

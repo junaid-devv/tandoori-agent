@@ -11,6 +11,7 @@
  * interactive handler) can recognize taps unambiguously.
  */
 import type { LanguagePreference } from "@/lib/schema.types";
+import { extractBaseItemName } from "@/lib/menu/search";
 import type {
   WhatsAppInteractiveListPayload,
   WhatsAppReplyButtonPayload,
@@ -21,6 +22,31 @@ export type InteractivePayload =
   | { kind: "list"; payload: WhatsAppInteractiveListPayload };
 
 const ur = (l: LanguagePreference) => l === "roman_urdu";
+
+/** Quick-reply buttons for 2-3 item variants (e.g. Half / Full). */
+export function variantButtons(
+  l: LanguagePreference,
+  variants: Array<{ id: string; name: string; price: number }>,
+  currency: string,
+  bodyText?: string,
+): InteractivePayload | null {
+  if (variants.length === 0 || variants.length > 3) return null;
+  const buttons = variants.map((v) => {
+    const { variant } = extractBaseItemName(v.name);
+    const label = variant ? `${variant.toUpperCase()} (${currency} ${v.price})` : v.name;
+    return {
+      id: `item:${v.id}`,
+      title: label.slice(0, 20),
+    };
+  });
+  return {
+    kind: "buttons",
+    payload: {
+      body: bodyText || (ur(l) ? "Kaunsa size chahiye?" : "Which size would you like?"),
+      buttons,
+    },
+  };
+}
 
 /** Order type as 3 quick-reply buttons. */
 export function orderTypeButtons(l: LanguagePreference): InteractivePayload {

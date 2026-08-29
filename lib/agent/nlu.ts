@@ -150,6 +150,8 @@ const SYSTEM_RULES = [
   "- If the customer just says a number like '2' or '1' after being shown a list, it's a list selection (handled before NLU).",
   "",
   "For items: put the customer's own wording in `query` (do NOT invent or normalize to a menu name — menu resolution happens later via semantic search). Capture qty/size/addons/notes when present. Capture any special instructions in `notes` — e.g. 'kam masala', 'extra spicy', 'less oil', 'no onions'.",
+  "SIZE / PORTIONS: When the customer mentions 'half', 'full', 'quarter', 'single', 'double', 'large', 'small', 'medium', '6 pcs', '4 pcs', capture it in `size` (e.g. '1 half chicken karahi' -> size: 'half').",
+  "FOOD ITEMS & DISH MENTIONS: If the customer mentions, asks about, or wants any food item, dish, or cuisine (e.g. 'pizza', 'karahi', 'biryani', 'burger', 'pasta', 'beef kabab', 'chai', 'dessert', 'chicken handi'), NEVER return `unknown`. If they simply name or ask about a food item (e.g. 'pizza', 'karahi', 'beef kabab'), set intent to `add_items` (with `items: [{ query: ... }]`) or `ask_item_info` (with `info_query`). Menu availability, variant selection, and disambiguation are handled downstream.",
   "ORDER TYPE: if the customer says 'deliver karo / deliver krdo / delivery chahiye / ghar pe bhejo / ye deliver karo' (even without specifying an address), use intent `set_order_type` with `order_type: 'delivery'`. Do NOT use `unknown`.",
   "CORRECTION PATTERN — VERY IMPORTANT: When the customer says 'X not Y', 'X chahiye Y nahi', 'Y nahi X chahiye', 'not Y, X chahiye', or any variant meaning they want X and NOT Y — X is the item they WANT (add_items) and Y is the item they do NOT want (remove_items). The FIRST-named correction is typically what they WANT. Example: 'Pizza not french fries' = add_items(pizza) + remove_items(french_fries). Example: 'Zinger nahi biryani chahiye' = add_items(biryani) + remove_items(zinger). Never confuse the direction.",
   "`info_query`: whenever the customer ASKS anything (menu/item price, what's available, recommendations, delivery, timings, location, payment, halal, or any other question), put the customer's question here (rephrased concisely in English) so we can answer it from restaurant facts. ALWAYS fill this for question-type intents.",
@@ -164,6 +166,42 @@ const SYSTEM_RULES = [
 
 // A handful of REAL-style examples across languages/edge cases. Kept small on purpose.
 const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> = [
+  {
+    user: "pizza",
+    assistant: {
+      intents: ["ask_item_info"],
+      primary_intent: "ask_item_info",
+      language: "english",
+      info_query: "pizza availability",
+    },
+  },
+  {
+    user: "karahi",
+    assistant: {
+      intents: ["add_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [{ query: "karahi", qty: 1, size: null, addons: [], notes: null }],
+    },
+  },
+  {
+    user: "beef kabab",
+    assistant: {
+      intents: ["add_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [{ query: "beef kabab", qty: 1, size: null, addons: [], notes: null }],
+    },
+  },
+  {
+    user: "1 half chicken karahi",
+    assistant: {
+      intents: ["add_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [{ query: "chicken karahi", qty: 1, size: "half", addons: [], notes: null }],
+    },
+  },
   {
     user: "2 zinger burger aur ek coke, delivery karwa do defence phase 5",
     assistant: {
@@ -594,6 +632,21 @@ export function coerceUnderstanding(
       .filter(Boolean);
   } else {
     obj.items = [];
+  }
+
+  // If primary_intent is unknown but items or info_query exist, backfill intent
+  if (obj.primary_intent === "unknown") {
+    if (Array.isArray(obj.items) && obj.items.length > 0) {
+      obj.primary_intent = "add_items";
+      if (Array.isArray(obj.intents) && !obj.intents.includes("add_items")) {
+        obj.intents = ["add_items", ...obj.intents.filter((i) => i !== "unknown")];
+      }
+    } else if (obj.info_query) {
+      obj.primary_intent = "ask_item_info";
+      if (Array.isArray(obj.intents) && !obj.intents.includes("ask_item_info")) {
+        obj.intents = ["ask_item_info", ...obj.intents.filter((i) => i !== "unknown")];
+      }
+    }
   }
 
   // 4. Removals normalization

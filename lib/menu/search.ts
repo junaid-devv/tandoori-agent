@@ -273,6 +273,123 @@ export async function searchMenu(
   return { matches, method: "vector", usedEmbedding: true };
 }
 
+// ---------------------------------------------------------------------
+// Variant & Disambiguation Helpers
+// ---------------------------------------------------------------------
+const VARIANT_PATTERN =
+  /\s*(?:[\(\[\{]|\s+-\s+|\s+\/\s+)(full|half|quarter|single|double|small|medium|large|1\s*kg|0?\.5\s*kg|half\s*kg|\d+\s*pcs?|tin|glass|bottle|boneless|b\/l)[\)\]\}]?\s*$/i;
+
+const SIZE_WORDS_PATTERN =
+  /\b(full|half|quarter|single|double|small|medium|large|\d+\s*pcs?|tin|glass|bottle)\b/i;
+
+export function extractBaseItemName(fullName: string): { baseName: string; variant: string | null } {
+  const match = fullName.match(VARIANT_PATTERN);
+  if (match && match[1]) {
+    const base = fullName.slice(0, match.index).trim();
+    return { baseName: base || fullName.trim(), variant: match[1].trim().toLowerCase() };
+  }
+  return { baseName: fullName.trim(), variant: null };
+}
+
+export function extractSizeFromQuery(query: string, explicitSize?: string | null): string | null {
+  if (explicitSize && explicitSize.trim()) {
+    const s = explicitSize.trim().toLowerCase();
+    const m = s.match(SIZE_WORDS_PATTERN);
+    return m ? m[1].toLowerCase() : s;
+  }
+  const match = query.match(SIZE_WORDS_PATTERN);
+  return match ? match[1].toLowerCase() : null;
+}
+
+export type ItemResolutionResult =
+  | { kind: "exact"; item: ResolvedMenuItem; confidence: number }
+  | { kind: "variants"; baseName: string; variants: ResolvedMenuItem[] }
+  | { kind: "ambiguous"; query: string; matches: ResolvedMenuItem[] }
+  | { kind: "not_found"; query: string; suggestions: ResolvedMenuItem[] };
+
+/**
+ * Detailed item resolution that detects size variants (Half/Full) and ambiguity.
+ * Prevents blindly adding Full when Half/Full options exist and no size was specified.
+ */
+export async function resolveItemDetailed(
+  branchId: string,
+  query: string,
+  explicitSize?: string | null,
+  inMemoryMenu?: Parameters<typeof searchMenu>[3],
+): Promise<ItemResolutionResult> {
+  const trimmed = query.trim();
+  if (!trimmed) return { kind: "not_found", query: trimmed, suggestions: [] };
+
+  const requestedSize = extractSizeFromQuery(trimmed, explicitSize);
+  const baseQuery = trimmed.replace(SIZE_WORDS_PATTERN, " ").replace(/\s+/g, " ").trim();
+
+  // Search with original query
+  const { matches: directMatches } = await searchMenu(branchId, trimmed, 8, inMemoryMenu);
+
+  // If size was stripped and baseQuery is different, also search with baseQuery to maximize recall
+  let combined = [...directMatches];
+  if (baseQuery && baseQuery !== trimmed && baseQuery.length >= 3) {
+    const { matches: baseMatches } = await searchMenu(branchId, baseQuery, 8, inMemoryMenu);
+    const seenIds = new Set(combined.map((m) => m.id));
+    for (const bm of baseMatches) {
+      if (!seenIds.has(bm.id)) {
+        combined.push(bm);
+        seenIds.add(bm.id);
+      }
+    }
+  }
+
+  const available = combined.filter((m) => m.is_available !== false);
+  if (available.length === 0) {
+    return { kind: "not_found", query: trimmed, suggestions: [] };
+  }
+
+  const top = available[0];
+  const topSim = top.similarity ?? 0;
+  if (topSim < 0.25) {
+    return { kind: "not_found", query: trimmed, suggestions: available.slice(0, 3) };
+  }
+
+  // 1) If user specified a size (e.g. "half", "full"), find the candidate matching that size
+  if (requestedSize) {
+    const sizeMatch = available.find((c) => {
+      const { variant } = extractBaseItemName(c.name);
+      return (
+        (variant && variant.toLowerCase() === requestedSize) ||
+        c.name.toLowerCase().includes(requestedSize)
+      );
+    });
+    if (sizeMatch) {
+      return { kind: "exact", item: sizeMatch, confidence: sizeMatch.similarity ?? 0.9 };
+    }
+  }
+
+  // 2) Check if top candidates share the same base name with multiple size variants
+  const topBase = extractBaseItemName(top.name);
+  const sameBaseVariants = available.filter((c) => {
+    const cBase = extractBaseItemName(c.name);
+    return cBase.baseName.toLowerCase() === topBase.baseName.toLowerCase() && cBase.variant !== null;
+  });
+
+  // If there are multiple size variants for this base item (e.g. Chicken Karahi Half & Full)
+  // and the user did NOT specify which size they want:
+  if (sameBaseVariants.length > 1 && !requestedSize) {
+    // Sort variants logically (e.g. Half before Full, or smaller price first)
+    sameBaseVariants.sort((a, b) => a.price - b.price);
+    return { kind: "variants", baseName: topBase.baseName, variants: sameBaseVariants };
+  }
+
+  // 3) Check for broad/ambiguous query matching multiple distinct dishes
+  const distinctBases = [...new Set(available.slice(0, 5).map((c) => extractBaseItemName(c.name).baseName.toLowerCase()))];
+  const isBroadSingleWord = /^(karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|juice|dessert|fish|boti)$/i.test(trimmed);
+  if ((distinctBases.length > 1 && isBroadSingleWord) || (distinctBases.length > 2 && topSim < 0.85)) {
+    return { kind: "ambiguous", query: trimmed, matches: available.slice(0, 5) };
+  }
+
+  // 4) Single exact / clear best match
+  return { kind: "exact", item: top, confidence: topSim };
+}
+
 /**
  * Resolve a single free-text item mention to the best menu item, or null.
  * Pass inMemoryMenu (ctx.menu) to skip DB on lexical fallback.
@@ -285,9 +402,9 @@ export async function resolveItem(
   query: string,
   inMemoryMenu?: Parameters<typeof searchMenu>[3],
 ): Promise<ResolvedMenuItem | null> {
-  const { matches } = await searchMenu(branchId, query, 3, inMemoryMenu);
-  // Never resolve to an unavailable item — treat it as not found so the
-  // executor can show proper "not available" suggestions to the customer.
-  const available = matches.filter((m) => m.is_available !== false);
-  return available[0] ?? null;
+  const res = await resolveItemDetailed(branchId, query, undefined, inMemoryMenu);
+  if (res.kind === "exact") return res.item;
+  // If only 1 variant or clear match, return it
+  if (res.kind === "variants" && res.variants.length === 1) return res.variants[0];
+  return null;
 }

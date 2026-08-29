@@ -16,7 +16,7 @@ import type { AgentAction, Transition } from "./state-machine";
 import type { TurnUnderstanding } from "./nlu";
 import { reply } from "./reply";
 import { addToCart, removeFromCart, updateQuantity, cartSubtotal } from "./cart";
-import { searchMenu, resolveItem } from "@/lib/menu/search";
+import { searchMenu, resolveItem, resolveItemDetailed } from "@/lib/menu/search";
 import { orderRepo } from "@/lib/data/order.repo";
 import { groundedAnswer } from "./answer";
 import {
@@ -25,10 +25,12 @@ import {
   itemPickList,
   categoryList,
   cartActionButtons,
+  variantButtons,
   type InteractivePayload,
 } from "./interactive";
 import type { TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
+import { findMatchingDeliveryArea, buildDeliveryAreaHint } from "./delivery";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export interface ExecutionResult {
@@ -172,53 +174,72 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const mentions = (action.payload?.items as TurnUnderstanding["items"]) ?? u.items;
         const isDelta = u.notes === "add_delta";
         const added: Array<{ name: string; newCartQty: number }> = [];
+        const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
 
         for (const m of mentions) {
           let query = m.query;
           if (isDelta && query === "__last_item__" && cart.length > 0) {
             query = cart[cart.length - 1].name;
           }
-          const resolved = await resolveItem(branchId, query, ctx.menu);
-          if (resolved?.method === "vector") usedSemantic = true;
-          if (!resolved) {
-            const { matches } = await searchMenu(branchId, query, 4, ctx.menu);
-            // Only show available items as suggestions
-            const availMatches = matches.filter((x) => x.is_available !== false);
-            if (availMatches.length) {
-              replies.push(reply.notFound(lang, query, availMatches.map((x) => x.name)));
-              patch.last_shown_options = availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price }));
-              patch.last_shown_options_at = new Date().toISOString();
-              setInteractive(itemPickList(lang, availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
+          const res = await resolveItemDetailed(branchId, query, m.size ?? undefined, ctx.menu);
+
+          if (res.kind === "exact") {
+            const resolved = res.item;
+            if (resolved.method === "vector") usedSemantic = true;
+            if (resolved.is_available === false) {
+              const { matches } = await searchMenu(branchId, query, 4, ctx.menu);
+              const availMatches = matches.filter((x) => x.is_available !== false);
+              replies.push(reply.notFound(lang, query, availMatches.map((x) => x.name), cats));
+              if (availMatches.length) {
+                patch.last_shown_options = availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price }));
+                patch.last_shown_options_at = new Date().toISOString();
+                setInteractive(itemPickList(lang, availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
+              }
+              continue;
+            }
+            cart = addToCart(cart, {
+              menu_item_id: resolved.id,
+              name: resolved.name,
+              unit_price: resolved.price,
+              qty: m.qty ?? 1,
+              size: m.size ?? null,
+              addons: m.addons ?? [],
+              notes: m.notes ?? null,
+            });
+            const cartItem = cart.find((ci) => ci.menu_item_id === resolved.id);
+            added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1) });
+          } else if (res.kind === "variants") {
+            // Item has multiple sizes (e.g. Half / Full) and user did not specify size
+            patch.last_shown_options = res.variants.map((v) => ({ id: v.id, name: v.name, price: v.price }));
+            patch.last_shown_options_at = new Date().toISOString();
+            replies.push(reply.itemVariants(lang, res.baseName, res.variants, cur));
+            const vb = variantButtons(lang, res.variants, cur);
+            if (vb) {
+              setInteractive(vb);
             } else {
-              const ans = await grounded(`customer wants "${query}" — is it available? suggest similar items if not`);
-              replies.push(ans ?? reply.notFound(lang, query, []));
+              setInteractive(itemPickList(lang, res.variants.map((v) => ({ id: v.id, name: v.name, price: v.price, category: v.category })), cur));
             }
-            continue;
-          }
-          // Defence-in-depth: resolveItem already filters unavailable items, but
-          // guard here too so we never silently add an out-of-stock item.
-          if (resolved.is_available === false) {
-            const { matches } = await searchMenu(branchId, query, 4, ctx.menu);
-            const availMatches = matches.filter((x) => x.is_available !== false);
-            replies.push(reply.notFound(lang, query, availMatches.map((x) => x.name)));
-            if (availMatches.length) {
-              patch.last_shown_options = availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price }));
+          } else if (res.kind === "ambiguous") {
+            // Broad query matches multiple distinct items (e.g. "Karahi" -> Chicken Karahi, Mutton Karahi, etc.)
+            patch.last_shown_options = res.matches.map((m) => ({ id: m.id, name: m.name, price: m.price }));
+            patch.last_shown_options_at = new Date().toISOString();
+            replies.push(reply.ambiguousMatches(lang, res.query, res.matches, cur));
+            setInteractive(itemPickList(lang, res.matches.map((m) => ({ id: m.id, name: m.name, price: m.price, category: m.category })), cur));
+          } else {
+            // not_found (e.g. "Pizza")
+            if (res.suggestions.length > 0) {
+              patch.last_shown_options = res.suggestions.map((x) => ({ id: x.id, name: x.name, price: x.price }));
               patch.last_shown_options_at = new Date().toISOString();
-              setInteractive(itemPickList(lang, availMatches.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
+              replies.push(reply.notFound(lang, query, res.suggestions.map((x) => x.name), cats));
+              setInteractive(itemPickList(lang, res.suggestions.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
+            } else {
+              const ans = await grounded(`customer wants "${query}" which is not on the menu. State that it is not available and suggest our actual menu categories.`);
+              replies.push(ans ?? reply.notFound(lang, query, [], cats));
+              if (cats.length > 0) {
+                setInteractive(categoryList(lang, cats, lang === "roman_urdu" ? "Menu dekhna chahenge?" : "What would you like?"));
+              }
             }
-            continue;
           }
-          cart = addToCart(cart, {
-            menu_item_id: resolved.id,
-            name: resolved.name,
-            unit_price: resolved.price,
-            qty: m.qty ?? 1,
-            size: m.size ?? null,
-            addons: m.addons ?? [],
-            notes: m.notes ?? null,
-          });
-          const cartItem = cart.find((ci) => ci.menu_item_id === resolved.id);
-          added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1) });
         }
 
         if (added.length) {
@@ -269,40 +290,67 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "show_menu":
       case "answer_info": {
         const query = (action.payload?.query as string) ?? u.info_query ?? "";
-        let matches: Awaited<ReturnType<typeof searchMenu>>["matches"] = [];
+        const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
 
         if (query) {
-          const res = await searchMenu(branchId, query, 6, ctx.menu);
-          usedSemantic = usedSemantic || res.usedEmbedding;
-          matches = res.matches;
+          const res = await resolveItemDetailed(branchId, query, undefined, ctx.menu);
+          if (res.kind === "not_found") {
+            if (res.suggestions.length > 0) {
+              patch.last_shown_options = res.suggestions.map((x) => ({ id: x.id, name: x.name, price: x.price }));
+              patch.last_shown_options_at = new Date().toISOString();
+              replies.push(reply.notFound(lang, query, res.suggestions.map((x) => x.name), cats));
+              setInteractive(itemPickList(lang, res.suggestions.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
+            } else {
+              const ans = await groundedAnswer({
+                question: `customer asked about "${query}" — state it's not on the menu and suggest available items from our categories`,
+                language: lang,
+                appName: input.appName,
+                currency: cur,
+                settings: ctx.settings,
+                menu: ctx.menu,
+                isOpenNow: ctx.isOpenNow,
+              });
+              replies.push(ans ?? reply.notFound(lang, query, [], cats));
+              if (cats.length > 0) setInteractive(categoryList(lang, cats));
+            }
+            break;
+          }
+
+          if (res.kind === "variants") {
+            patch.last_shown_options = res.variants.map((v) => ({ id: v.id, name: v.name, price: v.price }));
+            patch.last_shown_options_at = new Date().toISOString();
+            replies.push(reply.itemVariants(lang, res.baseName, res.variants, cur));
+            const vb = variantButtons(lang, res.variants, cur);
+            setInteractive(vb || itemPickList(lang, res.variants.map((v) => ({ id: v.id, name: v.name, price: v.price, category: v.category })), cur));
+            break;
+          }
+
+          if (res.kind === "ambiguous") {
+            patch.last_shown_options = res.matches.map((m) => ({ id: m.id, name: m.name, price: m.price }));
+            patch.last_shown_options_at = new Date().toISOString();
+            replies.push(reply.ambiguousMatches(lang, res.query, res.matches, cur));
+            setInteractive(itemPickList(lang, res.matches.map((m) => ({ id: m.id, name: m.name, price: m.price, category: m.category })), cur));
+            break;
+          }
+
+          // Exact single item inquiry
+          if (res.kind === "exact") {
+            patch.last_shown_options = [{ id: res.item.id, name: res.item.name, price: res.item.price }];
+            patch.last_shown_options_at = new Date().toISOString();
+            replies.push(`• ${res.item.name} — ${cur} ${res.item.price}`);
+            setInteractive(itemPickList(lang, [{ id: res.item.id, name: res.item.name, price: res.item.price, category: res.item.category }], cur));
+            break;
+          }
         } else {
           // Bare "menu" — show categories
-          const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
           if (cats.length > 1) setInteractive(categoryList(lang, cats));
-          matches = ctx.menu.slice(0, 6).map((m) => ({
+          const matches = ctx.menu.slice(0, 6).map((m) => ({
             id: m.id, name: m.name, price: m.price, category: m.category,
             description: null, is_available: true, similarity: null, method: "lexical" as const,
           }));
-        }
-
-        if (matches.length) {
-          patch.last_shown_options = matches.slice(0, 10).map((mm) => ({ id: mm.id, name: mm.name, price: mm.price }));
+          patch.last_shown_options = matches.map((mm) => ({ id: mm.id, name: mm.name, price: mm.price }));
           patch.last_shown_options_at = new Date().toISOString();
-          setInteractive(itemPickList(lang, matches.slice(0, 10).map((mm) => ({ id: mm.id, name: mm.name, price: mm.price, category: mm.category })), cur));
-        }
-
-        // Use grounded answer to describe items accurately (passed relevantItems so it's focused)
-        const relevantItems = matches.slice(0, 6).map((mm) => ({ name: mm.name, price: mm.price, category: mm.category ?? null, description: null }));
-        const ans = query
-          ? await groundedAnswer({ question: query, language: lang, appName: input.appName, currency: cur, settings: ctx.settings, menu: ctx.menu, isOpenNow: ctx.isOpenNow, relevantItems: relevantItems.length ? relevantItems : undefined })
-          : null;
-
-        if (ans) {
-          replies.push(ans);
-        } else if (matches.length) {
-          replies.push(reply.itemList(lang, matches.slice(0, 6).map((mm) => ({ name: mm.name, price: mm.price })), cur));
-        } else {
-          replies.push(lang === "roman_urdu" ? "Koi matching item nahi mila. Koi aur cheez batayein?" : "No matching items found. Try something else?");
+          replies.push(reply.itemList(lang, matches.map((mm) => ({ name: mm.name, price: mm.price })), cur));
         }
         break;
       }
@@ -333,8 +381,15 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "ask_order_type": {
         const chosen = action.payload?.chosen as OrderType | undefined;
         if (chosen) {
-          patch.order_type = chosen;
-          // No text reply here — the next action (promptForStage) will reply
+          if (chosen === "delivery" && ctx.settings.delivery_enabled === false) {
+            replies.push(reply.deliveryDisabled(lang));
+            patch.order_type = null;
+            patch.stage = "choosing_order_type";
+            setInteractive(orderTypeButtons(lang));
+          } else {
+            patch.order_type = chosen;
+            // No text reply here — the next action (promptForStage) will reply
+          }
         } else {
           replies.push(reply.askOrderType(lang));
           setInteractive(orderTypeButtons(lang));
@@ -353,15 +408,27 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             .eq("id", savedAddrNote[1])
             .maybeSingle();
           if (savedRow?.address) {
-            patch.address = savedRow.address;
-            patch.order_type = patch.order_type ?? "delivery";
-            replies.push(reply.savedAddressConfirmed(lang, savedRow.address));
+            if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(savedRow.address, ctx.settings)) {
+              replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
+              patch.stage = "collecting_delivery";
+              patch.address = null;
+            } else {
+              patch.address = savedRow.address;
+              patch.order_type = patch.order_type ?? "delivery";
+              replies.push(reply.savedAddressConfirmed(lang, savedRow.address));
+            }
           } else {
             replies.push(reply.askAddress(lang));
           }
         } else if (address) {
-          patch.address = address;
-          patch.order_type = patch.order_type ?? "delivery";
+          if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(address, ctx.settings)) {
+            replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
+            patch.stage = "collecting_delivery";
+            patch.address = null;
+          } else {
+            patch.address = address;
+            patch.order_type = patch.order_type ?? "delivery";
+          }
         } else {
           const saved = ctx.savedAddress;
           if (saved) {
@@ -377,7 +444,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               },
             });
           } else {
-            replies.push(reply.askAddress(lang));
+            const areaHint = buildDeliveryAreaHint(ctx.settings, lang === "roman_urdu");
+            replies.push(`${reply.askAddress(lang)}${areaHint}`);
           }
         }
         break;
@@ -408,7 +476,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           replies.push(reply.emptyCart(lang));
         } else {
           // show_cart: omit "View Cart" button since we're already showing the cart
-          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null));
+          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null, ctx.settings));
           setInteractive(cartActionButtons(lang, { hideViewCart: true }));
         }
         break;
@@ -419,7 +487,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (cart.length === 0) {
           replies.push(reply.emptyCart(lang));
         } else {
-          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null));
+          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null, ctx.settings));
           setInteractive(confirmButtons(lang));
         }
         break;
@@ -436,13 +504,41 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           break;
         }
         const deliveryAddr = patch.address ?? ctx.state.address;
-        // Client-side guard: catch missing address before the expensive RPC call
-        if (orderType === "delivery" && !deliveryAddr?.trim()) {
-          replies.push(reply.askAddress(lang));
-          patch.stage = "collecting_delivery";
-          break;
+        // Client-side guards:
+        if (orderType === "delivery") {
+          if (ctx.settings.delivery_enabled === false) {
+            replies.push(reply.deliveryDisabled(lang));
+            patch.stage = "choosing_order_type";
+            patch.order_type = null;
+            setInteractive(orderTypeButtons(lang));
+            break;
+          }
+          if (!deliveryAddr?.trim()) {
+            replies.push(reply.askAddress(lang));
+            patch.stage = "collecting_delivery";
+            break;
+          }
+          if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(deliveryAddr, ctx.settings)) {
+            replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
+            patch.stage = "collecting_delivery";
+            patch.address = null;
+            break;
+          }
+          const subtotal = cartSubtotal(cart);
+          if (ctx.settings.min_delivery_amount > 0 && subtotal < ctx.settings.min_delivery_amount) {
+            replies.push(reply.minDeliveryNotMet(lang, subtotal, ctx.settings.min_delivery_amount, cur));
+            patch.stage = "confirming";
+            replies.push(reply.summary(lang, cart, orderType, cur, deliveryAddr ?? null, ctx.settings));
+            setInteractive(cartActionButtons(lang));
+            break;
+          }
         }
         try {
+          const deliveryFee =
+            orderType === "delivery" && ctx.settings.delivery_enabled !== false
+              ? Number(ctx.settings.delivery_fee) || 0
+              : 0;
+
           const orderId = await orderRepo.place({
             conversationId: input.conversationId,
             branchId,
@@ -454,9 +550,19 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             guests: patch.guests ?? ctx.state.guests,
             reservationTime: patch.reservation_time ?? ctx.state.reservation_time,
             pickupTime: patch.pickup_time ?? ctx.state.pickup_time,
+            deliveryFee,
           });
           const placed = await orderRepo.getById(orderId);
-          replies.push(reply.orderPlaced(lang, placed?.order_number ?? 0, cur, placed?.total ?? cartSubtotal(cart)));
+          replies.push(
+            reply.orderPlaced(
+              lang,
+              placed?.order_number ?? 0,
+              cur,
+              placed?.total ?? (cartSubtotal(cart) + deliveryFee),
+              orderType,
+              ctx.settings,
+            ),
+          );
           placeOrder = true;
           patch.stage = "placed";
           cart = [];
@@ -464,22 +570,18 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           const msg = err instanceof Error ? err.message : "order failed";
           console.error("[executor] place_order failed:", msg);
           // Parse RPC error and give actionable reply; reset stage cleanly
-          if (/delivery.*area|outside.*area|area.*outside/i.test(msg)) {
-            const areas = ctx.settings.delivery_areas;
-            const areaList = areas.length ? areas.join(", ") : "";
-            replies.push(
-              lang === "roman_urdu"
-                ? `Maafi — ye address hamare delivery area mein nahi hai.${areaList ? `\nHum deliver karte hain: ${areaList}` : ""}\nDoosra address bhejein ya Pickup choose karein.`
-                : `Sorry — that address isn't in our delivery zone.${areaList ? `\nWe deliver to: ${areaList}` : ""}\nSend a different address or choose Pickup.`,
-            );
+          if (/min.*delivery|minimum.*delivery/i.test(msg)) {
+            const sub = cartSubtotal(cart);
+            replies.push(reply.minDeliveryNotMet(lang, sub, ctx.settings.min_delivery_amount, cur));
+            patch.stage = "confirming";
+            replies.push(reply.summary(lang, cart, orderType, cur, deliveryAddr ?? null, ctx.settings));
+            setInteractive(cartActionButtons(lang));
+          } else if (/delivery.*area|outside.*area|area.*outside/i.test(msg)) {
+            replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
             patch.stage = "collecting_delivery";
             patch.address = null;
           } else if (/delivery.*not available|not.*available.*delivery/i.test(msg)) {
-            replies.push(
-              lang === "roman_urdu"
-                ? "Delivery abhi available nahi. Pickup ya Dine-in choose karein."
-                : "Delivery isn't available right now. Please choose Pickup or Dine-in.",
-            );
+            replies.push(reply.deliveryDisabled(lang));
             patch.stage = "choosing_order_type";
             patch.order_type = null;
             setInteractive(orderTypeButtons(lang));
@@ -500,7 +602,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             );
             patch.stage = "confirming";
             // Re-show summary so they can retry immediately
-            replies.push(reply.summary(lang, cart, orderType, cur, deliveryAddr ?? null));
+            replies.push(reply.summary(lang, cart, orderType, cur, deliveryAddr ?? null, ctx.settings));
             setInteractive(confirmButtons(lang));
           }
           patch.last_error = msg;
@@ -556,7 +658,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (replies.length === 0) {
           if (cart.length > 0) {
             const addr = patch.address ?? ctx.state.address;
-            replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null));
+            replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null, ctx.settings));
             setInteractive(cartActionButtons(lang, { hideViewCart: true }));
           } else {
             const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];

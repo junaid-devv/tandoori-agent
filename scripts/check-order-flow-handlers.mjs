@@ -139,9 +139,54 @@ function testPipelineWiring() {
   pass("Pipeline and executor wiring files verified.");
 }
 
+import { reply } from "../lib/agent/reply.ts";
+
+// 7. Settings-aware order summary & confirmation verification
+function testSettingsDeliveryRulesSummaryAndConfirmation() {
+  const settings = {
+    branch_id: "b1",
+    is_accepting_orders: true,
+    opening_time: "10:00 AM",
+    closing_time: "11:00 PM",
+    min_delivery_amount: 450,
+    delivery_enabled: true,
+    delivery_fee: 150,
+    delivery_areas: ["F-6", "F-7"],
+    estimated_prep_minutes: 30,
+    estimated_delivery_minutes: 45,
+    city: "Islamabad",
+    phone_delivery: "0300-1234567",
+    phone_dine_in: "042-111222",
+    ai_personality: "Warm & Professional",
+    timezone: "Asia/Karachi",
+  };
+
+  const cartUnderMin = [{ menu_item_id: "m1", name: "Fries", unit_price: 200, qty: 1 }];
+  const summaryUnderMin = reply.summary("roman_urdu", cartUnderMin, "delivery", "Rs.", "Street 5, F-7", settings);
+  assert.ok(summaryUnderMin.includes("Total: Rs. 350 (COD)"), "Summary total must include delivery fee");
+  assert.ok(summaryUnderMin.includes("minimum order Rs. 450"), "Summary must warn about minimum delivery amount");
+  assert.ok(summaryUnderMin.includes("Delivery: ~45 min"), "Summary must include estimated delivery time");
+
+  const cartAboveMin = [{ menu_item_id: "m2", name: "Chicken Karahi", unit_price: 1395, qty: 1 }];
+  const summaryAboveMin = reply.summary("english", cartAboveMin, "delivery", "Rs.", "Street 5, F-7", settings);
+  assert.ok(summaryAboveMin.includes("Delivery Fee: Rs. 150"), "Summary must show delivery fee");
+  assert.ok(summaryAboveMin.includes("Total: Rs. 1545 (COD)"), "Summary must show total with delivery fee");
+  assert.ok(summaryAboveMin.includes("Delivery: ~45 min"), "Summary must show delivery ETA");
+
+  const placedMsg = reply.orderPlaced("english", 101, "Rs.", 1545, "delivery", settings);
+  assert.ok(placedMsg.includes("Order #101 confirmed!"), "Placed reply must include order number");
+  assert.ok(placedMsg.includes("Estimated delivery: ~45 mins"), "Placed reply must include ETA");
+
+  const minWarning = reply.minDeliveryNotMet("roman_urdu", 200, 450, "Rs.");
+  assert.ok(minWarning.includes("Rs. 450") && minWarning.includes("Rs. 250"), "Min delivery helper must calculate difference");
+
+  pass("Settings delivery rules (fee, min order, ETA) verified in concise order summary & confirmation.");
+}
+
 testAwaitingConfirmationPlacesOrder();
 testDeliveryAddressTransition();
 testNonLinearInfoQuery();
 testHumanEscalation();
 testCancelOrder();
 testPipelineWiring();
+testSettingsDeliveryRulesSummaryAndConfirmation();

@@ -5,6 +5,7 @@
  * Tone: friendly Pakistani restaurant staff — short, warm, never robotic.
  */
 import type { CartItem, LanguagePreference, OrderType } from "@/lib/schema.types";
+import type { RestaurantSettings } from "@/lib/settings";
 import { cartSubtotal } from "./cart";
 
 type Lang = LanguagePreference;
@@ -48,16 +49,36 @@ export const reply = {
     return ur(l) ? `Theek hai, remove ho gaya. Total: ${total}` : `Done. Total: ${total}`;
   },
 
-  notFound(l: Lang, query: string, suggestions: string[]): string {
+  notFound(l: Lang, query: string, suggestions: string[], categories?: string[]): string {
     if (suggestions.length > 0) {
       const opts = suggestions.slice(0, 3).join(", ");
       return ur(l)
         ? `"${query}" nahi mila. Ye try karein: ${opts}`
         : `"${query}" not found. Try: ${opts}`;
     }
+    if (categories && categories.length > 0) {
+      const catList = categories.slice(0, 5).join(", ");
+      return ur(l)
+        ? `"${query}" hamare menu mein available nahi hai. Hamare pas ${catList} items available hain.\nAap kya mangwana chahenge?`
+        : `"${query}" is not available on our menu. We specialize in ${catList}.\nWhat would you like to order?`;
+    }
     return ur(l)
-      ? `"${query}" available nahi. Koi aur item batayein.`
-      : `"${query}" isn't available. Try another item.`;
+      ? `"${query}" hamare menu mein available nahi hai. Aap menu dekhna chahenge?`
+      : `"${query}" isn't on our menu. Would you like to view the menu?`;
+  },
+
+  itemVariants(l: Lang, baseName: string, variants: Array<{ name: string; price: number }>, currency: string): string {
+    const list = variants.map((v) => `• ${v.name} — ${currency} ${v.price}`).join("\n");
+    return ur(l)
+      ? `*${baseName}* ke multiple options available hain:\n${list}\nKaunsa size / option chahiye?`
+      : `*${baseName}* comes in multiple options:\n${list}\nWhich size / option would you like?`;
+  },
+
+  ambiguousMatches(l: Lang, query: string, matches: Array<{ name: string; price: number }>, currency: string): string {
+    const list = matches.slice(0, 5).map((m) => `• ${m.name} — ${currency} ${m.price}`).join("\n");
+    return ur(l)
+      ? `"${query}" mein ye options available hain:\n${list}\nKaunsi wali mangwana chahenge?`
+      : `Here are our "${query}" options:\n${list}\nWhich one would you like to order?`;
   },
 
   itemList(l: Lang, items: Array<{ name: string; price: number }>, currency: string): string {
@@ -113,24 +134,87 @@ export const reply = {
     return ur(l) ? "Pickup kis waqt karenge?" : "What time will you pick up?";
   },
 
-  summary(l: Lang, cart: CartItem[], orderType: OrderType | null, currency: string, address?: string | null): string {
+  summary(
+    l: Lang,
+    cart: CartItem[],
+    orderType: OrderType | null,
+    currency: string,
+    address?: string | null,
+    settings?: RestaurantSettings | null,
+  ): string {
     const itemLines = cart.map((i) => {
       const note = i.notes ? ` (${i.notes})` : "";
       return `• ${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}${note}`;
     });
-    const total = `${currency} ${cartSubtotal(cart)}`;
-    const typeLabel = orderType
-      ? (orderType === "delivery" ? "🚚 Delivery" : orderType === "pickup" ? "🏃 Pickup" : "🍽️ Dine-in")
-      : "";
+    const subtotal = cartSubtotal(cart);
     const head = ur(l) ? "🛒 Aap ka order:" : "🛒 Your order:";
     const lines = [head, ...itemLines];
-    if (typeLabel) lines.push(typeLabel);
-    if (address?.trim()) lines.push(`📍 ${address.trim()}`);
-    lines.push(`💰 Total: ${total}`);
+
+    if (orderType === "delivery") {
+      if (address?.trim()) lines.push(`📍 ${address.trim()}`);
+      const deliveryFee = settings && settings.delivery_enabled !== false ? Number(settings.delivery_fee) || 0 : 0;
+      const total = subtotal + deliveryFee;
+
+      if (deliveryFee > 0) {
+        lines.push(`🛵 Delivery Fee: ${currency} ${deliveryFee}`);
+      } else {
+        lines.push(ur(l) ? "🛵 Delivery: Muft" : "🛵 Delivery: Free");
+      }
+
+      lines.push(`💰 Total: ${currency} ${total} (COD)`);
+
+      if (settings?.min_delivery_amount && subtotal < settings.min_delivery_amount) {
+        const diff = settings.min_delivery_amount - subtotal;
+        lines.push(
+          ur(l)
+            ? `⚠️ Delivery minimum order ${currency} ${settings.min_delivery_amount} hai (${currency} ${diff} mazeed add karein ya Pickup choose karein)`
+            : `⚠️ Minimum delivery order is ${currency} ${settings.min_delivery_amount} (add ${currency} ${diff} more or choose Pickup)`,
+        );
+      }
+
+      const estDelivery = Math.round(Number(settings?.estimated_delivery_minutes) || 45);
+      lines.push(ur(l) ? `⏱ Delivery: ~${estDelivery} min` : `⏱ Delivery: ~${estDelivery} min`);
+    } else if (orderType === "pickup") {
+      lines.push("🏃 Pickup");
+      lines.push(`💰 Total: ${currency} ${subtotal} (COD)`);
+    } else if (orderType === "dine-in") {
+      lines.push("🍽️ Dine-in");
+      lines.push(`💰 Total: ${currency} ${subtotal} (COD)`);
+    } else {
+      lines.push(`💰 Total: ${currency} ${subtotal}`);
+    }
+
     return lines.join("\n");
   },
 
-  orderPlaced(l: Lang, orderNumber: number, currency: string, total: number): string {
+  orderPlaced(
+    l: Lang,
+    orderNumber: number,
+    currency: string,
+    total: number,
+    orderType?: OrderType | null,
+    settings?: RestaurantSettings | null,
+  ): string {
+    const estDelivery = Math.round(Number(settings?.estimated_delivery_minutes) || 45);
+
+    if (orderType === "delivery") {
+      return ur(l)
+        ? `✅ Order #${orderNumber} confirm ho gaya!\n💰 Total: ${currency} ${total} (COD)\n🛵 Delivery: takreeban ${estDelivery} min\nShukriya! 🙏`
+        : `✅ Order #${orderNumber} confirmed!\n💰 Total: ${currency} ${total} (Cash on Delivery)\n🛵 Estimated delivery: ~${estDelivery} mins\nThank you! 🙏`;
+    }
+
+    if (orderType === "pickup") {
+      return ur(l)
+        ? `✅ Order #${orderNumber} confirm ho gaya!\n💰 Total: ${currency} ${total}\nShukriya! 🙏`
+        : `✅ Order #${orderNumber} confirmed!\n💰 Total: ${currency} ${total}\nThank you! 🙏`;
+    }
+
+    if (orderType === "dine-in") {
+      return ur(l)
+        ? `✅ Reservation & Order #${orderNumber} confirm ho gaya!\n💰 Total: ${currency} ${total}\nHum aap ka intezar karenge! 🙏`
+        : `✅ Reservation & Order #${orderNumber} confirmed!\n💰 Total: ${currency} ${total}\nLooking forward to serving you! 🙏`;
+    }
+
     return ur(l)
       ? `✅ Order #${orderNumber} confirm ho gaya!\n💰 Total: ${currency} ${total} (COD)\nJaldi taiyar ho jayega 🙏`
       : `✅ Order #${orderNumber} confirmed!\n💰 Total: ${currency} ${total} (Cash on Delivery)\nWe'll have it ready soon 🙏`;
@@ -186,5 +270,25 @@ export const reply = {
     return ur(l)
       ? "💵 Sirf Cash on Delivery (COD) available hai."
       : "💵 We only accept Cash on Delivery (COD).";
+  },
+
+  deliveryDisabled(l: Lang): string {
+    return ur(l)
+      ? "Maafi chahte hain, is waqt delivery service band hai. Aap Pickup ya Dine-in choose kar saktay hain."
+      : "Sorry, delivery is currently unavailable for this branch. Please choose Pickup or Dine-in.";
+  },
+
+  minDeliveryNotMet(l: Lang, currentSubtotal: number, minDelivery: number, currency: string): string {
+    const diff = minDelivery - currentSubtotal;
+    return ur(l)
+      ? `⚠️ Delivery ke liye minimum order ${currency} ${minDelivery} hai (Aap ka cart ${currency} ${currentSubtotal} hai).\nBaraye meherbani ${currency} ${diff} ka mazeed item add karein ya Pickup choose karein.`
+      : `⚠️ Minimum order for delivery is ${currency} ${minDelivery} (your current cart is ${currency} ${currentSubtotal}).\nPlease add ${currency} ${diff} more to your order or choose Pickup.`;
+  },
+
+  deliveryAreaNotCovered(l: Lang, areas: string[]): string {
+    const list = areas.length ? `\nHum deliver karte hain: ${areas.join(", ")}` : "";
+    return ur(l)
+      ? `Maafi — ye address hamare delivery area mein nahi hai.${list}\nDoosra address bhejein ya Pickup choose karein.`
+      : `Sorry — that address isn't in our delivery zone.${list}\nPlease send an address in our delivery area or choose Pickup.`;
   },
 };
