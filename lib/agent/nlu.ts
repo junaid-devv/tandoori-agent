@@ -281,6 +281,24 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
     },
   },
   {
+    user: "Delivery kis time available hogi?",
+    assistant: {
+      intents: ["ask_delivery_info"],
+      primary_intent: "ask_delivery_info",
+      language: "roman_urdu",
+      info_query: "what are your delivery timings and hours",
+    },
+  },
+  {
+    user: "Restaurant kab open hota hai?",
+    assistant: {
+      intents: ["ask_hours_or_location"],
+      primary_intent: "ask_hours_or_location",
+      language: "roman_urdu",
+      info_query: "what time does the restaurant open",
+    },
+  },
+  {
     user: "delivery available hai?",
     assistant: {
       intents: ["ask_delivery_info"],

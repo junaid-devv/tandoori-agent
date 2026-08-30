@@ -229,10 +229,11 @@ export default function SettingsPage() {
         </Card>
 
         <Card icon={<Truck size={16} />} title="Delivery Rules">
-          <SettingRow label="Charge Delivery Fee">
+          <SettingRow label="Delivery Service">
             <Toggle
               value={settings.delivery_enabled}
               onToggle={() => setSettings((current) => ({ ...current, delivery_enabled: !current.delivery_enabled }))}
+              color="bg-emerald-500"
             />
           </SettingRow>
 
@@ -245,7 +246,7 @@ export default function SettingsPage() {
                 step={10}
                 value={settings.delivery_fee}
                 onChange={(event) =>
-                  setSettings((current) => ({ ...current, delivery_fee: Number(event.target.value) || 0 }))
+                  setSettings((current) => ({ ...current, delivery_fee: Math.max(0, Number(event.target.value) || 0) }))
                 }
                 className="w-24 text-right text-sm font-bold text-slate-800 bg-transparent outline-none"
               />
@@ -261,7 +262,7 @@ export default function SettingsPage() {
                 step={50}
                 value={settings.min_delivery_amount}
                 onChange={(event) =>
-                  setSettings((current) => ({ ...current, min_delivery_amount: Number(event.target.value) || 0 }))
+                  setSettings((current) => ({ ...current, min_delivery_amount: Math.max(0, Number(event.target.value) || 0) }))
                 }
                 className="w-24 text-right text-sm font-bold text-slate-800 bg-transparent outline-none"
               />
@@ -270,13 +271,18 @@ export default function SettingsPage() {
 
           <StatusBadge
             active={!settings.delivery_enabled}
-            color="slate"
-            text="Delivery fee charging is OFF. Delivery remains free when an order is accepted."
+            color="orange"
+            text="Delivery service is OFF. The bot only accepts Pickup and Dine-in orders."
           />
           <StatusBadge
-            active={settings.delivery_enabled}
-            color="orange"
-            text={`Delivery fee is Rs. ${settings.delivery_fee}. Minimum delivery is Rs. ${settings.min_delivery_amount}.`}
+            active={settings.delivery_enabled && settings.delivery_fee === 0}
+            color="emerald"
+            text={`Delivery service is ON (Free Delivery). Minimum delivery is Rs. ${settings.min_delivery_amount}.`}
+          />
+          <StatusBadge
+            active={settings.delivery_enabled && settings.delivery_fee > 0}
+            color="emerald"
+            text={`Delivery service is ON. Delivery fee is Rs. ${settings.delivery_fee}. Minimum delivery is Rs. ${settings.min_delivery_amount}.`}
           />
 
           <SettingRow label="Prep Estimate">
@@ -434,7 +440,6 @@ export default function SettingsPage() {
     </div>
   );
 }
-
 function Card({
   icon,
   title,

@@ -254,6 +254,30 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         order_type: raw === "delivery" || raw === "pickup" || raw === "dine-in" ? raw : null,
         notes: "fast_path_order_type",
       };
+    } else if (/(?:delivery\s+(?:kis\s+time|kab|timing|time|available\s+hogi|hogi|chal|available)|kab\s+(?:tak\s+)?deliver\s+(?:hoga|hogi)|delivery\s+timing|delivery\s+charges|delivery\s+fee)/i.test(trimmed) && !/karahi|biryani|burger|tikka|kabab|pizza|bhejo|krdo|kardo/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["ask_delivery_info"],
+        primary_intent: "ask_delivery_info",
+        info_query: trimmed,
+        notes: "fast_path_delivery_info",
+      };
+    } else if (/(?:restaurant\s+)?(?:kab|kistime|kis\s+time)\s+(?:open|khulta|khula|khul)|(?:kab|kistime|kis\s+time)\s+(?:open|close|khulta|band)|(?:opening|closing)\s+(?:time|hours)|(?:what\s+are\s+your\s+hours|timing\s+kya\s+hai|restaurant\s+timing|timings\s+kya\s+hain)/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["ask_hours_or_location"],
+        primary_intent: "ask_hours_or_location",
+        info_query: trimmed,
+        notes: "fast_path_hours",
+      };
+    } else if (/^(?:payment|cod|cash\s+on\s+delivery|online\s+payment|card\s+payment|how\s+to\s+pay|payment\s+kese\s+karni\s+hai|payment\s+method)/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["ask_payment"],
+        primary_intent: "ask_payment",
+        info_query: trimmed,
+        notes: "fast_path_payment",
+      };
     }
   }
 

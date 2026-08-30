@@ -87,11 +87,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   /** Deterministic hours/location answer — never calls LLM. */
   const hoursAnswer = (): string => {
     const s = ctx.settings;
-    const status = ctx.isOpenNow ? (lang === "roman_urdu" ? "✅ Abhi KHULA hai" : "✅ Open right now") : (lang === "roman_urdu" ? "🔴 Abhi BAND hai" : "🔴 Closed right now");
+    const status = ctx.isOpenNow
+      ? (lang === "roman_urdu" ? "✅ Restaurant abhi KHULA hai" : "✅ We are currently OPEN")
+      : (lang === "roman_urdu" ? "🔴 Restaurant abhi BAND hai" : "🔴 We are currently CLOSED");
     if (lang === "roman_urdu") {
-      return `${status}\n🕐 Hours: ${s.opening_time} – ${s.closing_time}${s.city ? `\n📍 City: ${s.city}` : ""}`;
+      return `${status}\n🕐 Timings: ${s.opening_time} – ${s.closing_time}${s.city ? `\n📍 Location: ${s.city}` : ""}`;
     }
-    return `${status}\n🕐 Hours: ${s.opening_time} – ${s.closing_time}${s.city ? `\n📍 City: ${s.city}` : ""}`;
+    return `${status}\n🕐 Hours: ${s.opening_time} – ${s.closing_time}${s.city ? `\n📍 Location: ${s.city}` : ""}`;
   };
 
   /** Deterministic payment answer — never calls LLM. */
@@ -106,20 +108,22 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     const s = ctx.settings;
     if (!s.delivery_enabled) {
       return lang === "roman_urdu"
-        ? "Delivery abhi available nahi — sirf Pickup ya Dine-in ho sakta hai."
-        : "Delivery isn't available right now — Pickup or Dine-in only.";
+        ? `Maafi chahte hain, is waqt delivery service band hai — sirf Pickup ya Dine-in available hai.\n🕐 Restaurant Timings: ${s.opening_time} – ${s.closing_time}`
+        : `Sorry, delivery service is currently closed — Pickup or Dine-in only.\n🕐 Restaurant Hours: ${s.opening_time} – ${s.closing_time}`;
     }
     const parts: string[] = [];
     if (lang === "roman_urdu") {
       parts.push("✅ Delivery available hai");
+      parts.push(`🕐 Delivery Timings: ${s.opening_time} – ${s.closing_time}`);
       if (s.delivery_areas.length) parts.push(`📍 Areas: ${s.delivery_areas.join(", ")}`);
-      if (s.delivery_fee) parts.push(`💰 Fee: ${cur} ${s.delivery_fee}`);
+      parts.push(s.delivery_fee === 0 ? "💰 Delivery Fee: FREE" : `💰 Fee: ${cur} ${s.delivery_fee}`);
       if (s.min_delivery_amount) parts.push(`🛒 Min order: ${cur} ${s.min_delivery_amount}`);
-      if (s.estimated_delivery_minutes) parts.push(`⏱ Time: ~${s.estimated_delivery_minutes} min`);
+      if (s.estimated_delivery_minutes) parts.push(`⏱ Delivery Time: ~${s.estimated_delivery_minutes} min`);
     } else {
       parts.push("✅ Delivery is available");
+      parts.push(`🕐 Delivery Hours: ${s.opening_time} – ${s.closing_time}`);
       if (s.delivery_areas.length) parts.push(`📍 Areas: ${s.delivery_areas.join(", ")}`);
-      if (s.delivery_fee) parts.push(`💰 Fee: ${cur} ${s.delivery_fee}`);
+      parts.push(s.delivery_fee === 0 ? "💰 Delivery Fee: FREE" : `💰 Fee: ${cur} ${s.delivery_fee}`);
       if (s.min_delivery_amount) parts.push(`🛒 Min order: ${cur} ${s.min_delivery_amount}`);
       if (s.estimated_delivery_minutes) parts.push(`⏱ ETA: ~${s.estimated_delivery_minutes} min`);
     }
@@ -278,6 +282,28 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       }
 
       // ── Information ───────────────────────────────────────────────────────
+      case "answer_hours_location":
+        replies.push(hoursAnswer());
+        break;
+
+      case "answer_payment":
+        replies.push(paymentAnswer());
+        break;
+
+      case "answer_delivery_info":
+        replies.push(deliveryInfoAnswer());
+        break;
+
+      case "answer_grounded": {
+        const question = (action.payload?.query as string) ?? u.info_query ?? input.messageTextForFallback ?? "";
+        if (question) {
+          const ans = await grounded(question);
+          if (ans) replies.push(ans);
+          else replies.push(hoursAnswer());
+        }
+        break;
+      }
+
       case "answer_info": {
         const q = String(action.payload?.info_query ?? u.info_query ?? "").trim();
         if (/delivery|deliver|ghar/i.test(q) && !/karahi|burger|biryani|tikka|kabab/i.test(q)) {
@@ -357,16 +383,20 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const chosen = action.payload?.chosen as OrderType | undefined;
         if (chosen) {
           if (chosen === "delivery" && ctx.settings.delivery_enabled === false) {
-            replies.push(reply.deliveryDisabled(lang));
+            if (!hasDisambiguation) {
+              replies.push(reply.deliveryDisabled(lang));
+              setInteractive(orderTypeButtons(lang, ctx.settings));
+            }
             patch.order_type = null;
             patch.stage = "choosing_order_type";
-            setInteractive(orderTypeButtons(lang, ctx.settings));
           } else {
             patch.order_type = chosen;
           }
         } else {
-          replies.push(reply.askOrderType(lang));
-          setInteractive(orderTypeButtons(lang, ctx.settings));
+          if (!hasDisambiguation) {
+            replies.push(reply.askOrderType(lang));
+            setInteractive(orderTypeButtons(lang, ctx.settings));
+          }
         }
         break;
       }
