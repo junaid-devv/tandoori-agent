@@ -154,6 +154,7 @@ const SYSTEM_RULES = [
   "FOOD ITEMS & DISH MENTIONS: If the customer mentions, asks about, or wants any food item, dish, or cuisine (e.g. 'pizza', 'karahi', 'biryani', 'burger', 'pasta', 'beef kabab', 'chai', 'dessert', 'chicken handi'), NEVER return `unknown`. If they simply name or ask about a food item (e.g. 'pizza', 'karahi', 'beef kabab'), set intent to `add_items` (with `items: [{ query: ... }]`) or `ask_item_info` (with `info_query`). Menu availability, variant selection, and disambiguation are handled downstream.",
   "ORDER TYPE: if the customer says 'deliver karo / deliver krdo / delivery chahiye / ghar pe bhejo / ye deliver karo' (even without specifying an address), use intent `set_order_type` with `order_type: 'delivery'`. Do NOT use `unknown`.",
   "CORRECTION PATTERN — VERY IMPORTANT: When the customer says 'X not Y', 'X chahiye Y nahi', 'Y nahi X chahiye', 'not Y, X chahiye', or any variant meaning they want X and NOT Y — X is the item they WANT (add_items) and Y is the item they do NOT want (remove_items). The FIRST-named correction is typically what they WANT. Example: 'Pizza not french fries' = add_items(pizza) + remove_items(french_fries). Example: 'Zinger nahi biryani chahiye' = add_items(biryani) + remove_items(zinger). Never confuse the direction.",
+  "ADDRESS EXTRACTION: If the customer mentions any delivery location, area, sector, street, phase, or society (e.g. 'Askari 10', 'Model Town', 'DHA Phase 5', 'Bahria Town', 'Gulberg', 'F-7/2 Islamabad', 'House 29 Street 4'), ALWAYS extract it into `address`, include intent `provide_address` and set `order_type: 'delivery'`.",
   "`info_query`: whenever the customer ASKS anything (menu/item price, what's available, recommendations, delivery, timings, location, payment, halal, or any other question), put the customer's question here (rephrased concisely in English) so we can answer it from restaurant facts. ALWAYS fill this for question-type intents.",
   "Intent guide: `ask_delivery_info` = they ask whether you deliver / delivery area / fee / time (NOT giving an address or asking to deliver). `ask_hours_or_location` = opening/closing time or where you are. `ask_payment` = how to pay. `general_question` = any other genuine question that doesn't fit a specific intent — use it liberally instead of `unknown`, and put the question in `info_query`. `view_cart` = they want to see their current cart / order so far.",
   "Prefer a specific question intent + `general_question` over `unknown`. Only use `unknown` when the message is truly meaningless.",
@@ -194,12 +195,32 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
     },
   },
   {
+    user: "2 raita add krdo",
+    assistant: {
+      intents: ["add_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [{ query: "raita", qty: 2, size: null, addons: [], notes: null }],
+    },
+  },
+  {
     user: "1 half chicken karahi",
     assistant: {
       intents: ["add_items"],
       primary_intent: "add_items",
       language: "roman_urdu",
       items: [{ query: "chicken karahi", qty: 1, size: "half", addons: [], notes: null }],
+    },
+  },
+  {
+    user: "2 half chicken karahi askari 10 deliver krdo",
+    assistant: {
+      intents: ["add_items", "set_order_type", "provide_address"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [{ query: "chicken karahi", qty: 2, size: "half", addons: [], notes: null }],
+      order_type: "delivery",
+      address: "askari 10",
     },
   },
   {

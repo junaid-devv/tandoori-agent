@@ -380,7 +380,31 @@ export async function resolveItemDetailed(
     return { kind: "not_found", query: trimmed, suggestions: [] };
   }
 
-  // 1) If user specified a size (e.g. "half", "full"), find the candidate matching that size
+  // 1) Direct exact name match (e.g. "RAITA" -> item "RAITA", "Coke" -> "Coke")
+  const exactMatch = relevantCandidates.find((c) => {
+    const normCand = normalize(c.name);
+    const normQ = normalize(trimmed);
+    const normBaseQ = normalize(baseQuery);
+    return normCand === normQ || normCand === normBaseQ;
+  });
+
+  if (exactMatch) {
+    const { variant } = extractBaseItemName(exactMatch.name);
+    if (variant || requestedSize) {
+      return { kind: "exact", item: exactMatch, confidence: 1.0 };
+    }
+    const sameBaseVariants = relevantCandidates.filter((c) => {
+      const cBase = extractBaseItemName(c.name);
+      return cBase.baseName.toLowerCase() === exactMatch.name.toLowerCase() && cBase.variant !== null;
+    });
+    if (sameBaseVariants.length > 1) {
+      sameBaseVariants.sort((a, b) => a.price - b.price);
+      return { kind: "variants", baseName: exactMatch.name, variants: sameBaseVariants };
+    }
+    return { kind: "exact", item: exactMatch, confidence: 1.0 };
+  }
+
+  // 2) If user specified a size (e.g. "half", "full"), find the candidate matching that size
   if (requestedSize) {
     const sizeMatch = relevantCandidates.find((c) => {
       const { variant } = extractBaseItemName(c.name);
@@ -394,7 +418,7 @@ export async function resolveItemDetailed(
     }
   }
 
-  // 2) Check if top candidates share the same base name with multiple size variants
+  // 3) Check if top candidates share the same base name with multiple size variants
   const topBase = extractBaseItemName(top.name);
   const sameBaseVariants = relevantCandidates.filter((c) => {
     const cBase = extractBaseItemName(c.name);
@@ -409,14 +433,14 @@ export async function resolveItemDetailed(
     return { kind: "variants", baseName: topBase.baseName, variants: sameBaseVariants };
   }
 
-  // 3) Check for broad/ambiguous query matching multiple distinct dishes
+  // 4) Check for broad/ambiguous query matching multiple distinct dishes
   const distinctBases = [...new Set(relevantCandidates.slice(0, 5).map((c) => extractBaseItemName(c.name).baseName.toLowerCase()))];
   const isBroadSingleWord = /^(karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|juice|dessert|fish|boti)$/i.test(trimmed);
   if ((distinctBases.length > 1 && isBroadSingleWord) || (distinctBases.length > 1 && topSim < 0.85)) {
     return { kind: "ambiguous", query: trimmed, matches: relevantCandidates.slice(0, 5) };
   }
 
-  // 4) Single exact / clear best match
+  // 5) Single exact / clear best match
   return { kind: "exact", item: top, confidence: topSim };
 }
 
