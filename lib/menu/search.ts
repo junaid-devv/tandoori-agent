@@ -78,11 +78,24 @@ export function assertSearchReady(): void {
 // Text utils (lexical fallback only)
 // ---------------------------------------------------------------------
 function normalize(value: string): string {
-  return value
+  let v = value
     .toLowerCase()
     .replace(/[^a-z0-9\s-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
+  // Common Pakistani phonetic variations / transliterations
+  v = v
+    .replace(/\b(nan|non|naans|nans)\b/g, "naan")
+    .replace(/\b(krahi|karai|kadai|kadhai)\b/g, "karahi")
+    .replace(/\b(bryani|biryany|baryani|biryanis)\b/g, "biryani")
+    .replace(/\b(handee|handy)\b/g, "handi")
+    .replace(/\b(tika|tikkah)\b/g, "tikka")
+    .replace(/\b(kebab|kabaab|kababs|kebabs)\b/g, "kabab")
+    .replace(/\b(rogni|roghani)\b/g, "roghni")
+    .replace(/\b(cremy|cremi)\b/g, "creamy")
+    .replace(/\b(raitah|rayta|raitaa)\b/g, "raita")
+    .replace(/\b(coldring|colddrink|cooldrink)\b/g, "cold drink");
+  return v;
 }
 function compact(value: string): string {
   return normalize(value).replace(/\s+/g, "");
@@ -103,6 +116,13 @@ function overlapScore(query: string, candidate: string): number {
   for (const t of left) if (right.has(t)) inter += 1;
   const union = new Set([...left, ...right]).size;
   return union > 0 ? inter / union : 0;
+}
+
+export function queryTokensCoveredByName(query: string, name: string): boolean {
+  const qTokens = normalize(query).split(" ").filter((t) => t.length >= 3 && !/^(chicken|mutton|beef|special|pure|desi)$/i.test(t));
+  if (qTokens.length === 0) return false;
+  const nameNorm = normalize(name);
+  return qTokens.every((t) => nameNorm.includes(t));
 }
 
 function toVectorLiteral(embedding: number[]): string {
@@ -436,7 +456,13 @@ export async function resolveItemDetailed(
   // 4) Check for broad/ambiguous query matching multiple distinct dishes
   const distinctBases = [...new Set(relevantCandidates.slice(0, 5).map((c) => extractBaseItemName(c.name).baseName.toLowerCase()))];
   const isBroadSingleWord = /^(karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|juice|dessert|fish|boti)$/i.test(trimmed);
-  if ((distinctBases.length > 1 && isBroadSingleWord) || (distinctBases.length > 1 && topSim < 0.85)) {
+  const tokenCovered = relevantCandidates.find((c) => queryTokensCoveredByName(trimmed, c.name));
+
+  if (tokenCovered) {
+    return { kind: "exact", item: tokenCovered, confidence: 0.95 };
+  }
+
+  if (distinctBases.length > 1 && isBroadSingleWord) {
     return { kind: "ambiguous", query: trimmed, matches: relevantCandidates.slice(0, 5) };
   }
 

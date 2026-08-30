@@ -668,9 +668,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Status ───────────────────────────────────────────────────────────
       case "report_order_status": {
-        const recent = await orderRepo.getLatestForConversation(input.conversationId);
-        if (recent) replies.push(reply.orderStatus(lang, recent.order_number, recent.status));
-        else replies.push(reply.noRecentOrder(lang));
+        try {
+          const recent = await orderRepo.getLatestForConversation(input.conversationId);
+          if (recent) replies.push(reply.orderStatus(lang, recent.order_number, recent.status));
+          else replies.push(reply.noRecentOrder(lang));
+        } catch {
+          replies.push(reply.noRecentOrder(lang));
+        }
         break;
       }
 

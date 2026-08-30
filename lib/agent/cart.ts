@@ -33,9 +33,13 @@ export function removeFromCart(
   cart: CartItem[],
   target: { menu_item_id?: string; name?: string; qty: number | "all" },
 ): CartItem[] {
-  const match = (i: CartItem) =>
-    (target.menu_item_id && i.menu_item_id === target.menu_item_id) ||
-    (target.name && i.name.toLowerCase() === target.name.toLowerCase());
+  const targetLower = target.name?.trim().toLowerCase();
+  const match = (i: CartItem) => {
+    if (target.menu_item_id && i.menu_item_id === target.menu_item_id) return true;
+    if (!targetLower) return false;
+    const itemNameLower = i.name.toLowerCase();
+    return itemNameLower === targetLower || itemNameLower.includes(targetLower) || targetLower.includes(itemNameLower);
+  };
 
   const next: CartItem[] = [];
   for (const i of cart) {
@@ -54,11 +58,14 @@ export function updateQuantity(
   cart: CartItem[],
   target: { menu_item_id?: string; name?: string; qty: number },
 ): CartItem[] {
+  const targetLower = target.name?.trim().toLowerCase();
   return cart
     .map((i) => {
+      const itemNameLower = i.name.toLowerCase();
       const match =
         (target.menu_item_id && i.menu_item_id === target.menu_item_id) ||
-        (target.name && i.name.toLowerCase() === target.name.toLowerCase());
+        (targetLower && (itemNameLower === targetLower || itemNameLower.includes(targetLower) || targetLower.includes(itemNameLower))) ||
+        (cart.length === 1 && (!targetLower || targetLower === "item" || targetLower === "cart"));
       if (!match) return i;
       return { ...i, qty: Math.max(1, Math.min(target.qty, 50)) };
     })
