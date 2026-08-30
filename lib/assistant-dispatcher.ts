@@ -91,26 +91,8 @@ export async function sendAndPersistAssistantMessage({
 function buildInteractiveVisibleBody(content: string, interactiveBody: string): string {
   const contentText = content.trim();
   const bodyText = interactiveBody.trim();
-  if (!contentText) return bodyText;
-  if (!bodyText) return contentText;
-
-  // If the interactive body is already contained within the content (or is the
-  // same) just use the content — avoids duplicated text blocks.
-  const nc = normalizeForDedup(contentText);
-  const nb = normalizeForDedup(bodyText);
-  if (nc === nb || nc.includes(nb)) return contentText;
-
-  // Otherwise attach body on a single newline — not two — so there's no blank gap.
-  return `${contentText}\n${bodyText}`;
-}
-
-function normalizeForDedup(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/[*_`~]/g, "")
-    .replace(/[^a-z0-9\s]/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
+  if (contentText) return contentText;
+  return bodyText;
 }
 
 function buildInteractiveFallbackText(payload: {

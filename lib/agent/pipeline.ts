@@ -86,7 +86,7 @@ function understandingFromInteractiveId(
 
     case "confirm":
       if (val === "yes") {
-        return { ...base, intents: ["confirm_order"], primary_intent: "confirm_order" };
+        return { ...base, intents: ["confirm_order"], primary_intent: "confirm_order", notes: "fast_path_confirm" };
       }
       // "Go Back" / "Wapas Jao" — show cart, don't cancel
       return { ...base, intents: ["view_cart"], primary_intent: "view_cart" };
@@ -107,7 +107,7 @@ function understandingFromInteractiveId(
 
     case "action":
       if (val === "checkout") {
-        return { ...base, intents: ["confirm_order"], primary_intent: "confirm_order" };
+        return { ...base, intents: ["confirm_order"], primary_intent: "confirm_order", notes: "fast_path_checkout" };
       }
       if (val === "view_cart") {
         return { ...base, intents: ["view_cart"], primary_intent: "view_cart" };

@@ -264,6 +264,9 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
       if (missing && view.stage !== "confirming") {
         nextStage = missing;
         actions.push(promptForStage(missing));
+      } else if (view.stage !== "confirming" && u.notes !== "fast_path_confirm") {
+        actions.push({ kind: "show_summary" });
+        nextStage = "confirming";
       } else {
         actions.push({ kind: "place_order" });
         nextStage = "placed";
