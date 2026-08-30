@@ -23,6 +23,17 @@ export const reply = {
     return `${sal}${name} 😊 Welcome to *${appName}*!\nWhat would you like today?`;
   },
 
+  smalltalk(l: Lang, stage?: string): string {
+    if (stage === "placed") {
+      return ur(l)
+        ? "Bohat shukriya! ❤️ Aap ka order jald tayyar ho jayega. Koi aur cheez chahiye ho toh zaroor batayein!"
+        : "You're most welcome! ❤️ Your order will be prepared shortly. Let us know if you need anything else!";
+    }
+    return ur(l)
+      ? "Bohat shukriya! 😊 Hum aap ki khidmat ke liye hazir hain. Kya order karna chahenge?"
+      : "Thank you so much! 😊 Always happy to help. What would you like to order?";
+  },
+
   itemsAdded(l: Lang, added: Array<{ name: string; newCartQty: number }>, cart: CartItem[], currency: string): string {
     const total = `${currency} ${cartSubtotal(cart)}`;
     if (added.length === 0) {

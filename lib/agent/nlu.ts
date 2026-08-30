@@ -155,6 +155,7 @@ const SYSTEM_RULES = [
   "ORDER TYPE: if the customer says 'deliver karo / deliver krdo / delivery chahiye / ghar pe bhejo / ye deliver karo' (even without specifying an address), use intent `set_order_type` with `order_type: 'delivery'`. Do NOT use `unknown`.",
   "CORRECTION PATTERN — VERY IMPORTANT: When the customer says 'X not Y', 'X chahiye Y nahi', 'Y nahi X chahiye', 'not Y, X chahiye', or any variant meaning they want X and NOT Y — X is the item they WANT (add_items) and Y is the item they do NOT want (remove_items). The FIRST-named correction is typically what they WANT. Example: 'Pizza not french fries' = add_items(pizza) + remove_items(french_fries). Example: 'Zinger nahi biryani chahiye' = add_items(biryani) + remove_items(zinger). Never confuse the direction.",
   "ADDRESS EXTRACTION: If the customer mentions any delivery location, area, sector, street, phase, or society (e.g. 'Askari 10', 'Model Town', 'DHA Phase 5', 'Bahria Town', 'Gulberg', 'F-7/2 Islamabad', 'House 29 Street 4'), ALWAYS extract it into `address`, include intent `provide_address` and set `order_type: 'delivery'`.",
+  "COMPLIMENTS & GRATITUDE: When the customer says 'welcome', 'you are welcome', 'thank you', 'thanks', 'shukriya', 'jazakAllah', 'great service', 'zabardast', 'nice', 'awesome', 'good', 'super', or polite farewells like 'Allah hafiz', 'bye', set intent to 'smalltalk' (NEVER unknown).",
   "`info_query`: whenever the customer ASKS anything (menu/item price, what's available, recommendations, delivery, timings, location, payment, halal, or any other question), put the customer's question here (rephrased concisely in English) so we can answer it from restaurant facts. ALWAYS fill this for question-type intents.",
   "Intent guide: `ask_delivery_info` = they ask whether you deliver / delivery area / fee / time (NOT giving an address or asking to deliver). `ask_hours_or_location` = opening/closing time or where you are. `ask_payment` = how to pay. `general_question` = any other genuine question that doesn't fit a specific intent — use it liberally instead of `unknown`, and put the question in `info_query`. `view_cart` = they want to see their current cart / order so far.",
   "Prefer a specific question intent + `general_question` over `unknown`. Only use `unknown` when the message is truly meaningless.",
@@ -167,6 +168,38 @@ const SYSTEM_RULES = [
 
 // A handful of REAL-style examples across languages/edge cases. Kept small on purpose.
 const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> = [
+  {
+    user: "Welcome",
+    assistant: {
+      intents: ["smalltalk"],
+      primary_intent: "smalltalk",
+      language: "english",
+    },
+  },
+  {
+    user: "Shukriya",
+    assistant: {
+      intents: ["smalltalk"],
+      primary_intent: "smalltalk",
+      language: "roman_urdu",
+    },
+  },
+  {
+    user: "Great service, thanks a lot!",
+    assistant: {
+      intents: ["smalltalk"],
+      primary_intent: "smalltalk",
+      language: "english",
+    },
+  },
+  {
+    user: "Zabardast",
+    assistant: {
+      intents: ["smalltalk"],
+      primary_intent: "smalltalk",
+      language: "roman_urdu",
+    },
+  },
   {
     user: "pizza",
     assistant: {

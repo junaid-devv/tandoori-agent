@@ -690,7 +690,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Smalltalk ────────────────────────────────────────────────────────
       case "smalltalk":
-        if (replies.length === 0) replies.push(reply.greeting(lang, input.appName));
+        if (replies.length === 0) replies.push(reply.smalltalk(lang, ctx.state.stage));
         break;
 
       // ── Clarification ────────────────────────────────────────────────────

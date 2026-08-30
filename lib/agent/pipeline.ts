@@ -269,6 +269,15 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         info_query: trimmed,
         notes: "fast_path_delivery_info",
       };
+    } else if (
+      /^(?:welcome|you'?re welcome|you are welcome|ur welcome|yw|no problem|no prob|np|thank you|thanks|thx|tysm|shukriya|bohat shukriya|bahut shukriya|jazakallah|jazak allah|meharbani|great|awesome|nice|zabardast|good|perfect|super|mashallah|masha allah|subhanallah|allah hafiz|bye|goodbye|cya|take care)$/i.test(trimmed)
+    ) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["smalltalk"],
+        primary_intent: "smalltalk",
+        notes: "fast_path_smalltalk",
+      };
     } else if (/(?:restaurant\s+)?(?:kab|kistime|kis\s+time)\s+(?:open|khulta|khula|khul)|(?:kab|kistime|kis\s+time)\s+(?:open|close|khulta|band)|(?:opening|closing)\s+(?:time|hours)|(?:what\s+are\s+your\s+hours|timing\s+kya\s+hai|restaurant\s+timing|timings\s+kya\s+hain)/i.test(trimmed)) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
