@@ -51,8 +51,10 @@ export interface PlaceOrderPayload {
   sourceUserMessageId: string;
   type: OrderType;
   items: Array<{
+    menu_item_id?: string;
     name: string;
     qty: number;
+    unit_price?: number;
     size?: string | null;
     addons?: string[];
     item_instructions?: string | null;

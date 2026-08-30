@@ -506,7 +506,15 @@ begin
       select exists (
         select 1 from jsonb_array_elements_text(v_delivery_areas) as area(value)
         where btrim(area.value) <> ''
-          and lower(coalesce(p_address, '')) like '%' || lower(btrim(area.value)) || '%'
+          and (
+            lower(coalesce(p_address, '')) like '%' || lower(btrim(area.value)) || '%'
+            or lower(btrim(area.value)) like '%' || lower(coalesce(p_address, '')) || '%'
+            or (
+              select bool_and(lower(coalesce(p_address, '')) like '%' || lower(t.word) || '%')
+              from regexp_split_to_table(regexp_replace(btrim(area.value), '[^a-zA-Z0-9]+', ' ', 'g'), '\s+') as t(word)
+              where length(t.word) >= 3 and t.word !~ '^[0-9]+(-[0-9]+)?$'
+            )
+          )
       ) into v_delivery_area_matches;
       if not coalesce(v_delivery_area_matches, false) then
         raise exception 'Delivery address is outside configured delivery areas.';

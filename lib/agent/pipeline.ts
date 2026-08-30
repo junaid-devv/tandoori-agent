@@ -248,14 +248,18 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         primary_intent: "confirm_order",
         notes: "fast_path_checkout",
       };
-    } else if (ctx.view.stage === "choosing_order_type" && /^(delivery|pickup|dine-in|dine in)$/i.test(trimmed)) {
-      const raw = trimmed.toLowerCase().replace(" ", "-");
+    } else if (
+      /^(?:can i (?:change|switch) to |switch to |actually |no |nahi )?(delivery|pickup|dine-in|dine in)(?: is fine| krdo| kardo| please| chahiye| it\.{0,3})?$/i.test(trimmed) ||
+      /^(?:no you deliver it\.{0,3}|deliver it\.{0,3}|deliver please)$/i.test(trimmed)
+    ) {
+      const match = trimmed.match(/\b(delivery|pickup|dine-in|dine in)\b/i);
+      const raw = match ? match[1].toLowerCase().replace(" ", "-") : (trimmed.toLowerCase().includes("deliver") ? "delivery" : "pickup");
       understanding = {
         ...makeBase(ctx.state.preferred_language),
         intents: ["set_order_type"],
         primary_intent: "set_order_type",
         order_type: raw === "delivery" || raw === "pickup" || raw === "dine-in" ? raw : null,
-        notes: "fast_path_order_type",
+        notes: "fast_path_order_type_change",
       };
     } else if (/(?:delivery\s+(?:kis\s+time|kab|timing|time|available\s+hogi|hogi|chal|available)|kab\s+(?:tak\s+)?deliver\s+(?:hoga|hogi)|delivery\s+timing|delivery\s+charges|delivery\s+fee)/i.test(trimmed) && !/karahi|biryani|burger|tikka|kabab|pizza|bhejo|krdo|kardo/i.test(trimmed)) {
       understanding = {

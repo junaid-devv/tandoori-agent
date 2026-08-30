@@ -224,6 +224,24 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
     },
   },
   {
+    user: "Can I change to pickup?",
+    assistant: {
+      intents: ["set_order_type"],
+      primary_intent: "set_order_type",
+      language: "english",
+      order_type: "pickup",
+    },
+  },
+  {
+    user: "No delivery is fine",
+    assistant: {
+      intents: ["set_order_type"],
+      primary_intent: "set_order_type",
+      language: "english",
+      order_type: "delivery",
+    },
+  },
+  {
     user: "2 zinger burger aur ek coke, delivery karwa do defence phase 5",
     assistant: {
       intents: ["add_items", "set_order_type", "provide_address"],

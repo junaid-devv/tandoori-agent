@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bot, Clock, Phone, RefreshCw, Save, Store, Truck } from "lucide-react";
+import { Bot, CheckCircle2, Clock, Phone, RefreshCw, Save, Store, Truck } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
@@ -327,8 +327,27 @@ export default function SettingsPage() {
 
           <div className="py-3">
             <div className="flex items-center justify-between gap-3">
-              <span className="text-sm text-slate-600 font-medium">Delivery Areas</span>
-              <span className="text-xs text-slate-400">{settings.delivery_areas.length || "No"} areas</span>
+              <div>
+                <span className="text-sm text-slate-700 font-medium">Delivery Areas & Location Restrictions</span>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {settings.delivery_areas.length === 0
+                    ? "Deliver Anywhere — No location restrictions are active. Orders from all addresses will be accepted."
+                    : `Restricted to ${settings.delivery_areas.length} area${settings.delivery_areas.length > 1 ? "s" : ""}. Orders outside these areas will be blocked.`}
+                </p>
+              </div>
+              {settings.delivery_areas.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setSettings((current) => ({ ...current, delivery_areas: [] }))}
+                  className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition"
+                >
+                  Remove Restrictions (Deliver Anywhere)
+                </button>
+              ) : (
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
+                  <CheckCircle2 size={12} /> Anywhere
+                </span>
+              )}
             </div>
             <textarea
               value={settings.delivery_areas.join("\n")}
@@ -341,13 +360,10 @@ export default function SettingsPage() {
                     .filter(Boolean),
                 }))
               }
-              rows={5}
-              className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-800 outline-none focus:border-brand/30 focus:ring-2 focus:ring-brand/10"
-              placeholder="One area per line"
+              rows={4}
+              className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-800 outline-none focus:border-brand/30 focus:ring-2 focus:ring-brand/10 font-mono"
+              placeholder="Leave empty to deliver anywhere, or enter one area per line (e.g. DHA, Gulberg, Askari 10)..."
             />
-            <p className="mt-2 text-xs text-slate-400">
-              Leave empty to allow any address. When areas are listed, delivery orders must match one.
-            </p>
           </div>
         </Card>
 
