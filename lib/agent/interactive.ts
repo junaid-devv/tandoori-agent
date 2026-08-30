@@ -69,7 +69,7 @@ export function orderTypeButtons(l: LanguagePreference, settings?: RestaurantSet
   };
 }
 
-/** Confirm / cancel / add-more as reply buttons (3 max). */
+/** Confirm / add-more as reply buttons. */
 export function confirmButtons(l: LanguagePreference): InteractivePayload {
   return {
     kind: "buttons",
@@ -77,29 +77,22 @@ export function confirmButtons(l: LanguagePreference): InteractivePayload {
       body: ur(l) ? "Order confirm karein?" : "Confirm your order?",
       buttons: [
         { id: "confirm:yes", title: "Confirm ✓" },
-        { id: "confirm:no", title: ur(l) ? "Wapas Jao" : "Go Back" },
-        { id: "action:add_more", title: ur(l) ? "Aur Dalein" : "Add More" },
+        { id: "action:add_more", title: "Add More" },
       ],
     },
   };
 }
 
-/** Cart action buttons shown after adding an item or viewing cart.
- *  hideViewCart: true → omit the "View Cart" button (used when cart is already displayed). */
-export function cartActionButtons(l: LanguagePreference, opts?: { hideViewCart?: boolean }): InteractivePayload {
-  const buttons: Array<{ id: string; title: string }> = [
-    { id: "action:add_more", title: ur(l) ? "Aur Add Karein" : "Add More" },
-    { id: "action:checkout", title: "Checkout" },
-  ];
-  if (!opts?.hideViewCart) {
-    // Insert View Cart between Add More and Checkout (WhatsApp max 3 buttons)
-    buttons.splice(1, 0, { id: "action:view_cart", title: ur(l) ? "Cart Dekhein" : "View Cart" });
-  }
+/** Cart action buttons shown after adding an item or viewing cart. */
+export function cartActionButtons(l: LanguagePreference, _opts?: { hideViewCart?: boolean }): InteractivePayload {
   return {
     kind: "buttons",
     payload: {
       body: ur(l) ? "Kya karna hai?" : "What would you like to do?",
-      buttons,
+      buttons: [
+        { id: "action:add_more", title: "Add More" },
+        { id: "action:checkout", title: "Checkout" },
+      ],
     },
   };
 }
