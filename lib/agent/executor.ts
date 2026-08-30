@@ -245,8 +245,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         }
 
         if (added.length) {
-          replies.push(reply.itemsAdded(lang, added, cart, cur));
-          setInteractive(cartActionButtons(lang));
+          const willShowSummary = transition.actions.some((a) => a.kind === "show_summary");
+          if (!willShowSummary) {
+            replies.push(reply.itemsAdded(lang, added, cart, cur));
+            setInteractive(cartActionButtons(lang));
+          }
         }
         break;
       }
@@ -498,6 +501,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       }
 
       case "show_summary": {
+        if (hasDisambiguation) break;
         const addr = patch.address ?? ctx.state.address;
         if (cart.length === 0) {
           replies.push(reply.emptyCart(lang));

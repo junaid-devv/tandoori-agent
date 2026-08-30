@@ -174,7 +174,13 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
     if (!view.upsell_offered) {
       actions.push({ kind: "offer_upsell" });
     }
-    nextStage = "building_cart";
+    const allSlotsReady = Boolean(view.order_type && missingSlot(view) === null);
+    if (allSlotsReady) {
+      actions.push({ kind: "show_summary" });
+      nextStage = "confirming";
+    } else {
+      nextStage = "building_cart";
+    }
   }
   if (u.intents.includes("remove_items") && u.removals.length > 0) {
     actions.push({ kind: "remove_items", payload: { removals: u.removals } });
@@ -216,7 +222,9 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
         actions.push(promptForStage(missing));
         nextStage = missing;
       } else if (view.cart.length > 0 && hasSlotInThisTurn) {
-        actions.push({ kind: "show_summary" });
+        if (!actions.some((a) => a.kind === "show_summary")) {
+          actions.push({ kind: "show_summary" });
+        }
         nextStage = "confirming";
       }
     } else {
@@ -230,7 +238,9 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   if (u.address) {
     actions.push({ kind: "collect_delivery_address", payload: { address: u.address } });
     if (orderTypeAlreadySet && view.cart.length > 0) {
-      actions.push({ kind: "show_summary" });
+      if (!actions.some((a) => a.kind === "show_summary")) {
+        actions.push({ kind: "show_summary" });
+      }
       nextStage = "confirming";
     }
   }
@@ -243,14 +253,18 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   if (u.guests || u.reservation_time) {
     actions.push({ kind: "collect_dinein_details", payload: { guests: u.guests, reservation_time: u.reservation_time } });
     if (orderTypeAlreadySet && view.cart.length > 0) {
-      actions.push({ kind: "show_summary" });
+      if (!actions.some((a) => a.kind === "show_summary")) {
+        actions.push({ kind: "show_summary" });
+      }
       nextStage = "confirming";
     }
   }
   if (u.pickup_time) {
     actions.push({ kind: "collect_pickup_time", payload: { pickup_time: u.pickup_time } });
     if (orderTypeAlreadySet && view.cart.length > 0) {
-      actions.push({ kind: "show_summary" });
+      if (!actions.some((a) => a.kind === "show_summary")) {
+        actions.push({ kind: "show_summary" });
+      }
       nextStage = "confirming";
     }
   }
