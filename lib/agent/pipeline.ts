@@ -278,6 +278,27 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         info_query: trimmed,
         notes: "fast_path_payment",
       };
+    } else if (ctx.menu && ctx.menu.length > 0) {
+      const lower = trimmed.toLowerCase();
+      const categories = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
+      const matchedCategory = categories.find((c) => {
+        const cLower = c.toLowerCase();
+        return cLower === lower || cLower.includes(lower) || lower.includes(cLower);
+      });
+      if (
+        matchedCategory &&
+        lower !== "menu" &&
+        lower.length <= 40 &&
+        !/^(order|deliver|bhejo|krdo|kardo|chahiye|mangwana|pack|parcel|add|dal)/i.test(trimmed)
+      ) {
+        understanding = {
+          ...makeBase(ctx.state.preferred_language),
+          intents: ["browse_menu"],
+          primary_intent: "browse_menu",
+          info_query: matchedCategory,
+          notes: "fast_path_category_match",
+        };
+      }
     }
   }
 

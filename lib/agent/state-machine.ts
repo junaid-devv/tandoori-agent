@@ -106,7 +106,7 @@ function promptForStage(stage: ConversationStage): AgentAction {
 function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null {
   switch (intent) {
     case "browse_menu":
-      return { kind: "show_menu" };
+      return { kind: "show_menu", payload: { category: u.info_query ?? undefined } };
     case "ask_item_info":
     case "ask_recommendation":
       return { kind: "answer_info", payload: { query: u.info_query ?? "", intent } };

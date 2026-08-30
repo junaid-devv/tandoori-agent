@@ -281,6 +281,24 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
     },
   },
   {
+    user: "BBQ",
+    assistant: {
+      intents: ["browse_menu"],
+      primary_intent: "browse_menu",
+      language: "english",
+      info_query: "BBQ",
+    },
+  },
+  {
+    user: "Starters dikhao",
+    assistant: {
+      intents: ["browse_menu"],
+      primary_intent: "browse_menu",
+      language: "roman_urdu",
+      info_query: "Starters",
+    },
+  },
+  {
     user: "Delivery kis time available hogi?",
     assistant: {
       intents: ["ask_delivery_info"],

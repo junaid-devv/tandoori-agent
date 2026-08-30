@@ -87,11 +87,16 @@ export const reply = {
       : `Here are our "${query}" options:\n${list}\nWhich one would you like to order?`;
   },
 
-  itemList(l: Lang, items: Array<{ name: string; price: number }>, currency: string): string {
+  itemList(l: Lang, items: Array<{ name: string; price: number }>, currency: string, categoryName?: string): string {
     if (items.length === 0) {
       return ur(l) ? "Menu abhi available nahi." : "Menu not available right now.";
     }
-    return items.slice(0, 6).map((i) => `• ${i.name} — ${currency} ${i.price}`).join("\n");
+    const list = items.slice(0, 10).map((i) => `• ${i.name} — ${currency} ${i.price}`).join("\n");
+    const header = categoryName
+      ? `*${categoryName.toUpperCase()}* items:`
+      : (ur(l) ? "Menu items:" : "Menu items:");
+    const footer = ur(l) ? "Kaunsa item mangwana chahenge?" : "Which item would you like to order?";
+    return `${header}\n${list}\n\n${footer}`;
   },
 
   categoryList(l: Lang, categories: string[]): string {

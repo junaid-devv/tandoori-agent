@@ -355,17 +355,23 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       case "show_menu": {
         const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
-        const categoryQuery = action.payload?.category as string | undefined;
+        const categoryQuery =
+          (action.payload?.category as string | undefined) ??
+          (u.info_query as string | undefined);
 
         if (categoryQuery) {
+          const normQuery = categoryQuery.toLowerCase().trim();
           const categoryItems = ctx.menu.filter((m) =>
-            m.category && m.category.toLowerCase().includes(categoryQuery.toLowerCase())
+            m.category && (
+              m.category.toLowerCase().includes(normQuery) ||
+              normQuery.includes(m.category.toLowerCase())
+            )
           );
           if (categoryItems.length > 0) {
             patch.last_shown_options = categoryItems.map((m) => ({ id: m.id, name: m.name, price: m.price }));
             patch.last_shown_options_at = new Date().toISOString();
             patch.last_shown_category = categoryQuery;
-            replies.push(reply.itemList(lang, categoryItems, cur));
+            replies.push(reply.itemList(lang, categoryItems, cur, categoryQuery));
             setInteractive(itemPickList(lang, categoryItems, cur));
             break;
           }
