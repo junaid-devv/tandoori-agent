@@ -134,9 +134,9 @@ export function parseCustomerTimeToIso(
 
   const raw = value.trim().toLowerCase();
 
-  // 1) If already an ISO string
-  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(raw)) {
-    const d = new Date(raw);
+  // 1) If already an ISO or SQL timestamp string
+  if (/^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}/i.test(raw)) {
+    const d = new Date(raw.includes("T") ? raw : raw.replace(" ", "T"));
     if (!Number.isNaN(d.getTime())) return d.toISOString();
   }
 

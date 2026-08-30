@@ -21,7 +21,9 @@ import type { RestaurantSettings } from "@/lib/settings";
 import type { MenuCatalogItem } from "@/lib/menu";
 
 function getModel(): string {
-  return process.env.ORDER_AGENT_NLU_MODEL || process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
+  if (process.env.GROQ_API_KEY) return "qwen/qwen3.8-27b";
+  if (process.env.ORDER_AGENT_NLU_MODEL) return process.env.ORDER_AGENT_NLU_MODEL;
+  return process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
 }
 const MAX_TOKENS = Number(process.env.ORDER_AGENT_ANSWER_MAX_TOKENS) || 180;
 const TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 25_000;
@@ -30,6 +32,13 @@ const CACHE_TTL_MS = Number(process.env.ANSWER_CACHE_TTL_MS) || 3 * 60_000;
 let client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (client) return client;
+  if (process.env.GROQ_API_KEY) {
+    client = new OpenAI({
+      baseURL: "https://api.groq.com/openai/v1",
+      apiKey: process.env.GROQ_API_KEY,
+    });
+    return client;
+  }
   const baseURL =
     process.env.ORDER_AGENT_NLU_BASE_URL ||
     (process.env.DEEPSEEK_API_KEY ? "https://seekai.cc/v1" : "https://openrouter.ai/api/v1");

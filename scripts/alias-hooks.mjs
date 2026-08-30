@@ -28,6 +28,16 @@ function resolveWithExt(base) {
 }
 
 export async function resolve(specifier, context, nextResolve) {
+  if (specifier === "server-only") {
+    return {
+      format: "module",
+      shortCircuit: true,
+      url: "data:text/javascript,export default {}",
+    };
+  }
+  if (specifier === "next/server") {
+    return nextResolve("next/server.js", context);
+  }
   if (specifier.startsWith("@/")) {
     const target = resolveWithExt(path.join(ROOT, specifier.slice(2)));
     return nextResolve(pathToFileURL(target).href, context);

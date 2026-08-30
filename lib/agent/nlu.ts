@@ -22,7 +22,9 @@ import type { LanguagePreference } from "@/lib/schema.types";
 // Config
 // ---------------------------------------------------------------------
 function getNluModel(): string {
-  return process.env.ORDER_AGENT_NLU_MODEL || process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
+  if (process.env.GROQ_API_KEY) return "qwen/qwen3.8-27b";
+  if (process.env.ORDER_AGENT_NLU_MODEL) return process.env.ORDER_AGENT_NLU_MODEL;
+  return process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
 }
 const NLU_MAX_TOKENS = Number(process.env.ORDER_AGENT_NLU_MAX_TOKENS) || 400;
 const NLU_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 25_000;
@@ -31,6 +33,13 @@ const NLU_CACHE_TTL_MS = Number(process.env.NLU_CACHE_TTL_MS) || 5 * 60_000;
 let client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (client) return client;
+  if (process.env.GROQ_API_KEY) {
+    client = new OpenAI({
+      baseURL: "https://api.groq.com/openai/v1",
+      apiKey: process.env.GROQ_API_KEY,
+    });
+    return client;
+  }
   const baseURL =
     process.env.ORDER_AGENT_NLU_BASE_URL ||
     (process.env.DEEPSEEK_API_KEY ? "https://seekai.cc/v1" : "https://openrouter.ai/api/v1");
@@ -263,6 +272,17 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
       primary_intent: "set_order_type",
       language: "english",
       order_type: "pickup",
+    },
+  },
+  {
+    user: "chalo 4 logo ke liye table book krdo 8:30 pm pe dine in",
+    assistant: {
+      intents: ["set_order_type", "provide_dinein_details"],
+      primary_intent: "set_order_type",
+      language: "roman_urdu",
+      order_type: "dine-in",
+      guests: 4,
+      reservation_time: "8:30 PM",
     },
   },
   {
@@ -563,10 +583,10 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
 
 function buildMessages(input: NluInput): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
   // Compact context: keep tokens small. Cart: just name+qty. Options: max 8 names, truncated.
-  const cartStr = input.cart.length
+  const cartStr = (input.cart && input.cart.length)
     ? input.cart.map((c) => `${c.qty}x${c.name}`).join(",")
     : "empty";
-  const optStr = input.lastShownOptions?.length
+  const optStr = (input.lastShownOptions && input.lastShownOptions.length)
     ? input.lastShownOptions.slice(0, 8).map((o) => o.slice(0, 24)).join("|")
     : "";
 
@@ -575,15 +595,14 @@ function buildMessages(input: NluInput): OpenAI.Chat.Completions.ChatCompletionM
     optStr ? `OPTIONS:${optStr}` : "",
   ].filter(Boolean).join(" ");
 
-  const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-    { role: "system", content: `${SYSTEM_RULES}\n\n${ctx}` },
+  const examplesText = FEW_SHOT.slice(0, 15)
+    .map((ex) => `Customer: "${ex.user}" => ${JSON.stringify(fillDefaults(ex.assistant))}`)
+    .join("\n");
+
+  return [
+    { role: "system", content: `${SYSTEM_RULES}\n\n${ctx}\n\nEXAMPLES:\n${examplesText}` },
+    { role: "user", content: input.messageText },
   ];
-  for (const ex of FEW_SHOT) {
-    messages.push({ role: "user", content: ex.user });
-    messages.push({ role: "assistant", content: JSON.stringify(fillDefaults(ex.assistant)) });
-  }
-  messages.push({ role: "user", content: input.messageText });
-  return messages;
 }
 
 // ---------------------------------------------------------------------

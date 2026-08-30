@@ -158,6 +158,20 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     }
   }
 
+  if (u.guests && !patch.guests) patch.guests = u.guests;
+  if (u.reservation_time && !patch.reservation_time) {
+    patch.reservation_time = parseCustomerTimeToIso(u.reservation_time, ctx.settings.timezone);
+  }
+  if (u.pickup_time && !patch.pickup_time) {
+    patch.pickup_time = parseCustomerTimeToIso(u.pickup_time, ctx.settings.timezone);
+  }
+  if (u.address && !patch.address) {
+    patch.address = u.address;
+  }
+  if (u.order_type && !patch.order_type) {
+    patch.order_type = u.order_type;
+  }
+
   // ── Action dispatch ───────────────────────────────────────────────────────
   for (const action of transition.actions) {
     switch (action.kind) {

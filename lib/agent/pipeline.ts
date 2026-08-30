@@ -261,6 +261,18 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         order_type: raw === "delivery" || raw === "pickup" || raw === "dine-in" ? raw : null,
         notes: "fast_path_order_type_change",
       };
+    } else if (/(?:table\s+book|dine-?in|table\s+chahiye|dine\s+in)/i.test(trimmed)) {
+      const guestsMatch = trimmed.match(/\b(\d+)\s*(?:log|people|persons|guests|bande|bnde)\b/i);
+      const timeMatch = trimmed.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje))\b/i);
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["set_order_type", "provide_dinein_details"],
+        primary_intent: "set_order_type",
+        order_type: "dine-in",
+        guests: guestsMatch ? Number(guestsMatch[1]) : null,
+        reservation_time: timeMatch ? timeMatch[1] : null,
+        notes: "fast_path_dinein",
+      };
     } else if (/(?:delivery\s+(?:kis\s+time|kab|timing|time|available\s+hogi|hogi|chal|available)|kab\s+(?:tak\s+)?deliver\s+(?:hoga|hogi)|delivery\s+timing|delivery\s+charges|delivery\s+fee)/i.test(trimmed) && !/karahi|biryani|burger|tikka|kabab|pizza|bhejo|krdo|kardo/i.test(trimmed)) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
@@ -270,7 +282,8 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         notes: "fast_path_delivery_info",
       };
     } else if (
-      /^(?:welcome|you'?re welcome|you are welcome|ur welcome|yw|no problem|no prob|np|thank you|thanks|thx|tysm|shukriya|bohat shukriya|bahut shukriya|jazakallah|jazak allah|meharbani|great|awesome|nice|zabardast|good|perfect|super|mashallah|masha allah|subhanallah|allah hafiz|bye|goodbye|cya|take care)$/i.test(trimmed)
+      /(?:welcome|you'?re welcome|you are welcome|ur welcome|yw|no problem|no prob|np|thank you|thanks|thx|tysm|shukriya|bohat shukriya|bahut shukriya|jazakallah|jazak allah|meharbani|great|awesome|nice|zabardast|good|perfect|super|mashallah|masha allah|subhanallah|allah hafiz|bye|goodbye|cya|take care)/i.test(trimmed) &&
+      !/(?:biryani|karahi|handi|tikka|kabab|burger|pizza|roti|naan|nan|bhejo|krdo|kardo|order|chahiye|mangwana|dal do|daal do|table|book)/i.test(trimmed)
     ) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
