@@ -21,27 +21,28 @@ type MenuRow = {
   is_available: boolean;
 };
 
-const DEFAULT_EMBEDDING_MODEL = process.env.MENU_EMBEDDING_MODEL || "text-embedding-3-small";
-const DEFAULT_EMBEDDING_BASE_URL =
-  process.env.MENU_EMBEDDING_BASE_URL ||
-  process.env.OPENAI_BASE_URL ||
-  "https://api.openai.com/v1";
-const DEFAULT_EMBEDDING_API_KEY =
-  process.env.MENU_EMBEDDING_API_KEY ||
-  process.env.OPENAI_API_KEY ||
-  "";
-// Must match lib/menu/search.ts and the vector(1536) column exactly.
-const DEFAULT_EMBEDDING_DIMENSIONS = Number(process.env.MENU_EMBEDDING_DIMENSIONS) || 1536;
+function getEmbeddingModel(): string {
+  return process.env.MENU_EMBEDDING_MODEL || "text-embedding-3-small";
+}
+function getEmbeddingDimensions(): number {
+  return Number(process.env.MENU_EMBEDDING_DIMENSIONS) || 1536;
+}
 
 let embeddingClient: OpenAI | null = null;
 
 function getEmbeddingClient(): OpenAI | null {
-  if (!DEFAULT_EMBEDDING_API_KEY) return null;
+  const apiKey = process.env.MENU_EMBEDDING_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) return null;
   if (embeddingClient) return embeddingClient;
 
+  const baseURL =
+    process.env.MENU_EMBEDDING_BASE_URL ||
+    process.env.OPENAI_BASE_URL ||
+    "https://api.openai.com/v1";
+
   embeddingClient = new OpenAI({
-    apiKey: DEFAULT_EMBEDDING_API_KEY,
-    baseURL: DEFAULT_EMBEDDING_BASE_URL,
+    apiKey,
+    baseURL,
   });
 
   return embeddingClient;
@@ -109,17 +110,19 @@ async function createBatchEmbeddings(inputs: string[]): Promise<(number[] | null
   if (!client || trimmed.every((s) => !s)) return inputs.map(() => null);
 
   try {
+    const model = getEmbeddingModel();
+    const dimensions = getEmbeddingDimensions();
     const response = await client.embeddings.create({
-      model: DEFAULT_EMBEDDING_MODEL,
+      model,
       input: trimmed.map((s) => s || " "),
-      dimensions: DEFAULT_EMBEDDING_DIMENSIONS,
+      dimensions,
     });
 
     const result: (number[] | null)[] = new Array(inputs.length).fill(null);
     for (const entry of response.data) {
       if (
         Array.isArray(entry.embedding) &&
-        entry.embedding.length === DEFAULT_EMBEDDING_DIMENSIONS
+        entry.embedding.length === dimensions
       ) {
         result[entry.index] = entry.embedding;
       }
@@ -180,10 +183,11 @@ export async function syncMenuEmbeddingsForBranch(branchId: string): Promise<voi
     existingMap.set(emb.menu_item_id, emb);
   }
 
+  const targetModel = getEmbeddingModel();
   const itemsToSync = rows.filter((row) => {
     const source = buildEmbeddingSource(row);
     const existing = existingMap.get(row.id);
-    return !existing || existing.embedding_source !== source || existing.embedding_model !== DEFAULT_EMBEDDING_MODEL;
+    return !existing || existing.embedding_source !== source || existing.embedding_model !== targetModel;
   });
 
   if (itemsToSync.length === 0) {
@@ -211,7 +215,7 @@ export async function syncMenuEmbeddingsForBranch(branchId: string): Promise<voi
           upsertRows.push({
             menu_item_id: chunk[j].id,
             branch_id: chunk[j].branch_id,
-            embedding_model: DEFAULT_EMBEDDING_MODEL,
+            embedding_model: targetModel,
             embedding_source: sources[j],
             embedding: toVectorLiteral(vec),
             updated_at: new Date().toISOString(),
