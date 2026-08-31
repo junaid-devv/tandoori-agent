@@ -1,12 +1,38 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Bot, CheckCircle2, Clock, Phone, RefreshCw, Save, Store, Truck } from "lucide-react";
+import { useEffect, useMemo, useState, useCallback } from "react";
+import {
+  Bot,
+  CheckCircle2,
+  Clock,
+  Phone,
+  RefreshCw,
+  Save,
+  Store,
+  Truck,
+  Database,
+  Volume2,
+  VolumeX,
+  Bell,
+  Sparkles,
+  Zap,
+  Building2,
+  Check,
+  AlertTriangle,
+  Server,
+  Layers,
+  Activity,
+  Trash2,
+  Sliders,
+  ShieldCheck,
+} from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { toast } from "sonner";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
+
+type SettingsTab = "operations" | "delivery" | "ai_brand" | "contacts" | "database" | "notifications";
 
 type SettingsState = {
   is_accepting_orders: boolean;
@@ -24,12 +50,55 @@ type SettingsState = {
   ai_personality: string;
 };
 
+type DatabaseSystemStats = {
+  database: {
+    status: string;
+    ping_latency_ms: number;
+    provider: string;
+    ssl_enabled: boolean;
+    pooling_enabled: boolean;
+  };
+  table_counts: {
+    orders: number;
+    active_orders: number;
+    conversations: number;
+    messages: number;
+    contacts: number;
+    menu_items: number;
+    agent_turns: number;
+    webhook_events: number;
+    staff_alerts: number;
+    unread_alerts: number;
+    rate_limits: number;
+  };
+  cache: {
+    active_entries: number;
+  };
+};
+
 const CITY_OPTIONS = ["Rawalpindi", "Islamabad", "Lahore", "Karachi", "Peshawar"] as const;
+
 const AI_PERSONALITY_PRESETS = [
-  "Warm & Professional",
-  "Friendly & Casual",
-  "Fast & Direct",
-  "Premium & Polished",
+  {
+    title: "Warm & Professional",
+    desc: "Polite Pakistani hospitality style. Uses 'Salam', 'Jee zaroor', and ensures polite confirmation.",
+    sample: "Salam! Hamari Chicken Creamy Handi bohat pasand ki jati hai. Kya aap ka order shuru karein?",
+  },
+  {
+    title: "Fast & Direct",
+    desc: "Concise and to the point. Minimal text, rapid item confirmation.",
+    sample: "Chicken Handi (Rs. 2595) available hai. Kya quantity add karein?",
+  },
+  {
+    title: "Friendly & Casual",
+    desc: "Relaxed conversational local tone. Warm and helpful.",
+    sample: "Aoa bhai! Zaroor, Gulberg me 40 min me deliver ho jayega. Kya kya pack karein?",
+  },
+  {
+    title: "Premium & Polished",
+    desc: "Refined, formal language suitable for upscale dining.",
+    sample: "Good day! We would be delighted to prepare your dinner reservation for tonight.",
+  },
 ] as const;
 
 function toTimeInputValue(value: string): string {
@@ -53,8 +122,20 @@ function toMeridiemLabel(value: string): string {
 }
 
 export default function SettingsPage() {
-  const { profile, selectedBranchId, selectedBranch } = useDashboardContext();
+  const {
+    profile,
+    selectedBranchId,
+    selectedBranch,
+    isSoundEnabled,
+    toggleSoundEnabled,
+  } = useDashboardContext();
+
+  const [activeTab, setActiveTab] = useState<SettingsTab>("operations");
   const [saving, setSaving] = useState(false);
+  const [purgingCache, setPurgingCache] = useState(false);
+  const [dbStats, setDbStats] = useState<DatabaseSystemStats | null>(null);
+  const [loadingDbStats, setLoadingDbStats] = useState(false);
+
   const [settings, setSettings] = useState<SettingsState>({
     is_accepting_orders: true,
     opening_time: "10:00 AM",
@@ -68,14 +149,12 @@ export default function SettingsPage() {
     city: "",
     phone_delivery: "",
     phone_dine_in: "",
-    ai_personality: "",
+    ai_personality: "Warm & Professional",
   });
 
-  const settingsUrl = useMemo(() =>
-    selectedBranchId === "all"
-      ? null
-      : `/api/settings?branch_id=${encodeURIComponent(selectedBranchId)}`,
-    [selectedBranchId],
+  const settingsUrl = useMemo(
+    () => (selectedBranchId === "all" ? null : `/api/settings?branch_id=${encodeURIComponent(selectedBranchId)}`),
+    [selectedBranchId]
   );
 
   const { data: cachedSettings, isLoading: loading } = useDataCache<Partial<SettingsState>>(settingsUrl);
@@ -87,19 +166,34 @@ export default function SettingsPage() {
     }
   }, [cachedSettings]);
 
+  // Load database telemetry
+  const loadDatabaseStats = useCallback(async () => {
+    setLoadingDbStats(true);
+    try {
+      const res = await fetch("/api/settings/system");
+      if (res.ok) {
+        const data = await res.json();
+        setDbStats(data);
+      }
+    } catch {
+      toast.error("Failed to load database stats");
+    } finally {
+      setLoadingDbStats(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab === "database") {
+      void loadDatabaseStats();
+    }
+  }, [activeTab, loadDatabaseStats]);
+
   const cityOptions = useMemo(
     () => [...new Set([profile.city, ...CITY_OPTIONS].map((city) => city.trim()).filter(Boolean))],
-    [profile.city],
+    [profile.city]
   );
-  const selectedCityOption = cityOptions.includes(settings.city)
-    ? settings.city
-    : "__custom__";
-  const selectedPersonalityOption = AI_PERSONALITY_PRESETS.includes(
-    settings.ai_personality as (typeof AI_PERSONALITY_PRESETS)[number],
-  )
-    ? settings.ai_personality
-    : "__custom__";
 
+  const selectedCityOption = cityOptions.includes(settings.city) ? settings.city : "__custom__";
 
   async function save() {
     if (selectedBranchId === "all") return;
@@ -115,233 +209,375 @@ export default function SettingsPage() {
       if (!response.ok) {
         throw new Error("Save failed");
       }
-      // Bust cache so next visit reloads fresh settings
       invalidateCache("/api/settings");
-      toast.success("Settings saved");
-    } catch {
-      toast.error("Failed to save settings");
+      toast.success("Settings saved successfully.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to save settings");
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) {
-    return (
-      <div className="flex w-full flex-col gap-4 pb-8">
-        <PageHeader
-          title="Settings"
-          description={
-            selectedBranch
-              ? `Loading rules for ${selectedBranch.name}.`
-              : "Loading store hours, delivery rules, and agent behavior."
-          }
-        />
-        <div className="flex h-48 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 shadow-sm">
-          <RefreshCw className="h-5 w-5 animate-spin" />
-        </div>
-      </div>
-    );
+  async function handlePurgeCache() {
+    setPurgingCache(true);
+    try {
+      const res = await fetch("/api/settings/system", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "clear_cache" }),
+      });
+      if (res.ok) {
+        toast.success("In-memory cache purged successfully.");
+        void loadDatabaseStats();
+      }
+    } catch {
+      toast.error("Failed to purge cache");
+    } finally {
+      setPurgingCache(false);
+    }
   }
+
+  const playTestSound = () => {
+    try {
+      const AudioContextClass = window.AudioContext || ("webkitAudioContext" in window ? window.webkitAudioContext : undefined);
+      if (!AudioContextClass) return;
+      const ctx = new AudioContextClass();
+      const osc = ctx.createOscillator();
+      const gainNode = ctx.createGain();
+
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.1);
+
+      gainNode.gain.setValueAtTime(0, ctx.currentTime);
+      gainNode.gain.linearRampToValueAtTime(0.25, ctx.currentTime + 0.02);
+      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
+
+      osc.connect(gainNode);
+      gainNode.connect(ctx.destination);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+      toast.success("Test chime played");
+    } catch {
+      toast.error("Audio playback not supported");
+    }
+  };
+
+  const tabs: { key: SettingsTab; label: string; icon: React.ReactNode; badge?: string }[] = [
+    { key: "operations", label: "Store & Hours", icon: <Store size={15} /> },
+    { key: "delivery", label: "Delivery & Zones", icon: <Truck size={15} />, badge: settings.delivery_enabled ? "ON" : "OFF" },
+    { key: "ai_brand", label: "AI Tone & Voice", icon: <Bot size={15} /> },
+    { key: "contacts", label: "Contact & Location", icon: <Phone size={15} /> },
+    { key: "database", label: "Database & Stats", icon: <Database size={15} /> },
+    { key: "notifications", label: "Alerts & Audio", icon: <Bell size={15} /> },
+  ];
 
   if (selectedBranchId === "all") {
     return (
-      <div className="flex w-full flex-col gap-4 pb-8">
+      <div className="space-y-6">
         <PageHeader
-          title="Settings"
-          description="Choose one branch before editing store hours, delivery rules, and agent behavior."
+          title="Store Settings"
+          description="Branch-level operations, delivery zones, AI tone, and database insights."
         />
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-          Select a single branch from the sidebar to edit its settings.
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-900 shadow-sm">
+          <Building2 size={32} className="mx-auto mb-2 text-amber-600" />
+          <h3 className="font-bold text-base">Select a Specific Branch</h3>
+          <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto">
+            You are currently viewing &ldquo;All Branches&rdquo;. Please choose a specific location from the top branch switcher to edit its operational rules and settings.
+          </p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="flex w-full flex-col gap-4 pb-4 sm:pb-8">
-      <PageHeader
-        title="Settings"
-        description={
-          selectedBranch
-            ? `Rules for ${selectedBranch.name}.`
-            : "Control whether the agent can accept and place orders."
-        }
-        actions={
+    <div className="space-y-6 pb-12">
+      {/* Top Header with Save Button */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
+        <div>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">Branch Settings</h1>
+            {selectedBranch && (
+              <span className="rounded-full bg-brand/10 text-brand px-2.5 py-0.5 text-xs font-bold">
+                {selectedBranch.name}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 mt-0.5">
+            Configure operational hours, delivery rules, AI voice persona, and inspect database metrics.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2">
+          {activeTab !== "database" && (
+            <button
+              onClick={() => void save()}
+              disabled={saving}
+              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-brand-hover disabled:opacity-50"
+            >
+              {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
+              <span>Save Changes</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Categorized Tab Navigation Bar */}
+      <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+        {tabs.map(({ key, label, icon, badge }) => (
           <button
-            onClick={save}
-            disabled={saving}
-            className="flex h-9 items-center justify-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition hover:bg-brand-hover disabled:opacity-50"
-            aria-label="Save settings"
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={clsx(
+              "flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all sm:flex-1",
+              activeTab === key
+                ? "bg-slate-900 text-white shadow-sm"
+                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
+            )}
           >
-            {saving ? <RefreshCw size={15} className="animate-spin" /> : <Save size={15} />}
-            <span className="hidden sm:inline">Save Changes</span>
+            {icon}
+            <span>{label}</span>
+            {badge && (
+              <span
+                className={clsx(
+                  "rounded px-1.5 py-0.2 text-[9px] font-bold",
+                  badge === "ON"
+                    ? activeTab === key ? "bg-emerald-500 text-white" : "bg-emerald-100 text-emerald-800"
+                    : activeTab === key ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"
+                )}
+              >
+                {badge}
+              </span>
+            )}
           </button>
-        }
-      />
+        ))}
+      </div>
 
-      <div className="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-        <Card icon={<Store size={16} />} title="Store Status">
-          <SettingRow label="Accept Orders">
-            <Toggle
-              value={settings.is_accepting_orders}
-              onToggle={() => setSettings((current) => ({ ...current, is_accepting_orders: !current.is_accepting_orders }))}
-              color="bg-emerald-500"
-            />
-          </SettingRow>
-          <StatusBadge
-            active={settings.is_accepting_orders}
-            color="emerald"
-            text="Manual override is ON. The agent may accept orders during open hours."
-          />
-          <StatusBadge
-            active={!settings.is_accepting_orders}
-            color="orange"
-            text="Manual override is OFF. The agent will stay closed even during business hours."
-          />
-        </Card>
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 1: STORE & HOURS OPERATIONS
+         ───────────────────────────────────────────────────────────── */}
+      {activeTab === "operations" && (
+        <div className="space-y-4">
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
+            {/* Accepting orders banner switch */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 text-sm">Store Order Taking Status</span>
+                  <span
+                    className={clsx(
+                      "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                      settings.is_accepting_orders
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-amber-100 text-amber-800"
+                    )}
+                  >
+                    {settings.is_accepting_orders ? "Live & Accepting" : "Paused"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  When paused, the AI informs customers that the kitchen is temporarily not taking new orders.
+                </p>
+              </div>
 
-        <Card icon={<Clock size={16} />} title="Business Hours">
-          <SettingRow label="Opens">
-            <input
-              type="time"
-              value={toTimeInputValue(settings.opening_time)}
-              onChange={(event) =>
-                event.target.value
-                  ? setSettings((current) => ({ ...current, opening_time: toMeridiemLabel(event.target.value) }))
-                  : null
-              }
-              className="w-32 text-right text-sm font-semibold text-slate-800 bg-transparent outline-none"
-            />
-          </SettingRow>
-          <SettingRow label="Closes">
-            <input
-              type="time"
-              value={toTimeInputValue(settings.closing_time)}
-              onChange={(event) =>
-                event.target.value
-                  ? setSettings((current) => ({ ...current, closing_time: toMeridiemLabel(event.target.value) }))
-                  : null
-              }
-              className="w-32 text-right text-sm font-semibold text-slate-800 bg-transparent outline-none"
-            />
-          </SettingRow>
-          <p className="text-xs text-slate-400 mt-2 px-1 font-medium">Saved in restaurant local time. Overnight hours are supported.</p>
-        </Card>
-
-        <Card icon={<Truck size={16} />} title="Delivery Rules">
-          <SettingRow label="Delivery Service">
-            <Toggle
-              value={settings.delivery_enabled}
-              onToggle={() => setSettings((current) => ({ ...current, delivery_enabled: !current.delivery_enabled }))}
-              color="bg-emerald-500"
-            />
-          </SettingRow>
-
-          <SettingRow label="Delivery Fee">
-            <div className="flex items-center gap-1">
-              <span className="text-sm text-slate-400">Rs.</span>
-              <input
-                type="number"
-                min={0}
-                step={10}
-                value={settings.delivery_fee}
-                onChange={(event) =>
-                  setSettings((current) => ({ ...current, delivery_fee: Math.max(0, Number(event.target.value) || 0) }))
-                }
-                className="w-24 text-right text-sm font-bold text-slate-800 bg-transparent outline-none"
-              />
+              <button
+                type="button"
+                onClick={() => setSettings((curr) => ({ ...curr, is_accepting_orders: !curr.is_accepting_orders }))}
+                className={clsx(
+                  "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition",
+                  settings.is_accepting_orders
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "bg-slate-800 text-white hover:bg-slate-900"
+                )}
+              >
+                {settings.is_accepting_orders ? "Accepting Orders (ON)" : "Orders Paused (OFF)"}
+              </button>
             </div>
-          </SettingRow>
 
-          <SettingRow label="Minimum Delivery">
-            <div className="flex items-center gap-1">
-              <span className="text-sm text-slate-400">Rs.</span>
+            {/* Operating Hours */}
+            <div>
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Business Operating Hours</h3>
+              <p className="text-xs text-slate-400 mb-4">
+                The bot enforces these hours when telling customers whether the restaurant is currently open.
+              </p>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700">Opening Time</label>
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-slate-400" />
+                    <input
+                      type="time"
+                      value={toTimeInputValue(settings.opening_time)}
+                      onChange={(e) =>
+                        setSettings((curr) => ({
+                          ...curr,
+                          opening_time: e.target.value ? toMeridiemLabel(e.target.value) : curr.opening_time,
+                        }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-brand"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">Current: <span className="font-bold">{settings.opening_time}</span></p>
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
+                  <label className="text-xs font-bold text-slate-700">Closing Time</label>
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-slate-400" />
+                    <input
+                      type="time"
+                      value={toTimeInputValue(settings.closing_time)}
+                      onChange={(e) =>
+                        setSettings((curr) => ({
+                          ...curr,
+                          closing_time: e.target.value ? toMeridiemLabel(e.target.value) : curr.closing_time,
+                        }))
+                      }
+                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-brand"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500">Current: <span className="font-bold">{settings.closing_time}</span> (Overnight supported)</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Preparation Estimates */}
+            <div className="border-t border-slate-100 pt-5">
+              <h3 className="text-sm font-bold text-slate-900 mb-1">Fulfillment Time Estimates</h3>
+              <p className="text-xs text-slate-400 mb-4">Estimated duration communicated to customers for preparation and delivery.</p>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-700">Kitchen Prep Time</span>
+                    <span className="font-bold text-slate-900">{settings.estimated_prep_minutes} minutes</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={10}
+                    max={120}
+                    step={5}
+                    value={settings.estimated_prep_minutes}
+                    onChange={(e) => setSettings((curr) => ({ ...curr, estimated_prep_minutes: Number(e.target.value) }))}
+                    className="w-full accent-brand cursor-pointer"
+                  />
+                </div>
+
+                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-slate-700">Rider Delivery Time</span>
+                    <span className="font-bold text-slate-900">{settings.estimated_delivery_minutes} minutes</span>
+                  </div>
+                  <input
+                    type="range"
+                    min={15}
+                    max={120}
+                    step={5}
+                    value={settings.estimated_delivery_minutes}
+                    onChange={(e) => setSettings((curr) => ({ ...curr, estimated_delivery_minutes: Number(e.target.value) }))}
+                    className="w-full accent-brand cursor-pointer"
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 2: DELIVERY & ZONES
+         ───────────────────────────────────────────────────────────── */}
+      {activeTab === "delivery" && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
+          {/* Master Delivery Toggle */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-900 text-sm">Delivery Service</span>
+                <span
+                  className={clsx(
+                    "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                    settings.delivery_enabled
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-slate-200 text-slate-700"
+                  )}
+                >
+                  {settings.delivery_enabled ? "Enabled" : "Disabled (Pickup Only)"}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                {settings.delivery_enabled
+                  ? "Customers can place delivery orders. Delivery fee and minimum order rules apply."
+                  : "Delivery is disabled. The bot will only accept Pickup and Dine-in orders."}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setSettings((curr) => ({ ...curr, delivery_enabled: !curr.delivery_enabled }))}
+              className={clsx(
+                "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition",
+                settings.delivery_enabled
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "bg-slate-800 text-white hover:bg-slate-900"
+              )}
+            >
+              {settings.delivery_enabled ? "Delivery is Active (ON)" : "Enable Delivery"}
+            </button>
+          </div>
+
+          {/* Pricing & Minimums */}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Delivery Fee (Rs.)</label>
               <input
                 type="number"
                 min={0}
                 step={50}
+                value={settings.delivery_fee}
+                onChange={(e) => setSettings((curr) => ({ ...curr, delivery_fee: Math.max(0, Number(e.target.value) || 0) }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-brand"
+                placeholder="0 for Free Delivery"
+              />
+              <p className="text-[11px] text-slate-500">Set 0 for Free Delivery</p>
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Minimum Order Amount (Rs.)</label>
+              <input
+                type="number"
+                min={0}
+                step={100}
                 value={settings.min_delivery_amount}
-                onChange={(event) =>
-                  setSettings((current) => ({ ...current, min_delivery_amount: Math.max(0, Number(event.target.value) || 0) }))
-                }
-                className="w-24 text-right text-sm font-bold text-slate-800 bg-transparent outline-none"
+                onChange={(e) => setSettings((curr) => ({ ...curr, min_delivery_amount: Math.max(0, Number(e.target.value) || 0) }))}
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-brand"
+                placeholder="e.g. 500"
               />
+              <p className="text-[11px] text-slate-500">Orders below this amount will prompt the user to add more items</p>
             </div>
-          </SettingRow>
+          </div>
 
-          <StatusBadge
-            active={!settings.delivery_enabled}
-            color="orange"
-            text="Delivery service is OFF. The bot only accepts Pickup and Dine-in orders."
-          />
-          <StatusBadge
-            active={settings.delivery_enabled && settings.delivery_fee === 0}
-            color="emerald"
-            text={`Delivery service is ON (Free Delivery). Minimum delivery is Rs. ${settings.min_delivery_amount}.`}
-          />
-          <StatusBadge
-            active={settings.delivery_enabled && settings.delivery_fee > 0}
-            color="emerald"
-            text={`Delivery service is ON. Delivery fee is Rs. ${settings.delivery_fee}. Minimum delivery is Rs. ${settings.min_delivery_amount}.`}
-          />
-
-          <SettingRow label="Prep Estimate">
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                min={5}
-                max={240}
-                step={5}
-                value={settings.estimated_prep_minutes}
-                onChange={(event) =>
-                  setSettings((current) => ({
-                    ...current,
-                    estimated_prep_minutes: Number(event.target.value) || 30,
-                  }))
-                }
-                className="w-20 text-right text-sm font-bold text-slate-800 bg-transparent outline-none"
-              />
-              <span className="text-sm text-slate-400">min</span>
-            </div>
-          </SettingRow>
-
-          <SettingRow label="Delivery Estimate">
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                min={5}
-                max={240}
-                step={5}
-                value={settings.estimated_delivery_minutes}
-                onChange={(event) =>
-                  setSettings((current) => ({
-                    ...current,
-                    estimated_delivery_minutes: Number(event.target.value) || 45,
-                  }))
-                }
-                className="w-20 text-right text-sm font-bold text-slate-800 bg-transparent outline-none"
-              />
-              <span className="text-sm text-slate-400">min</span>
-            </div>
-          </SettingRow>
-
-          <div className="py-3">
-            <div className="flex items-center justify-between gap-3">
+          {/* Delivery Area Restrictions */}
+          <div className="border-t border-slate-100 pt-5 space-y-3">
+            <div className="flex items-center justify-between">
               <div>
-                <span className="text-sm text-slate-700 font-medium">Delivery Areas & Location Restrictions</span>
+                <h3 className="text-sm font-bold text-slate-900">Delivery Areas & Restrictions</h3>
                 <p className="text-xs text-slate-400 mt-0.5">
                   {settings.delivery_areas.length === 0
-                    ? "Deliver Anywhere — No location restrictions are active. Orders from all addresses will be accepted."
-                    : `Restricted to ${settings.delivery_areas.length} area${settings.delivery_areas.length > 1 ? "s" : ""}. Orders outside these areas will be blocked.`}
+                    ? "Deliver Anywhere — No location restrictions active."
+                    : `Restricted to ${settings.delivery_areas.length} area${settings.delivery_areas.length > 1 ? "s" : ""}.`}
                 </p>
               </div>
+
               {settings.delivery_areas.length > 0 ? (
                 <button
                   type="button"
-                  onClick={() => setSettings((current) => ({ ...current, delivery_areas: [] }))}
-                  className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition"
+                  onClick={() => setSettings((curr) => ({ ...curr, delivery_areas: [] }))}
+                  className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100"
                 >
-                  Remove All Restrictions
+                  Remove Restrictions (Deliver Anywhere)
                 </button>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
@@ -350,9 +586,9 @@ export default function SettingsPage() {
               )}
             </div>
 
-            {/* Active Area Tags */}
+            {/* Area Chips */}
             {settings.delivery_areas.length > 0 && (
-              <div className="mt-3 flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50">
                 {settings.delivery_areas.map((area, idx) => (
                   <span
                     key={idx}
@@ -362,12 +598,12 @@ export default function SettingsPage() {
                     <button
                       type="button"
                       onClick={() =>
-                        setSettings((current) => ({
-                          ...current,
-                          delivery_areas: current.delivery_areas.filter((_, i) => i !== idx),
+                        setSettings((curr) => ({
+                          ...curr,
+                          delivery_areas: curr.delivery_areas.filter((_, i) => i !== idx),
                         }))
                       }
-                      className="text-slate-400 hover:text-red-600 transition"
+                      className="text-slate-400 hover:text-red-600"
                     >
                       &times;
                     </button>
@@ -376,30 +612,27 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* Add New Area Input & Presets */}
-            <div className="mt-3 space-y-2">
-              <div className="flex gap-2">
-                <input
-                  type="text"
-                  placeholder="Type an area name (e.g. DHA Phase 5, Gulberg III) and press Enter..."
-                  className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-brand/40 focus:bg-white"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      e.preventDefault();
-                      const val = (e.target as HTMLInputElement).value.trim();
-                      if (val && !settings.delivery_areas.includes(val)) {
-                        setSettings((curr) => ({ ...curr, delivery_areas: [...curr.delivery_areas, val] }));
-                        (e.target as HTMLInputElement).value = "";
-                      }
+            {/* Input & Quick Presets */}
+            <div className="space-y-2">
+              <input
+                type="text"
+                placeholder="Type an area name (e.g. DHA Phase 5, Gulberg III) and press Enter..."
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-brand focus:bg-white"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const val = (e.target as HTMLInputElement).value.trim();
+                    if (val && !settings.delivery_areas.includes(val)) {
+                      setSettings((curr) => ({ ...curr, delivery_areas: [...curr.delivery_areas, val] }));
+                      (e.target as HTMLInputElement).value = "";
                     }
-                  }}
-                />
-              </div>
+                  }
+                }}
+              />
 
-              {/* Quick Area Presets */}
               <div className="flex flex-wrap items-center gap-1.5 pt-1">
                 <span className="text-[10px] font-bold uppercase text-slate-400">Quick add:</span>
-                {["Gulberg", "DHA Phase 1-5", "Bahria Town", "Johar Town", "Model Town", "F-6 / F-7", "Saddar", "Clifton"].map((preset) => {
+                {["Gulberg", "DHA Phase 1-6", "Bahria Town", "Johar Town", "Model Town", "F-6 / F-7", "Saddar", "Clifton"].map((preset) => {
                   const alreadyAdded = settings.delivery_areas.includes(preset);
                   return (
                     <button
@@ -426,170 +659,272 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
-        </Card>
+        </div>
+      )}
 
-        <Card icon={<Phone size={16} />} title="Contact & City">
-          <SettingRow label="City">
-            <select
-              value={selectedCityOption}
-              onChange={(event) =>
-                setSettings((current) => ({
-                  ...current,
-                  city: event.target.value === "__custom__" ? current.city : event.target.value,
-                }))
-              }
-              className="w-40 text-right text-sm font-semibold text-slate-800 bg-transparent outline-none"
-            >
-              {cityOptions.map((city) => (
-                <option key={city} value={city}>
-                  {city}
-                </option>
-              ))}
-              <option value="__custom__">Custom</option>
-            </select>
-          </SettingRow>
-          {selectedCityOption === "__custom__" ? (
-            <SettingRow label="Custom City">
-              <input
-                type="text"
-                value={settings.city}
-                onChange={(event) => setSettings((current) => ({ ...current, city: event.target.value }))}
-                className="w-40 text-right text-sm font-semibold text-slate-800 bg-transparent outline-none"
-              />
-            </SettingRow>
-          ) : null}
-          <SettingRow label="Delivery Phone">
-            <input
-              type="text"
-              value={settings.phone_delivery}
-              onChange={(event) => setSettings((current) => ({ ...current, phone_delivery: event.target.value }))}
-              className="w-40 text-right text-sm font-semibold text-slate-800 bg-transparent outline-none"
-            />
-          </SettingRow>
-          <SettingRow label="Dine-in Phone">
-            <input
-              type="text"
-              value={settings.phone_dine_in}
-              onChange={(event) => setSettings((current) => ({ ...current, phone_dine_in: event.target.value }))}
-              className="w-40 text-right text-sm font-semibold text-slate-800 bg-transparent outline-none"
-            />
-          </SettingRow>
-        </Card>
-
-        <Card icon={<Bot size={16} />} title="AI Tone">
-          <div className="py-2.5">
-            <span className="text-sm text-slate-600 font-medium">AI Personality</span>
-            <select
-              value={selectedPersonalityOption}
-              onChange={(event) =>
-                setSettings((current) => ({
-                  ...current,
-                  ai_personality:
-                    event.target.value === "__custom__" ? current.ai_personality : event.target.value,
-                }))
-              }
-              className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-800 outline-none focus:border-brand/30 focus:ring-2 focus:ring-brand/10"
-            >
-              {AI_PERSONALITY_PRESETS.map((preset) => (
-                <option key={preset} value={preset}>
-                  {preset}
-                </option>
-              ))}
-              <option value="__custom__">Custom</option>
-            </select>
-            {selectedPersonalityOption === "__custom__" ? (
-              <textarea
-                value={settings.ai_personality}
-                onChange={(event) =>
-                  setSettings((current) => ({ ...current, ai_personality: event.target.value }))
-                }
-                rows={4}
-                className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-800 outline-none focus:border-brand/30 focus:ring-2 focus:ring-brand/10"
-                placeholder="Describe custom tone"
-              />
-            ) : null}
-            <p className="mt-2 text-xs text-slate-400">
-              This tone is injected into the WhatsApp assistant prompt for the selected branch.
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 3: AI BRAND VOICE & PERSONALITY
+         ───────────────────────────────────────────────────────────── */}
+      {activeTab === "ai_brand" && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
+          <div>
+            <div className="flex items-center gap-2">
+              <Bot size={18} className="text-brand" />
+              <h3 className="text-base font-bold text-slate-900">AI Personality & Conversation Voice</h3>
+            </div>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Select how your AI assistant speaks to customers on WhatsApp. The tone dynamically injects into all customer interactions.
             </p>
           </div>
-        </Card>
-      </div>
-    </div>
-  );
-}
-function Card({
-  icon,
-  title,
-  children,
-}: {
-  icon: React.ReactNode;
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="flex items-center gap-2.5 border-b border-slate-100 px-4 py-3 sm:px-5 sm:py-4">
-        <span className="text-slate-500">{icon}</span>
-        <span className="text-sm font-bold text-slate-800 uppercase tracking-widest">{title}</span>
-      </div>
-      <div className="flex flex-1 flex-col gap-0 divide-y divide-slate-50 px-4 py-2 sm:px-5 sm:py-3">{children}</div>
-    </div>
-  );
-}
 
-function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="flex flex-col gap-1.5 py-2 sm:flex-row sm:items-center sm:justify-between sm:py-2.5">
-      <span className="text-sm font-medium text-slate-600">{label}</span>
-      <div className="flex justify-start sm:justify-end">{children}</div>
-    </div>
-  );
-}
+          {/* Preset Cards */}
+          <div className="grid gap-3 sm:grid-cols-2">
+            {AI_PERSONALITY_PRESETS.map((preset) => {
+              const isSelected = settings.ai_personality === preset.title;
+              return (
+                <div
+                  key={preset.title}
+                  onClick={() => setSettings((curr) => ({ ...curr, ai_personality: preset.title }))}
+                  className={clsx(
+                    "cursor-pointer rounded-xl border p-4 transition-all",
+                    isSelected
+                      ? "border-brand bg-brand/5 ring-1 ring-brand/30"
+                      : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                  )}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 text-sm">{preset.title}</span>
+                    {isSelected && <Check size={16} className="text-brand" />}
+                  </div>
+                  <p className="text-xs text-slate-500 mt-1">{preset.desc}</p>
+                  <div className="mt-3 rounded-lg bg-white p-2 border border-slate-100 text-[11px] text-slate-600 italic">
+                    &ldquo;{preset.sample}&rdquo;
+                  </div>
+                </div>
+              );
+            })}
+          </div>
 
-function Toggle({
-  value,
-  onToggle,
-  color = "bg-brand",
-}: {
-  value: boolean;
-  onToggle: () => void;
-  color?: string;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onToggle}
-      className={clsx(
-        "relative inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors duration-200",
-        value ? color : "bg-slate-200",
+          {/* Custom Personality Input */}
+          <div className="border-t border-slate-100 pt-5 space-y-2">
+            <label className="text-xs font-bold text-slate-700">Custom Brand Voice Guidelines</label>
+            <input
+              type="text"
+              value={settings.ai_personality}
+              onChange={(e) => setSettings((curr) => ({ ...curr, ai_personality: e.target.value }))}
+              placeholder="e.g. Energetic & Hospitable Karachi Street Food style"
+              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-brand focus:bg-white"
+            />
+            <p className="text-[11px] text-slate-400">
+              Type custom phrasing or instructions to uniquely customize your AI assistant tone.
+            </p>
+          </div>
+        </div>
       )}
-    >
-      <span
-        className={clsx(
-          "inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200",
-          value ? "translate-x-5" : "translate-x-0",
-        )}
-      />
-    </button>
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 4: CONTACT & LOCATION
+         ───────────────────────────────────────────────────────────── */}
+      {activeTab === "contacts" && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-5">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">Contact Numbers & City</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              These details are provided to customers when they ask for direct helpline or dine-in reservations.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">City</label>
+              <select
+                value={selectedCityOption}
+                onChange={(e) =>
+                  setSettings((curr) => ({
+                    ...curr,
+                    city: e.target.value === "__custom__" ? curr.city : e.target.value,
+                  }))
+                }
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+              >
+                {cityOptions.map((c) => (
+                  <option key={c} value={c}>
+                    {c}
+                  </option>
+                ))}
+                <option value="__custom__">Custom City</option>
+              </select>
+            </div>
+
+            {selectedCityOption === "__custom__" && (
+              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
+                <label className="text-xs font-bold text-slate-700">Custom City Name</label>
+                <input
+                  type="text"
+                  value={settings.city}
+                  onChange={(e) => setSettings((curr) => ({ ...curr, city: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+                  placeholder="e.g. Faisalabad"
+                />
+              </div>
+            )}
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Delivery Support Hotline</label>
+              <input
+                type="text"
+                value={settings.phone_delivery}
+                onChange={(e) => setSettings((curr) => ({ ...curr, phone_delivery: e.target.value }))}
+                placeholder="e.g. +92 300 1234567"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+              />
+            </div>
+
+            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
+              <label className="text-xs font-bold text-slate-700">Dine-in / Reservation Phone</label>
+              <input
+                type="text"
+                value={settings.phone_dine_in}
+                onChange={(e) => setSettings((curr) => ({ ...curr, phone_dine_in: e.target.value }))}
+                placeholder="e.g. 042-111-222-333"
+                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+              />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 5: DATABASE & SYSTEM INSIGHTS (NEW!)
+         ───────────────────────────────────────────────────────────── */}
+      {activeTab === "database" && (
+        <div className="space-y-6">
+          {/* Connection Health Banner */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
+                  <Database size={20} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-900">Supabase PostgreSQL Engine</h3>
+                    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      {dbStats?.database.status?.toUpperCase() || "CONNECTED"}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Cloud Database Connection &bull; Latency: <span className="font-mono font-bold text-slate-800">{dbStats?.database.ping_latency_ms ?? 120}ms</span>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => void loadDatabaseStats()}
+                  disabled={loadingDbStats}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+                >
+                  <RefreshCw size={13} className={clsx(loadingDbStats && "animate-spin text-brand")} />
+                  <span>Refresh Telemetry</span>
+                </button>
+                <button
+                  onClick={() => void handlePurgeCache()}
+                  disabled={purgingCache}
+                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+                >
+                  {purgingCache ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
+                  <span>Flush Cache</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Live Database Table Record Counts */}
+            <div className="mt-6">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Database Table Record Counts</h4>
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+                {[
+                  { table: "orders", label: "Orders (Total)", count: dbStats?.table_counts.orders ?? 0, sub: `${dbStats?.table_counts.active_orders ?? 0} active` },
+                  { table: "conversations", label: "Conversations", count: dbStats?.table_counts.conversations ?? 0, sub: "WhatsApp threads" },
+                  { table: "messages", label: "Messages", count: dbStats?.table_counts.messages ?? 0, sub: "inbound & outbound" },
+                  { table: "contacts", label: "Customer CRM", count: dbStats?.table_counts.contacts ?? 0, sub: "saved profiles" },
+                  { table: "menu_items", label: "Menu Catalog", count: dbStats?.table_counts.menu_items ?? 0, sub: "dishes & variants" },
+                  { table: "agent_turns", label: "AI Agent Turns", count: dbStats?.table_counts.agent_turns ?? 0, sub: "NLU logs" },
+                  { table: "webhook_events", label: "Webhook Events", count: dbStats?.table_counts.webhook_events ?? 0, sub: "Meta WhatsApp API" },
+                  { table: "staff_alerts", label: "Staff Alerts", count: dbStats?.table_counts.staff_alerts ?? 0, sub: `${dbStats?.table_counts.unread_alerts ?? 0} unread` },
+                  { table: "rate_limits", label: "Security Throttles", count: dbStats?.table_counts.rate_limits ?? 0, sub: "active IP blocks" },
+                  { table: "cache", label: "Cache Size", count: dbStats?.cache.active_entries ?? 0, sub: "in-memory records" },
+                ].map((item) => (
+                  <div key={item.table} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
+                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{item.label}</p>
+                    <p className="mt-1 text-xl font-bold text-slate-900">{item.count}</p>
+                    <p className="text-[10px] text-slate-500">{item.sub}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────
+          TAB 6: NOTIFICATIONS & AUDIO
+         ───────────────────────────────────────────────────────────── */}
+      {activeTab === "notifications" && (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
+          <div>
+            <h3 className="text-base font-bold text-slate-900">Audio Alerts & Notification Preferences</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Control browser sounds when new customer WhatsApp messages or orders arrive.
+            </p>
+          </div>
+
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-slate-900 text-sm">Dashboard Chime Sound</span>
+                <span
+                  className={clsx(
+                    "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                    isSoundEnabled
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-slate-200 text-slate-700"
+                  )}
+                >
+                  {isSoundEnabled ? "Enabled" : "Muted"}
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 mt-0.5">
+                Plays a pleasant sound chime when a new message arrives from a customer.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={playTestSound}
+                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Play Test Chime
+              </button>
+              <button
+                type="button"
+                onClick={toggleSoundEnabled}
+                className={clsx(
+                  "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition",
+                  isSoundEnabled
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "bg-slate-800 text-white hover:bg-slate-900"
+                )}
+              >
+                {isSoundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                <span>{isSoundEnabled ? "Sound ON" : "Sound Muted"}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
   );
-}
-
-function StatusBadge({
-  active,
-  color,
-  text,
-}: {
-  active: boolean;
-  color: "orange" | "emerald" | "slate";
-  text: string;
-}) {
-  if (!active) return null;
-
-  const colors = {
-    orange: "bg-orange-50 text-orange-700 border-orange-200",
-    emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
-    slate: "bg-slate-50 text-slate-600 border-slate-200",
-  };
-
-  return <p className={clsx("text-xs font-medium px-3 py-1.5 rounded-lg border mt-2", colors[color])}>{text}</p>;
 }

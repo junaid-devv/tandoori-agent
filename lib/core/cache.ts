@@ -20,6 +20,8 @@ export interface CacheStore {
   set<T>(key: string, value: T, ttlMs: number): Promise<void>;
   del(key: string): Promise<void>;
   delByPrefix(prefix: string): Promise<void>;
+  clear?(): Promise<void>;
+  size?(): Promise<number>;
   /** Load-through helper: returns cached value or computes, stores, and returns it. */
   getOrSet<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T>;
 }
@@ -69,9 +71,17 @@ export class InMemoryCacheStore implements CacheStore {
   }
 
   async delByPrefix(prefix: string): Promise<void> {
-    for (const key of this.store.keys()) {
-      if (key.startsWith(prefix)) this.store.delete(key);
+    for (const k of this.store.keys()) {
+      if (k.startsWith(prefix)) this.store.delete(k);
     }
+  }
+
+  async clear(): Promise<void> {
+    this.store.clear();
+  }
+
+  async size(): Promise<number> {
+    return this.store.size;
   }
 
   async getOrSet<T>(key: string, ttlMs: number, loader: () => Promise<T>): Promise<T> {
@@ -110,5 +120,7 @@ export const cache: CacheStore = {
   set: (k, v, ttl) => activeStore.set(k, v, ttl),
   del: (k) => activeStore.del(k),
   delByPrefix: (p) => activeStore.delByPrefix(p),
+  clear: () => (activeStore.clear ? activeStore.clear() : activeStore.delByPrefix("")),
+  size: () => (activeStore.size ? activeStore.size() : Promise.resolve(0)),
   getOrSet: (k, ttl, loader) => activeStore.getOrSet(k, ttl, loader),
 };
