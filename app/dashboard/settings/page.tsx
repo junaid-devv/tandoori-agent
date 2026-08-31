@@ -341,29 +341,90 @@ export default function SettingsPage() {
                   onClick={() => setSettings((current) => ({ ...current, delivery_areas: [] }))}
                   className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100 transition"
                 >
-                  Remove Restrictions (Deliver Anywhere)
+                  Remove All Restrictions
                 </button>
               ) : (
                 <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                  <CheckCircle2 size={12} /> Anywhere
+                  <CheckCircle2 size={12} /> Deliver Anywhere
                 </span>
               )}
             </div>
-            <textarea
-              value={settings.delivery_areas.join("\n")}
-              onChange={(event) =>
-                setSettings((current) => ({
-                  ...current,
-                  delivery_areas: event.target.value
-                    .split(/\r?\n/)
-                    .map((area) => area.trim())
-                    .filter(Boolean),
-                }))
-              }
-              rows={4}
-              className="mt-3 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-800 outline-none focus:border-brand/30 focus:ring-2 focus:ring-brand/10 font-mono"
-              placeholder="Leave empty to deliver anywhere, or enter one area per line (e.g. DHA, Gulberg, Askari 10)..."
-            />
+
+            {/* Active Area Tags */}
+            {settings.delivery_areas.length > 0 && (
+              <div className="mt-3 flex flex-wrap gap-1.5">
+                {settings.delivery_areas.map((area, idx) => (
+                  <span
+                    key={idx}
+                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-sm"
+                  >
+                    <span>{area}</span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSettings((current) => ({
+                          ...current,
+                          delivery_areas: current.delivery_areas.filter((_, i) => i !== idx),
+                        }))
+                      }
+                      className="text-slate-400 hover:text-red-600 transition"
+                    >
+                      &times;
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+
+            {/* Add New Area Input & Presets */}
+            <div className="mt-3 space-y-2">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="Type an area name (e.g. DHA Phase 5, Gulberg III) and press Enter..."
+                  className="flex-1 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-brand/40 focus:bg-white"
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      const val = (e.target as HTMLInputElement).value.trim();
+                      if (val && !settings.delivery_areas.includes(val)) {
+                        setSettings((curr) => ({ ...curr, delivery_areas: [...curr.delivery_areas, val] }));
+                        (e.target as HTMLInputElement).value = "";
+                      }
+                    }
+                  }}
+                />
+              </div>
+
+              {/* Quick Area Presets */}
+              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                <span className="text-[10px] font-bold uppercase text-slate-400">Quick add:</span>
+                {["Gulberg", "DHA Phase 1-5", "Bahria Town", "Johar Town", "Model Town", "F-6 / F-7", "Saddar", "Clifton"].map((preset) => {
+                  const alreadyAdded = settings.delivery_areas.includes(preset);
+                  return (
+                    <button
+                      key={preset}
+                      type="button"
+                      disabled={alreadyAdded}
+                      onClick={() =>
+                        setSettings((curr) => ({
+                          ...curr,
+                          delivery_areas: [...curr.delivery_areas, preset],
+                        }))
+                      }
+                      className={clsx(
+                        "rounded-md px-2 py-0.5 text-[11px] font-semibold transition border",
+                        alreadyAdded
+                          ? "border-transparent bg-slate-100 text-slate-400 cursor-default"
+                          : "border-slate-200 bg-white text-slate-700 hover:border-brand/40 hover:bg-brand/5 hover:text-brand"
+                      )}
+                    >
+                      + {preset}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </Card>
 

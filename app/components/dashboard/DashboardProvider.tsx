@@ -21,10 +21,19 @@ type DashboardContextValue = {
       }
     | null;
   setSelectedBranchId: (branchId: SelectedBranchId) => void;
+  isSidebarCollapsed: boolean;
+  toggleSidebarCollapsed: () => void;
+  isSoundEnabled: boolean;
+  toggleSoundEnabled: () => void;
+  isContextPanelOpen: boolean;
+  toggleContextPanelOpen: () => void;
   logout: () => Promise<void>;
 };
 
 const STORAGE_KEY = "restaurant-agent-selected-branch";
+const SIDEBAR_COLLAPSED_KEY = "orderiq-sidebar-collapsed";
+const SOUND_ENABLED_KEY = "orderiq-sound-enabled";
+const CONTEXT_PANEL_KEY = "orderiq-context-panel-open";
 const DashboardContext = createContext<DashboardContextValue | null>(null);
 
 function getInitialBranchId(session: DashboardSession, profile: RestaurantProfile): SelectedBranchId {
@@ -86,6 +95,21 @@ export function DashboardProvider({
     return resolveStoredBranchId(session, profile, stored) ?? fallbackBranchId;
   });
 
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+  });
+
+  const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(SOUND_ENABLED_KEY) !== "false";
+  });
+
+  const [isContextPanelOpen, setIsContextPanelOpen] = useState<boolean>(() => {
+    if (typeof window === "undefined") return true;
+    return window.localStorage.getItem(CONTEXT_PANEL_KEY) !== "false";
+  });
+
   const selectedBranch = useMemo(() => {
     if (selectedBranchId === "all") return null;
     return session.allowedBranches.find((branch) => branch.id === selectedBranchId) ?? null;
@@ -102,6 +126,30 @@ export function DashboardProvider({
         setSelectedBranchIdState(branchId);
         window.localStorage.setItem(STORAGE_KEY, branchId);
       },
+      isSidebarCollapsed,
+      toggleSidebarCollapsed: () => {
+        setIsSidebarCollapsed((prev) => {
+          const next = !prev;
+          window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
+          return next;
+        });
+      },
+      isSoundEnabled,
+      toggleSoundEnabled: () => {
+        setIsSoundEnabled((prev) => {
+          const next = !prev;
+          window.localStorage.setItem(SOUND_ENABLED_KEY, String(next));
+          return next;
+        });
+      },
+      isContextPanelOpen,
+      toggleContextPanelOpen: () => {
+        setIsContextPanelOpen((prev) => {
+          const next = !prev;
+          window.localStorage.setItem(CONTEXT_PANEL_KEY, String(next));
+          return next;
+        });
+      },
       logout: async () => {
         await fetch("/api/auth/logout", { method: "POST" });
         startTransition(() => {
@@ -110,7 +158,7 @@ export function DashboardProvider({
         });
       },
     };
-  }, [profileState, router, selectedBranch, selectedBranchId, session]);
+  }, [isContextPanelOpen, isSidebarCollapsed, isSoundEnabled, profileState, router, selectedBranch, selectedBranchId, session]);
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
 }

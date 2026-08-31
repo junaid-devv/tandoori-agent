@@ -56,7 +56,15 @@ export async function GET(req: NextRequest) {
       return apiErrorResponse(error, { fallback: "Failed to load conversations.", context: "conversations GET lite" });
     }
 
-    return NextResponse.json(data ?? []);
+    const normalized = (data ?? []).map((conv: any) => {
+      const lastMsgAt = conv.messages?.[0]?.created_at || conv.created_at;
+      return {
+        ...conv,
+        last_message_at: lastMsgAt,
+      };
+    }).sort((a: any, b: any) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+
+    return NextResponse.json(normalized);
   }
 
   let query = supabaseAdmin.from("conversations").select(`
@@ -117,5 +125,13 @@ export async function GET(req: NextRequest) {
     return apiErrorResponse(error, { fallback: "Failed to load conversations.", context: "conversations GET" });
   }
 
-  return NextResponse.json(data ?? []);
+  const normalized = (data ?? []).map((conv: any) => {
+    const lastMsgAt = conv.messages?.[0]?.created_at || conv.created_at;
+    return {
+      ...conv,
+      last_message_at: lastMsgAt,
+    };
+  }).sort((a: any, b: any) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
+
+  return NextResponse.json(normalized);
 }

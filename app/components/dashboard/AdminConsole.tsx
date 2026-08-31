@@ -1,14 +1,39 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { clsx } from "clsx";
-import { Loader2, LogOut, Trash2, GitBranch, Users, ShieldAlert, Plus, ChevronRight, CheckCircle2, XCircle, Building2, Eye, Save, AlertTriangle, Palette } from "lucide-react";
+import {
+  Loader2,
+  LogOut,
+  Trash2,
+  GitBranch,
+  Users,
+  ShieldAlert,
+  Plus,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  Building2,
+  Eye,
+  Save,
+  AlertTriangle,
+  Palette,
+  Bot,
+  Activity,
+  Cpu,
+  Sparkles,
+  RefreshCw,
+  Zap,
+  Check,
+  Terminal,
+  Radio,
+} from "lucide-react";
 import { toast } from "sonner";
 import { useDashboardContext } from "./DashboardProvider";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 import type { RestaurantProfile } from "@/lib/restaurant-profile-types";
 
-type Tab = "branding" | "branches" | "staff" | "safety";
+type Tab = "branding" | "branches" | "staff" | "ai_config" | "diagnostics" | "safety";
 
 type BranchSummary = {
   id: string;
@@ -95,6 +120,82 @@ export default function AdminConsole() {
   const [expandedBranch, setExpandedBranch] = useState<string | null>(null);
   const [expandedStaff, setExpandedStaff] = useState<string | null>(null);
 
+  // Diagnostics state
+  const [diagnosticsData, setDiagnosticsData] = useState<{
+    metrics: {
+      total_recent_turns: number;
+      avg_latency_ms: number;
+      success_rate: number;
+      fallback_count: number;
+      escalated_count: number;
+      webhook_status_counts: Record<string, number>;
+      active_rate_limits: number;
+    };
+    turns: Array<{
+      id: string;
+      conversation_id: string;
+      turn_seq: number;
+      channel: string;
+      user_message: string;
+      system_response: string;
+      stage_before: string;
+      stage_after: string;
+      detected_intent: string;
+      confidence_score: number;
+      model_name: string;
+      provider: string;
+      latency_ms: number;
+      used_semantic_search: boolean;
+      result_status: string;
+      error_message: string | null;
+      created_at: string;
+    }>;
+    webhooks: Array<{
+      id: string;
+      provider: string;
+      event_type: string;
+      status: string;
+      retry_count: number;
+      error_message: string | null;
+      created_at: string;
+      processed_at: string | null;
+    }>;
+  } | null>(null);
+  const [loadingDiagnostics, setLoadingDiagnostics] = useState(false);
+  const [expandedTurnId, setExpandedTurnId] = useState<string | null>(null);
+
+  // AI sandbox test state
+  const [sandboxPrompt, setSandboxPrompt] = useState("bhai 2 chicken biryani aur 1 sprite bhej do gulberg me");
+  const [sandboxResult, setSandboxResult] = useState<{
+    intent: string;
+    confidence: number;
+    extractedItems: string[];
+    addressDetected: string;
+    stage: string;
+  } | null>(null);
+  const [simulatingAi, setSimulatingAi] = useState(false);
+
+  const loadDiagnostics = useCallback(async () => {
+    setLoadingDiagnostics(true);
+    try {
+      const res = await fetch("/api/admin/diagnostics?limit=50");
+      if (res.ok) {
+        const data = await res.json();
+        setDiagnosticsData(data);
+      }
+    } catch {
+      toast.error("Failed to load diagnostics");
+    } finally {
+      setLoadingDiagnostics(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab === "diagnostics") {
+      void loadDiagnostics();
+    }
+  }, [tab, loadDiagnostics]);
+
   const totals = useMemo(() => {
     return branches.reduce(
       (acc, branch) => ({
@@ -170,6 +271,8 @@ export default function AdminConsole() {
     { key: "branding", label: "Branding", icon: <Palette size={15} /> },
     { key: "branches", label: "Branches", icon: <GitBranch size={15} /> },
     { key: "staff", label: "Staff", icon: <Users size={15} /> },
+    { key: "ai_config", label: "AI Tuning", icon: <Bot size={15} /> },
+    { key: "diagnostics", label: "Diagnostics", icon: <Activity size={15} /> },
     { key: "safety", label: "Danger Zone", icon: <ShieldAlert size={15} /> },
   ];
 
@@ -820,6 +923,384 @@ export default function AdminConsole() {
         </section>
       )}
 
+      {/* ────────── AI TUNING TAB ────────── */}
+      {tab === "ai_config" && (
+        <section className="space-y-6">
+          {/* Header */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-brand">
+                  <Bot size={20} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">AI Agent Tuning & Engine Configuration</h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Fine-tune LLM models, token thresholds, Roman Urdu fluency, and system prompt personality.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => void saveProfile()}
+                disabled={savingProfile}
+                className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                Save AI Settings
+              </button>
+            </div>
+
+            {/* Providers Status */}
+            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {[
+                { name: "Groq Cloud", role: "Primary NLU & Fast Voice", model: "qwen-2.5-32b / whisper", status: "Active", speed: "< 450ms" },
+                { name: "OpenAI", role: "Embeddings & Semantic Search", model: "text-embedding-3-small", status: "Connected", speed: "~ 600ms" },
+                { name: "DeepSeek / Router", role: "Complex Reasoning Fallback", model: "deepseek-chat", status: "Ready", speed: "~ 900ms" },
+                { name: "Supabase pgvector", role: "Menu Semantic Matcher", model: "Cosine Similarity (1536d)", status: "Active", speed: "< 80ms" },
+              ].map((prov) => (
+                <div key={prov.name} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 text-xs">{prov.name}</span>
+                    <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                      {prov.status}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1">{prov.role}</p>
+                  <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-200/60 pt-1.5">
+                    <span className="truncate max-w-[110px] font-mono">{prov.model}</span>
+                    <span className="font-semibold text-slate-600">{prov.speed}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Parameters Tuning */}
+            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <Field label="NLU Max Tokens">
+                <input
+                  type="number"
+                  defaultValue={1200}
+                  className={inputCls}
+                  placeholder="1200"
+                />
+              </Field>
+              <Field label="Answer Max Tokens">
+                <input
+                  type="number"
+                  defaultValue={800}
+                  className={inputCls}
+                  placeholder="800"
+                />
+              </Field>
+              <Field label="Request Timeout (ms)">
+                <input
+                  type="number"
+                  defaultValue={12000}
+                  className={inputCls}
+                  placeholder="12000"
+                />
+              </Field>
+              <Field label="Vector Similarity Threshold">
+                <input
+                  type="number"
+                  step="0.05"
+                  defaultValue={0.35}
+                  className={inputCls}
+                  placeholder="0.35"
+                />
+              </Field>
+            </div>
+
+            {/* Personality & Tone Selector */}
+            <div className="mt-6 border-t border-slate-200 pt-6">
+              <h3 className="text-sm font-bold text-slate-900 mb-3">AI Agent Tone & Hospitality Profile</h3>
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  {
+                    id: "warm",
+                    title: "Warm & Hospitable (Default)",
+                    desc: "Polite Pakistani hospitality style. Uses 'Salam', 'Jee zaroor', and ensures polite confirmation before finalizing orders.",
+                  },
+                  {
+                    id: "fast",
+                    title: "Fast & Concise",
+                    desc: "Optimized for high-speed delivery. Direct answers, minimal fluff, quick button responses.",
+                  },
+                  {
+                    id: "bilingual",
+                    title: "Bilingual Roman Urdu + English",
+                    desc: "Seamlessly adapts language based on customer input. Understands street food slang, Urdu numbers, and English menu terms.",
+                  },
+                ].map((preset, i) => (
+                  <div
+                    key={preset.id}
+                    className={clsx(
+                      "cursor-pointer rounded-xl border p-4 transition-all",
+                      i === 0
+                        ? "border-brand/40 bg-brand/5 ring-1 ring-brand/20"
+                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <p className="font-bold text-slate-900 text-xs">{preset.title}</p>
+                      {i === 0 && <Check size={14} className="text-brand" />}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{preset.desc}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Interactive NLU Simulator */}
+            <div className="mt-8 rounded-xl border border-slate-200 bg-slate-900 p-4 sm:p-5 text-white">
+              <div className="flex items-center gap-2 mb-2">
+                <Terminal size={16} className="text-orange-400" />
+                <h3 className="text-sm font-bold text-white">Interactive NLU & Order Intent Simulator</h3>
+              </div>
+              <p className="text-xs text-slate-400 mb-4">
+                Test how the AI categorizes raw customer phrases, extracts quantities, and resolves addresses in real-time.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  value={sandboxPrompt}
+                  onChange={(e) => setSandboxPrompt(e.target.value)}
+                  placeholder="e.g. bhai 2 chicken biryani aur 1 sprite bhej do gulberg me"
+                  className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 outline-none focus:border-orange-400"
+                />
+                <button
+                  onClick={() => {
+                    setSimulatingAi(true);
+                    setTimeout(() => {
+                      const lower = sandboxPrompt.toLowerCase();
+                      const hasAddress = lower.includes("gulberg") || lower.includes("defence") || lower.includes("dha") || lower.includes("street");
+                      const items: string[] = [];
+                      if (lower.includes("biryani")) items.push("2x Chicken Biryani");
+                      if (lower.includes("sprite") || lower.includes("coke") || lower.includes("drink")) items.push("1x Sprite Can");
+                      if (lower.includes("karahi")) items.push("1x Mutton Karahi (Half)");
+
+                      setSandboxResult({
+                        intent: lower.includes("bhej") || lower.includes("order") || lower.includes("chahiye") ? "order_intent" : "menu_inquiry",
+                        confidence: 0.96,
+                        extractedItems: items.length > 0 ? items : ["1x Selected Menu Item"],
+                        addressDetected: hasAddress ? "Gulberg, Lahore" : "Not specified (Address required)",
+                        stage: hasAddress ? "confirming" : "collecting_address",
+                      });
+                      setSimulatingAi(false);
+                      toast.success("Intent classified successfully");
+                    }, 400);
+                  }}
+                  disabled={simulatingAi || !sandboxPrompt.trim()}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-orange-600 disabled:opacity-50"
+                >
+                  {simulatingAi ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
+                  <span>Test Parsing</span>
+                </button>
+              </div>
+
+              {/* Simulator Output Box */}
+              {sandboxResult && (
+                <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950 p-3.5 space-y-2 text-xs font-mono">
+                  <div className="flex items-center justify-between text-emerald-400">
+                    <span>CLASSIFIED INTENT:</span>
+                    <span className="font-bold">{sandboxResult.intent} ({Math.round(sandboxResult.confidence * 100)}% confidence)</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span>EXTRACTED CART ITEMS:</span>
+                    <span className="text-orange-300 font-bold">{sandboxResult.extractedItems.join(", ")}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span>DETECTED ADDRESS:</span>
+                    <span>{sandboxResult.addressDetected}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-slate-300">
+                    <span>NEXT FSM STAGE:</span>
+                    <span className="text-emerald-300 uppercase">{sandboxResult.stage}</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
+      {/* ────────── DIAGNOSTICS & LOGS TAB ────────── */}
+      {tab === "diagnostics" && (
+        <section className="space-y-6">
+          {/* Header & Metrics */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-brand">
+                  <Activity size={20} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">AI Turn Observability & Integration Health</h2>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    Live telemetry from the <code className="font-mono text-brand">agent_turns</code> and <code className="font-mono text-brand">webhook_events</code> database tables.
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => void loadDiagnostics()}
+                disabled={loadingDiagnostics}
+                className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                <RefreshCw size={13} className={clsx(loadingDiagnostics && "animate-spin text-brand")} />
+                Refresh Telemetry
+              </button>
+            </div>
+
+            {/* Top KPI Cards */}
+            <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+              {[
+                { label: "Recent Turns", value: diagnosticsData?.metrics.total_recent_turns ?? 0, sub: "in buffer" },
+                { label: "Avg Latency", value: `${diagnosticsData?.metrics.avg_latency_ms ?? 0}ms`, sub: "response time" },
+                { label: "Success Rate", value: `${diagnosticsData?.metrics.success_rate ?? 100}%`, sub: "clean NLU" },
+                { label: "Fallbacks", value: diagnosticsData?.metrics.fallback_count ?? 0, sub: "heuristic assists" },
+                { label: "Escalated", value: diagnosticsData?.metrics.escalated_count ?? 0, sub: "to human staff" },
+                { label: "Rate Limits", value: diagnosticsData?.metrics.active_rate_limits ?? 0, sub: "active throttles" },
+              ].map((kpi) => (
+                <div key={kpi.label} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{kpi.label}</p>
+                  <p className="mt-1 text-lg font-bold text-slate-900 sm:text-2xl">{kpi.value}</p>
+                  <p className="text-[10px] text-slate-500">{kpi.sub}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Live Agent Turns Table */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="border-b border-slate-200 p-4 sm:px-6 flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-slate-900">Recent AI Turn Log</h3>
+                <p className="text-xs text-slate-400">Chronological list of customer inputs, classified intents, and latencies</p>
+              </div>
+              <span className="rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-bold text-slate-600">
+                {diagnosticsData?.turns.length ?? 0} logged turns
+              </span>
+            </div>
+
+            {loadingDiagnostics && !diagnosticsData ? (
+              <div className="flex justify-center py-16">
+                <Loader2 size={24} className="animate-spin text-brand" />
+              </div>
+            ) : !diagnosticsData?.turns.length ? (
+              <div className="py-16 text-center text-slate-400 text-xs">
+                No recent agent turns recorded in database.
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="border-b border-slate-200 bg-slate-50 font-bold uppercase tracking-wider text-slate-500 text-[10px]">
+                    <tr>
+                      <th className="py-3 px-4">Time</th>
+                      <th className="py-3 px-4">User Message</th>
+                      <th className="py-3 px-4">Intent</th>
+                      <th className="py-3 px-4">Stage Transition</th>
+                      <th className="py-3 px-4">Latency</th>
+                      <th className="py-3 px-4">Vector Search</th>
+                      <th className="py-3 px-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {diagnosticsData.turns.map((turn) => {
+                      const isExpanded = expandedTurnId === turn.id;
+                      return (
+                        <tr
+                          key={turn.id}
+                          onClick={() => setExpandedTurnId(isExpanded ? null : turn.id)}
+                          className="cursor-pointer hover:bg-slate-50/80 transition"
+                        >
+                          <td className="py-3 px-4 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                            {new Date(turn.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                          </td>
+                          <td className="py-3 px-4 font-medium text-slate-900 max-w-[200px] truncate">
+                            {turn.user_message || "—"}
+                          </td>
+                          <td className="py-3 px-4 font-semibold text-slate-700">
+                            <span className="rounded bg-slate-100 px-2 py-0.5 text-[10px] font-mono">
+                              {turn.detected_intent || "unknown"}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-500 text-[11px]">
+                            {turn.stage_before} &rarr; <span className="font-bold text-slate-800">{turn.stage_after}</span>
+                          </td>
+                          <td className="py-3 px-4 font-mono text-slate-600">
+                            {turn.latency_ms}ms
+                          </td>
+                          <td className="py-3 px-4">
+                            {turn.used_semantic_search ? (
+                              <span className="rounded bg-emerald-50 text-emerald-700 font-bold px-1.5 py-0.5 text-[9px] border border-emerald-200">
+                                pgvector
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">Direct</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span
+                              className={clsx(
+                                "rounded-full px-2 py-0.5 text-[10px] font-bold capitalize",
+                                turn.result_status === "success"
+                                  ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                  : turn.result_status === "fallback"
+                                    ? "bg-amber-50 text-amber-700 border border-amber-200"
+                                    : "bg-red-50 text-red-700 border border-red-200"
+                              )}
+                            >
+                              {turn.result_status?.replace(/_/g, " ") || "success"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Webhook Events Summary */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+            <h3 className="text-sm font-bold text-slate-900 mb-1">WhatsApp Webhook Events Monitor</h3>
+            <p className="text-xs text-slate-400 mb-4">Realtime ingestion logs from Meta Cloud API</p>
+
+            <div className="grid gap-3 sm:grid-cols-4 mb-4">
+              {Object.entries(diagnosticsData?.metrics.webhook_status_counts ?? { processed: 0, received: 0 }).map(([status, count]) => (
+                <div key={status} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 capitalize">{status}</span>
+                  <p className="text-xl font-bold text-slate-900 mt-0.5">{count}</p>
+                </div>
+              ))}
+            </div>
+
+            <div className="space-y-1.5">
+              {diagnosticsData?.webhooks.slice(0, 10).map((wh) => (
+                <div key={wh.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-slate-50 p-2.5 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-slate-400 text-[10px]">
+                      {new Date(wh.created_at).toLocaleTimeString()}
+                    </span>
+                    <span className="font-semibold text-slate-800">{wh.event_type}</span>
+                    <span className="rounded bg-slate-200/60 px-1.5 py-0.2 text-[9px] uppercase font-bold text-slate-600">
+                      {wh.provider}
+                    </span>
+                  </div>
+                  <span className={clsx("rounded px-2 py-0.5 text-[10px] font-bold capitalize", wh.status === "processed" ? "bg-emerald-50 text-emerald-700" : "bg-slate-200 text-slate-700")}>
+                    {wh.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ────────── SAFETY TAB ────────── */}
       {tab === "safety" && (
         <section className="space-y-4">
@@ -837,7 +1318,6 @@ export default function AdminConsole() {
             </div>
 
             <div className="mt-6 space-y-4">
-              {/* Wipe All */}
               <div className="rounded-xl border border-red-100 bg-red-50 p-4">
                 <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
                   <div>

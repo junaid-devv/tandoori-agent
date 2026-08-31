@@ -1,6 +1,7 @@
 import { DashboardProvider } from "@/app/components/dashboard/DashboardProvider";
 import { requireDashboardSession } from "@/lib/auth";
 import { Sidebar } from "@/app/components/Sidebar";
+import { Header } from "@/app/components/Header";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
 
 export const dynamic = "force-dynamic";
@@ -17,13 +18,15 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <Sidebar />
 
         <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <Header />
+
           <div
-            className="absolute inset-0 pointer-events-none z-0 opacity-[0.03]"
+            className="absolute inset-0 pointer-events-none z-0 opacity-[0.02]"
             style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)', backgroundSize: '24px 24px' }}
           />
 
-          <div className="no-scrollbar relative z-10 flex-1 overflow-y-auto p-3 pb-24 sm:p-6 sm:pb-8 lg:p-8 xl:p-10">
-            <div className="max-w-[1400px] mx-auto w-full">
+          <div className="no-scrollbar relative z-10 flex-1 overflow-y-auto p-3 pb-24 sm:p-5 sm:pb-8 lg:p-6 xl:p-8">
+            <div className="max-w-[1600px] mx-auto w-full">
               {children}
             </div>
           </div>
