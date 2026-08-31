@@ -294,7 +294,7 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
       nextStage = "placed";
     } else if (view.stage === "building_cart" && view.upsell_offered) {
       actions.push({ kind: "add_items", payload: { upsell: true } });
-    } else if (view.awaiting_selection) {
+    } else if (view.awaiting_selection && view.cart.length > 0) {
       actions.push({ kind: "ask_clarification", payload: { reason: "which_option" } });
     } else {
       actions.push({ kind: "ask_clarification", payload: { reason: "affirm_no_context" } });

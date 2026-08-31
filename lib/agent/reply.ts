@@ -30,8 +30,8 @@ export const reply = {
         : "You're most welcome! ❤️ Your order will be prepared shortly. Let us know if you need anything else!";
     }
     return ur(l)
-      ? "Bohat shukriya! 😊 Hum aap ki khidmat ke liye hazir hain. Kya order karna chahenge?"
-      : "Thank you so much! 😊 Always happy to help. What would you like to order?";
+      ? "Jee zaroor! 😊 Hum aap ki khidmat ke liye hazir hain. Kya order karna chahenge?"
+      : "Always happy to help! 😊 What would you like to order?";
   },
 
   itemsAdded(l: Lang, added: Array<{ name: string; newCartQty: number }>, cart: CartItem[], currency: string): string {
@@ -267,6 +267,11 @@ export const reply = {
     }
     if (reason === "empty_cart") {
       return ur(l) ? "Cart khali hai — pehle kuch add karein." : "Nothing in cart yet — add something first.";
+    }
+    if (reason === "affirm_no_context") {
+      return ur(l)
+        ? "Jee zaroor! 😊 Kya mangwana chahenge? Menu dekhna chahenge ya direct order batayein?"
+        : "Sure! 😊 What would you like to order today?";
     }
     return ur(l)
       ? "Samajh nahi paya — thora aur wazahat se bata dein?"

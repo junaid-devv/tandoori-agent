@@ -160,17 +160,33 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   }
 
   // ── 1b) Pure greeting with empty cart ──────────────────────────────────────
+  const GREETING_RE = /^(?:ass?al[a-z\s'-]*|aoa|a\.?o\.?a|salam|slam|hi|hello|hey|hola|good\s*(?:morning|afternoon|evening)|kese\s*ho|kia\s*hal\s*hai|kaise\s*hain)(?:\s+(?:bhai|janab|sir|dear|team|all|ap|aap|ji|jee))?[!.]*$/i;
   if (
     !understanding &&
-    input.trivial &&
     ctx.state.cart.length === 0 &&
-    /^(hi|hello|hey|salam|aoa|assalam|hola|hi there|hello there)$/i.test(input.messageText.trim())
+    GREETING_RE.test(input.messageText.trim())
   ) {
     understanding = {
       ...makeBase(ctx.state.preferred_language),
       intents: ["greeting"],
       primary_intent: "greeting",
       notes: "fast_path_greeting",
+    };
+  }
+
+  // ── 1b.2) Neutral acknowledgment when cart is empty ───────────────────────
+  const ACK_RE = /^(?:ok|okay|theek\s*hai|thk\s*hai|thik\s*hai|acha|achha|got\s*it|fine|alright|sahi|sahi\s*hai|ji|jee|haanji)[!.]*$/i;
+  if (
+    !understanding &&
+    ctx.state.cart.length === 0 &&
+    ctx.state.stage === "browsing" &&
+    ACK_RE.test(input.messageText.trim())
+  ) {
+    understanding = {
+      ...makeBase(ctx.state.preferred_language),
+      intents: ["smalltalk"],
+      primary_intent: "smalltalk",
+      notes: "fast_path_neutral_ack",
     };
   }
 
