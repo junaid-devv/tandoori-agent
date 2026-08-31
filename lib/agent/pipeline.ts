@@ -220,12 +220,26 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   // ── 1e) Order type, Checkout, Confirm & Navigation button text fast-paths ───
   if (!understanding) {
     const trimmed = input.messageText.trim();
-    if (ctx.view.stage === "confirming" && /^(confirm\s*✓?|confirm order|place order|order confirm|haan confirm|yes confirm)$/i.test(trimmed)) {
+    if (ctx.view.stage === "confirming" && /^(confirm\s*✓?|confirm order|place order|order confirm|haan confirm|yes confirm|checkout|proceed|ok|done)$/i.test(trimmed)) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
         intents: ["confirm_order"],
         primary_intent: "confirm_order",
         notes: "fast_path_confirm",
+      };
+    } else if (
+      ctx.view.stage === "collecting_delivery" &&
+      !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(trimmed) &&
+      !/^(pickup|dine-in|dine in)$/i.test(trimmed) &&
+      trimmed.length >= 2 &&
+      trimmed.length <= 150
+    ) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["provide_address"],
+        primary_intent: "provide_address",
+        address: trimmed,
+        notes: "fast_path_collecting_delivery_address",
       };
     } else if (/^(wapas jao|go back|back|cart dekhein|view cart)$/i.test(trimmed)) {
       understanding = {
@@ -353,6 +367,23 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     });
   }
   t.nlu = Date.now() - nluStart;
+
+  // Post-NLU safety net: if stage was collecting_delivery and NLU didn't extract address
+  if (
+    ctx.view.stage === "collecting_delivery" &&
+    (!understanding.address || understanding.primary_intent === "unknown") &&
+    !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(input.messageText.trim()) &&
+    !/^(pickup|dine-in|dine in)$/i.test(input.messageText.trim())
+  ) {
+    const rawAddr = input.messageText.trim();
+    if (rawAddr.length >= 2 && rawAddr.length <= 150) {
+      understanding.address = rawAddr;
+      understanding.primary_intent = "provide_address";
+      if (!understanding.intents.includes("provide_address")) {
+        understanding.intents = ["provide_address", ...understanding.intents.filter((i) => i !== "unknown")];
+      }
+    }
+  }
 
   // ── 3) FSM ─────────────────────────────────────────────────────────────────
   const fsmStart = Date.now();
