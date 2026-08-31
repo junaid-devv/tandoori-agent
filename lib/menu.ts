@@ -277,10 +277,12 @@ export async function applyMenuCatalog(branchId: string, items: MenuItem[], repl
   for (const item of sanitized.items) {
     const normalizedName = getMenuNameKey(item.name);
     const existing = existingByName.get(normalizedName);
+    const categoryId = item.category ? categoryMap.get(item.category) ?? null : null;
     const payload = {
       name: item.name,
       price: item.price,
       category: item.category,
+      category_id: categoryId,
       description: item.description,
       is_available: item.is_available,
       available_days: item.available_days,

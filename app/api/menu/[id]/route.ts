@@ -85,6 +85,33 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (Object.keys(updates).length === 0)
     return NextResponse.json({ error: "No valid fields" }, { status: 400 });
 
+  if ("category" in updates && updates.category) {
+    const catName = String(updates.category).trim();
+    if (catName) {
+      const { data: catRow } = await supabaseAdmin
+        .from("menu_categories")
+        .select("id")
+        .eq("branch_id", accessibleItem.branch_id)
+        .eq("name", catName)
+        .maybeSingle();
+
+      if (catRow) {
+        updates.category_id = catRow.id;
+      } else {
+        const { data: newCat } = await supabaseAdmin
+          .from("menu_categories")
+          .insert({
+            branch_id: accessibleItem.branch_id,
+            name: catName,
+            sort_order: 99,
+          })
+          .select("id")
+          .maybeSingle();
+        if (newCat) updates.category_id = newCat.id;
+      }
+    }
+  }
+
   const { error } = await supabaseAdmin
     .from("menu_items")
     .update(updates)
@@ -93,6 +120,12 @@ export async function PATCH(req: NextRequest, { params }: Params) {
   if (error) return apiErrorResponse(error, { fallback: "Failed to update menu item.", context: "menu item PATCH" });
 
   invalidateMenuCache(accessibleItem.branch_id);
+
+  if ("name" in updates || "category" in updates || "description" in updates) {
+    import("@/lib/semantic-menu").then(({ syncMenuEmbeddingsForBranch }) => {
+      syncMenuEmbeddingsForBranch(accessibleItem.branch_id).catch(() => {});
+    });
+  }
 
   return NextResponse.json({ success: true });
 }
@@ -110,6 +143,8 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
     return NextResponse.json({ error: "Menu item not found" }, { status: 404 });
   }
 
+  await supabaseAdmin.from("menu_item_embeddings").delete().eq("menu_item_id", accessibleItem.id);
+
   const { error } = await supabaseAdmin
     .from("menu_items")
     .delete()
@@ -121,3 +156,4 @@ export async function DELETE(_req: NextRequest, { params }: Params) {
 
   return NextResponse.json({ success: true });
 }
+

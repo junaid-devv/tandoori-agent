@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
-import { applyMenuCatalog, sanitizeMenuItems } from "@/lib/menu";
+import { applyMenuCatalog, invalidateMenuCache, sanitizeMenuItems } from "@/lib/menu";
 import type { WeekdayKey } from "@/lib/menu-availability";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
@@ -80,3 +80,27 @@ export async function PUT(req: NextRequest) {
     return apiErrorResponse(error, { fallback: "Menu update failed.", context: "menu route PUT" });
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const auth = await resolveRequestBranch(req, { requireBranch: true });
+    if (auth.response || !auth.branchId) {
+      return auth.response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
+    await supabaseAdmin.from("menu_item_embeddings").delete().eq("branch_id", auth.branchId);
+    await supabaseAdmin.from("menu_items").delete().eq("branch_id", auth.branchId);
+    await supabaseAdmin.from("menu_categories").delete().eq("branch_id", auth.branchId);
+
+    invalidateMenuCache(auth.branchId);
+
+    return NextResponse.json({
+      success: true,
+      branch_id: auth.branchId,
+      message: "All menu items, categories, and embeddings cleared successfully.",
+    });
+  } catch (error) {
+    return apiErrorResponse(error, { fallback: "Failed to clear menu.", context: "menu route DELETE" });
+  }
+}
+
