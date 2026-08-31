@@ -25,28 +25,37 @@ export type InteractivePayload =
 const ur = (l: LanguagePreference) => l === "roman_urdu";
 
 /** Quick-reply buttons for 2-3 item variants (e.g. Half / Full). */
+/** Quick-reply buttons / pick-list for item variants (e.g. Half / Full / Reg / Med / Large / XL). */
 export function variantButtons(
   l: LanguagePreference,
-  variants: Array<{ id: string; name: string; price: number }>,
+  variants: Array<{ id: string; name: string; price: number; category?: string | null }>,
   currency: string,
   bodyText?: string,
 ): InteractivePayload | null {
-  if (variants.length === 0 || variants.length > 3) return null;
-  const buttons = variants.map((v) => {
-    const { variant } = extractBaseItemName(v.name);
-    const label = variant ? `${variant.toUpperCase()} (${currency} ${v.price})` : v.name;
+  if (variants.length === 0) return null;
+  if (variants.length <= 3) {
+    const buttons = variants.map((v) => {
+      const { variant } = extractBaseItemName(v.name);
+      const label = variant ? `${variant.toUpperCase()} (${currency} ${v.price})` : v.name;
+      return {
+        id: `item:${v.id}`,
+        title: label.slice(0, 20),
+      };
+    });
     return {
-      id: `item:${v.id}`,
-      title: label.slice(0, 20),
+      kind: "buttons",
+      payload: {
+        body: bodyText || (ur(l) ? "Kaunsa size chahiye?" : "Which size would you like?"),
+        buttons,
+      },
     };
-  });
-  return {
-    kind: "buttons",
-    payload: {
-      body: bodyText || (ur(l) ? "Kaunsa size chahiye?" : "Which size would you like?"),
-      buttons,
-    },
-  };
+  }
+  return itemPickList(
+    l,
+    variants,
+    currency,
+    bodyText || (ur(l) ? "Kaunsa size chahiye?" : "Which size would you like?"),
+  );
 }
 
 /** Order type quick-reply buttons (hides Delivery button if delivery_enabled is false). */

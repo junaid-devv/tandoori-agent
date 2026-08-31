@@ -235,7 +235,7 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
 
   // 7) Address / slot collection
   const orderTypeAlreadySet = Boolean(view.order_type || u.order_type);
-  if (u.address) {
+  if (u.address || u.notes?.startsWith("use_saved_address:")) {
     actions.push({ kind: "collect_delivery_address", payload: { address: u.address } });
     if (orderTypeAlreadySet && view.cart.length > 0) {
       if (!actions.some((a) => a.kind === "show_summary")) {
@@ -243,8 +243,7 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
       }
       nextStage = "confirming";
     }
-  }
-  if (u.intents.includes("provide_address") && !u.address) {
+  } else if (u.intents.includes("provide_address")) {
     // Tap on "New Address" button — just prompt
     if (!actions.some((a) => a.kind === "collect_delivery_address")) {
       actions.push({ kind: "collect_delivery_address" });

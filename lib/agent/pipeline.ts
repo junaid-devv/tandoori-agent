@@ -249,6 +249,16 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         notes: "fast_path_checkout",
       };
     } else if (
+      ctx.savedAddress &&
+      /^(?:use saved|use saved address|saved address|pichla address|same address|purana address|previous address|wahi address|wahi pe|same)$/i.test(trimmed)
+    ) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["provide_address"],
+        primary_intent: "provide_address",
+        notes: `use_saved_address:${ctx.savedAddress.id}`,
+      };
+    } else if (
       /^(?:can i (?:change|switch) to |switch to |actually |no |nahi )?(delivery|pickup|dine-in|dine in)(?: is fine| krdo| kardo| please| chahiye| it\.{0,3})?$/i.test(trimmed) ||
       /^(?:no you deliver it\.{0,3}|deliver it\.{0,3}|deliver please)$/i.test(trimmed)
     ) {

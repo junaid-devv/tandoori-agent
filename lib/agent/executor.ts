@@ -16,7 +16,7 @@ import type { AgentAction, Transition } from "./state-machine";
 import type { TurnUnderstanding } from "./nlu";
 import { reply } from "./reply";
 import { addToCart, removeFromCart, updateQuantity, cartSubtotal } from "./cart";
-import { searchMenu, resolveItem, resolveItemDetailed } from "@/lib/menu/search";
+import { searchMenu, resolveItem, resolveItemDetailed, extractBaseItemName } from "@/lib/menu/search";
 import { orderRepo } from "@/lib/data/order.repo";
 import { groundedAnswer } from "./answer";
 import {
@@ -339,21 +339,76 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const ans = await grounded(q || "what are your popular items?");
         if (ans) {
           replies.push(ans);
+
+          // Find items from menu mentioned in the grounded answer or relevant to query
+          const lowerAns = ans.toLowerCase();
+          const mentionedMap = new Map<string, { id: string; name: string; price: number; category?: string | null }>();
+
+          for (const item of ctx.menu) {
+            const { baseName } = extractBaseItemName(item.name);
+            const lowerBase = baseName.toLowerCase();
+            const lowerFull = item.name.toLowerCase();
+
+            if (lowerAns.includes(lowerFull) || (lowerBase.length >= 4 && lowerAns.includes(lowerBase))) {
+              if (!mentionedMap.has(item.id)) {
+                mentionedMap.set(item.id, { id: item.id, name: item.name, price: item.price, category: item.category });
+              }
+            }
+          }
+
+          const matchedItems = Array.from(mentionedMap.values());
+          if (matchedItems.length > 0) {
+            patch.last_shown_options = matchedItems.slice(0, 10);
+            patch.last_shown_options_at = new Date().toISOString();
+
+            const distinctBases = Array.from(
+              new Set(matchedItems.map((m) => extractBaseItemName(m.name).baseName))
+            );
+
+            if (distinctBases.length === 1 && matchedItems.length > 1) {
+              // Single item with multiple sizes (e.g. Chicken Supreme -> Reg, Med, Large, XL)
+              const vb = variantButtons(lang, matchedItems, cur, lang === "roman_urdu" ? "Kaunsa size mangwana chahenge?" : "Which size would you like?");
+              if (vb) setInteractive(vb);
+            } else if (distinctBases.length >= 2 && distinctBases.length <= 3) {
+              setInteractive({
+                kind: "buttons",
+                payload: {
+                  body: lang === "roman_urdu" ? "In mein se kya mangwayein?" : "Which one would you like to try?",
+                  buttons: distinctBases.slice(0, 3).map((base) => {
+                    const sample = matchedItems.find((m) => extractBaseItemName(m.name).baseName === base);
+                    return {
+                      id: sample ? `item:${sample.id}` : `action:search_${base.slice(0, 10)}`,
+                      title: base.slice(0, 20),
+                    };
+                  }),
+                },
+              });
+            } else {
+              setInteractive(itemPickList(lang, matchedItems.slice(0, 10), cur, lang === "roman_urdu" ? "Recommended options:" : "Recommended options:"));
+            }
+          }
         } else {
           // Fallback to searching the menu
           const searchRes = await resolveItemDetailed(branchId, q, undefined, ctx.menu);
           if (searchRes.kind === "exact") {
             const { matches } = await searchMenu(branchId, q, 3, ctx.menu);
             if (matches.length) {
+              patch.last_shown_options = matches.map((m) => ({ id: m.id, name: m.name, price: m.price }));
+              patch.last_shown_options_at = new Date().toISOString();
               replies.push(reply.itemList(lang, matches, cur));
               setInteractive(itemPickList(lang, matches, cur));
             } else {
               replies.push(hoursAnswer());
             }
           } else if (searchRes.kind === "variants") {
+            patch.last_shown_options = searchRes.variants.map((v) => ({ id: v.id, name: v.name, price: v.price }));
+            patch.last_shown_options_at = new Date().toISOString();
             replies.push(reply.itemVariants(lang, searchRes.baseName, searchRes.variants, cur));
-            setInteractive(itemPickList(lang, searchRes.variants, cur));
+            const vb = variantButtons(lang, searchRes.variants, cur);
+            if (vb) setInteractive(vb);
           } else if (searchRes.kind === "ambiguous") {
+            patch.last_shown_options = searchRes.matches.map((m) => ({ id: m.id, name: m.name, price: m.price }));
+            patch.last_shown_options_at = new Date().toISOString();
             replies.push(reply.ambiguousMatches(lang, searchRes.query, searchRes.matches, cur));
             setInteractive(itemPickList(lang, searchRes.matches, cur));
           } else {
@@ -452,6 +507,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               patch.address = savedRow.address;
               patch.order_type = patch.order_type ?? "delivery";
               replies.push(reply.savedAddressConfirmed(lang, savedRow.address));
+
+              if (cart.length > 0 && !hasDisambiguation) {
+                patch.stage = "confirming";
+                replies.push(reply.summary(lang, cart, patch.order_type, cur, savedRow.address, ctx.settings));
+                setInteractive(confirmButtons(lang));
+              }
             }
           } else {
             replies.push(reply.askAddress(lang));
@@ -464,6 +525,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           } else {
             patch.address = address;
             patch.order_type = patch.order_type ?? "delivery";
+            if (cart.length > 0 && !hasDisambiguation) {
+              patch.stage = "confirming";
+              replies.push(reply.summary(lang, cart, patch.order_type, cur, address, ctx.settings));
+              setInteractive(confirmButtons(lang));
+            }
           }
         } else {
           const saved = ctx.savedAddress;
@@ -522,6 +588,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       case "show_summary": {
         if (hasDisambiguation) break;
+        const alreadyHasSummary = replies.some((r) => r.includes("Total:") || r.includes("Aap ka order") || r.includes("Your order"));
+        if (alreadyHasSummary) {
+          setInteractive(confirmButtons(lang));
+          break;
+        }
         const addr = patch.address ?? ctx.state.address;
         if (cart.length === 0) {
           replies.push(reply.emptyCart(lang));

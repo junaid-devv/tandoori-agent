@@ -297,10 +297,10 @@ export async function searchMenu(
 // Variant & Disambiguation Helpers
 // ---------------------------------------------------------------------
 const VARIANT_PATTERN =
-  /\s*(?:[\(\[\{]|\s+-\s+|\s+\/\s+)(full|half|quarter|single|double|small|medium|large|1\s*kg|0?\.5\s*kg|half\s*kg|\d+\s*pcs?|tin|glass|bottle|boneless|b\/l)[\)\]\}]?\s*$/i;
+  /\s*(?:[\(\[\{]|\s+-\s+|\s+\/\s+)(full|half|quarter|single|double|small|medium|large|extra\s*large|xl|reg(?:ular)?|med(?:ium)?|lar(?:ge)?|\d+["']|\w+\s*\d+["']|1\s*kg|0?\.5\s*kg|half\s*kg|\d+\s*pcs?|tin|glass|bottle|boneless|b\/l|with\s*cheese)[\)\]\}]?\s*$/i;
 
 const SIZE_WORDS_PATTERN =
-  /\b(full|half|quarter|single|double|small|medium|large|\d+\s*pcs?|tin|glass|bottle)\b/i;
+  /\b(full|half|quarter|single|double|small|medium|large|extra\s*large|xl|reg(?:ular)?|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle)\b/i;
 
 export function extractBaseItemName(fullName: string): { baseName: string; variant: string | null } {
   const match = fullName.match(VARIANT_PATTERN);
@@ -424,13 +424,26 @@ export async function resolveItemDetailed(
     return { kind: "exact", item: exactMatch, confidence: 1.0 };
   }
 
-  // 2) If user specified a size (e.g. "half", "full"), find the candidate matching that size
+  // 2) If user specified a size (e.g. "half", "full", "large", "reg", "medium", "xl"), find the candidate matching that size
   if (requestedSize) {
+    const s = requestedSize.toLowerCase();
     const sizeMatch = relevantCandidates.find((c) => {
       const { variant } = extractBaseItemName(c.name);
+      const v = variant ? variant.toLowerCase() : "";
+      const n = c.name.toLowerCase();
       return (
-        (variant && variant.toLowerCase() === requestedSize) ||
-        c.name.toLowerCase().includes(requestedSize)
+        v === s ||
+        v.includes(s) ||
+        s.includes(v) ||
+        n.includes(`(${s}`) ||
+        n.includes(` ${s} `) ||
+        (s === "regular" && (v.includes("reg") || n.includes("reg"))) ||
+        (s === "reg" && (v.includes("reg") || n.includes("reg"))) ||
+        (s === "medium" && (v.includes("med") || n.includes("med"))) ||
+        (s === "med" && (v.includes("med") || n.includes("med"))) ||
+        (s === "large" && (v.includes("large") || v.includes("lar") || n.includes("large"))) ||
+        (s === "xl" && (v.includes("xl") || v.includes("extra large") || n.includes("xl"))) ||
+        (s === "extra large" && (v.includes("xl") || v.includes("extra large") || n.includes("xl")))
       );
     });
     if (sizeMatch) {
