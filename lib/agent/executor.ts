@@ -437,6 +437,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             )
           );
           if (categoryItems.length > 0) {
+            // Natural numeric sort (e.g. DEAL 4 before DEAL 10)
+            const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+            categoryItems.sort((a, b) => collator.compare(a.name, b.name));
+
             patch.last_shown_options = categoryItems.map((m) => ({ id: m.id, name: m.name, price: m.price }));
             patch.last_shown_options_at = new Date().toISOString();
             patch.last_shown_category = categoryQuery;

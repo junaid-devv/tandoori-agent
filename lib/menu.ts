@@ -45,6 +45,7 @@ export type MenuCatalogItem = {
   name: string;
   price: number;
   category: string | null;
+  description?: string | null;
   is_available: boolean;
   base_is_available?: boolean;
   available_days?: WeekdayKey[];
@@ -164,7 +165,7 @@ export async function getMenuCatalog(branchId: string): Promise<MenuCatalogItem[
 
   const { data, error } = await supabaseAdmin
     .from("menu_items")
-    .select("id, name, price, category, is_available, available_days, available_start_time, available_end_time")
+    .select("id, name, price, category, description, is_available, available_days, available_start_time, available_end_time")
     .eq("branch_id", branchId)
     .order("category", { ascending: true })
     .order("name", { ascending: true });
@@ -180,6 +181,7 @@ export async function getMenuCatalog(branchId: string): Promise<MenuCatalogItem[
     name: item.name,
     price: Number(item.price),
     category: item.category ?? null,
+    description: item.description ?? null,
     is_available: isMenuScheduleAvailable({
       isAvailable: item.is_available ?? true,
       availableDays: item.available_days,

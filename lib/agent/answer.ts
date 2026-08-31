@@ -63,8 +63,9 @@ export interface GroundedAnswerInput {
   isOpenNow: boolean;
 }
 
-// Keywords that signal a non-menu question — we send only restaurant facts, not full menu.
-const NON_MENU_KEYWORDS = /\b(deliver|delivery|timing|hours|open|close|location|address|payment|cod|cash|pickup|dine.?in|halal|phone|number|contact|area|zone|charge|fee|minimum|min order|eta|time|available)\b/i;
+// Keywords that signal a pure logistics/operational question without food context.
+const NON_MENU_KEYWORDS = /\b(deliver|delivery|timing|hours|open|close|location|address|payment|cod|cash|pickup|dine.?in|halal|phone|number|contact|area|zone|charge|fee|minimum|min order|eta)\b/i;
+const MENU_INQUIRY_KEYWORDS = /\b(deal|deals|include|includes|contain|contains|detail|details|what is|whats in|burger|karahi|handi|bbq|biryani|naan|rice|drink|menu|item|items|price|cost|flavor|taste|ingredient|portion|size|combo)\b/i;
 
 function buildFacts(input: GroundedAnswerInput): string {
   const s = input.settings;
@@ -98,21 +99,26 @@ function buildFacts(input: GroundedAnswerInput): string {
     if (cats.length) lines.push(`MENU_CATEGORIES: ${cats.join(", ")}`);
   }
 
-  // Smart context trimming: non-menu questions don't need the full item list.
-  // For logistics/policy questions send only category names to keep tokens low.
-  const isNonMenuQuestion = NON_MENU_KEYWORDS.test(input.question) && !input.relevantItems?.length;
+  // Smart context trimming: skip full menu only for purely non-menu logistics questions
+  const isNonMenuQuestion =
+    NON_MENU_KEYWORDS.test(input.question) &&
+    !MENU_INQUIRY_KEYWORDS.test(input.question) &&
+    !input.relevantItems?.length;
+
   const focus = input.relevantItems?.length
     ? input.relevantItems
     : isNonMenuQuestion
-      ? [] // skip full menu for delivery/hours/payment questions
+      ? [] // skip full menu for purely delivery/hours/payment questions
       : input.menu;
 
   if (!isNonMenuQuestion) {
     const byCat = new Map<string, string[]>();
     for (const it of focus) {
       const cat = it.category || "Other";
-      const desc = "description" in it ? (it as { description?: string | null }).description : null;
-      const line = `${it.name} — ${cur} ${it.price}${desc ? ` (${desc})` : ""}`;
+      const desc = "description" in it && (it as { description?: string | null }).description
+        ? ` (Includes: ${(it as { description?: string | null }).description})`
+        : "";
+      const line = `${it.name} — ${cur} ${it.price}${desc}`;
       if (!byCat.has(cat)) byCat.set(cat, []);
       byCat.get(cat)!.push(line);
     }
@@ -139,6 +145,7 @@ function buildSystemPrompt(personality?: string): string {
     "",
     "HARD RULES:",
     "- Use ONLY the given facts. NEVER invent prices, items, discounts, timings, delivery areas, or policies.",
+    "- When the customer asks what a deal, combo, or item includes or contains: look up the (Includes: ...) in the MENU facts and describe the items and contents clearly.",
     "- If the customer asks for a dish or cuisine NOT on the menu: politely state that it is not available on our menu. If MENU_CATEGORIES is present in the facts, mention ONLY those exact categories (e.g. Karahi, Handi, BBQ); NEVER invent, assume, or list fast-food, pizza, burger, pasta, or other dishes not present in the facts. If MENU_CATEGORIES is not present, simply say the item is not on our menu and ask what they would like to order.",
     "- If the customer asks about social media, facebook, instagram, website, or other unlisted info: politely provide the support phone number or state that you will connect them with staff.",
     "- If the answer is not in the facts, say honestly you're not sure and offer to connect them to staff — do NOT guess or make up facts.",
