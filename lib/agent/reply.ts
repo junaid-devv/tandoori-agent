@@ -162,6 +162,27 @@ export const reply = {
       : "How many guests and what time? (e.g. 4 people, 8pm)";
   },
 
+  askDineInTime(l: Lang, guests: number): string {
+    return ur(l)
+      ? `Theek hai, ${guests} log. Kis waqt tashreef layein ge? (misaal: 8:00 PM)`
+      : `Got it, ${guests} guests. What time will you arrive? (e.g. 8:00 PM)`;
+  },
+
+  askDineInGuests(l: Lang, timeStr: string): string {
+    const timeLabel = timeStr ? ` (${timeStr})` : "";
+    return ur(l)
+      ? `Theek hai${timeLabel}. Kitne log honge? (misaal: 4 log)`
+      : `Got it${timeLabel}. How many guests will be joining? (e.g. 4 guests)`;
+  },
+
+  orderUpdated(l: Lang, orderNumber: number, orderType: OrderType, details?: string): string {
+    const detailStr = details ? ` (${details})` : "";
+    const typeLabel = orderType === "dine-in" ? "Dine-in" : orderType === "pickup" ? "Pickup" : "Delivery";
+    return ur(l)
+      ? `✅ Order #${orderNumber} update ho gaya: *${typeLabel}*${detailStr}.\nHamare staff ko notify kar diya gaya hai! 🙏`
+      : `✅ Order #${orderNumber} has been updated to *${typeLabel}*${detailStr}.\nOur kitchen and staff have been notified! 🙏`;
+  },
+
   askPickupTime(l: Lang): string {
     return ur(l) ? "Pickup kis waqt karenge?" : "What time will you pick up?";
   },

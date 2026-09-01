@@ -134,4 +134,27 @@ export const orderRepo = {
       .eq("id", id);
     if (error) throw error;
   },
+
+  async updateFulfillment(
+    id: string,
+    fulfillment: {
+      type: OrderType;
+      address?: string | null;
+      guests?: number | null;
+      reservation_time?: string | null;
+      pickup_time?: string | null;
+    },
+  ): Promise<void> {
+    const patch: Record<string, unknown> = {
+      type: fulfillment.type,
+      updated_at: new Date().toISOString(),
+    };
+    if (fulfillment.address !== undefined) patch.address = fulfillment.address;
+    if (fulfillment.guests !== undefined) patch.guests = fulfillment.guests;
+    if (fulfillment.reservation_time !== undefined) patch.reservation_time = fulfillment.reservation_time;
+    if (fulfillment.pickup_time !== undefined) patch.pickup_time = fulfillment.pickup_time;
+
+    const { error } = await supabaseAdmin.from("orders").update(patch).eq("id", id);
+    if (error) throw error;
+  },
 };

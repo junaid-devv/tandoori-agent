@@ -130,8 +130,22 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     return parts.join("\n");
   };
 
-  const grounded = async (question: string): Promise<string | null> =>
-    groundedAnswer({ question, language: lang, appName: input.appName, currency: cur, settings: ctx.settings, menu: ctx.menu, isOpenNow: ctx.isOpenNow });
+  const grounded = async (question: string): Promise<string | null> => {
+    const relevantItems = ctx.state.last_shown_options?.length
+      ? ctx.state.last_shown_options.map((o) => ({ name: o.name, price: o.price, category: ctx.state.last_shown_category || null }))
+      : undefined;
+
+    return groundedAnswer({
+      question,
+      language: lang,
+      appName: input.appName,
+      currency: cur,
+      settings: ctx.settings,
+      menu: ctx.menu,
+      relevantItems,
+      isOpenNow: ctx.isOpenNow,
+    });
+  };
 
   // ── Escalation ────────────────────────────────────────────────────────────
   if (transition.escalate) {
@@ -559,19 +573,86 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Collect dine-in details ──────────────────────────────────────────
       case "collect_dinein_details": {
-        const guests = action.payload?.guests as number | null | undefined;
-        const rtime = action.payload?.reservation_time as string | null | undefined;
+        const guests = (action.payload?.guests as number | null | undefined) ?? u.guests ?? patch.guests;
+        const rtime = (action.payload?.reservation_time as string | null | undefined) ?? u.reservation_time ?? patch.reservation_time;
         if (guests) patch.guests = guests;
         if (rtime) patch.reservation_time = parseCustomerTimeToIso(rtime, ctx.settings.timezone);
-        if (!guests && !rtime) replies.push(reply.askDineIn(lang));
+
+        const currentGuests = patch.guests ?? ctx.state.guests;
+        const currentRtime = patch.reservation_time ?? ctx.state.reservation_time;
+
+        // Check if modifying a recently placed order (within 1 hour)
+        const recentPlacedOrder = ctx.state.stage === "placed"
+          ? await orderRepo.getLatestForConversation(input.conversationId)
+          : null;
+
+        if (recentPlacedOrder && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
+          if (currentGuests && currentRtime) {
+            await orderRepo.updateFulfillment(recentPlacedOrder.id, {
+              type: "dine-in",
+              guests: currentGuests,
+              reservation_time: currentRtime,
+              address: null,
+            });
+            patch.order_type = "dine-in";
+            patch.stage = "placed";
+            replies.push(reply.orderUpdated(lang, recentPlacedOrder.order_number, "dine-in", `${currentGuests} guests, ${u.reservation_time || rtime || "reserved time"}`));
+            break;
+          } else if (currentGuests && !currentRtime) {
+            replies.push(reply.askDineInTime(lang, currentGuests));
+            break;
+          } else if (!currentGuests && currentRtime) {
+            replies.push(reply.askDineInGuests(lang, u.reservation_time || rtime || ""));
+            break;
+          }
+        }
+
+        if (!currentGuests && !currentRtime) {
+          replies.push(reply.askDineIn(lang));
+        } else if (currentGuests && !currentRtime) {
+          replies.push(reply.askDineInTime(lang, currentGuests));
+        } else if (!currentGuests && currentRtime) {
+          replies.push(reply.askDineInGuests(lang, u.reservation_time || rtime || ""));
+        } else if (cart.length === 0) {
+          replies.push(
+            lang === "roman_urdu"
+              ? `Theek hai, ${currentGuests} log, ${u.reservation_time || rtime || ""}. Menu se kya order karein ge?`
+              : `Got it, ${currentGuests} guests at ${u.reservation_time || rtime || ""}. What would you like to order from our menu?`,
+          );
+        }
         break;
       }
 
       // ── Collect pickup time ──────────────────────────────────────────────
       case "collect_pickup_time": {
-        const ptime = action.payload?.pickup_time as string | undefined;
+        const ptime = (action.payload?.pickup_time as string | undefined) ?? u.pickup_time;
         if (ptime) {
           patch.pickup_time = parseCustomerTimeToIso(ptime, ctx.settings.timezone);
+
+          // Check if modifying a recently placed order
+          const recentPlacedOrder = ctx.state.stage === "placed"
+            ? await orderRepo.getLatestForConversation(input.conversationId)
+            : null;
+
+          if (recentPlacedOrder && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
+            await orderRepo.updateFulfillment(recentPlacedOrder.id, {
+              type: "pickup",
+              pickup_time: patch.pickup_time,
+              address: null,
+            });
+            patch.order_type = "pickup";
+            patch.stage = "placed";
+            replies.push(reply.orderUpdated(lang, recentPlacedOrder.order_number, "pickup", ptime));
+            break;
+          }
+
+          if (cart.length === 0) {
+            replies.push(
+              lang === "roman_urdu"
+                ? `Theek hai, pickup time: ${ptime}. Menu se kya order karein ge?`
+                : `Got it, pickup time: ${ptime}. What would you like to order from our menu?`,
+            );
+          }
         } else {
           replies.push(reply.askPickupTime(lang));
         }

@@ -257,6 +257,63 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         address: trimmed,
         notes: "fast_path_collecting_delivery_address",
       };
+    } else if (
+      (ctx.view.stage === "collecting_dinein" || ctx.state.order_type === "dine-in") &&
+      !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(trimmed)
+    ) {
+      const combinedMatch =
+        trimmed.match(/(?:for\s+)?([1-9]\d?)\s*(?:people|persons|guests|members|log|banday|afraad)?\s*(?:at\s+|,\s*)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)?)/i) ||
+        trimmed.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)?)\s*(?:for\s+|,)?\s*([1-9]\d?)\s*(?:people|persons|guests|members|log|banday|afraad)?/i);
+
+      if (combinedMatch && /am|pm|baje|:/i.test(trimmed)) {
+        const isTimeFirst = /am|pm|baje|:/i.test(combinedMatch[1]);
+        const guests = Number(isTimeFirst ? combinedMatch[2] : combinedMatch[1]);
+        const timeStr = isTimeFirst ? combinedMatch[1] : combinedMatch[2];
+        understanding = {
+          ...makeBase(ctx.state.preferred_language),
+          intents: ["provide_dinein_details"],
+          primary_intent: "provide_dinein_details",
+          guests: Math.min(guests, 50),
+          reservation_time: timeStr,
+          notes: "fast_path_dinein_combined",
+        };
+      } else {
+        const guestOnlyMatch = trimmed.match(/^(?:for\s+)?([1-9]\d?)\s*(?:people|persons|guests|members|log|banday|afraad|seats|adad)?$/i);
+        const timeOnlyMatch = trimmed.match(/^(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje|o'?clock)?)$/i);
+
+        if (guestOnlyMatch && !/am|pm|baje/i.test(trimmed)) {
+          const guests = Math.min(Number(guestOnlyMatch[1]), 50);
+          understanding = {
+            ...makeBase(ctx.state.preferred_language),
+            intents: ["provide_dinein_details"],
+            primary_intent: "provide_dinein_details",
+            guests,
+            notes: "fast_path_dinein_guests",
+          };
+        } else if (timeOnlyMatch) {
+          understanding = {
+            ...makeBase(ctx.state.preferred_language),
+            intents: ["provide_dinein_details"],
+            primary_intent: "provide_dinein_details",
+            reservation_time: timeOnlyMatch[1],
+            notes: "fast_path_dinein_time",
+          };
+        }
+      }
+    } else if (
+      (ctx.view.stage === "collecting_pickup" || ctx.state.order_type === "pickup") &&
+      !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(trimmed)
+    ) {
+      const pickupTimeMatch = trimmed.match(/^(?:at\s+|in\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje|mins?|minutes?|hours?)?)$/i);
+      if (pickupTimeMatch) {
+        understanding = {
+          ...makeBase(ctx.state.preferred_language),
+          intents: ["provide_pickup_time"],
+          primary_intent: "provide_pickup_time",
+          pickup_time: trimmed,
+          notes: "fast_path_pickup_time",
+        };
+      }
     } else if (/^(wapas jao|go back|back|cart dekhein|view cart)$/i.test(trimmed)) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
