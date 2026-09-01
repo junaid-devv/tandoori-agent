@@ -543,6 +543,37 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           } else {
             patch.address = address;
             patch.order_type = patch.order_type ?? "delivery";
+
+            // Check if modifying a recently placed order (within 45 min)
+            const recentPlacedOrder = ctx.state.stage === "placed"
+              ? await orderRepo.getLatestForConversation(input.conversationId)
+              : null;
+            const isRecent = recentPlacedOrder &&
+              (Date.now() - new Date(recentPlacedOrder.created_at).getTime() < 45 * 60 * 1000);
+
+            if (isRecent && recentPlacedOrder.status === "out_for_delivery") {
+              replies.push(
+                lang === "roman_urdu"
+                  ? `Aap ka order #${recentPlacedOrder.order_number} already delivery ke liye nikal chuka hai. Address tabdeeli ke liye hamare delivery rider ya support se rabta karein.`
+                  : `Your order #${recentPlacedOrder.order_number} is already out for delivery. Please contact our support team to adjust the address.`,
+              );
+              break;
+            } else if (isRecent && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
+              await orderRepo.updateFulfillment(recentPlacedOrder.id, {
+                type: "delivery",
+                address,
+                guests: null,
+                reservation_time: null,
+              });
+              patch.stage = "placed";
+              replies.push(
+                lang === "roman_urdu"
+                  ? `✅ Order #${recentPlacedOrder.order_number} ka delivery address update ho gaya:\n📍 *${address}*\nHamare rider ko notify kar diya gaya hai! 🙏`
+                  : `✅ Delivery address for order #${recentPlacedOrder.order_number} updated to:\n📍 *${address}*\nOur dispatch team has been notified! 🙏`,
+              );
+              break;
+            }
+
             if (cart.length > 0 && !hasDisambiguation) {
               patch.stage = "confirming";
               replies.push(reply.summary(lang, cart, patch.order_type, cur, address, ctx.settings));
@@ -581,12 +612,23 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const currentGuests = patch.guests ?? ctx.state.guests;
         const currentRtime = patch.reservation_time ?? ctx.state.reservation_time;
 
-        // Check if modifying a recently placed order (within 1 hour)
+        // Check if modifying a recently placed order (within 45 minutes)
         const recentPlacedOrder = ctx.state.stage === "placed"
           ? await orderRepo.getLatestForConversation(input.conversationId)
           : null;
+        const isRecent = recentPlacedOrder &&
+          (Date.now() - new Date(recentPlacedOrder.created_at).getTime() < 45 * 60 * 1000);
 
-        if (recentPlacedOrder && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
+        if (isRecent && recentPlacedOrder.status === "out_for_delivery") {
+          replies.push(
+            lang === "roman_urdu"
+              ? `Aap ka order #${recentPlacedOrder.order_number} already delivery ke liye nikal chuka hai aur Dine-in mein switch nahi ho sakta. Baraye meherbani support se rabta karein.`
+              : `Your order #${recentPlacedOrder.order_number} is already out for delivery and cannot be changed to Dine-in. Please contact support.`,
+          );
+          break;
+        }
+
+        if (isRecent && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
           if (currentGuests && currentRtime) {
             await orderRepo.updateFulfillment(recentPlacedOrder.id, {
               type: "dine-in",
@@ -629,12 +671,23 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (ptime) {
           patch.pickup_time = parseCustomerTimeToIso(ptime, ctx.settings.timezone);
 
-          // Check if modifying a recently placed order
+          // Check if modifying a recently placed order (within 45 minutes)
           const recentPlacedOrder = ctx.state.stage === "placed"
             ? await orderRepo.getLatestForConversation(input.conversationId)
             : null;
+          const isRecent = recentPlacedOrder &&
+            (Date.now() - new Date(recentPlacedOrder.created_at).getTime() < 45 * 60 * 1000);
 
-          if (recentPlacedOrder && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
+          if (isRecent && recentPlacedOrder.status === "out_for_delivery") {
+            replies.push(
+              lang === "roman_urdu"
+                ? `Aap ka order #${recentPlacedOrder.order_number} already delivery ke liye nikal chuka hai aur Pickup mein switch nahi ho sakta. Support se rabta karein.`
+                : `Your order #${recentPlacedOrder.order_number} is already on its way for delivery. Please contact support.`,
+            );
+            break;
+          }
+
+          if (isRecent && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
             await orderRepo.updateFulfillment(recentPlacedOrder.id, {
               type: "pickup",
               pickup_time: patch.pickup_time,
