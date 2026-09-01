@@ -544,8 +544,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             patch.address = address;
             patch.order_type = patch.order_type ?? "delivery";
 
-            // Check if modifying a recently placed order (within 45 min)
-            const recentPlacedOrder = ctx.state.stage === "placed"
+            // Check if modifying a recently placed order (within 45 min and cart is empty)
+            const recentPlacedOrder = (ctx.state.stage === "placed" || cart.length === 0)
               ? await orderRepo.getLatestForConversation(input.conversationId)
               : null;
             const isRecent = recentPlacedOrder &&
@@ -612,8 +612,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const currentGuests = patch.guests ?? ctx.state.guests;
         const currentRtime = patch.reservation_time ?? ctx.state.reservation_time;
 
-        // Check if modifying a recently placed order (within 45 minutes)
-        const recentPlacedOrder = ctx.state.stage === "placed"
+        // Check if modifying a recently placed order (within 45 minutes and cart is empty)
+        const recentPlacedOrder = (ctx.state.stage === "placed" || cart.length === 0)
           ? await orderRepo.getLatestForConversation(input.conversationId)
           : null;
         const isRecent = recentPlacedOrder &&
@@ -671,8 +671,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (ptime) {
           patch.pickup_time = parseCustomerTimeToIso(ptime, ctx.settings.timezone);
 
-          // Check if modifying a recently placed order (within 45 minutes)
-          const recentPlacedOrder = ctx.state.stage === "placed"
+          // Check if modifying a recently placed order (within 45 minutes and cart is empty)
+          const recentPlacedOrder = (ctx.state.stage === "placed" || cart.length === 0)
             ? await orderRepo.getLatestForConversation(input.conversationId)
             : null;
           const isRecent = recentPlacedOrder &&
