@@ -203,8 +203,8 @@ export function Sidebar() {
       </div>
 
       {/* Mobile bottom nav */}
-      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-800 bg-zinc-950/95 px-2 py-1.5 shadow-[0_-12px_30px_rgba(15,23,42,0.16)] backdrop-blur lg:hidden">
-        <div className="no-scrollbar flex gap-1 overflow-x-auto">
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-800/80 bg-zinc-950/95 px-1 py-1 pb-[calc(env(safe-area-inset-bottom,0px)+0.375rem)] shadow-[0_-10px_25px_rgba(0,0,0,0.5)] backdrop-blur lg:hidden">
+        <div className="no-scrollbar flex items-center justify-around gap-0.5 overflow-x-auto px-0.5">
           {navItems.map(({ href, label, icon: Icon }) => {
             const isActive =
               href === "/dashboard"
@@ -220,19 +220,21 @@ export function Sidebar() {
                 prefetch
                 data-testid={`nav-${testIdKey}`}
                 className={clsx(
-                  "relative flex min-w-[62px] flex-1 flex-col items-center justify-center gap-0.5 rounded-lg px-1.5 py-1.5 text-[9px] font-semibold transition-all",
+                  "relative flex min-w-[48px] flex-1 flex-col items-center justify-center gap-0.5 rounded-xl py-1.5 px-0.5 transition-all duration-150",
                   isActive
-                    ? "bg-brand text-white"
-                    : "text-zinc-500 hover:bg-zinc-900 hover:text-zinc-200",
+                    ? "bg-brand/15 text-brand font-bold"
+                    : "text-zinc-400 hover:bg-zinc-900/60 hover:text-zinc-200",
                 )}
               >
-                <Icon size={17} />
-                <span className="max-w-full truncate whitespace-nowrap">{shortLabel}</span>
-                {href === "/dashboard/conversations" && globalUnreadCount > 0 && (
-                  <span className="absolute right-3 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-white px-1 text-[9px] font-bold text-brand">
-                    {globalUnreadCount}
-                  </span>
-                )}
+                <div className="relative">
+                  <Icon size={18} className={clsx("transition-colors", isActive ? "text-brand" : "text-zinc-400")} />
+                  {href === "/dashboard/conversations" && globalUnreadCount > 0 && (
+                    <span className="absolute -top-1 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-brand px-0.5 text-[8px] font-black text-white ring-2 ring-zinc-950">
+                      {globalUnreadCount}
+                    </span>
+                  )}
+                </div>
+                <span className="max-w-full truncate text-[9.5px] leading-tight tracking-tight">{shortLabel}</span>
               </Link>
             );
           })}

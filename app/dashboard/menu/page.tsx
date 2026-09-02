@@ -537,7 +537,7 @@ export default function MenuPage() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="grid grid-cols-1 gap-2 xs:grid-cols-2 sm:flex sm:flex-wrap sm:items-center">
                 {/* Photo Upload */}
                 <label className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-lg border border-orange-200 bg-white px-3.5 text-xs font-bold text-brand shadow-sm transition hover:bg-orange-50 disabled:opacity-50">
                   {processing ? <Loader2 className="h-4 w-4 animate-spin text-brand" /> : <UploadCloud size={15} />}
@@ -758,10 +758,10 @@ export default function MenuPage() {
 
           {/* Category Chips Bar */}
           {categories.length > 0 && (
-            <div className="flex items-center gap-2 overflow-x-auto pb-1 text-xs">
-              <span className="flex items-center gap-1 font-bold text-slate-400 pr-1">
+            <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto py-1 text-xs">
+              <span className="flex shrink-0 items-center gap-1 font-bold text-slate-400 pr-1">
                 <Filter size={13} />
-                <span>Filter:</span>
+                <span className="hidden sm:inline">Filter:</span>
               </span>
               <button
                 onClick={() => setSelectedCategory("all")}

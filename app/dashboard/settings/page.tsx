@@ -309,12 +309,12 @@ export default function SettingsPage() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex w-full sm:w-auto items-center gap-2">
           {activeTab !== "database" && (
             <button
               onClick={() => void save()}
               disabled={saving}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-brand-hover disabled:opacity-50"
+              className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-brand-hover disabled:opacity-50"
             >
               {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
               <span>Save Changes</span>
@@ -330,7 +330,7 @@ export default function SettingsPage() {
             key={key}
             onClick={() => setActiveTab(key)}
             className={clsx(
-              "flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-semibold transition-all sm:flex-1",
+              "flex shrink-0 items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all sm:flex-1 sm:px-4 sm:py-2.5",
               activeTab === key
                 ? "bg-slate-900 text-white shadow-sm"
                 : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
@@ -359,7 +359,7 @@ export default function SettingsPage() {
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "operations" && (
         <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm space-y-6">
             {/* Accepting orders banner switch */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
               <div>
@@ -385,7 +385,7 @@ export default function SettingsPage() {
                 type="button"
                 onClick={() => setSettings((curr) => ({ ...curr, is_accepting_orders: !curr.is_accepting_orders }))}
                 className={clsx(
-                  "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition",
+                  "inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition",
                   settings.is_accepting_orders
                     ? "bg-emerald-600 text-white hover:bg-emerald-700"
                     : "bg-slate-800 text-white hover:bg-slate-900"
@@ -518,7 +518,7 @@ export default function SettingsPage() {
               type="button"
               onClick={() => setSettings((curr) => ({ ...curr, delivery_enabled: !curr.delivery_enabled }))}
               className={clsx(
-                "inline-flex items-center justify-center gap-2 rounded-xl px-4 py-2 text-xs font-bold transition",
+                "inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition",
                 settings.delivery_enabled
                   ? "bg-emerald-600 text-white hover:bg-emerald-700"
                   : "bg-slate-800 text-white hover:bg-slate-900"

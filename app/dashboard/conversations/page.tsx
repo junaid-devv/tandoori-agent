@@ -368,7 +368,12 @@ export default function ConversationsPage() {
         if (requestedConversationId && cachedConversations.some((item) => item.id === requestedConversationId)) {
           return requestedConversationId;
         }
-        return cachedConversations.some((item) => item.id === current) ? current : cachedConversations[0]?.id ?? null;
+        if (current && cachedConversations.some((item) => item.id === current)) {
+          return current;
+        }
+        // Auto-select first conversation ONLY on desktop viewports (>= 768px)
+        const isDesktop = typeof window !== "undefined" && window.innerWidth >= 768;
+        return isDesktop ? (cachedConversations[0]?.id ?? null) : null;
       });
     }
   }, [cachedConversations, requestedConversationId]);
@@ -656,7 +661,7 @@ export default function ConversationsPage() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-7.5rem)] min-h-[560px] w-full overflow-hidden rounded-2xl border border-slate-200 bg-white font-sans text-slate-900 shadow-sm">
+    <div className="flex h-[calc(100dvh-7.5rem)] min-h-0 sm:min-h-[560px] w-full overflow-hidden rounded-xl sm:rounded-2xl border border-slate-200 bg-white font-sans text-slate-900 shadow-sm">
       
       {/* ─────────────────────────────────────────────────────────────
           PANE 1: INBOX LIST (w-80 / 320px)
@@ -898,7 +903,12 @@ export default function ConversationsPage() {
                 {/* Left: Customer metadata */}
                 <div className="flex items-center gap-3 min-w-0">
                   <button
-                    onClick={() => setSelectedId(null)}
+                    onClick={() => {
+                      setSelectedId(null);
+                      if (typeof window !== "undefined" && requestedConversationId) {
+                        window.history.replaceState(null, "", "/dashboard/conversations");
+                      }
+                    }}
                     className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 md:hidden"
                     title="Back to inbox"
                   >

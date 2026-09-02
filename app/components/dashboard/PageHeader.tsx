@@ -12,7 +12,7 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="relative overflow-hidden rounded-xl border border-slate-200 bg-white px-4 py-3 shadow-sm sm:px-5 sm:py-4">
+    <header className="relative overflow-hidden rounded-xl sm:rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:px-5 sm:py-4">
       <div
         className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 opacity-80 sm:block"
         style={{
@@ -21,22 +21,22 @@ export function PageHeader({
           clipPath: "polygon(22% 0, 100% 0, 100% 100%, 0 100%)",
         }}
       />
-      <div className="relative flex items-start justify-between gap-3">
+      <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h1 className="truncate text-xl font-bold tracking-tight text-slate-950 sm:text-2xl">
+          <div className="flex flex-wrap items-center gap-2">
+            <h1 className="text-lg font-bold tracking-tight text-slate-950 sm:text-2xl">
               {title}
             </h1>
             {meta}
           </div>
           {description ? (
-            <p className="mt-0.5 line-clamp-1 text-xs text-slate-500 sm:text-sm">
+            <p className="mt-0.5 line-clamp-2 text-xs text-slate-500 sm:line-clamp-1 sm:text-sm">
               {description}
             </p>
           ) : null}
         </div>
         {actions ? (
-          <div className="no-scrollbar flex max-w-[46%] shrink-0 items-center justify-end gap-2 overflow-x-auto sm:max-w-none">
+          <div className="flex shrink-0 flex-wrap items-center gap-2 border-t border-slate-100 pt-2.5 sm:border-0 sm:pt-0 sm:justify-end">
             {actions}
           </div>
         ) : null}

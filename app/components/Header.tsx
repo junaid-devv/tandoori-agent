@@ -68,13 +68,13 @@ export function Header() {
     session.allowedBranches.length > 1;
 
   return (
-    <header className="sticky top-0 z-30 flex h-14 w-full items-center justify-between border-b border-slate-200 bg-white/90 px-4 backdrop-blur-md sm:h-16 sm:px-6 lg:px-8">
+    <header className="sticky top-0 z-30 flex h-12 w-full items-center justify-between border-b border-slate-200 bg-white/90 px-3 backdrop-blur-md sm:h-16 sm:px-6 lg:px-8">
       {/* Left: Breadcrumbs & Page title */}
       <div className="flex items-center gap-2 sm:gap-3 min-w-0">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
           <span className="hidden sm:inline">OrderIQ</span>
           <ChevronRight size={12} className="hidden sm:inline text-slate-300" />
-          <span className="font-bold text-slate-900 truncate">{pageInfo.title}</span>
+          <span className="font-bold text-slate-900 truncate text-xs sm:text-sm">{pageInfo.title}</span>
         </div>
 
         {/* Universal Branch Selector */}

@@ -25,7 +25,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
             style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)', backgroundSize: '24px 24px' }}
           />
 
-          <div className="no-scrollbar relative z-10 flex-1 overflow-y-auto p-3 pb-24 sm:p-5 sm:pb-8 lg:p-6 xl:p-8">
+          <div className="no-scrollbar relative z-10 flex-1 overflow-y-auto p-3 pb-28 sm:p-5 sm:pb-8 lg:p-6 xl:p-8">
             <div className="max-w-[1600px] mx-auto w-full">
               {children}
             </div>
