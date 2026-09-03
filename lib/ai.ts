@@ -60,10 +60,11 @@ Rules:
 1. Strip numbering from the item name.
 2. If an item has MULTIPLE sizes/prices (e.g. M/L, S/M/L/XL, or "05 Pcs / 10 Pcs"), create ONE separate entry per size, appending the size to the name (e.g. "Chicken Tikka Pizza Large", "Nuggets (10 Pcs)").
 3. Extract items from EVERY column and section of the image — do not stop early.
-4. Preserve the visible category heading when possible, but keep category names concise (under 24 characters when possible).
-5. Return price as a plain number with no currency symbol.
-6. If price is unreadable, return null. Never guess.
-7. Return JSON only in this shape: { "items": [ { "name": "...", "price": 850, "category": "..." } ] }`;
+4. Preserve the visible category heading when possible, but keep category names concise (under 24 characters when possible). For combo promotions or "Buy 1 Get 1 Free" sections, use the category name "Deals".
+5. Do NOT extract extra toppings, add-ons, dips, or customizations (e.g. "Add Cheese", "Extra Dip", "Extra Topping") as standalone menu items.
+6. Return price as a plain number with no currency symbol.
+7. If price is unreadable, return null. Never guess.
+8. Return JSON only in this shape: { "items": [ { "name": "...", "price": 850, "category": "..." } ] }`;
 }
 
 async function geminiExtractMenu(imageUrl: string, systemPrompt: string): Promise<string | null> {
