@@ -292,6 +292,16 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
     if (view.stage === "confirming") {
       actions.push({ kind: "place_order" });
       nextStage = "placed";
+    } else if (view.stage === "building_cart" && view.cart.length > 0 && !view.upsell_offered) {
+      // User says "Ok" / "Confirm" / "Theek hai" while cart has items → treat as confirm_order
+      const missing = missingSlot(view);
+      if (missing) {
+        nextStage = missing;
+        actions.push(promptForStage(missing));
+      } else {
+        actions.push({ kind: "show_summary" });
+        nextStage = "confirming";
+      }
     } else if (view.stage === "building_cart" && view.upsell_offered) {
       actions.push({ kind: "add_items", payload: { upsell: true } });
     } else if (view.awaiting_selection && view.cart.length > 0) {

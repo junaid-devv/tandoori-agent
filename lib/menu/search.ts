@@ -354,12 +354,17 @@ function isCandidateRelevant(query: string, candidate: ResolvedMenuItem): boolea
  * Detailed item resolution that detects size variants (Half/Full) and ambiguity.
  * Prevents blindly adding Full when Half/Full options exist and no size was specified.
  * Accurately classifies items not on the menu as not_found rather than suggesting unrelated food.
+ *
+ * @param lastCategory - optional category context (e.g. "Burger") from last_shown_category.
+ *   Candidates matching this category get a similarity boost so that a query like
+ *   "Chaple Burger" in a Burger browsing context won't resolve to a Platter from another category.
  */
 export async function resolveItemDetailed(
   branchId: string,
   query: string,
   explicitSize?: string | null,
   inMemoryMenu?: Parameters<typeof searchMenu>[3],
+  lastCategory?: string | null,
 ): Promise<ItemResolutionResult> {
   const trimmed = query.trim();
   if (!trimmed) return { kind: "not_found", query: trimmed, suggestions: [] };
@@ -381,6 +386,20 @@ export async function resolveItemDetailed(
         seenIds.add(bm.id);
       }
     }
+  }
+
+  // If we have a category context, boost candidates from that category
+  if (lastCategory) {
+    const catNorm = lastCategory.toLowerCase().trim();
+    combined = combined.map((m) => {
+      const mCat = (m.category || "").toLowerCase().trim();
+      if (mCat === catNorm || mCat.includes(catNorm) || catNorm.includes(mCat)) {
+        return { ...m, similarity: Math.min(1.0, (m.similarity ?? 0) + 0.15) };
+      }
+      return m;
+    });
+    // Re-sort after boosting
+    combined.sort((a, b) => (b.similarity ?? 0) - (a.similarity ?? 0));
   }
 
   const available = combined.filter((m) => m.is_available !== false);

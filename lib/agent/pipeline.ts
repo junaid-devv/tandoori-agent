@@ -209,10 +209,13 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   // ── 1d) Name match against last-shown options ──────────────────────────────
   // When options were recently shown (e.g. after category browse or "Add More" or disambiguation),
   // a message that closely matches one of them should add it with the requested quantity.
+  // Guard: skip if the message looks like a question — route to NLU for info handling instead.
+  const QUESTION_SIGNALS =
+    /(\?|kia\s*hai|kya\s*hai|kia\s*h|kya\s*h|\bkia\b|\bkya\b|kaisa|details|batao|bata|what\s*is|how\s*much|kitne|mein\s*kya|main\s*kia|mein\s*kia|main\s*kya|ingredients|contains|mila|milta)/i;
   if (!understanding && ctx.state.last_shown_options.length > 0 && ctx.state.last_shown_options_at) {
     const ageMs = Date.now() - new Date(ctx.state.last_shown_options_at).getTime();
     const OPTION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-    if (ageMs < OPTION_WINDOW_MS) {
+    if (ageMs < OPTION_WINDOW_MS && !QUESTION_SIGNALS.test(input.messageText)) {
       const rawText = input.messageText.trim().toLowerCase();
       const cleanText = rawText.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
       const match = ctx.state.last_shown_options.find((o) => {
@@ -233,14 +236,38 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     }
   }
 
+  // ── 1d.5) Pronoun resolution — "is main kia hai?" / "yeh wala" / "iske baare mein" ─────
+  // When the user uses a pronoun to refer to the most recent item in cart or last-shown options,
+  // resolve the pronoun to that item and route as an info query about it.
+  const PRONOUN_QUERY_RE =
+    /^(?:is|yeh|ye|iss|iska|iski|iske|yah|yahi|woh|wala|isi|in)\b.*(?:\?|kia\s*hai|kya\s*hai|batao|bata|details|main\s*kia|mein\s*kya|kya\s*h|kia\s*h|iske|describe|hai\s*kia|hai\s*kya)/i;
+  if (!understanding && PRONOUN_QUERY_RE.test(input.messageText.trim())) {
+    // Resolve: last cart item > last shown option
+    const lastCartItem = ctx.state.cart.length > 0 ? ctx.state.cart[ctx.state.cart.length - 1] : null;
+    const lastOption = ctx.state.last_shown_options.length > 0 ? ctx.state.last_shown_options[0] : null;
+    const referent = lastCartItem?.name ?? lastOption?.name ?? null;
+    if (referent) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["ask_item_info"],
+        primary_intent: "ask_item_info",
+        info_query: referent,
+        notes: "fast_path_pronoun_resolve",
+      };
+    }
+  }
+
   // ── 1e) Order type, Checkout, Confirm & Navigation button text fast-paths ───
   if (!understanding) {
     const trimmed = input.messageText.trim();
-    if (ctx.view.stage === "confirming" && /^(confirm\s*✓?|confirm order|place order|order confirm|haan confirm|yes confirm|checkout|proceed|ok|done)$/i.test(trimmed)) {
+    if (
+      (ctx.view.stage === "confirming" || (ctx.view.stage === "building_cart" && ctx.state.cart.length > 0)) &&
+      /^(confirm\s*✓?|confirm order|place order|order confirm|haan confirm|yes confirm|checkout|proceed|ok|okay|done|theek hai|thik hai|thk hai|bilkul|zaroor|haan|haa|ha)$/i.test(trimmed)
+    ) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
-        intents: ["confirm_order"],
-        primary_intent: "confirm_order",
+        intents: ctx.view.stage === "confirming" ? ["confirm_order"] : ["affirm"],
+        primary_intent: ctx.view.stage === "confirming" ? "confirm_order" : "affirm",
         notes: "fast_path_confirm",
       };
     } else if (

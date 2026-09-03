@@ -217,7 +217,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           }
           if (!query.trim()) continue;
 
-          const res = await resolveItemDetailed(branchId, query, m.size, ctx.menu);
+          const res = await resolveItemDetailed(branchId, query, m.size, ctx.menu, ctx.state.last_shown_category ?? null);
           if (res.kind === "exact") {
             const resolved = res.item;
             if (resolved.method === "vector") usedSemantic = true;
@@ -349,6 +349,21 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           replies.push(paymentAnswer());
           break;
         }
+
+        // H4 fix: if the queried item is already in the cart, acknowledge it upfront
+        // so the bot doesn't sound confused ("Is it available?" when it's already added)
+        const qLower = q.toLowerCase();
+        const cartMatch = cart.find((ci) => ci.name.toLowerCase().includes(qLower) || qLower.includes(ci.name.toLowerCase()));
+        if (cartMatch) {
+          const alreadyInCart = lang === "roman_urdu"
+            ? `✅ *${cartMatch.name}* already aapke cart mein hai (${cartMatch.qty}x).`
+            : `✅ *${cartMatch.name}* is already in your cart (${cartMatch.qty}x).`;
+          replies.push(alreadyInCart);
+          // Also show cart action buttons to guide next step
+          setInteractive(cartActionButtons(lang));
+          break;
+        }
+
         // Menu item / general question:
         const ans = await grounded(q || "what are your popular items?");
         if (ans) {
@@ -402,8 +417,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             }
           }
         } else {
-          // Fallback to searching the menu
-          const searchRes = await resolveItemDetailed(branchId, q, undefined, ctx.menu);
+          // Fallback to searching the menu (pass category context for better results)
+          const searchRes = await resolveItemDetailed(branchId, q, undefined, ctx.menu, ctx.state.last_shown_category ?? null);
           if (searchRes.kind === "exact") {
             const { matches } = await searchMenu(branchId, q, 3, ctx.menu);
             if (matches.length) {
