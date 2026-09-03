@@ -296,17 +296,23 @@ export async function searchMenu(
 // ---------------------------------------------------------------------
 // Variant & Disambiguation Helpers
 // ---------------------------------------------------------------------
-const VARIANT_PATTERN =
-  /\s*(?:[\(\[\{]|\s+-\s+|\s+\/\s+)(full|half|quarter|single|double|small|medium|large|extra\s*large|xl|reg(?:ular)?|med(?:ium)?|lar(?:ge)?|\d+["']|\w+\s*\d+["']|1\s*kg|0?\.5\s*kg|half\s*kg|\d+\s*pcs?|tin|glass|bottle|boneless|b\/l|with\s*cheese)[\)\]\}]?\s*$/i;
+const VARIANT_WORDS =
+  "full|half|quarter|single|double|small|medium|large|extra\\s*large|xl|reg(?:ular)?|med(?:ium)?|lar(?:ge)?|\\d+[\"']|\\w+\\s*\\d+[\"']|1\\s*kg|0?\\.5\\s*kg|half\\s*kg|\\d+\\s*pcs?|tin|glass|bottle|boneless|b\\/l|with\\s*cheese";
+
+const VARIANT_PATTERN = new RegExp(
+  `(?:\\s*(?:[\\(\\[\\{]|\\s+-\\s+|\\s+\\/\\s+)(${VARIANT_WORDS})[\\)\\]\\}]?|\\s+(${VARIANT_WORDS}))\\s*$`,
+  "i"
+);
 
 const SIZE_WORDS_PATTERN =
   /\b(full|half|quarter|single|double|small|medium|large|extra\s*large|xl|reg(?:ular)?|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle)\b/i;
 
 export function extractBaseItemName(fullName: string): { baseName: string; variant: string | null } {
   const match = fullName.match(VARIANT_PATTERN);
-  if (match && match[1]) {
+  const variant = match ? (match[1] || match[2]) : null;
+  if (match && variant) {
     const base = fullName.slice(0, match.index).trim();
-    return { baseName: base || fullName.trim(), variant: match[1].trim().toLowerCase() };
+    return { baseName: base || fullName.trim(), variant: variant.trim().toLowerCase() };
   }
   return { baseName: fullName.trim(), variant: null };
 }
@@ -450,12 +456,18 @@ export async function resolveItemDetailed(
       const { variant } = extractBaseItemName(c.name);
       const v = variant ? variant.toLowerCase() : "";
       const n = c.name.toLowerCase();
+      const sDigits = s.replace(/\D/g, "");
+      const vDigits = v.replace(/\D/g, "");
+      const digitMatch = Boolean(sDigits && vDigits && sDigits === vDigits);
       return (
+        digitMatch ||
         v === s ||
         v.includes(s) ||
         s.includes(v) ||
         n.includes(`(${s}`) ||
         n.includes(` ${s} `) ||
+        n.endsWith(` ${s}`) ||
+        n.endsWith(` ${s}"`) ||
         (s === "regular" && (v.includes("reg") || n.includes("reg"))) ||
         (s === "reg" && (v.includes("reg") || n.includes("reg"))) ||
         (s === "medium" && (v.includes("med") || n.includes("med"))) ||

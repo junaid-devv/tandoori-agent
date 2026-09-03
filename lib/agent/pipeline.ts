@@ -15,6 +15,7 @@ import type { InteractivePayload } from "./interactive";
 import { loadTurnContext } from "./context";
 import { stateRepo } from "@/lib/data/state.repo";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { extractBaseItemName } from "@/lib/menu/search";
 import type { ConversationStage } from "@/lib/schema.types";
 
 export interface TurnResult {
@@ -218,13 +219,36 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     if (ageMs < OPTION_WINDOW_MS && !QUESTION_SIGNALS.test(input.messageText)) {
       const rawText = input.messageText.trim().toLowerCase();
       const cleanText = rawText.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+      const numMatch = cleanText.match(/\b\d+\b/);
+      const cleanNum = numMatch ? numMatch[0] : null;
       const match = ctx.state.last_shown_options.find((o) => {
         const oName = o.name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-        return oName === cleanText || cleanText.includes(oName) || oName.split(" ").every((w) => cleanText.includes(w));
+        if (oName === cleanText || cleanText.includes(oName) || oName.split(" ").every((w) => cleanText.includes(w))) {
+          return true;
+        }
+        // Match variant size if multi-variant options were shown (e.g. "13 inch" or "13" -> "Tanduri Pizza 13\"")
+        const oVariant = extractBaseItemName(o.name).variant?.replace(/[^a-z0-9]/g, "");
+        if (oVariant && (cleanText === oVariant || cleanText.includes(oVariant) || (cleanNum && oVariant.includes(cleanNum)))) {
+          return true;
+        }
+        return false;
       });
       if (match) {
-        const qtyMatch = input.messageText.match(/\b([1-9]\d?)\s*(?:x|plate|plates|portion|portions|adad|dafa)?\b/i);
-        const qty = qtyMatch ? Math.min(Number(qtyMatch[1]), 50) : 1;
+        let qty = 1;
+        const { variant } = extractBaseItemName(match.name);
+        const vDigits = variant ? variant.replace(/\D/g, "") : null;
+        const qtyCandidates = [...input.messageText.matchAll(/\b([1-9]\d?)\b(?!\s*(?:inch|"|'|cm|\/))/gi)]
+          .map((m) => ({ val: Number(m[1]), index: m.index ?? 0 }))
+          .filter((c) => {
+            if (vDigits && String(c.val) === vDigits) return false;
+            const prefix = input.messageText.slice(0, c.index).toLowerCase().trim();
+            if (prefix.endsWith("deal") || prefix.endsWith("deal#") || prefix.endsWith("no") || prefix.endsWith("number")) return false;
+            return true;
+          });
+
+        if (qtyCandidates.length > 0) {
+          qty = Math.min(qtyCandidates[0].val, 50);
+        }
         understanding = {
           ...makeBase(ctx.state.preferred_language),
           intents: ["add_items"],
@@ -433,24 +457,33 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       };
     } else if (ctx.menu && ctx.menu.length > 0) {
       const lower = trimmed.toLowerCase();
-      const categories = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
-      const matchedCategory = categories.find((c) => {
-        const cLower = c.toLowerCase();
-        return cLower === lower || cLower.includes(lower) || lower.includes(cLower);
-      });
-      if (
-        matchedCategory &&
-        lower !== "menu" &&
-        lower.length <= 40 &&
-        !/^(order|deliver|bhejo|krdo|kardo|chahiye|mangwana|pack|parcel|add|dal)/i.test(trimmed)
-      ) {
-        understanding = {
-          ...makeBase(ctx.state.preferred_language),
-          intents: ["browse_menu"],
-          primary_intent: "browse_menu",
-          info_query: matchedCategory,
-          notes: "fast_path_category_match",
-        };
+      const ORDER_SIGNALS = /\b(order|deliver|delivery|bhejo|krdo|kardo|chahiye|mangwana|pack|parcel|add|dal|daal|bhej|de do|dena|rakho)\b/i;
+      const HAS_QTY = /\b(\d+|ek|do|teen|char|one|two|three)\b/i;
+      if (!ORDER_SIGNALS.test(trimmed) && !HAS_QTY.test(trimmed)) {
+        const categories = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
+        const matchedCategory = categories.find((c) => {
+          const cLower = c.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const cleanLower = lower.replace(/[^a-z0-9]/g, "");
+          return (
+            cleanLower === cLower ||
+            cleanLower === `${cLower}s` ||
+            cleanLower === `${cLower}menu` ||
+            cleanLower === `show${cLower}` ||
+            cleanLower === `${cLower}dikhao` ||
+            cleanLower === `${cLower}dekhna` ||
+            cleanLower === `${cLower}category` ||
+            cleanLower === `${cLower}section`
+          );
+        });
+        if (matchedCategory && lower !== "menu") {
+          understanding = {
+            ...makeBase(ctx.state.preferred_language),
+            intents: ["browse_menu"],
+            primary_intent: "browse_menu",
+            info_query: matchedCategory,
+            notes: "fast_path_category_match",
+          };
+        }
       }
     }
   }

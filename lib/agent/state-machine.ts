@@ -271,7 +271,11 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   // 8) Confirm / checkout
   if (u.intents.includes("confirm_order")) {
     if (view.cart.length === 0) {
-      actions.push({ kind: "ask_clarification", payload: { reason: "empty_cart" } });
+      if (view.stage === "placed") {
+        actions.push({ kind: "smalltalk" });
+      } else {
+        actions.push({ kind: "ask_clarification", payload: { reason: "empty_cart" } });
+      }
     } else {
       const missing = missingSlot(view);
       if (missing && view.stage !== "confirming") {
@@ -291,6 +295,9 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   if (u.primary_intent === "affirm" && actions.length === 0) {
     if (view.stage === "confirming") {
       actions.push({ kind: "place_order" });
+      nextStage = "placed";
+    } else if (view.stage === "placed") {
+      actions.push({ kind: "smalltalk" });
       nextStage = "placed";
     } else if (view.stage === "building_cart" && view.cart.length > 0 && !view.upsell_offered) {
       // User says "Ok" / "Confirm" / "Theek hai" while cart has items → treat as confirm_order

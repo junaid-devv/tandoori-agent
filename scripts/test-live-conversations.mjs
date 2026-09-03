@@ -43,62 +43,79 @@ async function runLiveTest() {
 
   const scenarios = [
     // -------------------------------------------------------------------------
-    // SCENARIO 1: Daniyal — Casual Roman Urdu, Typos, Multi-Item & DHA Delivery
+    // SCENARIO 1: Ahmed — Full Delivery Order (Multi-item Pizza + Side + Delivery)
     // -------------------------------------------------------------------------
     {
-      persona: "Daniyal",
-      phone: "+923009990001",
+      persona: "Ahmed",
+      phone: "+923001112233",
       turns: [
-        "Aoa bhai, 1 chicken handi creamy aur 2 roghni nan chahiye",
-        "ek raita b sath daal do",
-        "delivery krdo DHA phase 2 sector B house 45",
+        "Aoa bhai, 1 Zinger Burger aur 1 Chicken Fajita 11\" chahiye",
+        "1 Masala Fries Medium bhi add kardo",
+        "delivery krdo Officers Colony Street 4 House 12 Wah Cantt",
         "Confirm ✓",
-        "bohat shukriya zabardast service",
+        "bohat shukriya",
       ],
     },
 
     // -------------------------------------------------------------------------
-    // SCENARIO 2: Zeeshan — Mind Changing: Quantity & Switching Pickup to Delivery
+    // SCENARIO 2: Bilal — Deal Inquiry (I1 fix) + Add + Quantity Change + Pickup (H1 fix)
     // -------------------------------------------------------------------------
     {
-      persona: "Zeeshan",
-      phone: "+923009990002",
+      persona: "Bilal",
+      phone: "+923214445566",
       turns: [
-        "2 chicken karahi half pickup krna hai 9:30 pm",
-        "wait 2 nahi sirf 1 kar do",
-        "No delivery is fine, Model Town flat 3 street 12 pe bhej do",
+        "Deal 1 main kia hai?",
+        "Acha 2 Deal 1 kardo",
+        "Nahi 2 nahi sirf 1 kardo",
+        "Pickup karna hai 10:30 pm",
+        "Ok",
         "Confirm ✓",
-        "Thank you",
       ],
     },
 
     // -------------------------------------------------------------------------
-    // SCENARIO 3: Ayesha — Out-of-Menu Query & Dine-In Table Booking
+    // SCENARIO 3: Hamza — Variant Selection (Size) + Shawarma + Dine-In Booking
     // -------------------------------------------------------------------------
     {
-      persona: "Ayesha",
-      phone: "+923009990003",
+      persona: "Hamza",
+      phone: "+923337778899",
       turns: [
-        "Assalam o Alaikum, 1 chicken multani handi aur 1 garlic naan",
-        "kya aap ke pas pizza ya burger b hai?",
-        "chalo 4 logo ke liye table book krdo 8:30 pm pe dine in",
+        "Tanduri Pizza chahiye",
+        "13 inch",
+        "aur 2 Chicken Shawarma bhi add kar do",
+        "table book krdo 4 log 9:30 pm dine in",
         "Confirm ✓",
-        "Welcome",
       ],
     },
 
     // -------------------------------------------------------------------------
-    // SCENARIO 4: Kamran — Disambiguation & Single Word Selection
+    // SCENARIO 4: Usman — Pronoun Resolution (I2 fix) + Category Boost (H2 fix) + Delivery
     // -------------------------------------------------------------------------
     {
-      persona: "Kamran",
-      phone: "+923009990004",
+      persona: "Usman",
+      phone: "+923458889900",
       turns: [
-        "karahi",
-        "Chicken Karahi (Half)",
-        "2 plain naan",
-        "delivery Askari 10 flat 8",
+        "Zinger Burger chahiye",
+        "Is main kia hai?",
+        "Burger category mein aur kya hai?",
+        "Tikka Boti Burger",
+        "delivery krdo Model Town Wah Cantt",
+        "Proceed to checkout",
         "Confirm ✓",
+      ],
+    },
+
+    // -------------------------------------------------------------------------
+    // SCENARIO 5: Saad — In-cart item query (H4 fix) + Delivery Confirmation
+    // -------------------------------------------------------------------------
+    {
+      persona: "Saad",
+      phone: "+923126667788",
+      turns: [
+        "1 Chicken Supreme 11\" add karo",
+        "Chicken Supreme available hai?",
+        "delivery krdo Sector A house 20 Wah",
+        "haan confirm",
       ],
     },
   ];
@@ -127,8 +144,25 @@ async function runLiveTest() {
     });
     const convId = conv.id;
 
-    // Reset state
-    await stateRepo.patch(convId, { ...getDefaultState(convId), preferred_language: "roman_urdu" });
+    // Reset state and previous test messages/orders for clean run
+    await supabaseAdmin.from("messages").delete().eq("conversation_id", convId);
+    await supabaseAdmin.from("orders").delete().eq("conversation_id", convId);
+    await stateRepo.patch(convId, {
+      ...getDefaultState(convId),
+      preferred_language: "roman_urdu",
+      cart: [],
+      order_type: null,
+      address: null,
+      guests: null,
+      reservation_time: null,
+      pickup_time: null,
+      stage: "greeting",
+      upsell_offered: false,
+      last_shown_options: [],
+      last_shown_options_at: null,
+      last_shown_category: null,
+      pending_clarification: null,
+    });
 
     let lastPlacedOrderId = null;
 
@@ -144,18 +178,18 @@ async function runLiveTest() {
         content: userText,
       });
 
-      // 2. Load latest state
-      const state = await stateRepo.ensure(convId, { preferred_language: "roman_urdu" });
-
-      // 3. Execute turn through live pipeline
+      // 2. Execute turn through live pipeline
       const turnResult = await runTurn({
-        messageText: userText,
-        state,
-        branchId: branch.id,
         conversationId: convId,
+        branchId: branch.id,
+        phone: sc.phone,
+        messageText: userText,
         sourceUserMessageId: userMsg.id,
+        whatsappMessageId: userMsg.id,
+        messageId: userMsg.id,
         appName: "ORDERiQ",
         currency: "Rs.",
+        customerName: sc.persona,
       });
 
       // 4. Persist assistant reply

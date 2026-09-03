@@ -12,46 +12,31 @@ if (!supabaseUrl || !supabaseServiceKey) {
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function verify() {
-  console.log('🔍 Checking Supabase for the AI reply...');
-  
-  // 1. Find the conversation for our test number
-  const { data: conv, error: convError } = await supabase
-    .from('conversations')
-    .select('id, name')
-    .eq('phone', '923001234567')
-    .single();
+  console.log('🔍 Checking active branches...');
+  const { data: branches } = await supabase.from('branches').select('*');
+  console.log('Branches:', branches);
 
-  if (convError || !conv) {
-    console.log('❌ No conversation found for test number.');
-    return;
+  const { data: settings } = await supabase.from('restaurant_settings').select('*');
+  console.log('Settings:', settings);
+
+  const { data: items } = await supabase
+    .from('menu_items')
+    .select('id, name, price, category, description, is_available')
+    .eq('is_available', true)
+    .order('category');
+
+  const grouped = {};
+  for (const item of (items || [])) {
+    grouped[item.category] = grouped[item.category] || [];
+    grouped[item.category].push({ name: item.name, price: item.price, desc: item.description });
   }
 
-  console.log(`✅ Found conversation for: ${conv.name}`);
-
-  // 2. Get the latest message (should be the AI reply)
-  const { data: messages, error: msgError } = await supabase
-    .from('messages')
-    .select('role, content, created_at')
-    .eq('conversation_id', conv.id)
-    .order('created_at', { ascending: false })
-    .limit(2);
-
-  if (msgError || !messages || messages.length === 0) {
-    console.log('❌ No messages found.');
-    return;
-  }
-
-  console.log('\n--- Recent Chat ---');
-  messages.reverse().forEach(m => {
-    console.log(`[${m.role.toUpperCase()}] ${m.content}`);
-  });
-  console.log('-------------------\n');
-
-  if (messages.some(m => m.role === 'assistant')) {
-    console.log('✨ SUCCESS: AI responded and saved to database!');
-  } else {
-    console.log('⏳ Still waiting for AI or something went wrong?');
+  console.log('\n--- Active Menu Items by Category ---');
+  for (const [cat, list] of Object.entries(grouped)) {
+    console.log(`\n=== Category: ${cat} (${list.length} items) ===`);
+    list.forEach(i => console.log(`  - ${i.name} (Rs. ${i.price})${i.desc ? ' | ' + i.desc : ''}`));
   }
 }
 
 verify().catch(console.error);
+

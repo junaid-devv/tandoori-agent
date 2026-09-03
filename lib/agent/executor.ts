@@ -299,8 +299,26 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "update_quantity": {
         const items = (action.payload?.items as TurnUnderstanding["items"]) ?? u.items;
         for (const m of items) {
-          const resolved = await resolveItem(branchId, m.query, ctx.menu);
-          cart = updateQuantity(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? m.query, qty: m.qty ?? 1 });
+          let query = m.query || "";
+          if ((!query || query === "current_item" || query === "__last_item__" || query === "item" || query === "cart") && cart.length > 0) {
+            query = cart[cart.length - 1].name;
+          }
+          if (m.size && cart.length > 0) {
+            const sizeRes = await resolveItemDetailed(branchId, query, m.size, ctx.menu);
+            if (sizeRes.kind === "exact") {
+              const oldItem = cart.find(ci => ci.name.toLowerCase().includes(query.toLowerCase()) || query.toLowerCase().includes(ci.name.toLowerCase())) || cart[cart.length - 1];
+              if (oldItem) {
+                oldItem.menu_item_id = sizeRes.item.id;
+                oldItem.name = sizeRes.item.name;
+                oldItem.unit_price = sizeRes.item.price;
+                oldItem.size = m.size;
+                if (m.qty) oldItem.qty = m.qty;
+                continue;
+              }
+            }
+          }
+          const resolved = await resolveItem(branchId, query, ctx.menu);
+          cart = updateQuantity(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? query, qty: m.qty ?? 1 });
         }
         replies.push(reply.cartUpdated(lang, cart, cur));
         if (cart.length > 0) setInteractive(cartActionButtons(lang));
@@ -352,8 +370,18 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
         // H4 fix: if the queried item is already in the cart, acknowledge it upfront
         // so the bot doesn't sound confused ("Is it available?" when it's already added)
-        const qLower = q.toLowerCase();
-        const cartMatch = cart.find((ci) => ci.name.toLowerCase().includes(qLower) || qLower.includes(ci.name.toLowerCase()));
+        const qClean = q.toLowerCase().replace(/[^a-z0-9\s]/g, " ");
+        const cartMatch = cart.find((ci) => {
+          const ciFull = ci.name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim();
+          const ciBase = extractBaseItemName(ci.name).baseName.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim();
+          return (
+            qClean.includes(ciBase) ||
+            qClean.includes(ciFull) ||
+            ciFull.includes(qClean) ||
+            ciBase.includes(qClean) ||
+            ciBase.split(" ").every((w) => w.length >= 3 && qClean.includes(w))
+          );
+        });
         if (cartMatch) {
           const alreadyInCart = lang === "roman_urdu"
             ? `✅ *${cartMatch.name}* already aapke cart mein hai (${cartMatch.qty}x).`

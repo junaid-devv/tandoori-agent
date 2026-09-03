@@ -59,13 +59,19 @@ export function updateQuantity(
   target: { menu_item_id?: string; name?: string; qty: number },
 ): CartItem[] {
   const targetLower = target.name?.trim().toLowerCase();
+  const isGeneric =
+    !targetLower ||
+    targetLower === "item" ||
+    targetLower === "cart" ||
+    targetLower === "current_item" ||
+    targetLower === "__last_item__";
   return cart
-    .map((i) => {
+    .map((i, idx) => {
       const itemNameLower = i.name.toLowerCase();
       const match =
         (target.menu_item_id && i.menu_item_id === target.menu_item_id) ||
-        (targetLower && (itemNameLower === targetLower || itemNameLower.includes(targetLower) || targetLower.includes(itemNameLower))) ||
-        (cart.length === 1 && (!targetLower || targetLower === "item" || targetLower === "cart"));
+        (!isGeneric && targetLower && (itemNameLower === targetLower || itemNameLower.includes(targetLower) || targetLower.includes(itemNameLower))) ||
+        (isGeneric && (cart.length === 1 || idx === cart.length - 1));
       if (!match) return i;
       return { ...i, qty: Math.max(1, Math.min(target.qty, 50)) };
     })
