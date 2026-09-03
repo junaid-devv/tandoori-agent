@@ -216,10 +216,30 @@ export interface Database {
         };
         Update: Partial<Database["public"]["Tables"]["restaurant_settings"]["Insert"]>;
       };
+      menu_categories: {
+        Row: {
+          id: string;
+          branch_id: string;
+          name: string;
+          sort_order: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          branch_id: string;
+          name: string;
+          sort_order?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["menu_categories"]["Insert"]>;
+      };
       menu_items: {
         Row: {
           id: string;
           branch_id: string;
+          category_id: string | null;
           name: string;
           price: number;
           category: string | null;
@@ -235,6 +255,7 @@ export interface Database {
         Insert: {
           id?: string;
           branch_id: string;
+          category_id?: string | null;
           name: string;
           price: number;
           category?: string | null;
