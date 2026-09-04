@@ -207,8 +207,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
         const mentions = (action.payload?.items as TurnUnderstanding["items"]) ?? u.items;
         const isDelta = u.notes === "add_delta";
-        const added: Array<{ name: string; newCartQty: number }> = [];
+        const added: Array<{ name: string; newCartQty: number; notes?: string | null }> = [];
         const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
+
+        const INSTRUCTION_PATTERNS = /\b(non\s*spicy|spicy|teekha|kam\s*teekha|mirch|masala|kali\s*mirch|safed\s*mirch|oil|tail|ghee|cheese|sauce|ketchup|mayo|mayonnaise|raita|chutney|chatni|salad|onion|pyaaz|pyaz|pyas|crispy|chilled|thandi|garam|bina|without|extra|less|kam|zyada|ziyada|hona\s*chaye|hona\s*chahiye|rakhna|rakhein|karna|krna|dalna|daalna|bhejna)\b/i;
+        const EXPLICIT_ADD_QTY = /\b(\d+|ek|do|teen|char|one|two|three)\s*(?:aur|more|add|extra\s+piece)\b/i;
 
         for (const m of mentions) {
           let query = m.query || "";
@@ -216,6 +219,32 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             query = cart[cart.length - 1].name;
           }
           if (!query.trim()) continue;
+
+          // Check if this mention is an instruction/cooking note update for an item ALREADY in the cart
+          // E.g. Customer says "Pizza non spicy hona chaye" or "kali mirch istemal krna"
+          const rawMsg = input.messageTextForFallback || "";
+          const hasInstruction = Boolean(m.notes || INSTRUCTION_PATTERNS.test(rawMsg) || INSTRUCTION_PATTERNS.test(query));
+          const hasExplicitNewQty = EXPLICIT_ADD_QTY.test(rawMsg) || (typeof m.qty === "number" && m.qty > 1);
+
+          if (cart.length > 0 && hasInstruction && !hasExplicitNewQty) {
+            const qClean = query.replace(INSTRUCTION_PATTERNS, "").trim();
+            const qLower = (qClean || query).toLowerCase().replace(/[^a-z0-9]/g, "");
+            const existingItem = cart.find((ci) => {
+              const ciLower = ci.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+              return (
+                (qLower.length >= 3 && ciLower.includes(qLower)) ||
+                (qLower.length >= 3 && qLower.includes(ciLower)) ||
+                (qLower.length >= 4 && ciLower.includes(qLower.slice(0, 4)))
+              );
+            }) || (cart.length === 1 ? cart[0] : null);
+
+            if (existingItem) {
+              const noteText = m.notes || rawMsg.replace(/^(?:can\s+you\s+|please\s+)?(?:make\s+)?(?:the\s+)?(?:pizza|burger|karahi|deal\s*\d+|it)\s*/i, "").trim();
+              existingItem.notes = noteText;
+              replies.push(reply.itemInstructionUpdated(lang, existingItem.name, noteText));
+              continue;
+            }
+          }
 
           const res = await resolveItemDetailed(branchId, query, m.size, ctx.menu, ctx.state.last_shown_category ?? null);
           if (res.kind === "exact") {
@@ -235,7 +264,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               notes: m.notes ?? null,
             });
             const cartItem = cart.find((ci) => ci.menu_item_id === resolved.id);
-            added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1) });
+            added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1), notes: m.notes ?? null });
           } else if (res.kind === "variants") {
             // Item has multiple sizes (e.g. Half / Full) and user did not specify size
             hasDisambiguation = true;
@@ -278,6 +307,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             replies.push(reply.itemsAdded(lang, added, cart, cur));
             setInteractive(cartActionButtons(lang));
           }
+        } else if (replies.length > 0 && cart.length > 0 && !hasDisambiguation) {
+          setInteractive(cartActionButtons(lang));
         }
         break;
       }
@@ -936,7 +967,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "report_order_status": {
         try {
           const recent = await orderRepo.getLatestForConversation(input.conversationId);
-          if (recent) replies.push(reply.orderStatus(lang, recent.order_number, recent.status));
+          if (recent) replies.push(reply.orderStatus(lang, recent.order_number, recent.status, ctx.settings?.estimated_delivery_minutes));
           else replies.push(reply.noRecentOrder(lang));
         } catch {
           replies.push(reply.noRecentOrder(lang));

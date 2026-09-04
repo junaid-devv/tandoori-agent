@@ -161,14 +161,16 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   }
 
   // ── 1b) Pure greeting with empty cart ──────────────────────────────────────
-  const GREETING_RE = /^(?:ass?al[a-z\s'-]*|aoa|a\.?o\.?a|salam|slam|hi|hello|hey|hola|good\s*(?:morning|afternoon|evening)|kese\s*ho|kia\s*hal\s*hai|kaise\s*hain)(?:\s+(?:bhai|janab|sir|dear|team|all|ap|aap|ji|jee))?[!.]*$/i;
+  const GREETING_RE = /^(?:g|ji|jee|haan|hanji|ass?al[a-z\s'-]*|aoa|a\.?o\.?a|salam|slam|hi|hello|hey|hola|good\s*(?:morning|afternoon|evening)|kese\s*ho|kia\s*hal\s*hai|kaise\s*hain)(?:\s+(?:bhai|janab|sir|dear|team|all|ap|aap|ji|jee))?[!.]*$/i;
   if (
     !understanding &&
     ctx.state.cart.length === 0 &&
     GREETING_RE.test(input.messageText.trim())
   ) {
+    const isUrduGreeting = /^(?:g|ji|jee|haan|hanji|ass?al[a-z\s'-]*|aoa|a\.?o\.?a|salam|slam|kese|kia\s*hal|kaise)/i.test(input.messageText.trim());
+    const langToUse = isUrduGreeting ? "roman_urdu" : ctx.state.preferred_language;
     understanding = {
-      ...makeBase(ctx.state.preferred_language),
+      ...makeBase(langToUse),
       intents: ["greeting"],
       primary_intent: "greeting",
       notes: "fast_path_greeting",
@@ -421,6 +423,17 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         reservation_time: timeMatch ? timeMatch[1] : null,
         notes: "fast_path_dinein",
       };
+    } else if (
+      (ctx.view.stage === "placed" || ctx.state.stage === "placed" || /(?:order\s+kahan|kab\s+(?:tak\s+)?ayga|kitna\s+time\s+lag|time\s+kitna\s+lag)/i.test(trimmed)) &&
+      /(?:kab\s+(?:tak\s+)?(?:ayga|aega|aayega|deliver\s+hoga|pohnchega)|time\s+kitna\s+lag(?:ega|y\s*ga)?|kitna\s+time\s+lag(?:ega|y\s*ga)?|kahan\s+pohncha|status\s+(?:kia|kya)\s+hai|order\s+kahan\s+hai)/i.test(trimmed)
+    ) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["order_status"],
+        primary_intent: "order_status",
+        info_query: trimmed,
+        notes: "fast_path_order_status",
+      };
     } else if (/(?:delivery\s+(?:kis\s+time|kab|timing|time|available\s+hogi|hogi|chal|available)|kab\s+(?:tak\s+)?deliver\s+(?:hoga|hogi)|delivery\s+timing|delivery\s+charges|delivery\s+fee)/i.test(trimmed) && !/karahi|biryani|burger|tikka|kabab|pizza|bhejo|krdo|kardo/i.test(trimmed)) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
@@ -461,16 +474,25 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       const HAS_QTY = /\b(\d+|ek|do|teen|char|one|two|three)\b/i;
       if (!ORDER_SIGNALS.test(trimmed) && !HAS_QTY.test(trimmed)) {
         const categories = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
+        const cleanLower = lower.replace(/[^a-z0-9]/g, "");
+        const cleanStem = cleanLower.replace(/s$/, "");
         const matchedCategory = categories.find((c) => {
           const cLower = c.toLowerCase().replace(/[^a-z0-9]/g, "");
-          const cleanLower = lower.replace(/[^a-z0-9]/g, "");
+          const cStem = cLower.replace(/s$/, "");
           return (
             cleanLower === cLower ||
+            cleanStem === cStem ||
+            cStem.endsWith(cleanStem) ||
             cleanLower === `${cLower}s` ||
+            cLower === `${cleanLower}s` ||
             cleanLower === `${cLower}menu` ||
+            cleanStem === `${cStem}menu` ||
             cleanLower === `show${cLower}` ||
+            cleanStem === `show${cStem}` ||
             cleanLower === `${cLower}dikhao` ||
+            cleanStem === `${cStem}dikhao` ||
             cleanLower === `${cLower}dekhna` ||
+            cleanStem === `${cStem}dekhna` ||
             cleanLower === `${cLower}category` ||
             cleanLower === `${cLower}section`
           );

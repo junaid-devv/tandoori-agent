@@ -898,6 +898,17 @@ export default function MenuPage() {
                           </button>
                         </label>
                       </div>
+
+                      <label className="block pt-1">
+                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Description / Deals Details</span>
+                        <input
+                          value={item.description ?? ""}
+                          onChange={(event) => mutateItem(index, { description: event.target.value || null })}
+                          onBlur={() => void handleBlurSave(item, index)}
+                          placeholder="e.g. 1 Large Pizza, 2 Burgers, 1.5L Drink"
+                          className="mt-1 h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-600 outline-none focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
+                        />
+                      </label>
                     </div>
                   );
                 })
@@ -906,10 +917,11 @@ export default function MenuPage() {
 
             {/* Desktop Table */}
             <div className="hidden overflow-x-auto md:block">
-              <div className="min-w-[980px]">
-                <div className="grid grid-cols-[2.2fr_1.25fr_100px_244px_72px_56px] gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
+              <div className="min-w-[1100px]">
+                <div className="grid grid-cols-[1.8fr_1fr_1.8fr_90px_230px_60px_50px] gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
                   <div>Item Name</div>
                   <div>Category</div>
+                  <div>Description / Deals Info</div>
                   <div>Price (Rs.)</div>
                   <div>Schedule / Days</div>
                   <div className="text-center">Live</div>
@@ -932,7 +944,7 @@ export default function MenuPage() {
                         <div
                           key={item.id ?? `draft-${index}`}
                           className={clsx(
-                            "grid grid-cols-[2.2fr_1.25fr_100px_244px_72px_56px] gap-2 px-4 py-2 items-center hover:bg-slate-50/70 transition-colors",
+                            "grid grid-cols-[1.8fr_1fr_1.8fr_90px_230px_60px_50px] gap-2 px-4 py-2 items-center hover:bg-slate-50/70 transition-colors",
                             item._deleting && "pointer-events-none opacity-40",
                           )}
                         >
@@ -955,6 +967,15 @@ export default function MenuPage() {
                             onBlur={() => void handleBlurSave(item, index)}
                             placeholder="e.g. Breads"
                             className="h-8 w-full rounded-lg border border-transparent bg-transparent px-2 text-sm outline-none transition hover:bg-slate-100/80 focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
+                          />
+
+                          {/* Description */}
+                          <input
+                            value={item.description ?? ""}
+                            onChange={(event) => mutateItem(index, { description: event.target.value || null })}
+                            onBlur={() => void handleBlurSave(item, index)}
+                            placeholder="e.g. 1 Pizza, 2 Burgers..."
+                            className="h-8 w-full rounded-lg border border-transparent bg-transparent px-2 text-xs text-slate-600 outline-none transition hover:bg-slate-100/80 focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
                           />
 
                           {/* Price */}

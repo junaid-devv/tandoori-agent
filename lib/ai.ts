@@ -62,9 +62,10 @@ Rules:
 3. Extract items from EVERY column and section of the image — do not stop early.
 4. Preserve the visible category heading when possible, but keep category names concise (under 24 characters when possible). For combo promotions or "Buy 1 Get 1 Free" sections, use the category name "Deals".
 5. Do NOT extract extra toppings, add-ons, dips, or customizations (e.g. "Add Cheese", "Extra Dip", "Extra Topping") as standalone menu items.
-6. Return price as a plain number with no currency symbol.
-7. If price is unreadable, return null. Never guess.
-8. Return JSON only in this shape: { "items": [ { "name": "...", "price": 850, "category": "..." } ] }`;
+6. Extract a concise description for deals, combos, or items that list their contents or ingredients (e.g. "1 Regular Pizza, 1 Cold Drink, 1 Garlic Mayo Dip").
+7. Return price as a plain number with no currency symbol.
+8. If price is unreadable, return null. Never guess.
+9. Return JSON only in this shape: { "items": [ { "name": "...", "price": 850, "category": "...", "description": "..." } ] }`;
 }
 
 async function geminiExtractMenu(imageUrl: string, systemPrompt: string): Promise<string | null> {

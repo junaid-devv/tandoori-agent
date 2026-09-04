@@ -102,18 +102,18 @@ function buildFacts(input: GroundedAnswerInput): string {
   // Smart context trimming: skip full menu only for purely non-menu logistics questions
   const isNonMenuQuestion =
     NON_MENU_KEYWORDS.test(input.question) &&
-    !MENU_INQUIRY_KEYWORDS.test(input.question) &&
-    !input.relevantItems?.length;
-
-  const focus = input.relevantItems?.length
-    ? input.relevantItems
-    : isNonMenuQuestion
-      ? [] // skip full menu for purely delivery/hours/payment questions
-      : input.menu;
+    !MENU_INQUIRY_KEYWORDS.test(input.question);
 
   if (!isNonMenuQuestion) {
+    if (input.relevantItems?.length) {
+      lines.push("", "RECENTLY_SHOWN_OPTIONS:");
+      for (const it of input.relevantItems) {
+        lines.push(`  - ${it.name} — ${cur} ${it.price}`);
+      }
+    }
+
     const byCat = new Map<string, string[]>();
-    for (const it of focus) {
+    for (const it of input.menu) {
       const cat = it.category || "Other";
       const desc = "description" in it && (it as { description?: string | null }).description
         ? ` (Includes: ${(it as { description?: string | null }).description})`
@@ -145,9 +145,10 @@ function buildSystemPrompt(personality?: string): string {
     "",
     "HARD RULES:",
     "- Use ONLY the given facts. NEVER invent prices, items, discounts, timings, delivery areas, or policies.",
-    "- When the customer asks what a deal, combo, or item includes or contains: look up the (Includes: ...) in the MENU facts and describe the items and contents clearly.",
+    "- NEVER provide dummy, sample, or fabricated phone numbers (e.g. 042-111-222-333 or 0300-1234567). Only mention a phone number if PHONE_DELIVERY is explicitly listed in the facts AND the user specifically asked for a contact number.",
+    "- When the customer asks what a deal, combo, or item includes or contains (e.g. 'Deal 1 mein kya hai', 'family deal mein kya milta hai'): look up the (Includes: ...) in the MENU facts and describe the exact items and contents clearly.",
     "- If the customer asks for a dish or cuisine NOT on the menu: politely state that it is not available on our menu. If MENU_CATEGORIES is present in the facts, mention ONLY those exact categories (e.g. Karahi, Handi, BBQ); NEVER invent, assume, or list fast-food, pizza, burger, pasta, or other dishes not present in the facts. If MENU_CATEGORIES is not present, simply say the item is not on our menu and ask what they would like to order.",
-    "- If the customer asks about social media, facebook, instagram, website, or other unlisted info: politely provide the support phone number or state that you will connect them with staff.",
+    "- If the customer asks about social media, facebook, instagram, website, or other unlisted info: politely state that you will connect them with staff.",
     "- If the answer is not in the facts, say honestly you're not sure and offer to connect them to staff — do NOT guess or make up facts.",
     "- Keep replies to 1-3 SHORT lines maximum. Do NOT provide extra information that wasn't asked for.",
     "- For simple availability questions (e.g. 'koi sandwich hai?'), just confirm YES or list 2-3 items — do NOT mention phone numbers or give a full speech.",

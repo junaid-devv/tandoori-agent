@@ -158,7 +158,14 @@ const SYSTEM_RULES = [
   "- If the customer says a number with an item name and no context item in cart, default to `add_items`.",
   "- If the customer just says a number like '2' or '1' after being shown a list, it's a list selection (handled before NLU).",
   "",
-  "For items: put the customer's own wording in `query` (do NOT invent or normalize to a menu name — menu resolution happens later via semantic search). Capture qty/size/addons/notes when present. Capture any special instructions in `notes` — e.g. 'kam masala', 'extra spicy', 'less oil', 'no onions'.",
+  "For items: put the customer's own wording in `query` (do NOT invent or normalize to a menu name — menu resolution happens later via semantic search). Capture qty/size/addons/notes when present.",
+  "",
+  "SPECIAL INSTRUCTIONS & PREPARATION NOTES — CRITICAL:",
+  "- When the customer specifies taste, cooking instructions, or modifications — e.g. 'kali mirch istemal krna', 'non spicy hona chaye', 'kam mirch rakhna', 'extra sauce', 'bina pyaz ke', 'chilled cold drink', 'less oil', 'crispy fries', 'raita alag se bhejna' — ALWAYS extract that instruction into the item's `notes`! NEVER include the instruction inside the `query` field.",
+  "- Initial order with instruction: e.g. '1 chicken karahi deliver krdo , kali mirch istemal krna' -> items: [{ query: 'chicken karahi', qty: 1, notes: 'kali mirch istemal krna' }], order_type: 'delivery', intents: ['add_items', 'set_order_type'].",
+  "- Instruction for item ALREADY in cart: e.g. 'Pizza non spicy hona chaye' (when Pizza is in CART) -> items: [{ query: 'pizza', qty: null, notes: 'non spicy hona chaye' }], intents: ['add_items']. This will update the note on the existing cart item without asking for size or adding duplicate items.",
+  "- General order note not tied to a dish: e.g. 'jaldi deliver karna', 'change le kar aana 5000 ka note hai', 'gate pe bell bajana' -> put this in root `notes`.",
+  "",
   "SIZE / PORTIONS: When the customer mentions 'half', 'full', 'quarter', 'single', 'double', 'large', 'small', 'medium', '6 pcs', '4 pcs', capture it in `size` (e.g. '1 half chicken karahi' -> size: 'half').",
   "FOOD ITEMS & DISH MENTIONS: If the customer mentions, asks about, or wants any food item, dish, or cuisine (e.g. 'pizza', 'karahi', 'biryani', 'burger', 'pasta', 'beef kabab', 'chai', 'dessert', 'chicken handi'), NEVER return `unknown`. If they simply name or ask about a food item (e.g. 'pizza', 'karahi', 'beef kabab'), set intent to `add_items` (with `items: [{ query: ... }]`) or `ask_item_info` (with `info_query`). Menu availability, variant selection, and disambiguation are handled downstream.",
   "ORDER TYPE: if the customer says 'deliver karo / deliver krdo / delivery chahiye / ghar pe bhejo / ye deliver karo' (even without specifying an address), use intent `set_order_type` with `order_type: 'delivery'`. Do NOT use `unknown`.",
@@ -235,6 +242,43 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
       primary_intent: "add_items",
       language: "roman_urdu",
       items: [{ query: "beef kabab", qty: 1, size: null, addons: [], notes: null }],
+    },
+  },
+  {
+    user: "1 chicken karahi deliver krdo , kali mirch istemal krna",
+    assistant: {
+      intents: ["add_items", "set_order_type"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      order_type: "delivery",
+      items: [{ query: "chicken karahi", qty: 1, size: null, addons: [], notes: "kali mirch istemal krna" }],
+    },
+  },
+  {
+    user: "Pizza non spicy hona chaye",
+    assistant: {
+      intents: ["add_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [{ query: "Pizza", qty: null, size: null, addons: [], notes: "non spicy hona chaye" }],
+    },
+  },
+  {
+    user: "Deal 1 bhejo or cold drink chilled ho",
+    assistant: {
+      intents: ["add_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [{ query: "Deal 1", qty: 1, size: null, addons: [], notes: "cold drink chilled ho" }],
+    },
+  },
+  {
+    user: "change lekar aana 5000 ka note hai",
+    assistant: {
+      intents: ["affirm"],
+      primary_intent: "affirm",
+      language: "roman_urdu",
+      notes: "change lekar aana 5000 ka note hai",
     },
   },
   {
@@ -596,7 +640,7 @@ function buildMessages(input: NluInput): OpenAI.Chat.Completions.ChatCompletionM
     optStr ? `OPTIONS:${optStr}` : "",
   ].filter(Boolean).join(" ");
 
-  const examplesText = FEW_SHOT.slice(0, 15)
+  const examplesText = FEW_SHOT.slice(0, 25)
     .map((ex) => `Customer: "${ex.user}" => ${JSON.stringify(fillDefaults(ex.assistant))}`)
     .join("\n");
 
@@ -744,7 +788,7 @@ export function coerceUnderstanding(
       .map((it: unknown) => {
         if (!it || typeof it !== "object") return null;
         const itemObj = it as Record<string, unknown>;
-        const query = String(itemObj.query || itemObj.name || itemObj.item || "").trim();
+        let query = String(itemObj.query || itemObj.name || itemObj.item || "").trim();
         if (!query) return null;
         const qtyRaw = itemObj.qty ?? itemObj.quantity;
         const qty = typeof qtyRaw === "number" ? qtyRaw : (qtyRaw === null ? null : 1);
@@ -754,7 +798,17 @@ export function coerceUnderstanding(
           : Array.isArray(itemObj.customizations)
             ? itemObj.customizations.map((c) => String(c).trim()).filter(Boolean)
             : [];
-        const notes = typeof itemObj.notes === "string" && itemObj.notes.trim() ? itemObj.notes.trim() : null;
+        let notes = typeof itemObj.notes === "string" && itemObj.notes.trim() ? itemObj.notes.trim() : null;
+
+        // Defensive extraction: If query itself contains cooking/special instruction and notes is empty, split it
+        if (!notes) {
+          const splitMatch = query.match(/^(.+?)(?:[,،\s]+)(kali\s*mirch.*|safed\s*mirch.*|non\s*spicy.*|spicy.*|kam\s*mirch.*|kam\s*masala.*|extra\s+.*|bina\s+.*|without\s+.*|with\s+extra.*|chilled.*|crispy.*|garam.*|hona\s*chaye.*|hona\s*chahiye.*|rakhna.*|istemal\s*k.*|use\s*k.*)$/i);
+          if (splitMatch && splitMatch[1].trim()) {
+            query = splitMatch[1].replace(/[,،\s]+$/, "").trim();
+            notes = splitMatch[2].trim();
+          }
+        }
+
         return { query, qty, size, addons, notes };
       })
       .filter(Boolean);

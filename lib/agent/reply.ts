@@ -34,15 +34,24 @@ export const reply = {
       : "Always happy to help! 😊 What would you like to order?";
   },
 
-  itemsAdded(l: Lang, added: Array<{ name: string; newCartQty: number }>, cart: CartItem[], currency: string): string {
+  itemsAdded(l: Lang, added: Array<{ name: string; newCartQty: number; notes?: string | null }>, cart: CartItem[], currency: string): string {
     const total = `${currency} ${cartSubtotal(cart)}`;
     if (added.length === 0) {
       return ur(l) ? `🛒 Total: ${total}` : `🛒 Total: ${total}`;
     }
-    const list = added.map((i) => `${i.newCartQty}x ${i.name}`).join(", ");
+    const list = added.map((i) => {
+      const noteStr = i.notes ? ` (Note: ${i.notes})` : "";
+      return `${i.newCartQty}x ${i.name}${noteStr}`;
+    }).join(", ");
     return ur(l)
       ? `✅ ${list} add ho gaya. Total: ${total}`
       : `✅ Added: ${list}. Total: ${total}`;
+  },
+
+  itemInstructionUpdated(l: Lang, itemName: string, note: string): string {
+    return ur(l)
+      ? `✅ *${itemName}* ke liye note save ho gaya: "${note}" 👍`
+      : `✅ Special instruction saved for *${itemName}*: "${note}" 👍`;
   },
 
   cartUpdated(l: Lang, cart: CartItem[], currency: string): string {
@@ -314,10 +323,39 @@ export const reply = {
       : "Connecting you with our staff — someone will reply shortly.";
   },
 
-  orderStatus(l: Lang, orderNumber: number, status: string): string {
-    return ur(l)
-      ? `Order #${orderNumber}: ${status}`
-      : `Order #${orderNumber}: ${status}`;
+  orderStatus(l: Lang, orderNumber: number, status: string, estimatedDeliveryMinutes?: number | null): string {
+    const s = (status || "").toLowerCase();
+    const isUr = ur(l);
+    const est = Math.round(Number(estimatedDeliveryMinutes) || 45);
+
+    if (s === "pending" || s === "received") {
+      return isUr
+        ? `Aap ka Order #${orderNumber} receive ho chuka hai aur kitchen mein tayyar ho raha hai. Aam tor par ~${est} minutes mein deliver hota hai! 🍳🛵`
+        : `Your Order #${orderNumber} has been received and is being prepared in the kitchen. Usually takes ~${est} mins! 🍳🛵`;
+    }
+    if (s === "in_prep" || s === "cooking" || s === "confirmed") {
+      return isUr
+        ? `Aap ka Order #${orderNumber} kitchen mein ban raha hai. Jald deliver hoga! 🍳`
+        : `Your Order #${orderNumber} is actively being prepared in the kitchen. Will be dispatched shortly! 🍳`;
+    }
+    if (s === "dispatched" || s === "out_for_delivery" || s === "on_the_way") {
+      return isUr
+        ? `Aap ka Order #${orderNumber} rider ke pas hai aur deliver hone ke liye raste mein hai! 🛵`
+        : `Your Order #${orderNumber} is on the way with our rider! 🛵`;
+    }
+    if (s === "delivered" || s === "completed") {
+      return isUr
+        ? `Aap ka Order #${orderNumber} deliver ho chuka hai. Umeed hai aap ko khana pasand aya hoga! Bohat shukriya ❤️`
+        : `Your Order #${orderNumber} has been delivered. We hope you enjoy your meal! ❤️`;
+    }
+    if (s === "cancelled") {
+      return isUr
+        ? `Aap ka Order #${orderNumber} cancel ho chuka hai.`
+        : `Your Order #${orderNumber} was cancelled.`;
+    }
+    return isUr
+      ? `Aap ke Order #${orderNumber} ka status: *${status}*. Delivery jald pohnch rahi hai! 🛵`
+      : `Order #${orderNumber} status: *${status}*. On its way soon! 🛵`;
   },
 
   noRecentOrder(l: Lang): string {
