@@ -559,7 +559,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     conversationId: input.conversationId,
     sourceUserMessageId: input.sourceUserMessageId,
     appName: input.appName,
-    currency: input.currency || ctx.settings.currency || "Rs.",
+    currency: input.currency || (ctx.settings as unknown as { currency?: string })?.currency || "Rs.",
     customerName: input.customerName ?? null,
     messageTextForFallback: input.messageText,
   });

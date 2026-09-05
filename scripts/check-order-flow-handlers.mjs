@@ -136,7 +136,9 @@ function testPipelineWiring() {
 
   assert.ok(pipeline.includes("runTurn"), "pipeline must export runTurn");
   assert.ok(executor.includes("executeTurn"), "executor must export executeTurn");
-  pass("Pipeline and executor wiring files verified.");
+  assert.ok(executor.includes("orderRepo.cancelOrder(recent.id)"), "executor must call orderRepo.cancelOrder on cancellation");
+  assert.ok(executor.includes("customer_cancellation"), "executor must create customer_cancellation alert on cancellation");
+  pass("Pipeline and executor wiring files verified (including cancellation status handling).");
 }
 
 import { reply } from "../lib/agent/reply.ts";

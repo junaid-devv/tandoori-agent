@@ -60,7 +60,7 @@ interface ExecInput {
 export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   const { transition, understanding: u, ctx, branchId } = input;
   const lang: LanguagePreference = u.language || ctx.state.preferred_language;
-  const cur = input.currency || ctx.settings.currency || "Rs.";
+  const cur = input.currency || (ctx.settings as unknown as { currency?: string })?.currency || "Rs.";
 
   let cart: CartItem[] = ctx.state.cart.map((i) => ({ ...i }));
   const patch: Partial<ConversationStateRow> = {
