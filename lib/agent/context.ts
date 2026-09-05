@@ -61,6 +61,8 @@ export function buildStateView(state: ConversationStateRow): StateView {
     order_type: state.order_type,
     has_address: Boolean(state.address),
     has_dinein_details: state.guests !== null && state.reservation_time !== null,
+    has_guests: state.guests !== null,
+    has_reservation_time: state.reservation_time !== null,
     has_pickup_time: state.pickup_time !== null,
     upsell_offered: state.upsell_offered,
     awaiting_selection: recentlyShown,

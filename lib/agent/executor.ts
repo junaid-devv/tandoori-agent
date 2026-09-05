@@ -59,7 +59,7 @@ interface ExecInput {
 export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   const { transition, understanding: u, ctx, branchId } = input;
   const lang: LanguagePreference = u.language || ctx.state.preferred_language;
-  const cur = input.currency;
+  const cur = input.currency || ctx.settings.currency || "Rs.";
 
   let cart: CartItem[] = ctx.state.cart.map((i) => ({ ...i }));
   const patch: Partial<ConversationStateRow> = {
@@ -902,7 +902,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           patch.stage = "placed";
           cart = [];
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "order failed";
+          const msg =
+            (err && typeof err === "object" && "message" in err ? String(err.message) : String(err)) ||
+            "order failed";
           console.error("[executor] place_order failed:", msg);
           if (/min.*delivery|minimum.*delivery/i.test(msg)) {
             const sub = cartSubtotal(cart);

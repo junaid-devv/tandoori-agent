@@ -195,7 +195,8 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
 
   // ── 1c) Bare numeric selection of last-shown option ────────────────────────
   const numeric = input.messageText.match(NUMERIC_RE);
-  if (!understanding && numeric && ctx.view.awaiting_selection && ctx.state.last_shown_options.length > 0) {
+  const isBrowsingOrBuildingCart = ctx.view.stage === "browsing" || ctx.view.stage === "building_cart";
+  if (!understanding && numeric && isBrowsingOrBuildingCart && ctx.view.awaiting_selection && ctx.state.last_shown_options.length > 0) {
     const idx = Number(numeric[1]) - 1;
     const chosen = ctx.state.last_shown_options[idx];
     if (chosen) {
@@ -213,9 +214,10 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   // When options were recently shown (e.g. after category browse or "Add More" or disambiguation),
   // a message that closely matches one of them should add it with the requested quantity.
   // Guard: skip if the message looks like a question — route to NLU for info handling instead.
+  // Also only run when in browsing or building_cart stages to prevent checkout detail hijacking.
   const QUESTION_SIGNALS =
     /(\?|kia\s*hai|kya\s*hai|kia\s*h|kya\s*h|\bkia\b|\bkya\b|kaisa|details|batao|bata|what\s*is|how\s*much|kitne|mein\s*kya|main\s*kia|mein\s*kia|main\s*kya|ingredients|contains|mila|milta)/i;
-  if (!understanding && ctx.state.last_shown_options.length > 0 && ctx.state.last_shown_options_at) {
+  if (!understanding && isBrowsingOrBuildingCart && ctx.state.last_shown_options.length > 0 && ctx.state.last_shown_options_at) {
     const ageMs = Date.now() - new Date(ctx.state.last_shown_options_at).getTime();
     const OPTION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
     if (ageMs < OPTION_WINDOW_MS && !QUESTION_SIGNALS.test(input.messageText)) {
@@ -288,13 +290,34 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     const trimmed = input.messageText.trim();
     if (
       (ctx.view.stage === "confirming" || (ctx.view.stage === "building_cart" && ctx.state.cart.length > 0)) &&
-      /^(confirm\s*✓?|confirm order|place order|order confirm|haan confirm|yes confirm|checkout|proceed|ok|okay|done|theek hai|thik hai|thk hai|bilkul|zaroor|haan|haa|ha)$/i.test(trimmed)
+      /^(confirm\s*✓?|confirm order|place order|order confirm|haan confirm|yes confirm|proceed|ok|okay|done|theek hai|thik hai|thk hai|bilkul|zaroor|haan|haa|ha)$/i.test(trimmed)
     ) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
         intents: ctx.view.stage === "confirming" ? ["confirm_order"] : ["affirm"],
         primary_intent: ctx.view.stage === "confirming" ? "confirm_order" : "affirm",
         notes: "fast_path_confirm",
+      };
+    } else if (/^(checkout|proceed to checkout|bill)$/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["confirm_order"],
+        primary_intent: "confirm_order",
+        notes: "fast_path_checkout",
+      };
+    } else if (/^(aur dalein|aur add karein|add more|aur kuch)$/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["browse_menu"],
+        primary_intent: "browse_menu",
+        notes: "fast_path_add_more",
+      };
+    } else if (/^(wapas jao|go back|back|cart dekhein|view cart)$/i.test(trimmed)) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["view_cart"],
+        primary_intent: "view_cart",
+        notes: "fast_path_view_cart",
       };
     } else if (
       ctx.view.stage === "collecting_delivery" &&
@@ -311,7 +334,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         notes: "fast_path_collecting_delivery_address",
       };
     } else if (
-      (ctx.view.stage === "collecting_dinein" || ctx.state.order_type === "dine-in") &&
+      ctx.view.stage === "collecting_dinein" &&
       !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(trimmed)
     ) {
       const combinedMatch =
@@ -354,7 +377,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         }
       }
     } else if (
-      (ctx.view.stage === "collecting_pickup" || ctx.state.order_type === "pickup") &&
+      ctx.view.stage === "collecting_pickup" &&
       !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(trimmed)
     ) {
       const pickupTimeMatch = trimmed.match(/^(?:at\s+|in\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje|mins?|minutes?|hours?)?)$/i);
@@ -367,27 +390,6 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
           notes: "fast_path_pickup_time",
         };
       }
-    } else if (/^(wapas jao|go back|back|cart dekhein|view cart)$/i.test(trimmed)) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["view_cart"],
-        primary_intent: "view_cart",
-        notes: "fast_path_view_cart",
-      };
-    } else if (/^(aur dalein|aur add karein|add more|aur kuch)$/i.test(trimmed)) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["browse_menu"],
-        primary_intent: "browse_menu",
-        notes: "fast_path_add_more",
-      };
-    } else if (/^(checkout|proceed to checkout|bill)$/i.test(trimmed)) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["confirm_order"],
-        primary_intent: "confirm_order",
-        notes: "fast_path_checkout",
-      };
     } else if (
       ctx.savedAddress &&
       /^(?:use saved|use saved address|saved address|pichla address|same address|purana address|previous address|wahi address|wahi pe|same)$/i.test(trimmed)
@@ -555,7 +557,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     conversationId: input.conversationId,
     sourceUserMessageId: input.sourceUserMessageId,
     appName: input.appName,
-    currency: input.currency,
+    currency: input.currency || ctx.settings.currency || "Rs.",
     customerName: input.customerName ?? null,
     messageTextForFallback: input.messageText,
   });

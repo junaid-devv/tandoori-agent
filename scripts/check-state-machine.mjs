@@ -168,6 +168,33 @@ console.log("\n== state-machine FSM tests ==");
   check(hasAction(t, "answer_grounded"), "unknown with info_query routes to grounded answer");
 }
 
+// 14) Dine-in partial details: providing only guests stays in collecting_dinein
+{
+  const t = nextTransition(
+    view({ stage: "collecting_dinein", cart: [cartItem("Pizza")], order_type: "dine-in", has_guests: false, has_reservation_time: false }),
+    u({ intents: ["provide_dinein_details"], primary_intent: "provide_dinein_details", guests: 6 }),
+  );
+  check(t.nextStage === "collecting_dinein" && !hasAction(t, "show_summary"), "dine-in with only guests stays in collecting_dinein");
+}
+
+// 15) Dine-in complete details: providing both guests and time advances to confirming
+{
+  const t = nextTransition(
+    view({ stage: "collecting_dinein", cart: [cartItem("Pizza")], order_type: "dine-in", has_guests: true, has_reservation_time: false }),
+    u({ intents: ["provide_dinein_details"], primary_intent: "provide_dinein_details", reservation_time: "8pm" }),
+  );
+  check(t.nextStage === "confirming" && hasAction(t, "show_summary"), "dine-in with both guests and time advances to confirming with summary");
+}
+
+// 16) Confirm / Affirm with missing slot NEVER places order
+{
+  const t = nextTransition(
+    view({ stage: "confirming", cart: [cartItem("Pizza")], order_type: "dine-in", has_dinein_details: false, has_guests: false }),
+    u({ intents: ["confirm_order"], primary_intent: "confirm_order" }),
+  );
+  check(!hasAction(t, "place_order") && t.nextStage === "collecting_dinein", "confirm with missing dinein details never places order and prompts missing slot");
+}
+
 console.log("");
 if (failures > 0) {
   console.error(`STATE-MACHINE CHECK FAILED: ${failures} failure(s)`);

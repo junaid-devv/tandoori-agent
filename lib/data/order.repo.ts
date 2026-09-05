@@ -73,7 +73,7 @@ export const orderRepo = {
     const { data, error } = await supabaseAdmin.rpc("place_order_from_payload", {
       p_conversation_id: payload.conversationId,
       p_branch_id: payload.branchId,
-      p_source_user_message_id: payload.sourceUserMessageId,
+      p_source_user_message_id: payload.sourceUserMessageId ?? null,
       p_type: payload.type,
       p_items: payload.items,
       p_customer_instructions: payload.customerInstructions ?? null,
@@ -83,7 +83,7 @@ export const orderRepo = {
       p_pickup_time: payload.pickupTime ?? null,
       p_delivery_fee: payload.deliveryFee ?? 0,
     });
-    if (error) throw error;
+    if (error) throw new Error(error.message || JSON.stringify(error));
     const row = Array.isArray(data) ? data[0] : data;
     const id = row?.id as string | undefined;
     if (!id) throw new Error("place_order_from_payload returned no order id.");

@@ -46,6 +46,8 @@ export interface StateView {
   order_type: OrderType | null;
   has_address: boolean;
   has_dinein_details: boolean;
+  has_guests: boolean;
+  has_reservation_time: boolean;
   has_pickup_time: boolean;
   upsell_offered: boolean;
   awaiting_selection: boolean;
@@ -200,7 +202,7 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
       if (!actions.some((a) => a.kind === ia.kind)) {
         actions.push(ia);
       }
-      if (!inCheckout && (ia.kind === "show_menu" || ia.kind === "answer_info")) {
+      if (ia.kind === "show_menu" || (!inCheckout && ia.kind === "answer_info")) {
         nextStage = view.cart.length > 0 ? "building_cart" : "browsing";
       }
     }
@@ -215,7 +217,9 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
       const hasSlotInThisTurn =
         (chosen === "delivery" && Boolean(u.address || view.has_address)) ||
         (chosen === "pickup" && Boolean(u.pickup_time || view.has_pickup_time)) ||
-        (chosen === "dine-in" && Boolean((u.guests || u.reservation_time) || view.has_dinein_details));
+        (chosen === "dine-in" &&
+          (Boolean(u.guests) || view.has_guests) &&
+          (Boolean(u.reservation_time) || view.has_reservation_time));
 
       const missing = missingSlotForType(chosen, view);
       if (missing && !hasSlotInThisTurn) {
@@ -251,11 +255,17 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   }
   if (u.guests || u.reservation_time) {
     actions.push({ kind: "collect_dinein_details", payload: { guests: u.guests, reservation_time: u.reservation_time } });
-    if (orderTypeAlreadySet && view.cart.length > 0) {
+    const hasBothGuestsAndTime =
+      (Boolean(u.guests) || view.has_guests) &&
+      (Boolean(u.reservation_time) || view.has_reservation_time);
+
+    if (hasBothGuestsAndTime && orderTypeAlreadySet && view.cart.length > 0) {
       if (!actions.some((a) => a.kind === "show_summary")) {
         actions.push({ kind: "show_summary" });
       }
       nextStage = "confirming";
+    } else {
+      nextStage = "collecting_dinein";
     }
   }
   if (u.pickup_time) {
@@ -278,7 +288,7 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
       }
     } else {
       const missing = missingSlot(view);
-      if (missing && view.stage !== "confirming") {
+      if (missing) {
         nextStage = missing;
         actions.push(promptForStage(missing));
       } else if (view.stage !== "confirming" && u.notes !== "fast_path_confirm") {
@@ -294,8 +304,14 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   // 9) Bare affirm — resolve by stage context
   if (u.primary_intent === "affirm" && actions.length === 0) {
     if (view.stage === "confirming") {
-      actions.push({ kind: "place_order" });
-      nextStage = "placed";
+      const missing = missingSlot(view);
+      if (missing) {
+        nextStage = missing;
+        actions.push(promptForStage(missing));
+      } else {
+        actions.push({ kind: "place_order" });
+        nextStage = "placed";
+      }
     } else if (view.stage === "placed") {
       actions.push({ kind: "smalltalk" });
       nextStage = "placed";

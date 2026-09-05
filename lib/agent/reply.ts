@@ -14,7 +14,13 @@ const ur = (l: Lang) => l === "roman_urdu";
 export const reply = {
 
   greeting(l: Lang, appName: string, customerName?: string | null, wasSalam?: boolean): string {
-    const name = customerName ? ` ${customerName.split(" ")[0]}` : "";
+    const isBusinessName =
+      customerName &&
+      /\b(restaurant|cafe|hotel|fast\s*food|point|corner|store|shop|bakers|bakery|traders|enterprises|services|official|ltd|pvt|co|company|mart|supermarket|dhabba|dhaba)\b/i.test(
+        customerName,
+      );
+    const firstName = customerName && !isBusinessName ? customerName.split(" ")[0].trim() : "";
+    const name = firstName ? ` ${firstName}` : "";
     if (ur(l)) {
       const sal = wasSalam ? "Walaikum Assalam!" : "Assalam o Alaikum!";
       return `${sal}${name} 😊 *${appName}* mein khush aamdeed!\nAaj kya order karein ge?`;
