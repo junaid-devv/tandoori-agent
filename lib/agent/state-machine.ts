@@ -186,7 +186,7 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   }
   if (u.intents.includes("remove_items") && u.removals.length > 0) {
     actions.push({ kind: "remove_items", payload: { removals: u.removals } });
-    if (view.cart.length > 1) nextStage = "building_cart";
+    nextStage = view.cart.length > 1 ? "building_cart" : "browsing";
   }
   if (u.intents.includes("update_quantity") && u.items.length > 0) {
     actions.push({ kind: "update_quantity", payload: { items: u.items } });

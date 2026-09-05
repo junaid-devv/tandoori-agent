@@ -326,13 +326,34 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       trimmed.length >= 2 &&
       trimmed.length <= 150
     ) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["provide_address"],
-        primary_intent: "provide_address",
-        address: trimmed,
-        notes: "fast_path_collecting_delivery_address",
-      };
+      // Detect "Naya Address" / "New address" button text or typed equivalent → prompt for address, don't capture
+      const isNewAddressRequest = /^(new|naya|naya\s+address|new\s+address)$/i.test(trimmed) || /^addr:(?:new|saved:.*)$/i.test(trimmed);
+      // Detect questions — contains ?, or common question words → let NLU handle
+      const isQuestion = /[?]|(?:^|\b)(?:kia|kya|kitna|kitni|kitnay|kab|konsa|konsi|kaisa|hai\s*(?:kia|kya)|time|timing|fee|charges|delivery|menu|deal|mein\s*(?:kia|kya)|main\s*(?:kia|kya)|batao|bata|dikhao|details|available|price|rate|open|close|band|khul)(?:\b|$)/i.test(trimmed);
+      // Detect order type switches
+      const isOrderTypeSwitch = /(?:switch|change|actually|nahi)\s*(?:to\s+)?(?:pickup|dine.?in)/i.test(trimmed) || /^(?:pickup|dine.?in)\s*(?:krdo|kardo|please|chahiye)?$/i.test(trimmed);
+      // Detect human escalation
+      const isEscalation = /(?:insaan|manager|staff|agent|person|banday?\s+se\s+baat)/i.test(trimmed);
+
+      if (isNewAddressRequest) {
+        // Route to FSM's provide_address without an address → it will prompt
+        understanding = {
+          ...makeBase(ctx.state.preferred_language),
+          intents: ["provide_address"],
+          primary_intent: "provide_address",
+          notes: "fast_path_new_address_request",
+        };
+      } else if (!isQuestion && !isOrderTypeSwitch && !isEscalation) {
+        // Treat as actual address
+        understanding = {
+          ...makeBase(ctx.state.preferred_language),
+          intents: ["provide_address"],
+          primary_intent: "provide_address",
+          address: trimmed,
+          notes: "fast_path_collecting_delivery_address",
+        };
+      }
+      // else: falls through to NLU for questions, order type switches, etc.
     } else if (
       ctx.view.stage === "collecting_dinein" &&
       !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(trimmed)
@@ -524,25 +545,6 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     });
   }
   t.nlu = Date.now() - nluStart;
-
-  // Post-NLU safety net: if stage was collecting_delivery and NLU didn't extract address
-  if (
-    ctx.view.stage === "collecting_delivery" &&
-    (!understanding.address || understanding.primary_intent === "unknown") &&
-    !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(input.messageText.trim()) &&
-    !/^(pickup|dine-in|dine in)$/i.test(input.messageText.trim()) &&
-    !/^addr:(?:new|saved:.*)$/i.test(input.messageText.trim()) &&
-    !/^(new|naya|naya address|new address)$/i.test(input.messageText.trim())
-  ) {
-    const rawAddr = input.messageText.trim();
-    if (rawAddr.length >= 2 && rawAddr.length <= 150) {
-      understanding.address = rawAddr;
-      understanding.primary_intent = "provide_address";
-      if (!understanding.intents.includes("provide_address")) {
-        understanding.intents = ["provide_address", ...understanding.intents.filter((i) => i !== "unknown")];
-      }
-    }
-  }
 
   // ── 3) FSM ─────────────────────────────────────────────────────────────────
   const fsmStart = Date.now();

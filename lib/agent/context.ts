@@ -53,7 +53,7 @@ export function buildStateView(state: ConversationStateRow): StateView {
   const recentlyShown =
     state.last_shown_options.length > 0 &&
     state.last_shown_options_at !== null &&
-    Date.now() - new Date(state.last_shown_options_at).getTime() < 10 * 60_000;
+    Date.now() - new Date(state.last_shown_options_at).getTime() < 5 * 60_000;
 
   return {
     stage: state.stage,

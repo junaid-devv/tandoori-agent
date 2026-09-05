@@ -746,14 +746,15 @@ function normalizeIntent(raw: unknown): string | null {
   if (/general|other|misc|question|halal|info/i.test(s)) return "general_question";
   if (/deal|special|discount|browse|list|category/i.test(s)) return "browse_menu";
   if (/order|add|buy|kar do|mangwa/i.test(s)) return "add_items";
-  if (/remove|cancel|hata|rehne/i.test(s)) return "remove_items";
+  if (/cancel.?order|order.?cancel/i.test(s)) return "cancel_order";
+  if (/remove|hata|rehne|nikal/i.test(s)) return "remove_items";
   if (/human|agent|person|staff|manager/i.test(s)) return "human_request";
   if (/status|kahan|tracking/i.test(s)) return "order_status";
   if (/cart|trolley|basket|dikhao|show.*cart/i.test(s)) return "view_cart";
   if (/checkout|bill|finalize/i.test(s)) return "confirm_order";
   if (/greet|salam|hello|hi/i.test(s)) return "greeting";
   if (/yes|haan|han|ji|confirm|theek/i.test(s)) return "affirm";
-  if (/no|nahi|na|cancel|nope/i.test(s)) return "deny";
+  if (/no|nahi|na|nope/i.test(s)) return "deny";
 
   return raw; // pass-through so Zod rejects unrecognized values
 }
@@ -802,7 +803,7 @@ export function coerceUnderstanding(
 
         // Defensive extraction: If query itself contains cooking/special instruction and notes is empty, split it
         if (!notes) {
-          const splitMatch = query.match(/^(.+?)(?:[,،\s]+)(kali\s*mirch.*|safed\s*mirch.*|non\s*spicy.*|spicy.*|kam\s*mirch.*|kam\s*masala.*|extra\s+.*|bina\s+.*|without\s+.*|with\s+extra.*|chilled.*|crispy.*|garam.*|hona\s*chaye.*|hona\s*chahiye.*|rakhna.*|istemal\s*k.*|use\s*k.*)$/i);
+          const splitMatch = query.match(/^(\S+(?:\s+\S+)+?)(?:[,،\s]+)(kali\s*mirch.*|safed\s*mirch.*|non\s*spicy.*|spicy.*|kam\s*mirch.*|kam\s*masala.*|extra\s+.*|bina\s+.*|without\s+.*|with\s+extra.*|chilled.*|crispy.*|garam.*|hona\s*chaye.*|hona\s*chahiye.*|rakhna.*|istemal\s*k.*|use\s*k.*)$/i);
           if (splitMatch && splitMatch[1].trim()) {
             query = splitMatch[1].replace(/[,،\s]+$/, "").trim();
             notes = splitMatch[2].trim();

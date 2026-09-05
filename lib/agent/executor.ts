@@ -230,20 +230,25 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           if (cart.length > 0 && hasInstruction && !hasExplicitNewQty) {
             const qClean = query.replace(INSTRUCTION_PATTERNS, "").trim();
             const qLower = (qClean || query).toLowerCase().replace(/[^a-z0-9]/g, "");
-            const existingItem = cart.find((ci) => {
-              const ciLower = ci.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-              return (
-                (qLower.length >= 3 && ciLower.includes(qLower)) ||
-                (qLower.length >= 3 && qLower.includes(ciLower)) ||
-                (qLower.length >= 4 && ciLower.includes(qLower.slice(0, 4)))
-              );
-            }) || (cart.length === 1 ? cart[0] : null);
-
-            if (existingItem) {
-              const noteText = m.notes || rawMsg.replace(/^(?:can\s+you\s+|please\s+)?(?:make\s+)?(?:the\s+)?(?:pizza|burger|karahi|deal\s*\d+|it)\s*/i, "").trim();
-              existingItem.notes = noteText;
-              replies.push(reply.itemInstructionUpdated(lang, existingItem.name, noteText));
-              continue;
+            // Guard: if the query is JUST a common food item name, it's a new order, not a note
+            const FOOD_NAMES = /^(raita|salad|naan|nan|roti|rice|chawal|chutney|chatni|fries|sauce|ketchup|mayo|cheese|cold\s*drink|drink|pepsi|coke|dew|7up|sprite|water|pani|lassi|dahi)$/i;
+            const isJustFoodName = FOOD_NAMES.test(query.trim());
+            if (!isJustFoodName) {
+              const existingItem = cart.find((ci) => {
+                const ciLower = ci.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                return (
+                  (qLower.length >= 3 && ciLower.includes(qLower)) ||
+                  (qLower.length >= 3 && qLower.includes(ciLower)) ||
+                  (qLower.length >= 4 && ciLower.includes(qLower.slice(0, 4)))
+                );
+              });
+              // Only match when query actually references an existing cart item — no blind single-item fallback
+              if (existingItem) {
+                const noteText = m.notes || rawMsg.replace(/^(?:can\s+you\s+|please\s+)?(?:make\s+)?(?:the\s+)?(?:pizza|burger|karahi|deal\s*\d+|it)\s*/i, "").trim();
+                existingItem.notes = noteText;
+                replies.push(reply.itemInstructionUpdated(lang, existingItem.name, noteText));
+                continue;
+              }
             }
           }
 
@@ -583,6 +588,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Collect delivery address ─────────────────────────────────────────
       case "collect_delivery_address": {
+        // Clear stale/invalid addresses that leaked from button payloads or previous bugs
+        const currentAddr = patch.address ?? ctx.state.address;
+        if (currentAddr && /^(addr:(new|saved:.*)|new|naya|naya\s+address|new\s+address)$/i.test(currentAddr.trim())) {
+          patch.address = null;
+        }
         if (ctx.settings.delivery_enabled === false) {
           if (!replies.some((r) => r.includes("delivery") || r.includes("Delivery"))) {
             replies.push(reply.deliveryDisabled(lang));
@@ -815,7 +825,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           setInteractive(confirmButtons(lang));
           break;
         }
-        const addr = patch.address ?? ctx.state.address;
+        let addr = patch.address ?? ctx.state.address;
+        // Clean stale/invalid address values before displaying
+        if (addr && /^(addr:(new|saved:.*)|new|naya|naya\s+address|new\s+address)$/i.test(addr.trim())) {
+          addr = null;
+          patch.address = null;
+        }
         if (cart.length === 0) {
           replies.push(reply.emptyCart(lang));
         } else {
@@ -827,6 +842,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Place order ──────────────────────────────────────────────────────
       case "place_order": {
+        if (!ctx.isOpenNow) {
+          replies.push(reply.closed(lang, ctx.settings.opening_time));
+          break;
+        }
         if (cart.length === 0) { replies.push(reply.emptyCart(lang)); break; }
         const orderType = (patch.order_type ?? ctx.state.order_type) as OrderType | null;
         if (!orderType) {
@@ -1082,6 +1101,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       if (r.includes("Kitne log") || r.includes("How many guests")) return false;
       return true;
     });
+    // Override stage to building_cart so next turn's fast-paths (numeric selection, name matching) work
+    patch.stage = "building_cart";
   }
 
   // De-duplicate identical consecutive lines
