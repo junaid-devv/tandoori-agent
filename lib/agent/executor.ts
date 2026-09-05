@@ -33,6 +33,7 @@ import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } fr
 import { findMatchingDeliveryArea, buildDeliveryAreaHint } from "./delivery";
 import { parseCustomerTimeToIso } from "@/lib/restaurant-time";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createStaffAlert } from "@/lib/staff-alerts";
 
 export interface ExecutionResult {
   replyText: string;
@@ -370,9 +371,18 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         replies.push(paymentAnswer());
         break;
 
-      case "answer_delivery_info":
-        replies.push(deliveryInfoAnswer());
+      case "answer_delivery_info": {
+        const queryStr = String(action.payload?.query ?? u.info_query ?? input.messageTextForFallback ?? "").toLowerCase();
+        if (/kitna\s+time|time\s+kitna|how\s+much\s+time|delivery\s+time|kab\s+tak\s+pohanch|kitni\s+der|der\s+lag|دیر|وقت|ٹائم/i.test(queryStr)) {
+          const estDelivery = Math.round(Number(ctx.settings?.estimated_delivery_minutes) || 45);
+          replies.push(lang === "roman_urdu" ? `⏱ Delivery mein takreeban ~${estDelivery} minutes lagte hain.` : `⏱ Estimated delivery time is ~${estDelivery} mins.`);
+        } else if (/charge|fee|pesay|paise|paisa|kitnay\s+ka|پیسے|قیمت|چارجز/i.test(queryStr)) {
+          replies.push(lang === "roman_urdu" ? (ctx.settings.delivery_fee === 0 ? "💰 Delivery bilkul free hai!" : `💰 Delivery Fee: ${cur} ${ctx.settings.delivery_fee}`) : (ctx.settings.delivery_fee === 0 ? "💰 Delivery is FREE!" : `💰 Delivery Fee: ${cur} ${ctx.settings.delivery_fee}`));
+        } else {
+          replies.push(deliveryInfoAnswer());
+        }
         break;
+      }
 
       case "answer_grounded": {
         const question = (action.payload?.query as string) ?? u.info_query ?? input.messageTextForFallback ?? "";
@@ -948,8 +958,50 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       // ── Cancel / restart ─────────────────────────────────────────────────
       case "cancel_order": {
         const recent = await orderRepo.getLatestForConversation(input.conversationId);
-        if (recent) await orderRepo.requestCancellation(recent.id);
-        replies.push(reply.orderCancelled(lang));
+        if (recent) {
+          const createdAtMs = new Date(recent.created_at).getTime();
+          const withinWindow = Number.isFinite(createdAtMs) && Date.now() - createdAtMs <= 10 * 60 * 1000;
+
+          if (recent.status === "cancelled") {
+            replies.push(
+              lang === "roman_urdu"
+                ? `Order #${recent.order_number} pehle hi cancel ho chuka hai.`
+                : `Order #${recent.order_number} has already been cancelled.`,
+            );
+          } else if (recent.status === "out_for_delivery" || recent.status === "delivered") {
+            replies.push(
+              lang === "roman_urdu"
+                ? `Maaf kijiyega, Order #${recent.order_number} deliver hone ke liye nikal chuka hai aur ab cancel nahi ho sakta. Madad ke liye hamare staff se rabta karein.`
+                : `Sorry, Order #${recent.order_number} is already on its way or delivered and cannot be cancelled. Please contact our support for help.`,
+            );
+          } else if (recent.status === "received" || withinWindow) {
+            await orderRepo.cancelOrder(recent.id);
+            await createStaffAlert({
+              conversationId: input.conversationId,
+              branchId: recent.branch_id || branchId,
+              kind: "customer_cancellation",
+              severity: "high",
+              message: `Order #${recent.order_number} (Rs. ${recent.subtotal}) was cancelled by customer. Do not prepare or dispatch.`,
+            }).catch((alertErr) => console.error("Failed to create cancellation staff alert:", alertErr));
+            replies.push(reply.orderCancelled(lang));
+          } else {
+            await orderRepo.requestCancellation(recent.id);
+            await createStaffAlert({
+              conversationId: input.conversationId,
+              branchId: recent.branch_id || branchId,
+              kind: "customer_cancellation",
+              severity: "high",
+              message: `Cancellation requested for Order #${recent.order_number} after prep window. Staff review required.`,
+            }).catch((alertErr) => console.error("Failed to create cancellation staff alert:", alertErr));
+            replies.push(
+              lang === "roman_urdu"
+                ? `Aap ke Order #${recent.order_number} ki cancellation request branch staff ko bhej di gayi hai.`
+                : `Cancellation request for Order #${recent.order_number} has been sent to our restaurant staff.`,
+            );
+          }
+        } else {
+          replies.push(reply.orderCancelled(lang));
+        }
         cart = [];
         break;
       }

@@ -117,7 +117,7 @@ function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null
     case "ask_payment":
       return { kind: "answer_payment" };
     case "ask_delivery_info":
-      return { kind: "answer_delivery_info" };
+      return { kind: "answer_delivery_info", payload: { query: u.info_query ?? "" } };
     case "general_question":
       return { kind: "answer_grounded", payload: { query: u.info_query ?? "", intent } };
     case "order_status":

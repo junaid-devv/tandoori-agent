@@ -121,16 +121,34 @@ export const orderRepo = {
   },
 
   async updateStatus(id: string, status: OrderStatus): Promise<void> {
-    const patch: Record<string, unknown> = { status };
-    if (status === "cancelled") patch.cancelled_at = new Date().toISOString();
+    const patch: Record<string, unknown> = { status, updated_at: new Date().toISOString() };
+    if (status === "cancelled") {
+      const now = new Date().toISOString();
+      patch.cancelled_at = now;
+      patch.cancellation_requested_at = now;
+    }
     const { error } = await supabaseAdmin.from("orders").update(patch).eq("id", id);
+    if (error) throw error;
+  },
+
+  async cancelOrder(id: string): Promise<void> {
+    const now = new Date().toISOString();
+    const { error } = await supabaseAdmin
+      .from("orders")
+      .update({
+        status: "cancelled",
+        cancelled_at: now,
+        cancellation_requested_at: now,
+        updated_at: now,
+      })
+      .eq("id", id);
     if (error) throw error;
   },
 
   async requestCancellation(id: string): Promise<void> {
     const { error } = await supabaseAdmin
       .from("orders")
-      .update({ cancellation_requested_at: new Date().toISOString() })
+      .update({ cancellation_requested_at: new Date().toISOString(), updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) throw error;
   },

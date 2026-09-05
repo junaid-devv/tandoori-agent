@@ -530,7 +530,9 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     ctx.view.stage === "collecting_delivery" &&
     (!understanding.address || understanding.primary_intent === "unknown") &&
     !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(input.messageText.trim()) &&
-    !/^(pickup|dine-in|dine in)$/i.test(input.messageText.trim())
+    !/^(pickup|dine-in|dine in)$/i.test(input.messageText.trim()) &&
+    !/^addr:(?:new|saved:.*)$/i.test(input.messageText.trim()) &&
+    !/^(new|naya|naya address|new address)$/i.test(input.messageText.trim())
   ) {
     const rawAddr = input.messageText.trim();
     if (rawAddr.length >= 2 && rawAddr.length <= 150) {
