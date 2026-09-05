@@ -12,7 +12,7 @@ import { cache } from "@/lib/core/cache";
 import { stateRepo } from "@/lib/data/state.repo";
 import { getMenuCatalog } from "@/lib/menu";
 import { getRestaurantSettings, isWithinOperatingHours } from "@/lib/settings";
-import { getLatestSavedAddress, type SavedAddress } from "@/lib/customer-crm";
+import { getLatestSavedAddress, isValidDeliveryAddress, type SavedAddress } from "@/lib/customer-crm";
 import type { MenuCatalogItem } from "@/lib/menu";
 import type { RestaurantSettings } from "@/lib/settings";
 import type { ConversationStateRow } from "@/lib/schema.types";
@@ -82,9 +82,12 @@ export async function loadTurnContext(input: LoadContextInput): Promise<TurnCont
   ]);
 
   // Load saved address in parallel only if delivery is plausible (order type not set or delivery)
-  const savedAddress = needsSavedAddress && (state.order_type === null || state.order_type === "delivery")
+  let savedAddress = needsSavedAddress && (state.order_type === null || state.order_type === "delivery")
     ? await getLatestSavedAddress(input.conversationId).catch(() => null)
     : null;
+  if (savedAddress && (!isValidDeliveryAddress(savedAddress.address) || !isValidDeliveryAddress(savedAddress.label))) {
+    savedAddress = null;
+  }
 
   const isOpenNow =
     settings.is_accepting_orders &&

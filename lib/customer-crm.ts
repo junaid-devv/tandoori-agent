@@ -42,13 +42,21 @@ function getAddressLabel(address: string) {
   return compact.length > 36 ? `${compact.slice(0, 33)}...` : compact;
 }
 
+export function isValidDeliveryAddress(address: string | null | undefined): boolean {
+  if (!address || typeof address !== "string") return false;
+  const trimmed = address.trim();
+  if (trimmed.length < 4) return false;
+  if (/^(addr:(?:new|saved:.*)|new|naya|naya\s+address|new\s+address)$/i.test(trimmed)) return false;
+  return true;
+}
+
 export async function saveCustomerAddressFromOrder(input: {
   conversationId: string;
   branchId: string;
   address: string | null;
 }) {
   const address = input.address?.trim();
-  if (!address) return;
+  if (!isValidDeliveryAddress(address)) return;
 
   const { data: conversation, error: conversationError } = await supabaseAdmin
     .from("conversations")
@@ -61,7 +69,7 @@ export async function saveCustomerAddressFromOrder(input: {
   }
 
   const now = new Date().toISOString();
-  const addressKey = normalizeAddressKey(address);
+  const addressKey = normalizeAddressKey(address!);
   const { data: existing, error: lookupError } = await supabaseAdmin
     .from("customer_addresses")
     .select("id, use_count")
@@ -79,8 +87,8 @@ export async function saveCustomerAddressFromOrder(input: {
     const { error } = await supabaseAdmin
       .from("customer_addresses")
       .update({
-        label: getAddressLabel(address),
-        address,
+        label: getAddressLabel(address!),
+        address: address!,
         use_count: Number(existing.use_count ?? 0) + 1,
         last_used_at: now,
       })
@@ -92,8 +100,8 @@ export async function saveCustomerAddressFromOrder(input: {
   const { error } = await supabaseAdmin.from("customer_addresses").insert({
     contact_id: conversation.contact_id,
     branch_id: input.branchId,
-    label: getAddressLabel(address),
-    address,
+    label: getAddressLabel(address!),
+    address: address!,
     address_key: addressKey,
     use_count: 1,
     last_used_at: now,
@@ -141,11 +149,12 @@ export async function getLatestSavedAddress(conversationId: string): Promise<Sav
     .select("id, label, address, last_used_at, use_count")
     .eq("contact_id", conversation.contact_id)
     .eq("branch_id", conversation.branch_id)
+    .not("address", "ilike", "addr:%")
     .order("last_used_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-  if (error || !data) return null;
-  return data as SavedAddress;
+    .limit(5);
+  if (error || !data || data.length === 0) return null;
+  const valid = data.find((d) => isValidDeliveryAddress(d.address) && isValidDeliveryAddress(d.label));
+  return (valid as SavedAddress) || null;
 }
 
 export function isUseSavedAddressRequest(text: string) {

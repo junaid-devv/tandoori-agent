@@ -322,12 +322,16 @@ async function processOneMessage(
   const nextLang = inferLanguagePreference(incomingContent, state.preferred_language);
   void contactRepo.setPreferredLanguage(contact.id, nextLang).catch(() => {});
 
-  // Processing lock (optimistic — if already held, skip this turn)
+  // Processing lock (wait for prior turn if active)
   const lockToken = await acquireLock(conversation.id);
   if (!lockToken) {
     console.warn("[webhook] Could not acquire processing lock, skipping turn:", conversation.id);
     return;
   }
+
+  // Refresh conversation state now that we hold the lock, ensuring we have the latest
+  // cart, stage, and order details from any turn that completed while we waited.
+  state = await stateRepo.ensure(conversation.id);
 
   try {
     const result = await runTurn({
@@ -357,7 +361,7 @@ async function processOneMessage(
 
     if (result.placeOrder) {
       void Promise.all([
-        saveCustomerAddressFromOrder({ conversationId: conversation.id, branchId: activeBranch.id, address: state.address }),
+        saveCustomerAddressFromOrder({ conversationId: conversation.id, branchId: activeBranch.id, address: result.address ?? state.address }),
         updateCustomerOrderStats({ conversationId: conversation.id, preferredLanguage: nextLang }),
       ]).catch((e) => console.error("[webhook] Post-order hooks failed:", e));
     }
@@ -741,9 +745,9 @@ function isValidWhatsAppSignature(rawBody: string, sig: string | null): boolean 
 // ---------------------------------------------------------------------------
 async function acquireLock(conversationId: string): Promise<string | null> {
   const token = crypto.randomUUID();
-  const staleThresholdMs = 90_000;
-  // Exponential backoff: 80ms, 160ms, 320ms, 640ms — 4 attempts, max ~1.2s total wait
-  const delays = [80, 160, 320, 640];
+  // Delays: wait up to ~12s with progressive backoff so rapid sequential messages from the same user
+  // wait for the active turn to finish and release the lock, rather than dropping the message.
+  const delays = [150, 250, 400, 600, 800, 1000, 1500, 2000, 2500, 3000];
   for (let i = 0; i <= delays.length; i++) {
     const now = new Date().toISOString();
     const stale = new Date(Date.now() - staleThresholdMs).toISOString();

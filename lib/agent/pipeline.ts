@@ -21,6 +21,7 @@ import type { ConversationStage } from "@/lib/schema.types";
 export interface TurnResult {
   replyText: string;
   stage: ConversationStage;
+  address?: string | null;
   placeOrder: boolean;
   escalate: boolean;
   intent: string;
@@ -606,6 +607,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   return {
     replyText: exec.replyText,
     stage: exec.statePatch.stage ?? ctx.state.stage,
+    address: exec.statePatch.address ?? ctx.state.address,
     placeOrder: exec.placeOrder,
     escalate: exec.escalate,
     intent: understanding.primary_intent,

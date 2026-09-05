@@ -34,6 +34,7 @@ import { findMatchingDeliveryArea, buildDeliveryAreaHint } from "./delivery";
 import { parseCustomerTimeToIso } from "@/lib/restaurant-time";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createStaffAlert } from "@/lib/staff-alerts";
+import { isValidDeliveryAddress } from "@/lib/customer-crm";
 
 export interface ExecutionResult {
   replyText: string;
@@ -675,7 +676,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             }
           }
         } else {
-          const saved = ctx.savedAddress;
+          const saved = ctx.savedAddress && isValidDeliveryAddress(ctx.savedAddress.address) && isValidDeliveryAddress(ctx.savedAddress.label) ? ctx.savedAddress : null;
           if (saved) {
             replies.push(reply.askAddressWithSaved(lang, saved.label));
             setInteractive({
