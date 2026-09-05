@@ -12,15 +12,7 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="relative overflow-hidden rounded-xl sm:rounded-2xl border border-slate-200 bg-white p-3.5 shadow-sm sm:px-5 sm:py-4">
-      <div
-        className="pointer-events-none absolute inset-y-0 right-0 hidden w-1/2 opacity-80 sm:block"
-        style={{
-          background:
-            "linear-gradient(135deg, rgba(234,88,12,0.12), rgba(255,247,237,0.32) 42%, transparent 70%)",
-          clipPath: "polygon(22% 0, 100% 0, 100% 100%, 0 100%)",
-        }}
-      />
+    <header className="relative overflow-hidden rounded-2xl border border-slate-200/80 bg-white p-4 shadow-xs sm:px-6 sm:py-4.5">
       <div className="relative flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
