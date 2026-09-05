@@ -122,7 +122,7 @@ function understandingFromInteractiveId(
     case "addr":
       if (val === "new") {
         // User wants to type a new address — tell FSM to prompt for it
-        return { ...base, intents: ["provide_address"], primary_intent: "provide_address" };
+        return { ...base, intents: ["provide_address"], primary_intent: "provide_address", notes: "prompt_new_address" };
       }
       if (val.startsWith("saved:")) {
         return {
@@ -328,7 +328,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       trimmed.length <= 150
     ) {
       // Detect "Naya Address" / "New address" button text or typed equivalent → prompt for address, don't capture
-      const isNewAddressRequest = /^(new|naya|naya\s+address|new\s+address)$/i.test(trimmed) || /^addr:(?:new|saved:.*)$/i.test(trimmed);
+      const isNewAddressRequest = /^(new|naya|naya\s+address|new\s+address)$/i.test(trimmed) || trimmed === "addr:new";
       // Detect questions — contains ?, or common question words → let NLU handle
       const isQuestion = /[?]|(?:^|\b)(?:kia|kya|kitna|kitni|kitnay|kab|konsa|konsi|kaisa|hai\s*(?:kia|kya)|time|timing|fee|charges|delivery|menu|deal|mein\s*(?:kia|kya)|main\s*(?:kia|kya)|batao|bata|dikhao|details|available|price|rate|open|close|band|khul)(?:\b|$)/i.test(trimmed);
       // Detect order type switches
@@ -342,7 +342,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
           ...makeBase(ctx.state.preferred_language),
           intents: ["provide_address"],
           primary_intent: "provide_address",
-          notes: "fast_path_new_address_request",
+          notes: "prompt_new_address",
         };
       } else if (!isQuestion && !isOrderTypeSwitch && !isEscalation) {
         // Treat as actual address

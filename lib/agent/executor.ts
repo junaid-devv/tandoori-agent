@@ -677,7 +677,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             }
           }
         } else {
-          const saved = ctx.savedAddress && isValidDeliveryAddress(ctx.savedAddress.address) && isValidDeliveryAddress(ctx.savedAddress.label) ? ctx.savedAddress : null;
+          const isNewAddressRequest = Boolean(
+            action.payload?.isNewAddressRequest ||
+            u.notes === "prompt_new_address" ||
+            u.notes === "fast_path_new_address_request"
+          );
+          const saved = !isNewAddressRequest && ctx.savedAddress && isValidDeliveryAddress(ctx.savedAddress.address) && isValidDeliveryAddress(ctx.savedAddress.label) ? ctx.savedAddress : null;
           if (saved) {
             replies.push(reply.askAddressWithSaved(lang, saved.label));
             setInteractive({

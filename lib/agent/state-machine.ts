@@ -256,10 +256,9 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
       nextStage = "confirming";
     }
   } else if (u.intents.includes("provide_address")) {
-    // Tap on "New Address" button — just prompt
-    if (!actions.some((a) => a.kind === "collect_delivery_address")) {
-      actions.push({ kind: "collect_delivery_address" });
-    }
+    // Tap on "New Address" button or typed "new address" — prompt for new address
+    actions.push({ kind: "collect_delivery_address", payload: { isNewAddressRequest: true } });
+    nextStage = "collecting_delivery";
   }
   if (u.guests || u.reservation_time) {
     actions.push({ kind: "collect_dinein_details", payload: { guests: u.guests, reservation_time: u.reservation_time } });
