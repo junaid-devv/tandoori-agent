@@ -425,12 +425,13 @@ export async function resolveItemDetailed(
     return { kind: "not_found", query: trimmed, suggestions: [] };
   }
 
-  // 1) Direct exact name match (e.g. "RAITA" -> item "RAITA", "Coke" -> "Coke")
+  // 1) Direct exact name match (e.g. "RAITA" -> item "RAITA", "Coke" -> "Coke", "Chicken Handi" -> "CHICKEN HANDI (BONELESS)")
   const exactMatch = relevantCandidates.find((c) => {
     const normCand = normalize(c.name);
+    const normBaseCand = normalize(extractBaseItemName(c.name).baseName);
     const normQ = normalize(trimmed);
     const normBaseQ = normalize(baseQuery);
-    return normCand === normQ || normCand === normBaseQ;
+    return normCand === normQ || normCand === normBaseQ || normBaseCand === normQ || normBaseCand === normBaseQ;
   });
 
   if (exactMatch) {
@@ -440,11 +441,11 @@ export async function resolveItemDetailed(
     }
     const sameBaseVariants = relevantCandidates.filter((c) => {
       const cBase = extractBaseItemName(c.name);
-      return cBase.baseName.toLowerCase() === exactMatch.name.toLowerCase() && cBase.variant !== null;
+      return cBase.baseName.toLowerCase() === extractBaseItemName(exactMatch.name).baseName.toLowerCase() && cBase.variant !== null;
     });
     if (sameBaseVariants.length > 1) {
       sameBaseVariants.sort((a, b) => a.price - b.price);
-      return { kind: "variants", baseName: exactMatch.name, variants: sameBaseVariants };
+      return { kind: "variants", baseName: extractBaseItemName(exactMatch.name).baseName, variants: sameBaseVariants };
     }
     return { kind: "exact", item: exactMatch, confidence: 1.0 };
   }
@@ -498,16 +499,19 @@ export async function resolveItemDetailed(
   }
 
   // 4) Check for broad/ambiguous query matching multiple distinct dishes
+  const candidatesCoveringQuery = relevantCandidates.filter((c) => queryTokensCoveredByName(trimmed, c.name));
   const distinctBases = [...new Set(relevantCandidates.slice(0, 5).map((c) => extractBaseItemName(c.name).baseName.toLowerCase()))];
-  const isBroadSingleWord = /^(karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|juice|dessert|fish|boti)$/i.test(trimmed);
-  const tokenCovered = relevantCandidates.find((c) => queryTokensCoveredByName(trimmed, c.name));
+  const isBroadSingleWord = /^(burger|burgers|pizza|pizzas|shawarma|roll|rolls|paratha|sandwich|sandwiches|pasta|fries|deal|deals|wrap|wraps|salad|salads|shake|shakes|karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|drinks|juice|dessert|fish|boti)$/i.test(trimmed);
 
-  if (tokenCovered) {
-    return { kind: "exact", item: tokenCovered, confidence: 0.95 };
+  // If multiple distinct dishes match the query (or the query is a broad generic dish/category term):
+  if (distinctBases.length > 1 && (isBroadSingleWord || candidatesCoveringQuery.length > 1)) {
+    const matches = (candidatesCoveringQuery.length > 1 ? candidatesCoveringQuery : relevantCandidates).slice(0, 5);
+    return { kind: "ambiguous", query: trimmed, matches };
   }
 
-  if (distinctBases.length > 1 && isBroadSingleWord) {
-    return { kind: "ambiguous", query: trimmed, matches: relevantCandidates.slice(0, 5) };
+  // If exactly ONE candidate uniquely covers all query tokens, it is an exact match:
+  if (candidatesCoveringQuery.length === 1) {
+    return { kind: "exact", item: candidatesCoveringQuery[0], confidence: 0.95 };
   }
 
   // 5) Single exact / clear best match

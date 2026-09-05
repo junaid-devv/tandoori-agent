@@ -589,6 +589,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Collect delivery address ─────────────────────────────────────────
       case "collect_delivery_address": {
+        if (hasDisambiguation) break;
         // Clear stale/invalid addresses that leaked from button payloads or previous bugs
         const currentAddr = patch.address ?? ctx.state.address;
         if (currentAddr && /^(addr:(new|saved:.*)|new|naya|naya\s+address|new\s+address)$/i.test(currentAddr.trim())) {
@@ -699,6 +700,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Collect dine-in details ──────────────────────────────────────────
       case "collect_dinein_details": {
+        if (hasDisambiguation) break;
         const guests = (action.payload?.guests as number | null | undefined) ?? u.guests ?? patch.guests;
         const rtime = (action.payload?.reservation_time as string | null | undefined) ?? u.reservation_time ?? patch.reservation_time;
         if (guests) patch.guests = guests;
@@ -762,6 +764,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Collect pickup time ──────────────────────────────────────────────
       case "collect_pickup_time": {
+        if (hasDisambiguation) break;
         const ptime = (action.payload?.pickup_time as string | undefined) ?? u.pickup_time;
         if (ptime) {
           patch.pickup_time = parseCustomerTimeToIso(ptime, ctx.settings.timezone);
@@ -1097,7 +1100,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   let finalReplies = replies.filter(Boolean);
   if (hasDisambiguation) {
     finalReplies = finalReplies.filter((r) => {
-      if (r.includes("Delivery address bhej") || r.includes("Please send your delivery address")) return false;
+      if (r.includes("Delivery address bhej") || r.includes("Please send your delivery address") || r.includes("Pichli dafa") || r.includes("Last time you used")) return false;
       if (r.includes("Pickup kis waqt") || r.includes("What time will you pick up")) return false;
       if (r.includes("Kitne log") || r.includes("How many guests")) return false;
       return true;

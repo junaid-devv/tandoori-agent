@@ -180,6 +180,14 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
     if (allSlotsReady) {
       actions.push({ kind: "show_summary" });
       nextStage = "confirming";
+    } else if (view.order_type) {
+      const missing = missingSlot(view);
+      if (missing) {
+        actions.push(promptForStage(missing));
+        nextStage = missing;
+      } else {
+        nextStage = "building_cart";
+      }
     } else {
       nextStage = "building_cart";
     }
