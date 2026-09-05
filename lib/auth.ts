@@ -179,18 +179,18 @@ export const getDashboardSession = cache(async (): Promise<DashboardSession> => 
 
   if (allowedBranches.length === 0) {
     allowedBranches.push({
-      id: "default-branch-id",
-      slug: "tandoori-islamabad",
-      name: "Tandoori Hub",
-      city: "Islamabad",
-      address: "Sector F-6/2, Islamabad",
+      id: "92de8ae3-eac0-4b31-8e13-a1c3557c7c5c",
+      slug: "cheesybox-wah",
+      name: "Cheesy Box — Wah Branch",
+      city: "Wah Cantt",
+      address: "Wah Cantt (Dine In, Take Away & Delivery)",
     });
   }
 
   return {
     userId: "auto-login-admin",
-    email: "demo_admin@tandoori.pk",
-    fullName: "Demo Admin",
+    email: "admin@cheesybox.pk",
+    fullName: "Cheesy Box Admin",
     role: "admin",
     defaultBranchId: allowedBranches[0]?.id ?? "default-branch-id",
     allowedBranches,

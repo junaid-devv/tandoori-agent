@@ -1,0 +1,154 @@
+{
+  "restaurant": {
+    "name": "Cheesy Box",
+    "tagline": "Fast Food Cafe",
+    "brand_color": "#F59E0B",
+    "brand_hover_color": "#D97706",
+    "logo_url": "/cheesybox-logo.png",
+    "branches": [
+      {
+        "name": "Cheesy Box — Wah Branch",
+        "slug": "cheesybox-wah",
+        "city": "Wah Cantt",
+        "address": "Wah Cantt (Dine In, Take Away & Delivery)",
+        "phone_delivery": "0345 1875536",
+        "phone_dinein": "0345 1875536"
+      },
+      {
+        "name": "Cheesy Box — Rawalpindi Branch",
+        "slug": "cheesybox-rawalpindi",
+        "city": "Rawalpindi",
+        "address": "Rawalpindi (Dine In, Take Away & Delivery)",
+        "phone_delivery": "0319 5641187",
+        "phone_dinein": "0319 5641187"
+      }
+    ]
+  },
+  "categories": [
+    { "name": "Exclusive Deals", "sort_order": 1 },
+    { "name": "Weekly Deals", "sort_order": 2 },
+    { "name": "Crown Crust Deals", "sort_order": 3 },
+    { "name": "Special Festive Deals", "sort_order": 4 }
+  ],
+  "items": [
+    {
+      "name": "Deal 1 — Cheesy Feast (Large Tikka Pizza + Loaded Fries + 6 Wings + 1.5L Drink)",
+      "price": 2699,
+      "category": "Exclusive Deals",
+      "description": "Items included: 1 Large Tikka Pizza, 1 Large Loaded Fries, 6 Crispy Wings, 1 1.5 Liter Next Cola. The ultimate cheesy feast, big in size and bigger in taste!",
+      "is_available": true
+    },
+    {
+      "name": "Deal 1 — Double Large Pizza (2 Large Pizzas)",
+      "price": 2000,
+      "category": "Exclusive Deals",
+      "description": "Items included: 2 Large Pizzas. Baked to perfection with premium ingredients. Double the pizza, double the happiness!",
+      "is_available": true
+    },
+    {
+      "name": "Deal 2 — Zinger & Pizza Feast (Medium Pizza + 4 Zingers + 1.5L Drink)",
+      "price": 2400,
+      "category": "Exclusive Deals",
+      "description": "Items included: 1 Medium Pizza, 4 Zinger Burgers, 1 1.5 Liter Next Cola. More cheese, more happiness!",
+      "is_available": true
+    },
+    {
+      "name": "Deal 3 — Giant Party Feast (Large Pizza + 4 Zingers + 10 Wings + 1.5L Drink)",
+      "price": 3499,
+      "category": "Exclusive Deals",
+      "description": "Items included: 1 Large Pizza, 4 Crispy Zingers, 10 Crispy Wings, 1 1.5 Liter Next Cola. Big in size, bigger in taste!",
+      "is_available": true
+    },
+    {
+      "name": "Deal 4 — Crown Crust Feast (Large Crown Crust + 2 Zingers + 6 Wings + 2 Dips)",
+      "price": 2699,
+      "category": "Crown Crust Deals",
+      "description": "Items included: 1 Large Crown Crust Pizza, 2 Zinger Burgers, 6 Crispy Wings, 2 Dips. More cheese, more happiness!",
+      "is_available": true
+    },
+    {
+      "name": "Deal 5 — 2 Small Crown Crust Pizzas",
+      "price": 999,
+      "category": "Crown Crust Deals",
+      "description": "Items included: 2 Small Crown Crust Pizzas with melted cheese pockets and delicious toppings. Big in size, bigger in taste!",
+      "is_available": true
+    },
+    {
+      "name": "Deal 6 — 2 Medium Crown Crust Pizzas",
+      "price": 1800,
+      "category": "Crown Crust Deals",
+      "description": "Items included: 2 Medium Crown Crust Pizzas with mouthwatering crown crust. Big in size, bigger in taste!",
+      "is_available": true
+    },
+    {
+      "name": "Deal 7 — Zinger & Wings Box (2 Zingers + Large Fries + 6 Wings + 2 Drinks + 2 Dips)",
+      "price": 1500,
+      "category": "Exclusive Deals",
+      "description": "Items included: 2 Zinger Burgers, 1 Large Fries, 6 Crispy Wings, 2 Regular Cold Drinks, 2 Dips. More cheese, more happiness!",
+      "is_available": true
+    },
+    {
+      "name": "Deal 8 — Mega Burger Bash (4 Zingers + 4 Patty Burgers + 1.5L Drink)",
+      "price": 2499,
+      "category": "Exclusive Deals",
+      "description": "Items included: 4 Zinger Burgers, 4 Chicken Patty Burgers, 1 1.5 Liter Next Cola. Big in size, bigger in taste!",
+      "is_available": true
+    },
+    {
+      "name": "Weekly Deal — Zinger & Patty Combo (1 Zinger + 1 Patty + 1 Cold Drink)",
+      "price": 600,
+      "category": "Weekly Deals",
+      "description": "Items included: 1 Zinger Burger, 1 Chicken Patty Burger, 1 NR Cold Drink (Next Cola). More flavor, more crunch, more happiness!",
+      "is_available": true
+    },
+    {
+      "name": "Weekly Deal — 2 Small Pizzas",
+      "price": 799,
+      "category": "Weekly Deals",
+      "description": "Items included: 2 Small Pizzas. Premium ingredients, fresh & hot, baked to perfection. Small size, big happiness!",
+      "is_available": true
+    },
+    {
+      "name": "Weekly Deal — 2 Medium Pizzas",
+      "price": 1600,
+      "category": "Weekly Deals",
+      "description": "Items included: 2 Medium Pizzas. Premium ingredients, fresh & hot, baked to perfection. Double the pizza, double the happiness!",
+      "is_available": true
+    },
+    {
+      "name": "Weekly Deal — 2 Large Pizzas",
+      "price": 2000,
+      "category": "Weekly Deals",
+      "description": "Items included: 2 Large Pizzas. Premium ingredients, fresh & hot, baked to perfection. Double the pizza, double the happiness!",
+      "is_available": true
+    },
+    {
+      "name": "Weekly Deal — 2 Zingers & 6 Crispy Wings",
+      "price": 1000,
+      "category": "Weekly Deals",
+      "description": "Items included: 2 Zinger Burgers, 6 Crispy Wings. 100% real chicken, fresh ingredients, crispy & delicious.",
+      "is_available": true
+    },
+    {
+      "name": "Weekly Deal — 5 Chicken Patty Burgers",
+      "price": 1199,
+      "category": "Weekly Deals",
+      "description": "Items included: 5 Chicken Patty Burgers. 100% chicken, fresh ingredients, hot & delicious, made to perfection.",
+      "is_available": true
+    },
+    {
+      "name": "Weekly Deal — Pizza Combo (1 Medium Pizza + 1 Small Pizza + 1L Drink)",
+      "price": 1499,
+      "category": "Weekly Deals",
+      "description": "Items included: 1 Medium Pizza, 1 Small Pizza, 1 Liter Cold Drink (Next Cola). Double the pizza, double the happiness!",
+      "is_available": true
+    },
+    {
+      "name": "Independence Day Deal (2 Small Pizzas + 6 Oven Baked Wings)",
+      "price": 1200,
+      "category": "Special Festive Deals",
+      "description": "Items included: 2 Small Pizzas, 6 Oven Baked Wings. Celebrate freedom with great food!",
+      "is_available": true
+    }
+  ]
+}
