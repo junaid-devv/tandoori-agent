@@ -745,6 +745,7 @@ function isValidWhatsAppSignature(rawBody: string, sig: string | null): boolean 
 // ---------------------------------------------------------------------------
 async function acquireLock(conversationId: string): Promise<string | null> {
   const token = crypto.randomUUID();
+  const staleThresholdMs = 90_000;
   // Delays: wait up to ~12s with progressive backoff so rapid sequential messages from the same user
   // wait for the active turn to finish and release the lock, rather than dropping the message.
   const delays = [150, 250, 400, 600, 800, 1000, 1500, 2000, 2500, 3000];
