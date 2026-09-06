@@ -257,8 +257,8 @@ export function detectUniversityFastPath(userMessage: string): FastPathResult | 
       replyButtons: {
         body: "Select what you would like to know:",
         buttons: [
-          { id: "btn:programs", title: "📚 Programs Offered" },
-          { id: "btn:eligibility", title: "🎓 Eligibility Criteria" },
+          { id: "btn:programs", title: "📚 Programs" },
+          { id: "btn:eligibility", title: "🎓 Eligibility" },
           { id: "btn:procedure", title: "📝 How to Apply" },
         ],
       },

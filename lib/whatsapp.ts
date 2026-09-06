@@ -64,7 +64,7 @@ export async function sendWhatsAppMessage(to: string, body: string, phoneNumberI
       raw: { mock: true },
     };
   }
-  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {
@@ -175,7 +175,7 @@ export async function sendWhatsAppInteractiveList(
       raw: { mock: true },
     };
   }
-  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {
@@ -274,7 +274,7 @@ export async function sendWhatsAppReplyButtons(
       raw: { mock: true },
     };
   }
-  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {
