@@ -126,14 +126,14 @@ export async function processUniversityWebhookMessage({
     return;
   }
 
-  // 6. Conversational AI Counselor for multi-turn custom queries
-  // Load recent message history
+  // Load prior message history (excluding the current turn just inserted)
   const { data: recentMsgs } = await supabaseAdmin
     .from("messages")
     .select("role, content")
     .eq("conversation_id", conversationId)
+    .neq("whatsapp_msg_id", rawMessageId ?? "no_match")
     .order("created_at", { ascending: true })
-    .limit(10);
+    .limit(8);
 
   const history: ChatHistoryMessage[] = (recentMsgs ?? []).map((m) => ({
     role: m.role as "user" | "assistant",

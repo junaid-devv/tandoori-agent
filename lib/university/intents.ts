@@ -37,13 +37,13 @@ export function detectUniversityFastPath(userMessage: string): FastPathResult | 
   const raw = userMessage.trim().toLowerCase();
   const daysLeft = getDaysRemainingUntilDeadline();
 
-  // 1. Button Payloads
-  if (raw === "btn:programs" || raw === "programs" || raw === "courses") {
+  // 1. Interactive Button Clicks (Exact payload matches only)
+  if (raw === "btn:programs") {
     return {
       intent: "ask_programs",
       textReply:
         `📚 *SARHAD UNIVERSITY – FALL 2026 PROGRAMS OFFERED*\n\n` +
-        `The following programs are available for Fall 2026 at DEC Gilgit:\n\n` +
+        `DEC Alam Public School & College, Jutial, Gilgit mein mandrja-zail programs available hain:\n\n` +
         `1️⃣ *BBA* (Business Administration)\n` +
         `2️⃣ *B.Ed* (Bachelor of Education)\n` +
         `3️⃣ *English* (Literature & Linguistics)\n` +
@@ -51,126 +51,124 @@ export function detectUniversityFastPath(userMessage: string): FastPathResult | 
         `5️⃣ *Urdu*\n` +
         `6️⃣ *Health & Physical Education*\n\n` +
         `🎓 *Degree Options:*\n` +
-        `• *After FA/FSc:* 2-Year Associate Degree (ADP) or 4-Year BS\n` +
-        `• *After Graduation:* 2.5-Year BS Program\n\n` +
-        `📍 *Center:* DEC Alam Public School & College, Jutial, Gilgit\n` +
-        `⏰ *Last Date:* 10 September 2026 (${daysLeft} days left!)\n\n` +
+        `• *After FA/FSc (Min 45%):* 2-Year Associate Degree (ADP) ya 4-Year BS\n` +
+        `• *After Graduation (Min 45%):* 2.5-Year BS Bridge Program\n\n` +
+        `🗓️ *Last Date:* 10 September 2026 (${daysLeft} din baqi hain!)\n\n` +
         `Aap kis program mein admission lena chahtay hain?`,
       replyButtons: {
-        body: "Select an option below to proceed:",
+        body: "Agla step select karein:",
         buttons: [
-          { id: "btn:eligibility", title: "Check Eligibility" },
-          { id: "btn:procedure", title: "How to Apply" },
-          { id: "btn:location", title: "DEC Center Gilgit" },
+          { id: "btn:eligibility", title: "🎓 Eligibility" },
+          { id: "btn:procedure", title: "📝 How to Apply" },
+          { id: "btn:location", title: "📍 DEC Gilgit" },
         ],
       },
     };
   }
 
-  if (raw === "btn:eligibility" || raw === "eligibility" || raw.includes("criteria") || raw.includes("marks kitne")) {
+  if (raw === "btn:eligibility") {
     return {
       intent: "ask_eligibility",
       textReply:
         `✅ *SARHAD UNIVERSITY – ELIGIBILITY CRITERIA*\n\n` +
         `• *Minimum Requirement:* *45% Marks* in previous qualification.\n\n` +
-        `🎓 *Options by Qualification:*\n` +
-        `1️⃣ *After FA / FSc / ICS / I.Com (Min 45%):*\n` +
-        `   • *2-Year Associate Degree Program (ADP)* — equivalent to Graduation\n` +
-        `   • *4-Year BS Program*\n\n` +
-        `2️⃣ *After 2-Year Graduation / BA / BSc (Min 45%):*\n` +
-        `   • *2.5-Year BS Program* (convert to 16-year BS Honours)\n\n` +
-        `Apni previous qualification (FA/FSc ya Graduation) aur percentage batayein taa k hum aap ka admission guide kar sakein!`,
+        `🎓 *Degree Pathways:*\n` +
+        `1️⃣ *FA / FSc / ICS / I.Com k baad:*\n` +
+        `   • 2-Year Associate Degree (ADP) — Graduation equivalent\n` +
+        `   • 4-Year BS Program\n\n` +
+        `2️⃣ *2-Year Graduation (BA/BSc) k baad:*\n` +
+        `   • 2.5-Year BS Program (16-year BS Honours degree)\n\n` +
+        `Apni previous qualification (FA/FSc ya Graduation) aur percentage batayein taa k hum mazeed guide karein!`,
       replyButtons: {
-        body: "Choose your background:",
+        body: "Apni qualification select karein:",
         buttons: [
-          { id: "btn:qual_fa", title: "I have FA / FSc" },
-          { id: "btn:qual_grad", title: "I have Graduation" },
-          { id: "btn:procedure", title: "Admission Steps" },
+          { id: "btn:qual_fa", title: "1️⃣ FA / FSc" },
+          { id: "btn:qual_grad", title: "2️⃣ Graduation" },
+          { id: "btn:procedure", title: "📝 How to Apply" },
         ],
       },
     };
   }
 
-  if (raw === "btn:procedure" || raw === "admission procedure" || raw.includes("apply kaise") || raw.includes("how to apply")) {
+  if (raw === "btn:procedure") {
     return {
       intent: "ask_procedure",
       textReply:
-        `📝 *SARHAD UNIVERSITY – ADMISSION PROCEDURE (FALL 2026)*\n\n` +
-        `1. Apni qualification k mutabiq desired program select karein.\n` +
-        `2. *DEC Alam Public School & College, Jutial, Gilgit* visit karein guidance & registration k liye.\n` +
+        `📝 *ADMISSION PROCEDURE (FALL 2026)*\n\n` +
+        `1. Desired program select karein.\n` +
+        `2. *DEC Alam Public School & College, Jutial, Gilgit* visit karein.\n` +
         `3. Educational documents (DMC, CNIC/B-form, Photos) submit karein.\n` +
-        `4. Admission confirm hone k baad aapko *LMS ID* mil jayegi.\n` +
-        `5. *LMS par recorded video lectures* available honge jo aap apnay schedule k mutabiq kisi bhi waqt dekh saktay hain.\n` +
+        `4. Admission confirm hotay hi *LMS ID* mil jaye gi.\n` +
+        `5. LMS par 24/7 recorded video lectures available hotay hain.\n` +
         `6. Course outline receive karein (har subject k ~25 prescribed topics).\n` +
-        `7. Semester end par DEC center mein 70-mark paper appear karein.\n\n` +
+        `7. Semester end par DEC Gilgit center mein 70-mark paper appear karein.\n\n` +
         `⏰ *Last Date:* 10 September 2026!`,
       replyButtons: {
-        body: "Next steps:",
+        body: "Mazeed maloomat:",
         buttons: [
-          { id: "btn:classes", title: "Class Schedule" },
-          { id: "btn:location", title: "DEC Center Info" },
-          { id: "btn:counselor", title: "Talk to Counselor" },
+          { id: "btn:classes", title: "🏫 Sunday Classes" },
+          { id: "btn:location", title: "📍 DEC Gilgit" },
+          { id: "btn:programs", title: "📚 Programs" },
         ],
       },
     };
   }
 
-  if (raw === "btn:classes" || raw.includes("sunday") || raw.includes("job") || raw.includes("classes timing") || raw.includes("class schedule")) {
+  if (raw === "btn:classes") {
     return {
       intent: "ask_classes_schedule",
       textReply:
         `🏫 *CLASSES & DISTANCE LEARNING SYSTEM*\n\n` +
-        `⭐ *Ye Distance Learning Program hai*, jo khaas tor par job holders, teachers aur regular classes na lene walay students k liye banaya gaya hai!\n\n` +
-        `💻 *Online LMS:* Recorded video lectures 24/7 available hotay hain. Aap apni marzi k waqt study kar saktay hain.\n\n` +
-        `📌 *Sunday Physical Classes:* DEC Alam Public School & College, Jutial, Gilgit mein har Sunday physical classes hoti hain.\n` +
-        `➡️ *Sunday classes bilkul OPTIONAL hain!* Jo students Sunday attend nahi kar saktay wo LMS lectures se complete study kar saktay hain.\n\n` +
-        `Is flexible system ki wajah se aap job k sath easily degree mukamal kar saktay hain!`,
+        `⭐ Ye distance learning program hai jo job holders aur teachers k liye ideal hai!\n\n` +
+        `💻 *Online LMS:* Recorded lectures 24/7 available hotay hain. Aap apni marzi k waqt study kar saktay hain.\n\n` +
+        `📌 *Sunday Classes:* DEC Alam Public School Jutial mein har Sunday physical classes hoti hain jo k *100% OPTIONAL* hain.\n\n` +
+        `Aap bina Sunday attend kiye bhi pura degree program LMS k zariye mukamal kar saktay hain!`,
       replyButtons: {
-        body: "Explore more:",
+        body: "Explore karein:",
         buttons: [
-          { id: "btn:programs", title: "View Programs" },
-          { id: "btn:location", title: "Center Location" },
-          { id: "btn:eligibility", title: "Check Eligibility" },
+          { id: "btn:programs", title: "📚 Programs" },
+          { id: "btn:location", title: "📍 DEC Gilgit" },
+          { id: "btn:eligibility", title: "🎓 Eligibility" },
         ],
       },
     };
   }
 
-  if (raw === "btn:location" || raw.includes("kahan hai") || raw.includes("address") || raw.includes("location") || raw.includes("jutial") || raw.includes("alam public")) {
+  if (raw === "btn:location") {
     return {
       intent: "ask_location",
       textReply:
-        `📍 *SARHAD UNIVERSITY ADMISSION CENTER (DEC GILGIT)*\n\n` +
+        `📍 *SARHAD UNIVERSITY DEC GILGIT CENTER*\n\n` +
         `🏫 *Distance Education Center (DEC)*\n` +
         `Alam Public School & College, Jutial, Gilgit.\n\n` +
         `🗓️ *Fall 2026 Admissions Open!*\n` +
-        `⏰ *Last Date to Apply:* *10 September 2026* (${daysLeft} din baqi hain!)\n\n` +
-        `Admissions limited session k liye hain. Apnay educational documents k sath DEC Alam Public School & College Jutial visit farmaein taa k registration process mukamal ho sakay.`,
+        `⏰ *Last Date:* *10 September 2026* (${daysLeft} din baqi hain!)\n\n` +
+        `Apnay educational documents k sath DEC Alam Public School Jutial visit farmaein taa k registration process mukamal ho sakay.`,
       replyButtons: {
         body: "Quick options:",
         buttons: [
-          { id: "btn:programs", title: "Programs List" },
-          { id: "btn:procedure", title: "Admission Steps" },
-          { id: "btn:counselor", title: "Call Counselor" },
+          { id: "btn:programs", title: "📚 Programs" },
+          { id: "btn:procedure", title: "📝 How to Apply" },
+          { id: "btn:eligibility", title: "🎓 Eligibility" },
         ],
       },
     };
   }
 
-  if (raw === "btn:dates" || raw.includes("last date") || raw.includes("deadline") || raw.includes("kab tak")) {
+  if (raw === "btn:dates") {
     return {
       intent: "ask_deadline",
       textReply:
         `🗓️ *IMPORTANT ADMISSION DEADLINE*\n\n` +
-        `⏰ *Last Date for Admission:* *10 September 2026*\n` +
-        `📍 *Location:* DEC Alam Public School & College, Jutial, Gilgit\n\n` +
-        `⚠️ *Note:* Fall 2026 session k liye seats limited hain. Last date ka intezar na karein aur jald az jald apni registration confirm karein!`,
+        `⏰ *Last Date for Admission:* *10 September 2026* (${daysLeft} din baqi hain!)\n` +
+        `📍 *Center:* DEC Alam Public School & College, Jutial, Gilgit\n\n` +
+        `Fall 2026 session k liye seats limited hain, is liye last date se pehle apni registration confirm karein!`,
       replyButtons: {
-        body: "Apply before deadline:",
+        body: "Apply karein:",
         buttons: [
-          { id: "btn:programs", title: "View Programs" },
-          { id: "btn:procedure", title: "How to Apply" },
-          { id: "btn:location", title: "Center Location" },
+          { id: "btn:programs", title: "📚 Programs" },
+          { id: "btn:procedure", title: "📝 How to Apply" },
+          { id: "btn:location", title: "📍 DEC Gilgit" },
         ],
       },
     };
@@ -180,23 +178,20 @@ export function detectUniversityFastPath(userMessage: string): FastPathResult | 
     return {
       intent: "ask_eligibility",
       textReply:
-        `🎓 *Options for FA / FSc / ICS / I.Com Students (Min 45% Marks):*\n\n` +
-        `1️⃣ *2-Year Associate Degree Program (ADP)*\n` +
-        `   • 4 Semesters — Equivalent to traditional 2-year Graduation\n` +
-        `   • Career-oriented and fast-track\n\n` +
-        `2️⃣ *4-Year BS Program*\n` +
-        `   • 8 Semesters — Complete 16-Year Honours Degree\n\n` +
+        `🎓 *Options for FA / FSc Students (Min 45% Marks):*\n\n` +
+        `1️⃣ *2-Year Associate Degree (ADP)* — Graduation equivalent\n` +
+        `2️⃣ *4-Year BS Program* — Complete Honours degree\n\n` +
         `Available Fields: BBA, B.Ed, English, Urdu, Education, Health & Physical Education.\n\n` +
-        `Aap kis subject mein interest rakhtay hain? Aur aap ka shubh naam kya hai?`,
+        `Aap kis program mein interested hain?`,
       extractedLeadData: {
         qualification: "FA/FSc",
       },
       replyButtons: {
-        body: "Choose your preferred path:",
+        body: "Programs dekhein:",
         buttons: [
-          { id: "btn:programs", title: "Available Programs" },
-          { id: "btn:procedure", title: "How to Apply" },
-          { id: "btn:location", title: "DEC Center Gilgit" },
+          { id: "btn:programs", title: "📚 Programs" },
+          { id: "btn:procedure", title: "📝 How to Apply" },
+          { id: "btn:location", title: "📍 DEC Gilgit" },
         ],
       },
     };
@@ -206,44 +201,38 @@ export function detectUniversityFastPath(userMessage: string): FastPathResult | 
     return {
       intent: "ask_eligibility",
       textReply:
-        `🎓 *Options for Graduation / BA / BSc / B.Com Students (Min 45% Marks):*\n\n` +
+        `🎓 *Options for Graduation / BA / BSc Students (Min 45% Marks):*\n\n` +
         `✅ *2.5-Year BS Program (Bridge Degree)*\n` +
-        `• 5 Semesters\n` +
-        `• Converts your 14-year education into a full 16-year HEC-recognized BS Honours Degree!\n\n` +
+        `• 5 Semesters — Converts 14-year education to full 16-year HEC-recognized BS Honours Degree!\n\n` +
         `Available Fields: BBA, B.Ed, English, Urdu, Education, Health & Physical Education.\n\n` +
-        `LMS par flexible recorded lectures hain, jo working teachers aur professionals k liye ideal hain.\n\n` +
-        `Aap ka naam kya hai aur aap kis program mein admission lena chahtay hain?`,
+        `Aap kis program mein admission lena chahtay hain?`,
       extractedLeadData: {
         qualification: "Graduation (BA/BSc)",
       },
       replyButtons: {
-        body: "Next actions:",
+        body: "Agla step:",
         buttons: [
-          { id: "btn:programs", title: "View Programs" },
-          { id: "btn:procedure", title: "Admission Steps" },
-          { id: "btn:location", title: "DEC Center Gilgit" },
+          { id: "btn:programs", title: "📚 Programs" },
+          { id: "btn:procedure", title: "📝 How to Apply" },
+          { id: "btn:location", title: "📍 DEC Gilgit" },
         ],
       },
     };
   }
 
-  // 2. Ad Greetings & Welcome (e.g. clicks from sponsored Facebook/Instagram ads)
-  const isAdClick =
-    raw.includes("ad") ||
-    raw.includes("sponsored") ||
-    raw.includes("facebook") ||
-    raw.includes("instagram") ||
-    raw.includes("sarhad university") ||
-    raw.includes("admissions open") ||
+  // 2. Pure Greetings (only when user sends pure hello/hi with no query attached)
+  const isPureGreeting =
     raw === "hi" ||
     raw === "hello" ||
     raw === "salam" ||
     raw === "aoa" ||
+    raw === "a.o.a" ||
     raw === "assalam o alaikum" ||
     raw === "assalam-o-alaikum" ||
-    raw === "hey";
+    raw === "hey" ||
+    raw === "start";
 
-  if (isAdClick && raw.length < 150) {
+  if (isPureGreeting) {
     return {
       intent: "ad_greeting",
       textReply:
@@ -265,5 +254,6 @@ export function detectUniversityFastPath(userMessage: string): FastPathResult | 
     };
   }
 
+  // ALL other natural questions, inquiries, and conversations flow to LLM Counselor!
   return null;
 }
