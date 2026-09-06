@@ -7,6 +7,7 @@ import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
+import UniversityAdmissionsDashboard from "@/app/admissions/page";
 
 const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
   received: { label: "New", bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
@@ -58,6 +59,10 @@ const ALERT_KIND_LABELS: Record<string, string> = {
 };
 
 export default function DashboardPage() {
+  if (process.env.NEXT_PUBLIC_APP_MODE === "university") {
+    return <UniversityAdmissionsDashboard />;
+  }
+
   const { selectedBranchId, selectedBranch } = useDashboardContext();
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [localAlerts, setLocalAlerts] = useState<StaffAlert[] | null>(null);

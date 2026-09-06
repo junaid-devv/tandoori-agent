@@ -54,6 +54,7 @@ import {
 import { normalizeText } from "@/lib/order-text-utils";
 import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import { downloadWhatsAppMedia, getWhatsAppMediaUrl } from "@/lib/whatsapp";
+import { processUniversityWebhookMessage } from "@/lib/university/pipeline";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
@@ -201,6 +202,26 @@ async function processWebhook(body: unknown) {
 
   const events = extractMessages(body);
   if (events.length === 0) return;
+
+  // University Admissions Mode
+  if (process.env.APP_MODE === "university") {
+    for (const { message, contactName } of events) {
+      try {
+        const incomingContent = await extractContent(message);
+        if (incomingContent) {
+          await processUniversityWebhookMessage({
+            phone: message.from,
+            contactName,
+            messageContent: incomingContent,
+            rawMessageId: message.id,
+          });
+        }
+      } catch (error) {
+        console.error("[webhook-university] Failed to process message:", { from: message.from, error });
+      }
+    }
+    return;
+  }
 
   // Fetch branches + profile in parallel with short process-level cache
   const [branches, profile] = await Promise.all([getCachedBranches(), getCachedProfile()]);
