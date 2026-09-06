@@ -33,7 +33,7 @@ export interface FastPathResult {
   };
 }
 
-export function detectUniversityFastPath(userMessage: string): FastPathResult | null {
+export function detectUniversityFastPath(userMessage: string, hasPriorMessages = false): FastPathResult | null {
   const raw = userMessage.trim().toLowerCase();
   const daysLeft = getDaysRemainingUntilDeadline();
 
@@ -220,29 +220,31 @@ export function detectUniversityFastPath(userMessage: string): FastPathResult | 
     };
   }
 
-  // 2. Pure Greetings (only when user sends pure hello/hi with no query attached)
-  const isPureGreeting =
-    raw === "hi" ||
-    raw === "hello" ||
-    raw === "salam" ||
+  // 2. Initial Greetings (ONLY on first message of a conversation)
+  const isIslamicGreeting =
     raw === "aoa" ||
     raw === "a.o.a" ||
+    raw === "salam" ||
+    raw === "slaam" ||
     raw === "assalam o alaikum" ||
     raw === "assalam-o-alaikum" ||
+    raw === "assalamu alaikum" ||
+    raw === "asalam alaikum";
+
+  const isEnglishGreeting =
+    raw === "hi" ||
+    raw === "hello" ||
     raw === "hey" ||
     raw === "start";
 
-  if (isPureGreeting) {
+  if (!hasPriorMessages && (isIslamicGreeting || isEnglishGreeting)) {
+    const salutation = isIslamicGreeting ? "Walaikum Assalam!" : "Hello! Assalam-o-Alaikum!";
     return {
       intent: "ad_greeting",
       textReply:
-        `📢 *SARHAD UNIVERSITY – FALL 2026 ADMISSIONS*\n` +
-        `🎓 *Distance Education Center (DEC) Gilgit*\n\n` +
-        `Assalam-o-Alaikum! Sarhad University DEC Alam Public School & College, Jutial, Gilgit mein Fall 2026 k admissions OPEN hain.\n\n` +
-        `🗓️ *Last Date:* 10 September 2026 (${daysLeft} din baqi hain!)\n` +
-        `✅ *Eligibility:* Minimum 45% marks\n` +
-        `💻 *System:* Distance learning with LMS video lectures + Optional Sunday classes\n\n` +
-        `Hum aap ki kis tarah rehnumai kar saktay hain? Niche diye gaye buttons se select karein ya apna sawal likhein:`,
+        `${salutation} Sarhad University DEC Gilgit mein khush-amdeed.\n\n` +
+        `Fall 2026 admissions open hain (Last Date: 10 September). Yahan LMS recorded lectures aur optional Sunday physical classes k sath degree hoti hai.\n\n` +
+        `Aap kis program k baray mein maloomat lena chahtay hain?`,
       replyButtons: {
         body: "Select what you would like to know:",
         buttons: [
@@ -254,6 +256,6 @@ export function detectUniversityFastPath(userMessage: string): FastPathResult | 
     };
   }
 
-  // ALL other natural questions, inquiries, and conversations flow to LLM Counselor!
+  // ALL other inquiries and ongoing conversation turns flow to LLM Counselor!
   return null;
 }

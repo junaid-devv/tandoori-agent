@@ -94,8 +94,17 @@ export async function processUniversityWebhookMessage({
     return;
   }
 
-  // 5. Try 0ms Fast-Path intent matcher
-  const fastPath = detectUniversityFastPath(messageContent);
+  // Check if conversation has prior history
+  const { count: priorMsgCount } = await supabaseAdmin
+    .from("messages")
+    .select("*", { count: "exact", head: true })
+    .eq("conversation_id", conversationId)
+    .neq("whatsapp_msg_id", rawMessageId ?? "none");
+
+  const hasPriorMessages = (priorMsgCount ?? 0) > 0;
+
+  // 5. Try 0ms Fast-Path intent matcher (buttons only if prior messages exist)
+  const fastPath = detectUniversityFastPath(messageContent, hasPriorMessages);
   if (fastPath) {
     let replyText = fastPath.textReply;
     let buttons = fastPath.replyButtons;
