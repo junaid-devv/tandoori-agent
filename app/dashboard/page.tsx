@@ -59,7 +59,11 @@ const ALERT_KIND_LABELS: Record<string, string> = {
 };
 
 export default function DashboardPage() {
-  if (process.env.NEXT_PUBLIC_APP_MODE === "university") {
+  if (
+    process.env.NEXT_PUBLIC_APP_MODE === "university" ||
+    process.env.APP_MODE === "university" ||
+    process.env.NEXT_PUBLIC_APP_NAME?.toLowerCase().includes("university")
+  ) {
     return <UniversityAdmissionsDashboard />;
   }
 

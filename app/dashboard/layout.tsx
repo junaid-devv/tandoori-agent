@@ -7,6 +7,10 @@ import { getRestaurantProfile } from "@/lib/restaurant-profile";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
+  if (process.env.APP_MODE === "university" || process.env.NEXT_PUBLIC_APP_MODE === "university") {
+    return <>{children}</>;
+  }
+
   const [session, profile] = await Promise.all([
     requireDashboardSession(),
     getRestaurantProfile(),
