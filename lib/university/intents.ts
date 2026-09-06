@@ -259,3 +259,93 @@ export function detectUniversityFastPath(userMessage: string, hasPriorMessages =
   // ALL other inquiries and ongoing conversation turns flow to LLM Counselor!
   return null;
 }
+
+export function getContextualReplyButtons(
+  userMessage: string,
+  botReplyText: string
+): WhatsAppReplyButtonPayload {
+  const rawUser = userMessage.toLowerCase().trim();
+  const rawBot = botReplyText.toLowerCase();
+
+  // If discussing programs or degrees
+  if (
+    rawUser.includes("program") ||
+    rawUser.includes("course") ||
+    rawBot.includes("bba") ||
+    rawBot.includes("b.ed") ||
+    rawBot.includes("degree")
+  ) {
+    return {
+      body: "Next steps:",
+      buttons: [
+        { id: "btn:eligibility", title: "🎓 Eligibility" },
+        { id: "btn:procedure", title: "📝 How to Apply" },
+        { id: "btn:location", title: "📍 DEC Gilgit" },
+      ],
+    };
+  }
+
+  // If discussing eligibility, marks, or qualifications
+  if (
+    rawUser.includes("eligib") ||
+    rawUser.includes("mark") ||
+    rawUser.includes("criteria") ||
+    rawBot.includes("45%")
+  ) {
+    return {
+      body: "Qualification options:",
+      buttons: [
+        { id: "btn:qual_fa", title: "1️⃣ FA / FSc" },
+        { id: "btn:qual_grad", title: "2️⃣ Graduation" },
+        { id: "btn:programs", title: "📚 Programs" },
+      ],
+    };
+  }
+
+  // If discussing classes, schedule, or LMS
+  if (
+    rawUser.includes("class") ||
+    rawUser.includes("sunday") ||
+    rawUser.includes("timing") ||
+    rawUser.includes("kab") ||
+    rawBot.includes("lms") ||
+    rawBot.includes("recorded")
+  ) {
+    return {
+      body: "Explore more:",
+      buttons: [
+        { id: "btn:programs", title: "📚 Programs" },
+        { id: "btn:procedure", title: "📝 How to Apply" },
+        { id: "btn:location", title: "📍 DEC Gilgit" },
+      ],
+    };
+  }
+
+  // If discussing location, center, or how to apply
+  if (
+    rawUser.includes("kahan") ||
+    rawUser.includes("address") ||
+    rawUser.includes("location") ||
+    rawUser.includes("apply") ||
+    rawBot.includes("jutial")
+  ) {
+    return {
+      body: "Quick options:",
+      buttons: [
+        { id: "btn:programs", title: "📚 Programs" },
+        { id: "btn:procedure", title: "📝 How to Apply" },
+        { id: "btn:classes", title: "🏫 Sunday Classes" },
+      ],
+    };
+  }
+
+  // Default: Universal guide buttons
+  return {
+    body: "Agla step select karein:",
+    buttons: [
+      { id: "btn:programs", title: "📚 Programs" },
+      { id: "btn:eligibility", title: "🎓 Eligibility" },
+      { id: "btn:procedure", title: "📝 How to Apply" },
+    ],
+  };
+}

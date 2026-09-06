@@ -4,7 +4,7 @@ import {
   sendWhatsAppReplyButtons,
   type WhatsAppReplyButtonPayload,
 } from "../whatsapp";
-import { detectUniversityFastPath } from "./intents";
+import { detectUniversityFastPath, getContextualReplyButtons } from "./intents";
 import { askUniversityCounselorAI, type ChatHistoryMessage } from "./counselor-ai";
 import { upsertStudentLead, getLeadByPhone } from "./lead-manager";
 
@@ -161,8 +161,11 @@ export async function processUniversityWebhookMessage({
       : undefined
   );
 
-  // Send reply
-  await sendOutboundUniversityMessage(cleanPhone, aiResult.replyText, null, phoneNumberId);
+  // Generate relevant buttons so the user has immediate next steps to proceed
+  const contextualButtons = getContextualReplyButtons(messageContent, aiResult.replyText);
+
+  // Send reply with interactive buttons
+  await sendOutboundUniversityMessage(cleanPhone, aiResult.replyText, contextualButtons, phoneNumberId);
 
   // Persist outbound AI message
   await supabaseAdmin.from("messages").insert({
