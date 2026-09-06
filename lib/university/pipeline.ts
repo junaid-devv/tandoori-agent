@@ -13,11 +13,13 @@ export async function processUniversityWebhookMessage({
   contactName,
   messageContent,
   rawMessageId,
+  phoneNumberId,
 }: {
   phone: string;
   contactName: string;
   messageContent: string;
   rawMessageId?: string;
+  phoneNumberId?: string;
 }): Promise<void> {
   const cleanPhone = phone.replace(/[^0-9+]/g, "").replace(/^\+/, "");
 
@@ -99,7 +101,7 @@ export async function processUniversityWebhookMessage({
     let buttons = fastPath.replyButtons;
 
     // Send reply via WhatsApp
-    await sendOutboundUniversityMessage(cleanPhone, replyText, buttons);
+    await sendOutboundUniversityMessage(cleanPhone, replyText, buttons, phoneNumberId);
 
     // Persist outbound AI message
     await supabaseAdmin.from("messages").insert({
@@ -151,7 +153,7 @@ export async function processUniversityWebhookMessage({
   );
 
   // Send reply
-  await sendOutboundUniversityMessage(cleanPhone, aiResult.replyText);
+  await sendOutboundUniversityMessage(cleanPhone, aiResult.replyText, null, phoneNumberId);
 
   // Persist outbound AI message
   await supabaseAdmin.from("messages").insert({
@@ -180,19 +182,24 @@ export async function processUniversityWebhookMessage({
 async function sendOutboundUniversityMessage(
   toPhone: string,
   text: string,
-  replyButtons?: WhatsAppReplyButtonPayload | null
+  replyButtons?: WhatsAppReplyButtonPayload | null,
+  phoneNumberId?: string
 ): Promise<void> {
   if (replyButtons && replyButtons.buttons.length > 0) {
     try {
-      await sendWhatsAppReplyButtons(toPhone, {
-        ...replyButtons,
-        body: text,
-      });
+      await sendWhatsAppReplyButtons(
+        toPhone,
+        {
+          ...replyButtons,
+          body: text,
+        },
+        phoneNumberId
+      );
       return;
     } catch (error) {
       console.warn("[university-pipeline] Failed to send reply buttons, falling back to text:", error);
     }
   }
 
-  await sendWhatsAppMessage(toPhone, text);
+  await sendWhatsAppMessage(toPhone, text, phoneNumberId);
 }

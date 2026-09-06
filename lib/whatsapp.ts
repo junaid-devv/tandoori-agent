@@ -56,7 +56,7 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs = WH
   }
 }
 
-export async function sendWhatsAppMessage(to: string, body: string): Promise<WhatsAppSendResult> {
+export async function sendWhatsAppMessage(to: string, body: string, phoneNumberId?: string): Promise<WhatsAppSendResult> {
   if (process.env.MOCK_WHATSAPP === "true") {
     console.log(`[MOCK WHATSAPP] Sending text message to ${to}:`, body);
     return {
@@ -64,7 +64,7 @@ export async function sendWhatsAppMessage(to: string, body: string): Promise<Wha
       raw: { mock: true },
     };
   }
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {
@@ -166,6 +166,7 @@ export async function downloadWhatsAppMedia(mediaUrl: string): Promise<ArrayBuff
 export async function sendWhatsAppInteractiveList(
   to: string,
   payload: WhatsAppInteractiveListPayload,
+  phoneNumberId?: string,
 ): Promise<WhatsAppSendResult> {
   if (process.env.MOCK_WHATSAPP === "true") {
     console.log(`[MOCK WHATSAPP] Sending interactive list to ${to}:`, payload);
@@ -174,7 +175,7 @@ export async function sendWhatsAppInteractiveList(
       raw: { mock: true },
     };
   }
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {
@@ -264,6 +265,7 @@ export async function sendWhatsAppInteractiveList(
 export async function sendWhatsAppReplyButtons(
   to: string,
   payload: WhatsAppReplyButtonPayload,
+  phoneNumberId?: string,
 ): Promise<WhatsAppSendResult> {
   if (process.env.MOCK_WHATSAPP === "true") {
     console.log(`[MOCK WHATSAPP] Sending reply buttons to ${to}:`, payload);
@@ -272,7 +274,7 @@ export async function sendWhatsAppReplyButtons(
       raw: { mock: true },
     };
   }
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID;
+  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {

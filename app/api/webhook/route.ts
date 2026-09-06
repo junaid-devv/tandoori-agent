@@ -90,6 +90,7 @@ type IncomingEnvelope = {
   entry?: Array<{
     changes?: Array<{
       value?: {
+        metadata?: { phone_number_id?: string; display_phone_number?: string };
         contacts?: Array<{ profile?: { name?: string } }>;
         messages?: IncomingWhatsAppMessage[];
         statuses?: IncomingWhatsAppStatus[];
@@ -205,7 +206,7 @@ async function processWebhook(body: unknown) {
 
   // University Admissions Mode
   if (process.env.APP_MODE === "university") {
-    for (const { message, contactName } of events) {
+    for (const { message, contactName, phoneNumberId } of events) {
       try {
         const incomingContent = await extractContent(message);
         if (incomingContent) {
@@ -214,6 +215,7 @@ async function processWebhook(body: unknown) {
             contactName,
             messageContent: incomingContent,
             rawMessageId: message.id,
+            phoneNumberId,
           });
         }
       } catch (error) {
@@ -675,15 +677,16 @@ async function upsertContact(phone: string, name: string | null) {
 // ---------------------------------------------------------------------------
 // Envelope parsing
 // ---------------------------------------------------------------------------
-function extractMessages(body: unknown): Array<{ message: IncomingWhatsAppMessage; contactName: string }> {
+function extractMessages(body: unknown): Array<{ message: IncomingWhatsAppMessage; contactName: string; phoneNumberId?: string }> {
   const envelope = body as IncomingEnvelope;
-  const out: Array<{ message: IncomingWhatsAppMessage; contactName: string }> = [];
+  const out: Array<{ message: IncomingWhatsAppMessage; contactName: string; phoneNumberId?: string }> = [];
   for (const entry of envelope.entry ?? []) {
     for (const change of entry.changes ?? []) {
       const value = change.value;
       const contactName = value?.contacts?.[0]?.profile?.name ?? "";
+      const phoneNumberId = value?.metadata?.phone_number_id;
       for (const msg of value?.messages ?? []) {
-        out.push({ message: msg, contactName });
+        out.push({ message: msg, contactName, phoneNumberId });
       }
     }
   }
