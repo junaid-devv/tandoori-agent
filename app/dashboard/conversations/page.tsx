@@ -132,6 +132,7 @@ interface Message {
   };
   audioUrl?: string | null;
   isVoiceNote?: boolean;
+  transcript?: string | null;
 }
 
 interface MessageResponse {
@@ -551,6 +552,7 @@ export default function ConversationsPage() {
         listSelector: dm.listSelector,
         audioUrl: (dm as any).audioUrl || null,
         isVoiceNote: (dm as any).isVoiceNote || false,
+        transcript: (dm as any).transcript || null,
       })) as Message[];
     }
     return messages;
@@ -1095,11 +1097,8 @@ export default function ConversationsPage() {
                                   <span>
                                     {isIncoming ? (activeConversation.name || "Customer") : isHuman ? "Staff Operator" : "AI Agent"}
                                   </span>
-                                  {message.isVoiceNote && (
-                                    <span className={clsx(
-                                      "rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
-                                      isIncoming ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/20 text-emerald-300"
-                                    )}>
+                                  {isIncoming && message.isVoiceNote && (
+                                    <span className="rounded bg-emerald-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-emerald-700">
                                       Voice
                                     </span>
                                   )}
@@ -1109,30 +1108,18 @@ export default function ConversationsPage() {
                                 </span>
                               </div>
 
-                              {/* Voice Note Audio Player */}
-                              {(message.isVoiceNote || message.audioUrl) && (
-                                <div
-                                  className={clsx(
-                                    "my-2 rounded-xl border p-2.5 sm:p-3 transition-colors",
-                                    isIncoming
-                                      ? "border-emerald-200 bg-emerald-50/70 text-slate-800"
-                                      : "border-white/20 bg-white/10 text-white"
-                                  )}
-                                >
+                              {/* Voice Note Audio Player — strictly for incoming customer voice notes */}
+                              {isIncoming && (message.isVoiceNote || message.audioUrl) && (
+                                <div className="my-2 rounded-xl border border-emerald-200 bg-emerald-50/70 p-2.5 sm:p-3 text-slate-800 transition-colors">
                                   <div className="mb-2 flex items-center gap-2">
-                                    <div
-                                      className={clsx(
-                                        "flex h-7 w-7 items-center justify-center rounded-full shadow-xs shrink-0",
-                                        isIncoming ? "bg-emerald-600 text-white" : "bg-white text-slate-900"
-                                      )}
-                                    >
+                                    <div className="flex h-7 w-7 items-center justify-center rounded-full bg-emerald-600 text-white shadow-xs shrink-0">
                                       <Mic size={13} />
                                     </div>
                                     <div className="min-w-0 flex-1">
-                                      <p className={clsx("text-xs font-bold leading-none", isIncoming ? "text-emerald-950" : "text-white")}>
+                                      <p className="text-xs font-bold leading-none text-emerald-950">
                                         WhatsApp Voice Note
                                       </p>
-                                      <p className={clsx("text-[10px] mt-0.5 truncate", isIncoming ? "text-emerald-700" : "text-white/70")}>
+                                      <p className="text-[10px] mt-0.5 truncate text-emerald-700">
                                         {message.audioUrl ? "Audio message" : "Recorded audio"}
                                       </p>
                                     </div>
@@ -1148,7 +1135,7 @@ export default function ConversationsPage() {
                                       />
                                     </div>
                                   ) : (
-                                    <div className="flex items-center gap-1.5 text-[11px] italic opacity-75">
+                                    <div className="flex items-center gap-1.5 text-[11px] italic opacity-75 text-emerald-800/80">
                                       <Volume2 size={12} />
                                       <span>Audio recording expired or hosted on WhatsApp</span>
                                     </div>
@@ -1158,22 +1145,19 @@ export default function ConversationsPage() {
 
                               {/* Content */}
                               {message.content && (
-                                message.isVoiceNote ? (
-                                  <div
-                                    className={clsx(
-                                      "mt-1 rounded-xl border p-2.5 text-xs sm:text-sm",
-                                      isIncoming
-                                        ? "border-emerald-200 bg-emerald-50/40 text-slate-800"
-                                        : "border-white/15 bg-white/5 text-slate-200"
-                                    )}
-                                  >
+                                isIncoming && message.isVoiceNote ? (
+                                  <div className="mt-1 rounded-xl border border-emerald-200 bg-emerald-50/40 p-2.5 text-xs sm:text-sm text-slate-800">
                                     <div className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600">
                                       <Sparkles size={11} />
                                       <span>Transcription</span>
                                     </div>
-                                    <div className="whitespace-pre-wrap leading-relaxed">
-                                      {renderMessageContent(
-                                        message.content.replace(/^🎤\s*(\[Voice note transcribed\]:\s*)?/i, "").replace(/^"|"$/g, "").trim() || message.content
+                                    <div className="whitespace-pre-wrap leading-relaxed font-medium">
+                                      {message.transcript ? (
+                                        renderMessageContent(message.transcript)
+                                      ) : message.content && !message.content.includes("[Voice note") ? (
+                                        renderMessageContent(message.content.replace(/^🎤\s*(\[Voice note transcribed\]:\s*)?/i, "").replace(/^"|"$/g, "").trim())
+                                      ) : (
+                                        <span className="italic text-slate-400">Audio received (no transcript available)</span>
                                       )}
                                     </div>
                                   </div>

@@ -13,6 +13,7 @@
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { after, NextRequest } from "next/server";
+import OpenAI from "openai";
 import { runTurn } from "@/lib/agent/pipeline";
 import { stateRepo, getDefaultState } from "@/lib/data/state.repo";
 import { contactRepo } from "@/lib/data/contact.repo";
@@ -566,10 +567,11 @@ async function handleNonText(
 ) {
   if (message.type === "reaction") return;
 
-  if (message.type === "audio") {
+  if (message.type === "audio" || (message as any).type === "voice" || (message as any).voice) {
     const lang = stateLang(state);
     const isRomanUrdu = lang === "roman_urdu";
-    const audioId = message.audio?.id;
+    const audioObj = message.audio || (message as any).voice;
+    const audioId = audioObj?.id;
 
     // Check Groq or OpenAI credentials for transcription
     const groqApiKey = process.env.GROQ_API_KEY || (process.env.DEEPSEEK_API_KEY?.startsWith("gsk_") ? process.env.DEEPSEEK_API_KEY : undefined);
@@ -584,13 +586,12 @@ async function handleNonText(
         const audioBuffer = await downloadWhatsAppMedia(mediaUrl);
 
         // Transcribe via Groq (whisper-large-v3-turbo) or OpenAI Whisper
-        const OpenAI = (await import("openai")).default;
         const client = new OpenAI({
           apiKey,
           baseURL: isGroq ? "https://api.groq.com/openai/v1" : undefined,
         });
 
-        const rawMime = message.audio?.mime_type || "audio/ogg";
+        const rawMime = audioObj?.mime_type || "audio/ogg";
         const cleanMime = rawMime.split(";")[0]?.trim() || "audio/ogg";
         const ext = cleanMime.includes("mp4") || cleanMime.includes("m4a") ? "m4a" : "ogg";
 
@@ -601,11 +602,14 @@ async function handleNonText(
           ? (process.env.GROQ_AUDIO_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo")
           : "whisper-1";
 
+        // Multi-lingual prompt guiding Whisper towards Roman Pashto, Roman Urdu, and English
+        const prompt = "Customer ordering food at a Pakistani restaurant. Pashto, Roman Pashto, Urdu, Roman Urdu, English. Stare mashay, pa kher, menu wakhaya, delivery fee tsomra da, raka, dwa, dre, karahi, naan, deal, pizza, burger, address, shukriya.";
+
         const transcription = await client.audio.transcriptions.create({
           model,
           file: audioFile,
-          ...(lang === "pashto" ? { language: "ps" } : lang === "roman_urdu" ? { language: "ur" } : {}),
-          prompt: "Pakistani restaurant food order. May contain Pashto, Roman Pashto, Urdu, Roman Urdu, English, food names, quantities, delivery address.",
+          ...(lang === "pashto" ? { language: "ps" } : {}),
+          prompt,
         });
 
         const transcript = transcription.text?.trim();
@@ -613,27 +617,23 @@ async function handleNonText(
 
         console.log(`[voice] Transcribed (${model}): "${transcript}"`);
 
-        // Upload audio file to Supabase Storage for permanent dashboard playback
-        let voiceAudioUrl = audioId ? `/api/media/${audioId}` : null;
-        try {
-          const storagePath = `${conversation.id}/${message.id}.${ext}`;
-          const { error: uploadError } = await supabaseAdmin.storage
-            .from("voice-notes")
-            .upload(storagePath, audioBuffer, {
-              contentType: cleanMime,
-              upsert: true,
-            });
-          if (!uploadError) {
-            const { data: publicUrlData } = supabaseAdmin.storage
-              .from("voice-notes")
-              .getPublicUrl(storagePath);
-            if (publicUrlData?.publicUrl) {
-              voiceAudioUrl = publicUrlData.publicUrl;
-            }
-          }
-        } catch (uploadErr) {
-          console.warn("[voice] Could not upload voice note to storage:", uploadErr);
-        }
+        // Synchronously calculate public storage URL
+        const storagePath = `${conversation.id}/${message.id}.${ext}`;
+        const { data: publicUrlData } = supabaseAdmin.storage
+          .from("voice-notes")
+          .getPublicUrl(storagePath);
+        const voiceAudioUrl = publicUrlData?.publicUrl || `/api/media/${audioId}`;
+
+        // Non-blocking upload to Supabase storage — eliminates user reply latency!
+        void supabaseAdmin.storage
+          .from("voice-notes")
+          .upload(storagePath, audioBuffer, {
+            contentType: cleanMime,
+            upsert: true,
+          })
+          .catch((uploadErr) => {
+            console.warn("[voice] Background storage upload warning:", uploadErr);
+          });
 
         // Store with transcript and audioUrl visible in conversation history
         const persistedMsg = await messageRepo.insert({
@@ -706,10 +706,10 @@ async function handleNonText(
         // Graceful degradation — language-consistent, no escalation
         const fallbackMsg =
           lang === "pashto"
-            ? "🎤 Voice note raghay, kho pohaidal ke mushkil sho. Khpal order text ke rawalegay!"
+            ? "Voice note raghay, kho pohaidal ke mushkil sho. Khpal order text ke rawalegay!"
             : isRomanUrdu
-            ? "🎤 Voice note mil gaya, lekin samajhne mein mushkil hua. Apna order text mein bhej dein!"
-            : "🎤 Got your voice note, but had trouble understanding it. Please type your order!";
+            ? "Voice note mil gaya, lekin samajhne mein mushkil hua. Apna order text mein bhej dein!"
+            : "Got your voice note, but had trouble understanding it. Please type your order!";
         await messageRepo.insert({
           conversationId: conversation.id,
           role: "user",
@@ -730,10 +730,10 @@ async function handleNonText(
     // No API key — graceful degradation / voice_note fallback, language-consistent
     const voiceFallback =
       lang === "pashto"
-        ? "🎤 Voice note raghay! Khpal order text ke rawalegay, za ba darsara madad kawa."
+        ? "Voice note raghay! Khpal order text ke rawalegay, za ba darsara madad kawa."
         : isRomanUrdu
-        ? "🎤 Voice note mil gaya! Apna order text mein bhej dein, main turant help karunga."
-        : "🎤 Got your voice note! Please type your order and I'll help right away.";
+        ? "Voice note mil gaya! Apna order text mein bhej dein, main turant help karunga."
+        : "Got your voice note! Please type your order and I'll help right away.";
     await messageRepo.insert({
       conversationId: conversation.id,
       role: "user",

@@ -50,8 +50,25 @@ export async function GET(
       const meta = (row.metadata || {}) as Record<string, any>;
       let replyButtons = meta.replyButtons as Array<{ id: string; title: string }> | undefined;
       let listSelector = meta.listSelector as { title: string; buttonText: string; rows: Array<{ id: string; title: string; description?: string }> } | undefined;
-      const isVoiceNote = Boolean(meta.isVoiceNote || row.content?.startsWith("🎤") || row.content?.includes("[Voice note"));
-      const audioUrl = meta.audioUrl || (meta.mediaId ? `/api/media/${meta.mediaId}` : null);
+      const isUserMessage = row.role === "user" || row.sender_kind === "user";
+      const isVoiceNote = Boolean(
+        isUserMessage && (
+          meta.isVoiceNote ||
+          meta.audioUrl ||
+          meta.mediaId ||
+          row.content?.startsWith("🎤") ||
+          row.content?.includes("[Voice note")
+        )
+      );
+      const audioUrl = isVoiceNote ? (meta.audioUrl || (meta.mediaId ? `/api/media/${meta.mediaId}` : null)) : null;
+      const transcript = isVoiceNote
+        ? (meta.transcript || (row.content?.startsWith("🎤") ? row.content.replace(/^🎤\s*/, "").trim() : null))
+        : null;
+
+      // Clean assistant content so older fallback messages don't display a misleading microphone emoji
+      const content = !isUserMessage && typeof row.content === "string" && row.content.startsWith("🎤 ")
+        ? row.content.replace(/^🎤\s*/, "")
+        : row.content;
 
       // Intelligent reconstruction for older assistant messages that had interactive options sent
       if (!replyButtons && !listSelector && row.role === "assistant") {
@@ -96,7 +113,7 @@ export async function GET(
         conversation_id: row.conversation_id,
         role: row.role,
         sender_kind: row.sender_kind,
-        content: row.content,
+        content,
         whatsapp_msg_id: row.whatsapp_msg_id,
         created_at: row.created_at,
         delivery_status: row.delivery_status,
@@ -106,6 +123,7 @@ export async function GET(
         listSelector,
         audioUrl,
         isVoiceNote,
+        transcript,
       };
     })
     .sort((left, right) => {

@@ -76,14 +76,23 @@ const ENGLISH_SIGNAL_WORDS = [
  */
 const PASHTO_SIGNAL_WORDS = [
   "stare mashay",
+  "staray mashay",
   "stare",
+  "staray",
   "pa kher",
   "pa khair",
+  "pakhray",
   "manana",
   "dera manana",
   "ghwaarom",
   "ghwaarem",
   "ghwaram",
+  "ghwaaray",
+  "ghwaray",
+  "wakhaya",
+  "wakhaye",
+  "wakhayey",
+  "leedal",
   "wrakawa",
   "rakawa",
   "raka",
@@ -91,7 +100,11 @@ const PASHTO_SIGNAL_WORDS = [
   "raasha",
   "rasha",
   "tsomra",
+  "tsomra da",
+  "amrada",
+  "tsomrada",
   "tsanga",
+  "tsanga ye",
   "cherta",
   "kalta",
   "dalta",
@@ -112,6 +125,32 @@ const PASHTO_SIGNAL_WORDS = [
   "deliver krra",
   "ghar ta",
   "kora ta",
+  "zmong",
+  "khpal",
+  "khush raghlay",
+  "rawalegay",
+  "rawastaway",
+  "darsara",
+  "wakhla",
+  "khwand",
+  "tse",
+  "raghay",
+];
+
+const PASHTO_SCRIPT_WORDS = [
+  "مننه",
+  "ستړي",
+  "مه شي",
+  "پخیر",
+  "په خیر",
+  "وښایه",
+  "څنګه",
+  "څومره",
+  "غواړم",
+  "راکړه",
+  "ډوډۍ",
+  "راولېږئ",
+  "خوراک",
 ];
 
 function scoreSignals(text: string, words: string[]): number {
@@ -136,24 +175,23 @@ export function containsUrduScript(text: string): boolean {
 }
 
 /**
- * Detect if text contains Pashto-specific Unicode characters.
+ * Detect if text contains Pashto-specific Unicode characters or distinct Pashto script words.
  * Pashto uses several characters not found in Arabic or Urdu:
  *   ځ (U+0681), څ (U+0685), ږ (U+0696), ټ (U+067C), ډ (U+0688),
  *   ړ (U+0693), ښ (U+069A), ڼ (U+06BC), ۍ (U+06CD), ې (U+06D0)
- *
- * Presence of even one of these characters is a very strong Pashto signal.
  */
 export function containsPashtoScript(text: string): boolean {
-  // Pashto-specific characters that don't appear in standard Arabic or Urdu
-  return /[\u0681\u0685\u0696\u067C\u0688\u0693\u069A\u06BC\u06CD\u06D0]/.test(text);
+  if (/[\u0681\u0685\u0696\u067C\u0688\u0693\u069A\u06BC\u06CD\u06D0]/.test(text)) {
+    return true;
+  }
+  return PASHTO_SCRIPT_WORDS.some((word) => text.includes(word));
 }
 
 export function inferLanguagePreference(
   text: string,
   previous: LanguagePreference = "english",
 ): LanguagePreference {
-  // Pashto-specific script characters — highest priority since they are
-  // unambiguously Pashto (not shared with standard Arabic/Urdu).
+  // Pashto-specific script characters or vocabulary — highest priority
   if (containsPashtoScript(text)) return "pashto";
 
   // General Arabic/Urdu-range script — could be Pashto or Urdu.
