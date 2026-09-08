@@ -327,7 +327,7 @@ async function processOneMessage(
 
   // Non-text / voice
   if (!incomingContent) {
-    await handleNonText(message, conversation, state, detectedLang, profile, activeBranch);
+    await handleNonText(message, conversation, state, detectedLang, profile, activeBranch, contactName || contact.name || null);
     return;
   }
 
@@ -562,6 +562,7 @@ async function handleNonText(
   langOrPrefersRomanUrdu: boolean | LanguagePreference,
   profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
   activeBranch: { id: string; name?: string },
+  customerName?: string | null,
 ) {
   if (message.type === "reaction") return;
 
@@ -570,31 +571,47 @@ async function handleNonText(
     const isRomanUrdu = lang === "roman_urdu";
     const audioId = message.audio?.id;
 
+    // Check Groq or OpenAI credentials for transcription
+    const groqApiKey = process.env.GROQ_API_KEY || (process.env.DEEPSEEK_API_KEY?.startsWith("gsk_") ? process.env.DEEPSEEK_API_KEY : undefined);
+    const apiKey = groqApiKey || process.env.OPENAI_API_KEY;
+    const isGroq = Boolean(groqApiKey);
+
     // --- Real voice pipeline ---
-    if (audioId && process.env.OPENAI_API_KEY) {
+    if (audioId && apiKey) {
       try {
-        console.log(`[voice] Processing voice note from ${message.from}, audioId=${audioId}`);
+        console.log(`[voice] Processing voice note from ${message.from}, audioId=${audioId}, provider=${isGroq ? "groq" : "openai"}`);
         const mediaUrl = await getWhatsAppMediaUrl(audioId);
         const audioBuffer = await downloadWhatsAppMedia(mediaUrl);
 
-        // Transcribe via OpenAI Whisper
+        // Transcribe via Groq (whisper-large-v3-turbo) or OpenAI Whisper
         const OpenAI = (await import("openai")).default;
-        const openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+        const client = new OpenAI({
+          apiKey,
+          baseURL: isGroq ? "https://api.groq.com/openai/v1" : undefined,
+        });
 
-        const audioBlob = new Blob([audioBuffer], { type: message.audio?.mime_type || "audio/ogg" });
-        const audioFile = new File([audioBlob], "voice.ogg", { type: audioBlob.type });
+        const rawMime = message.audio?.mime_type || "audio/ogg";
+        const cleanMime = rawMime.split(";")[0]?.trim() || "audio/ogg";
+        const ext = cleanMime.includes("mp4") || cleanMime.includes("m4a") ? "m4a" : "ogg";
 
-        const transcription = await openaiClient.audio.transcriptions.create({
-          model: "whisper-1",
+        const audioBlob = new Blob([audioBuffer], { type: cleanMime });
+        const audioFile = new File([audioBlob], `voice.${ext}`, { type: cleanMime });
+
+        const model = isGroq
+          ? (process.env.GROQ_AUDIO_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo")
+          : "whisper-1";
+
+        const transcription = await client.audio.transcriptions.create({
+          model,
           file: audioFile,
           ...(lang === "pashto" ? { language: "ps" } : lang === "roman_urdu" ? { language: "ur" } : {}),
-          prompt: "Pakistani restaurant order. May contain Pashto, Roman Pashto, Urdu, Roman Urdu, English, food names, quantities, delivery address.",
+          prompt: "Pakistani restaurant food order. May contain Pashto, Roman Pashto, Urdu, Roman Urdu, English, food names, quantities, delivery address.",
         });
 
         const transcript = transcription.text?.trim();
         if (!transcript) throw new Error("Empty transcription");
 
-        console.log(`[voice] Transcribed: "${transcript}"`);
+        console.log(`[voice] Transcribed (${model}): "${transcript}"`);
 
         // Store with transcript visible in conversation history
         const persistedMsg = await messageRepo.insert({
@@ -605,8 +622,11 @@ async function handleNonText(
           whatsappMsgId: message.id,
         });
 
-        // Update language from transcript — fire-and-forget, don't block the turn
+        // Update language from transcript
         const transcriptLang = inferLanguagePreference(transcript, state.preferred_language);
+        if (transcriptLang !== state.preferred_language) {
+          await stateRepo.patch(conversation.id, { preferred_language: transcriptLang });
+        }
         void contactRepo.getByPhone(message.from).then((c) => {
           if (c) void contactRepo.setPreferredLanguage(c.id, transcriptLang).catch(() => {});
         }).catch(() => {});
@@ -628,10 +648,17 @@ async function handleNonText(
             messageId: persistedMsg.id,
             appName: profile.app_name || "Restaurant",
             currency: profile.currency || "Rs.",
+            customerName: customerName || null,
           });
           if (result.escalate) {
             await escalateToHuman({ conversationId: conversation.id, branchId: activeBranch.id, phone: message.from, reason: result.intent, language: transcriptLang });
             await conversationRepo.setMode(conversation.id, "human");
+          }
+          if (result.placeOrder) {
+            void Promise.all([
+              saveCustomerAddressFromOrder({ conversationId: conversation.id, branchId: activeBranch.id, address: result.address ?? state.address }),
+              updateCustomerOrderStats({ conversationId: conversation.id, preferredLanguage: transcriptLang }),
+            ]).catch((e) => console.error("[voice] Post-order hooks failed:", e));
           }
           await sendAndPersistAssistantMessage({
             conversationId: conversation.id,
@@ -660,7 +687,7 @@ async function handleNonText(
       }
     }
 
-    // No OPENAI_API_KEY — graceful degradation / voice_note fallback, language-consistent
+    // No API key — graceful degradation / voice_note fallback, language-consistent
     const voiceFallback =
       lang === "pashto"
         ? "🎤 Voice note raghay! Khpal order text ke rawalegay, za ba darsara madad kawa."
