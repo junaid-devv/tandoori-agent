@@ -1,5 +1,6 @@
 import { getMenuCategories } from "./order-menu-categories.ts";
 import { itemSimilarityScore, normalizeText, tokenOverlapScore } from "./order-text-utils.ts";
+import type { LanguagePreference } from "./schema.types.ts";
 
 type MenuCatalogItemLike = {
   id: string;
@@ -109,7 +110,7 @@ export function findCategoryRequest(text: string, menuItems: MenuCatalogItemLike
 export function buildCategoryItemsReply(
   category: string,
   menuItems: MenuCatalogItemLike[],
-  romanUrdu: boolean,
+  langOrRomanUrdu: boolean | LanguagePreference,
 ): {
   text: string;
   selectableItems: MenuCatalogItemLike[];
@@ -122,9 +123,14 @@ export function buildCategoryItemsReply(
 } {
   const target = normalizeText(category);
   const rows = menuItems.filter((item) => normalizeText(item.category ?? "General") === target);
+  const isPa = langOrRomanUrdu === "pashto";
+  const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
+
   if (rows.length === 0) {
     return {
-      text: romanUrdu
+      text: isPa
+        ? "De category ke items wane-munde shwa. Da balke category num rawalega."
+        : isUr
         ? "Is category mein items nahi mile. Kisi aur category ka naam bhej dein."
         : "No items found in that category. Please send another category name.",
       selectableItems: [],
@@ -145,12 +151,16 @@ export function buildCategoryItemsReply(
     "──────────────",
     ...(hasMore
       ? [
-          romanUrdu
+          isPa
+            ? `List na select kra. Baaqi ${rows.length - selectableItems.length} items leedo dapara num type kra.`
+            : isUr
             ? `List se select karein. Baki ${rows.length - selectableItems.length} items dekhne ke liye naam type karein.`
             : `Select from the list, or type item name to search the remaining ${rows.length - selectableItems.length} items.`,
         ]
       : [
-          romanUrdu
+          isPa
+            ? "Khpal khwakh item da list na select kra."
+            : isUr
             ? "Apni pasand ka item list se select karein."
             : "Please choose your item from the list.",
         ]),
@@ -158,7 +168,7 @@ export function buildCategoryItemsReply(
 
   const interactiveList = {
     body: text,
-    buttonText: romanUrdu ? "View Items" : "View Items",
+    buttonText: "View Items",
     sectionTitle: category.length > 24 ? `${category.slice(0, 21)}...` : category,
     rows: listRows,
   };
@@ -166,18 +176,30 @@ export function buildCategoryItemsReply(
   return { text, selectableItems, interactiveList };
 }
 
-export function buildAmbiguousItemReply(query: string, options: MenuCatalogItemLike[], romanUrdu: boolean): string {
-  return romanUrdu
+export function buildAmbiguousItemReply(query: string, options: MenuCatalogItemLike[], langOrRomanUrdu: boolean | LanguagePreference): string {
+  const isPa = langOrRomanUrdu === "pashto";
+  const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
+  if (isPa) return `Da *${query}* mutaliq kam yaw pakaar day?`;
+  return isUr
     ? `*${query}* se mutaliq kaunsa item chahiye?`
     : `Which item did you mean for *${query}*?`;
 }
 
-export function buildItemMatchesReply(query: string, options: MenuCatalogItemLike[], romanUrdu: boolean): string {
+export function buildItemMatchesReply(query: string, options: MenuCatalogItemLike[], langOrRomanUrdu: boolean | LanguagePreference): string {
+  const isPa = langOrRomanUrdu === "pashto";
+  const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
   const topResultsHint =
     options.length >= 10
-      ? romanUrdu
+      ? isPa
+        ? "\n\nTop matches wakhayast shwa. Saheeh result dapara pūra item num rawalega."
+        : isUr
         ? "\n\nTop matches dikhaye gaye hain. Zyada exact result ke liye poora item name bhej dein."
         : "\n\nShowing top matches. Send a more specific item name for broader accuracy."
       : "";
-  return (romanUrdu ? `*${query}* ke related items ye hain:` : `Here are matching items for *${query}*:`) + topResultsHint;
+  const intro = isPa
+    ? `*${query}* sara matching items da di:`
+    : isUr
+    ? `*${query}* ke related items ye hain:`
+    : `Here are matching items for *${query}*:`;
+  return intro + topResultsHint;
 }

@@ -87,7 +87,7 @@ create table contacts (
   phone text not null unique,
   name text,
   active_branch_id uuid references branches(id) on delete set null,
-  preferred_language text not null default 'english' check (preferred_language in ('english', 'roman_urdu')),
+  preferred_language text not null default 'english' check (preferred_language in ('english', 'roman_urdu', 'pashto')),
   tags jsonb not null default '[]'::jsonb check (jsonb_typeof(tags) = 'array'),
   notes text,
   total_orders integer not null default 0 check (total_orders >= 0),
@@ -220,7 +220,7 @@ create table conversation_states (
   customer_instructions text,
 
   -- preferences / language
-  preferred_language text not null default 'english' check (preferred_language in ('english', 'roman_urdu')),
+  preferred_language text not null default 'english' check (preferred_language in ('english', 'roman_urdu', 'pashto')),
 
   -- ephemeral turn context (for deterministic fast-path selection)
   last_shown_options jsonb not null default '[]'::jsonb check (jsonb_typeof(last_shown_options) = 'array'),

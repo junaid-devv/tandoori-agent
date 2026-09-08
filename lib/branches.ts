@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
+import type { LanguagePreference } from "./schema.types";
 
 export interface BranchRecord {
   id: string;
@@ -40,6 +41,8 @@ export function isBranchChangeRequest(messageText: string): boolean {
     "branch badal",
     "branch change karna",
     "branch badal do",
+    "branch badala kra",
+    "bal branch",
   ].some((pattern) => normalized.includes(pattern));
 }
 
@@ -73,17 +76,25 @@ export async function getBranchById(branchId: string): Promise<BranchRecord | nu
   return data ?? null;
 }
 
-export function getBranchSelectionPrompt(branches: BranchSummary[], prefersRomanUrdu: boolean): string {
+export function getBranchSelectionPrompt(branches: BranchSummary[], langOrPrefersRomanUrdu: boolean | LanguagePreference): string {
+  const isPa = langOrPrefersRomanUrdu === "pashto";
+  const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
+
   if (branches.length === 0) {
-    return prefersRomanUrdu
+    if (isPa) return "Bakhana ghwaarom, da wakht da branch list nishta. Lagya baad koshish kra.";
+    return isUr
       ? "Maazrat, is waqt koi branch available nahi hai. Thori dair baad dobara try karein."
       : "Sorry, there are no branches available right now. Please try again shortly.";
   }
 
-  const intro = prefersRomanUrdu
+  const intro = isPa
+    ? "Order shuru kawalo na awal khpala branch select kra:"
+    : isUr
     ? "Order shuru karne se pehle apni branch select karein:"
     : "Before we start your order, please choose your branch:";
-  const closing = prefersRomanUrdu
+  const closing = isPa
+    ? "Reply ke da branch number ya branch num rawalega."
+    : isUr
     ? "Reply mein branch number ya branch ka naam bhej dein."
     : "Reply with the branch number or the branch name.";
 

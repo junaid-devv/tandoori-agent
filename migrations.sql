@@ -1197,3 +1197,16 @@ as $$
   order by mie.embedding <=> query_embedding
   limit greatest(match_count, 1);
 $$;
+
+-- =====================================================================
+-- Migration: Add Pashto language support
+-- Run this on live Supabase database to allow 'pashto' as a preferred_language value.
+-- =====================================================================
+
+-- contacts table
+alter table contacts drop constraint if exists contacts_preferred_language_check;
+alter table contacts add constraint contacts_preferred_language_check check (preferred_language in ('english', 'roman_urdu', 'pashto')) not valid;
+
+-- conversation_states table
+alter table conversation_states drop constraint if exists conversation_states_preferred_language_check;
+alter table conversation_states add constraint conversation_states_preferred_language_check check (preferred_language in ('english', 'roman_urdu', 'pashto')) not valid;

@@ -162,14 +162,20 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   }
 
   // ── 1b) Pure greeting with empty cart ──────────────────────────────────────
-  const GREETING_RE = /^(?:g|ji|jee|haan|hanji|ass?al[a-z\s'-]*|aoa|a\.?o\.?a|salam|slam|hi|hello|hey|hola|good\s*(?:morning|afternoon|evening)|kese\s*ho|kia\s*hal\s*hai|kaise\s*hain)(?:\s+(?:bhai|janab|sir|dear|team|all|ap|aap|ji|jee))?[!.]*$/i;
+  const GREETING_RE = /^(?:g|ji|jee|haan|hanji|ass?al[a-z\s'-]*|aoa|a\.?o\.?a|salam|slam|hi|hello|hey|hola|good\s*(?:morning|afternoon|evening)|kese\s*ho|kia\s*hal\s*hai|kaise\s*hain|stare?\s*mashay|pa\s*khe[ri]r?|tsanga\s*ye)(?:\s+(?:bhai|janab|sir|dear|team|all|ap|aap|ji|jee|rasha|wrora|saib))?[!.]*$/i;
   if (
     !understanding &&
     ctx.state.cart.length === 0 &&
     GREETING_RE.test(input.messageText.trim())
   ) {
-    const isUrduGreeting = /^(?:g|ji|jee|haan|hanji|ass?al[a-z\s'-]*|aoa|a\.?o\.?a|salam|slam|kese|kia\s*hal|kaise)/i.test(input.messageText.trim());
-    const langToUse = isUrduGreeting ? "roman_urdu" : ctx.state.preferred_language;
+    const isPashtoGreeting = /^(?:stare?\s*mashay|pa\s*khe[ri]r?|tsanga\s*ye)/i.test(input.messageText.trim());
+    const isUrduGreeting = /^(?:g|ji|jee|haan|hanji|kese|kia\s*hal|kaise)/i.test(input.messageText.trim());
+    // Greet in Pashto if person previously communicated in Pashto OR used a Pashto greeting
+    const langToUse = isPashtoGreeting || ctx.state.preferred_language === "pashto"
+      ? "pashto"
+      : isUrduGreeting
+      ? "roman_urdu"
+      : ctx.state.preferred_language;
     understanding = {
       ...makeBase(langToUse),
       intents: ["greeting"],
@@ -179,7 +185,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   }
 
   // ── 1b.2) Neutral acknowledgment when cart is empty ───────────────────────
-  const ACK_RE = /^(?:ok|okay|theek\s*hai|thk\s*hai|thik\s*hai|acha|achha|got\s*it|fine|alright|sahi|sahi\s*hai|ji|jee|haanji)[!.]*$/i;
+  const ACK_RE = /^(?:ok|okay|theek\s*hai|thk\s*hai|thik\s*hai|acha|achha|got\s*it|fine|alright|sahi|sahi\s*hai|ji|jee|haanji|kha|dera\s*manana|manana|ao)[!.]*$/i;
   if (
     !understanding &&
     ctx.state.cart.length === 0 &&

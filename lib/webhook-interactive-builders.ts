@@ -1,6 +1,7 @@
 import type { BranchSummary } from "./branches";
 import type { MenuCatalogItem } from "./menu";
 import { buildMenuItemRowId } from "./order-menu-replies.ts";
+import type { LanguagePreference } from "./schema.types";
 
 type InteractiveListPayload =
   | {
@@ -13,11 +14,14 @@ type InteractiveListPayload =
 
 export function buildInteractiveListForPresentedOptions(
   options: MenuCatalogItem[],
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
 ): InteractiveListPayload {
   if (!Array.isArray(options) || options.length < 1) {
     return null;
   }
+
+  const isPa = langOrPrefersRomanUrdu === "pashto";
+  const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
 
   const rows = options.slice(0, 10).map((item) => ({
     id: buildMenuItemRowId(item.id),
@@ -26,23 +30,28 @@ export function buildInteractiveListForPresentedOptions(
   }));
 
   return {
-    body: prefersRomanUrdu
+    body: isPa
+      ? "Khpal khwakh item da list na select kra."
+      : isUr
       ? "Apni pasand ka item list se select karein."
       : "Please choose your item from the list.",
-    buttonText: prefersRomanUrdu ? "Select Item" : "Select Item",
-    sectionTitle: prefersRomanUrdu ? "Menu Options" : "Menu Options",
+    buttonText: "Select Item",
+    sectionTitle: "Menu Options",
     rows,
   };
 }
 
 export function buildInteractiveListForBranches(
   branches: BranchSummary[],
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
   selectedCity?: string,
 ): InteractiveListPayload {
   if (!Array.isArray(branches) || branches.length < 1) {
     return null;
   }
+
+  const isPa = langOrPrefersRomanUrdu === "pashto";
+  const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
 
   const rows = branches.slice(0, 10).map((branch) => ({
     id: branch.id,
@@ -51,15 +60,19 @@ export function buildInteractiveListForBranches(
   }));
 
   return {
-    body: prefersRomanUrdu
+    body: isPa
+      ? selectedCity
+        ? `*${selectedCity}* ke khpala branch select kra.`
+        : "Order shuru kawalo na awal khpala branch select kra."
+      : isUr
       ? selectedCity
         ? `*${selectedCity}* mein apni branch select karein.`
         : "Order shuru karne se pehle apni branch select karein."
       : selectedCity
         ? `Please choose your branch in *${selectedCity}*.`
         : "Before we start your order, please choose your branch.",
-    buttonText: prefersRomanUrdu ? "Select Branch" : "Select Branch",
-    sectionTitle: prefersRomanUrdu ? "Branches" : "Branches",
+    buttonText: "Select Branch",
+    sectionTitle: "Branches",
     rows,
   };
 }

@@ -3,8 +3,13 @@ import { createStaffAlert, resolveStaffAlerts } from "./staff-alerts";
 import { supabaseAdmin } from "./supabase-admin";
 import { stateRepo } from "./data/state.repo";
 
-function buildHandoffReply(prefersRomanUrdu: boolean): string {
-  return prefersRomanUrdu
+import type { LanguagePreference } from "./schema.types";
+
+function buildHandoffReply(langOrPrefersRomanUrdu: boolean | LanguagePreference): string {
+  if (langOrPrefersRomanUrdu === "pashto") {
+    return "Za manager ta message forward kawom. Lagya ba jawab darshi.";
+  }
+  return (langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true)
     ? "Main manager ko message forward kar raha hoon. Thori dair mein reply aa jayega."
     : "I'm forwarding this to the manager. They'll reply shortly.";
 }
@@ -14,7 +19,8 @@ export async function escalateToHuman(input: {
   branchId: string;
   phone: string;
   reason: string;
-  prefersRomanUrdu: boolean;
+  prefersRomanUrdu?: boolean;
+  language?: LanguagePreference;
 }) {
   // Check current state to avoid duplicate escalation
   const state = await stateRepo.get(input.conversationId);
@@ -59,7 +65,7 @@ export async function escalateToHuman(input: {
     await sendAndPersistOutboundMessage({
       conversationId: input.conversationId,
       phone: input.phone,
-      content: buildHandoffReply(input.prefersRomanUrdu),
+      content: buildHandoffReply(input.language ?? input.prefersRomanUrdu ?? false),
       senderKind: "system",
     }).catch((error) => {
       console.error("[handoff] Failed to notify customer about handoff:", error);

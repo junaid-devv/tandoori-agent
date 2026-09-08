@@ -1,5 +1,5 @@
 import { supabaseAdmin } from "./supabase-admin";
-import type { OrderType } from "./schema.types";
+import type { OrderType, LanguagePreference } from "./schema.types";
 
 /**
  * Reorder cart item — a simplified cart item shape for reorder candidates.
@@ -111,7 +111,7 @@ export async function saveCustomerAddressFromOrder(input: {
 
 export async function updateCustomerOrderStats(input: {
   conversationId: string;
-  preferredLanguage?: "english" | "roman_urdu";
+  preferredLanguage?: LanguagePreference;
 }) {
   const { data: conversation, error: conversationError } = await supabaseAdmin
     .from("conversations")

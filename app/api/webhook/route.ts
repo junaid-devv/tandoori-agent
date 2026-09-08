@@ -53,6 +53,7 @@ import {
 } from "@/lib/whatsapp";
 import { normalizeText } from "@/lib/order-text-utils";
 import { inferLanguagePreference } from "@/lib/core/lang-detect";
+import type { LanguagePreference } from "@/lib/schema.types";
 import { downloadWhatsAppMedia, getWhatsAppMediaUrl } from "@/lib/whatsapp";
 import { processUniversityWebhookMessage } from "@/lib/university/pipeline";
 
@@ -251,7 +252,11 @@ async function processOneMessage(
   const phone = message.from;
   const contact = await upsertContact(phone, contactName);
   const incomingContent = await extractContent(message);
-  const prefersRomanUrdu = inferLanguagePreference(incomingContent ?? "", "english") === "roman_urdu";
+  const detectedLang = inferLanguagePreference(
+    incomingContent ?? "",
+    (contact.preferred_language as LanguagePreference) || "english",
+  );
+  const prefersRomanUrdu = detectedLang === "roman_urdu";
 
   // ---- Branch resolution ----
   let activeBranch: BranchRecord | null = contact.active_branch_id
@@ -270,10 +275,10 @@ async function processOneMessage(
   // ---- No branch yet: city/branch selection flow ----
   if (!activeBranch) {
     if (!incomingContent) {
-      if (message.type !== "reaction") await sendCitySelection(phone, cityGroups, prefersRomanUrdu);
+      if (message.type !== "reaction") await sendCitySelection(phone, cityGroups, detectedLang);
       return;
     }
-    await handleBranchSelection(message, contact, incomingContent, branches, cityGroups, prefersRomanUrdu, profile);
+    await handleBranchSelection(message, contact, incomingContent, branches, cityGroups, detectedLang, profile);
     return;
   }
 
@@ -309,7 +314,7 @@ async function processOneMessage(
   // Human mode: forward to staff, check for bot-resume command
   if (conversation.mode === "human") {
     if (incomingContent && shouldResumeBotFromMessage(incomingContent)) {
-      await handleBotResume(conversation, state, message, incomingContent, prefersRomanUrdu);
+      await handleBotResume(conversation, state, message, incomingContent, detectedLang);
     } else if (incomingContent) {
       // Persist message and mark unread in parallel
       await Promise.all([
@@ -322,13 +327,13 @@ async function processOneMessage(
 
   // Non-text / voice
   if (!incomingContent) {
-    await handleNonText(message, conversation, state, prefersRomanUrdu, profile, activeBranch);
+    await handleNonText(message, conversation, state, detectedLang, profile, activeBranch);
     return;
   }
 
   // Branch change request
   if (isBranchChangeRequest(incomingContent) && profile.branch_mode === "multiple") {
-    await handleBranchChange(message, contact, conversation, state, incomingContent, cityGroups, branches, prefersRomanUrdu);
+    await handleBranchChange(message, contact, conversation, state, incomingContent, cityGroups, branches, detectedLang);
     return;
   }
 
@@ -413,7 +418,7 @@ async function handleBranchSelection(
   content: string,
   branches: BranchRecord[],
   cityGroups: CityBranchGroup[],
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
   profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
 ) {
   const phone = message.from;
@@ -423,18 +428,18 @@ async function handleBranchSelection(
   if (selectedCity) {
     const cityGroup = cityGroups.find((g) => normalizeCityValue(g.city) === normalizeCityValue(selectedCity)) ?? null;
     const cityBranches = cityGroup?.branches ?? [];
-    if (cityBranches.length === 0) { await sendCitySelection(phone, cityGroups, prefersRomanUrdu); return; }
+    if (cityBranches.length === 0) { await sendCitySelection(phone, cityGroups, langOrPrefersRomanUrdu); return; }
     if (cityBranches.length === 1) {
-      await assignBranchAndGreet(message, contact, cityBranches[0], content, prefersRomanUrdu, profile);
+      await assignBranchAndGreet(message, contact, cityBranches[0], content, langOrPrefersRomanUrdu, profile);
       return;
     }
-    await sendBranchSelection(phone, cityBranches, prefersRomanUrdu, selectedCity);
+    await sendBranchSelection(phone, cityBranches, langOrPrefersRomanUrdu, selectedCity);
     return;
   }
 
   const selectedBranch = findBranchSelection(content, branches);
-  if (!selectedBranch) { await sendCitySelection(phone, cityGroups, prefersRomanUrdu); return; }
-  await assignBranchAndGreet(message, contact, selectedBranch, content, prefersRomanUrdu, profile);
+  if (!selectedBranch) { await sendCitySelection(phone, cityGroups, langOrPrefersRomanUrdu); return; }
+  await assignBranchAndGreet(message, contact, selectedBranch, content, langOrPrefersRomanUrdu, profile);
 }
 
 async function assignBranchAndGreet(
@@ -442,7 +447,7 @@ async function assignBranchAndGreet(
   contact: Awaited<ReturnType<typeof upsertContact>>,
   branch: BranchSummary,
   content: string,
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
   profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
 ) {
   await contactRepo.setActiveBranch(contact.id, branch.id);
@@ -450,11 +455,21 @@ async function assignBranchAndGreet(
   const state = await stateRepo.ensure(conversation.id);
   if (state.last_user_whatsapp_msg_id === message.id) return;
 
+  const resolvedLang: LanguagePreference =
+    typeof langOrPrefersRomanUrdu === "string"
+      ? langOrPrefersRomanUrdu
+      : langOrPrefersRomanUrdu
+      ? "roman_urdu"
+      : "english";
+
   const menuItems = await getMenuCatalog(branch.id);
-  const categoryUI = buildInteractiveCategoryUI(menuItems, prefersRomanUrdu, 1);
-  const greetReply = prefersRomanUrdu
-    ? `Theek hai, *${branch.name}* select ho gayi. Address: ${branch.address}\n\nAb category select karein ya item name bhej dein.`
-    : `Got it — you've selected *${branch.name}*. Address: ${branch.address}\n\nChoose a category or send any item name.`;
+  const categoryUI = buildInteractiveCategoryUI(menuItems, resolvedLang, 1);
+  const greetReply =
+    resolvedLang === "pashto"
+      ? `Kha, *${branch.name}* select sho. Address: ${branch.address}\n\nOss category select kra ya da item num rawalega.`
+      : resolvedLang === "roman_urdu"
+      ? `Theek hai, *${branch.name}* select ho gayi. Address: ${branch.address}\n\nAb category select karein ya item name bhej dein.`
+      : `Got it — you've selected *${branch.name}*. Address: ${branch.address}\n\nChoose a category or send any item name.`;
 
   await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content, whatsappMsgId: message.id });
   await sendAndPersistAssistantMessage({
@@ -466,7 +481,7 @@ async function assignBranchAndGreet(
   });
   await stateRepo.patch(conversation.id, {
     stage: "building_cart",
-    preferred_language: prefersRomanUrdu ? "roman_urdu" : "english",
+    preferred_language: resolvedLang,
     last_user_whatsapp_msg_id: message.id,
     last_processed_user_message_at: toIso(message.timestamp),
   });
@@ -480,13 +495,19 @@ async function handleBranchChange(
   content: string,
   cityGroups: CityBranchGroup[],
   branches: BranchRecord[],
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
 ) {
+  const resolvedLang: LanguagePreference =
+    typeof langOrPrefersRomanUrdu === "string"
+      ? langOrPrefersRomanUrdu
+      : langOrPrefersRomanUrdu
+      ? "roman_urdu"
+      : "english";
   const cities = cityGroups.map((g) => g.city);
-  const prompt = getCitySelectionPrompt(cities, prefersRomanUrdu);
-  const interactiveList = buildInteractiveListForCities(cities, prefersRomanUrdu);
+  const prompt = getCitySelectionPrompt(cities, resolvedLang);
+  const interactiveList = buildInteractiveListForCities(cities, resolvedLang);
   await contactRepo.setActiveBranch(contact.id, null);
-  await stateRepo.patch(conversation.id, { stage: "greeting", preferred_language: prefersRomanUrdu ? "roman_urdu" : "english", last_user_whatsapp_msg_id: message.id });
+  await stateRepo.patch(conversation.id, { stage: "greeting", preferred_language: resolvedLang, last_user_whatsapp_msg_id: message.id });
   await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: prompt, interactiveList });
 }
 
@@ -503,11 +524,22 @@ async function handleBotResume(
   state: Awaited<ReturnType<typeof stateRepo.ensure>>,
   message: IncomingWhatsAppMessage,
   content: string,
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
 ) {
   await resumeBotForConversation(conversation.id);
   await conversationRepo.setMode(conversation.id, "agent");
-  const resumeReply = prefersRomanUrdu ? "Theek hai. Apna order message bhej dein." : "Done. Send your order when ready.";
+  const resolvedLang: LanguagePreference =
+    typeof langOrPrefersRomanUrdu === "string"
+      ? langOrPrefersRomanUrdu
+      : langOrPrefersRomanUrdu
+      ? "roman_urdu"
+      : "english";
+  const resumeReply =
+    resolvedLang === "pashto"
+      ? "Kha. Khpal order message rawalegay."
+      : resolvedLang === "roman_urdu"
+      ? "Theek hai. Apna order message bhej dein."
+      : "Done. Send your order when ready.";
   await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: resumeReply });
   await stateRepo.patch(conversation.id, { is_bot_active: true, escalation_reason: null, escalated_at: null, last_user_whatsapp_msg_id: message.id });
 }
@@ -519,6 +551,7 @@ async function handleBotResume(
 // Language helper — uses stable conversation state, not single-message snap
 // ---------------------------------------------------------------------------
 function stateLang(state: { preferred_language: string }): import("@/lib/schema.types").LanguagePreference {
+  if (state.preferred_language === "pashto") return "pashto";
   return state.preferred_language === "roman_urdu" ? "roman_urdu" : "english";
 }
 
@@ -526,7 +559,7 @@ async function handleNonText(
   message: IncomingWhatsAppMessage,
   conversation: Awaited<ReturnType<typeof conversationRepo.ensure>>,
   state: Awaited<ReturnType<typeof stateRepo.ensure>>,
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
   profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
   activeBranch: { id: string; name?: string },
 ) {
@@ -554,8 +587,8 @@ async function handleNonText(
         const transcription = await openaiClient.audio.transcriptions.create({
           model: "whisper-1",
           file: audioFile,
-          language: "ur",
-          prompt: "Pakistani restaurant order. May contain Urdu, Roman Urdu, English, food names, quantities, delivery address.",
+          ...(lang === "pashto" ? { language: "ps" } : lang === "roman_urdu" ? { language: "ur" } : {}),
+          prompt: "Pakistani restaurant order. May contain Pashto, Roman Pashto, Urdu, Roman Urdu, English, food names, quantities, delivery address.",
         });
 
         const transcript = transcription.text?.trim();
@@ -597,7 +630,7 @@ async function handleNonText(
             currency: profile.currency || "Rs.",
           });
           if (result.escalate) {
-            await escalateToHuman({ conversationId: conversation.id, branchId: activeBranch.id, phone: message.from, reason: result.intent, prefersRomanUrdu: transcriptLang === "roman_urdu" });
+            await escalateToHuman({ conversationId: conversation.id, branchId: activeBranch.id, phone: message.from, reason: result.intent, language: transcriptLang });
             await conversationRepo.setMode(conversation.id, "human");
           }
           await sendAndPersistAssistantMessage({
@@ -615,9 +648,12 @@ async function handleNonText(
       } catch (err) {
         console.error("[voice] Voice pipeline failed:", err);
         // Graceful degradation — language-consistent, no escalation
-        const fallbackMsg = isRomanUrdu
-          ? "🎤 Voice note mil gaya, lekin samajhne mein mushkil hua. Apna order text mein bhej dein!"
-          : "🎤 Got your voice note, but had trouble understanding it. Please type your order!";
+        const fallbackMsg =
+          lang === "pashto"
+            ? "🎤 Voice note raghay, kho pohaidal ke mushkil sho. Khpal order text ke rawalegay!"
+            : isRomanUrdu
+            ? "🎤 Voice note mil gaya, lekin samajhne mein mushkil hua. Apna order text mein bhej dein!"
+            : "🎤 Got your voice note, but had trouble understanding it. Please type your order!";
         await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: "[Voice note - transcription failed]", whatsappMsgId: message.id });
         await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: fallbackMsg });
         return;
@@ -625,9 +661,12 @@ async function handleNonText(
     }
 
     // No OPENAI_API_KEY — graceful degradation / voice_note fallback, language-consistent
-    const voiceFallback = isRomanUrdu
-      ? "🎤 Voice note mil gaya! Apna order text mein bhej dein, main turant help karunga."
-      : "🎤 Got your voice note! Please type your order and I'll help right away.";
+    const voiceFallback =
+      lang === "pashto"
+        ? "🎤 Voice note raghay! Khpal order text ke rawalegay, za ba darsara madad kawa."
+        : isRomanUrdu
+        ? "🎤 Voice note mil gaya! Apna order text mein bhej dein, main turant help karunga."
+        : "🎤 Got your voice note! Please type your order and I'll help right away.";
     await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: "[Voice note received]", whatsappMsgId: message.id });
     await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: voiceFallback });
     return;
@@ -635,9 +674,12 @@ async function handleNonText(
 
   // Other unsupported media types
   const lang = stateLang(state);
-  const fallback = lang === "roman_urdu"
-    ? "Please text message bhej dein, main order mein help karta hoon."
-    : "Please send a text message and I'll help with your order.";
+  const fallback =
+    lang === "pashto"
+      ? "Meherbani warka text message rawalegay, za ba order ke madad kawa."
+      : lang === "roman_urdu"
+      ? "Please text message bhej dein, main order mein help karta hoon."
+      : "Please send a text message and I'll help with your order.";
   await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: conversation.phone, content: fallback });
 }
 
@@ -806,17 +848,17 @@ async function releaseLock(conversationId: string, token: string) {
 // ---------------------------------------------------------------------------
 // Messaging helpers
 // ---------------------------------------------------------------------------
-async function sendCitySelection(phone: string, cityGroups: CityBranchGroup[], prefersRomanUrdu: boolean) {
+async function sendCitySelection(phone: string, cityGroups: CityBranchGroup[], langOrPrefersRomanUrdu: boolean | LanguagePreference) {
   const cities = cityGroups.map((g) => g.city);
-  const list = buildInteractiveListForCities(cities, prefersRomanUrdu);
+  const list = buildInteractiveListForCities(cities, langOrPrefersRomanUrdu);
   if (list) { try { await sendWhatsAppInteractiveList(phone, list); return; } catch { /* fall through */ } }
-  await sendWhatsAppMessage(phone, getCitySelectionPrompt(cities, prefersRomanUrdu));
+  await sendWhatsAppMessage(phone, getCitySelectionPrompt(cities, langOrPrefersRomanUrdu));
 }
 
-async function sendBranchSelection(phone: string, branches: BranchSummary[], prefersRomanUrdu: boolean, city?: string) {
-  const list = buildInteractiveListForBranches(branches, prefersRomanUrdu, city);
+async function sendBranchSelection(phone: string, branches: BranchSummary[], langOrPrefersRomanUrdu: boolean | LanguagePreference, city?: string) {
+  const list = buildInteractiveListForBranches(branches, langOrPrefersRomanUrdu, city);
   if (list) { try { await sendWhatsAppInteractiveList(phone, list); return; } catch { /* fall through */ } }
-  await sendWhatsAppMessage(phone, getBranchSelectionPrompt(branches, prefersRomanUrdu));
+  await sendWhatsAppMessage(phone, getBranchSelectionPrompt(branches, langOrPrefersRomanUrdu));
 }
 
 // ---------------------------------------------------------------------------

@@ -275,7 +275,7 @@ const ParsedTurnRemovalSchema = z.object({
 const OrderTurnInterpretationSchema = z.object({
   intent: OrderTurnIntentSchema,
   confidence: z.number().min(0).max(1),
-  language: z.enum(["english", "roman_urdu"]),
+  language: z.enum(["english", "roman_urdu", "pashto"]),
   add_items: z.array(ParsedTurnItemSchema).max(10),
   remove_items: z.array(ParsedTurnRemovalSchema).max(10),
   unknown_items: z.array(z.string().trim().min(1).max(120)).max(5),
@@ -334,7 +334,9 @@ function buildSupportPrompt(
   const aiPersonality = settings.ai_personality?.trim() || "Warm & Professional";
   const deliveryAreas = settings.delivery_areas.length > 0 ? settings.delivery_areas.join(", ") : "not restricted in settings";
   const languageInstruction =
-    preferredLanguage === "roman_urdu"
+    preferredLanguage === "pashto"
+      ? "Reply only in natural Roman Pashto written in English letters (e.g. 'Za ghwaarom', 'Manana', 'Dera manana'). The customer may write in Pashto script (پښتو) or Roman Pashto — understand both and always reply in Roman Pashto that a Pashtun WhatsApp user would easily read."
+      : preferredLanguage === "roman_urdu"
       ? "Reply only in natural Roman Urdu written in English letters. The customer may write in Urdu Arabic script (اردو) or Roman Urdu — understand both and always reply in Roman Urdu."
       : "Reply only in natural English. The customer may write in Urdu Arabic script (اردو) — understand it and still reply in English.";
 
@@ -399,19 +401,21 @@ function buildOrderInterpreterPrompt(input: OrderTurnInterpretationInput): strin
     "- If the user asks for a human, is abusive, or sounds angry, set wants_human=true.",
     "- If quantity is not clearly an integer, do not guess. Leave the item out of add_items and mention it in unknown_items or notes.",
     "- If an item is descriptive or misspelled, use SEMANTIC_MENU_MATCHES only as verified candidate hints.",
-    "- The customer may write in Urdu Arabic script (اردو), Roman Urdu, or English. Understand ALL three and map food item names to their closest MENU_CATALOG match.",
+    "- The customer may write in Urdu Arabic script (اردو), Roman Urdu, Pashto (پښتو), Roman Pashto, or English. Understand ALL and map food item names to their closest MENU_CATALOG match.",
     "- Common Urdu food terms: چکن = Chicken, کڑاہی/کڑائی = Karahi, بریانی = Biryani, نان = Naan, روٹی = Roti, چاول = Rice, سالن = Salan/Curry, دال = Daal, قورمہ = Qorma, نہاری = Nihari, پایہ = Paya, حلیم = Haleem, برگر = Burger, پیزا = Pizza, فرائز = Fries, رول = Roll, مینیو/مینو = Menu, آپشن/اوشن/اویشن = Option, اویلیبل/ایویلیبل/دستیاب = Available, آرڈر = Order, بیف = Beef, مٹن = Mutton.",
+    "- Common Pashto food terms: چرګ/مرغه = Chicken, غوښه = Meat, وريژې = Rice, ډوډۍ = Roti/Bread, کباب = Kabab, برګر = Burger, پيزه = Pizza, کراهی = Karahi, بریاني = Biryani.",
+    "- Common Roman Pashto ordering phrases: 'za ghwaarom / ghwaram' = I want, 'wrakawa / rakawa / raka' = give me, 'tsomra' = how much, 'manana' = thanks, 'yaw/dwa/dre/tsalor/pinzah' = 1/2/3/4/5, 'deliver kra' = deliver it, 'kora ta' = to my home.",
     "- Common Roman Urdu conversational phrases: 'is k elawa'/'iske ilawa' = besides this/anything else, 'kch aur'/'kuch aur' = anything else, 'menu me h?'/'menu mein hai?' = is it on the menu?, 'nh h'/'nahi hai' = not available?, 'b aad kr'/'bhi add kar' = also add, 'krwa do'/'karwa do' = place/do it, 'kr da'/'kar da' = do it, 'kitne ka' = how much, 'haan'/'han' = yes, 'na'/'nahi' = no, 'bas itna'/'bas' = that's all, 'aur kuch nahi' = nothing else, 'theek hai' = okay. Always map these to proper intents even with heavy abbreviation.",
     "- Messages prefixed with '[Voice note]' are voice-to-text transcriptions. Treat the text after the prefix as a normal customer message and parse it for order intent.",
     "- IMPORTANT: When the customer sends a free-text item name with a quantity (e.g., 'Zinger burger 3', '2 biryani', 'chicken karahi 1'), ALWAYS extract it into add_items with the correct quantity. The number adjacent to an item name IS the quantity.",
-    "- If the user writes 'مینیو', 'مینو', 'menu', or 'meniu', set intent=browse_menu and asks_menu=true.",
+    "- If the user writes 'مینیو', 'مینو', 'menu', 'meniu', 'منیو', or 'menu wakhaya', set intent=browse_menu and asks_menu=true.",
     "intent must be one of:",
     "greeting,add_items,remove_items,set_order_type,provide_address,provide_dine_in_details,confirm_order,modify_order,browse_menu,category_question,payment_question,eta_question,order_status_question,cancel_order,restart_order,continue_order,chitchat,unknown",
     "Schema:",
     "{",
     '  "intent": "unknown",',
     '  "confidence": 0.0,',
-    '  "language": "english|roman_urdu",',
+    '  "language": "english|roman_urdu|pashto",',
     '  "add_items": [{"name":"Chicken Biryani", "qty":2}],',
     '  "remove_items": [{"name":"Chicken Biryani", "qty":1|"all"}],',
     '  "unknown_items": [""],',
@@ -673,6 +677,11 @@ export async function getCustomerSupportReply(
 
     const content = completion.choices[0]?.message?.content?.trim();
     if (!content) {
+      if (preferredLanguage === "pashto") {
+        return isOpenNow
+          ? "Ao. Item num warkawa ya *menu* type kra."
+          : "Mung oss band yu. Items leedo dapara *menu* type kra.";
+      }
       if (preferredLanguage === "roman_urdu") {
         return isOpenNow
           ? "Ji. Item ka naam bhej dein ya *menu* likh dein."
@@ -687,6 +696,11 @@ export async function getCustomerSupportReply(
     return cleanCustomerReply(content);
   } catch (error) {
     console.error("[ai] support fallback failed:", error);
+    if (preferredLanguage === "pashto") {
+      return isOpenNow
+        ? "Ao. Item num warkawa ya *menu* type kra."
+        : "Mung oss band yu. Items leedo dapara *menu* type kra.";
+    }
     if (preferredLanguage === "roman_urdu") {
       return isOpenNow
         ? "Ji. Item ka naam bhej dein ya *menu* likh dein."

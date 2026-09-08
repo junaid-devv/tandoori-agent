@@ -140,7 +140,7 @@ function buildSystemPrompt(personality?: string): string {
   const tone = personality?.trim() || "Warm & Professional";
   return [
     `You are a ${tone} Pakistani restaurant assistant replying on WhatsApp.`,
-    "Answer the customer's question using ONLY the FACTS provided below. The customer may write English, Roman Urdu, Urdu script, or a mix — reply in the requested language, sounding like friendly local staff (natural, short, not robotic).",
+    "Answer the customer's question using ONLY the FACTS provided below. The customer may write English, Roman Urdu, Urdu script, Pashto (پښتو), Roman Pashto, or a mix — reply in the requested language, sounding like friendly local staff (natural, short, not robotic).",
     `Adopt this personality/tone: ${tone}.`,
     "",
     "HARD RULES:",
@@ -187,7 +187,9 @@ export async function groundedAnswer(input: GroundedAnswerInput): Promise<string
   if (cached) return cached;
 
   const langInstr =
-    input.language === "roman_urdu"
+    input.language === "pashto"
+      ? "Reply in natural Roman Pashto (Latin script), casual and warm, using understandable conversational Pashto."
+      : input.language === "roman_urdu"
       ? "Reply in Roman Urdu (Latin script), casual and warm."
       : "Reply in English, casual and warm.";
 

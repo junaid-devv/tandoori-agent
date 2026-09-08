@@ -7,7 +7,7 @@
  */
 import { normalizeText } from "../order-text-utils.ts";
 import type { RestaurantSettings } from "../settings.ts";
-import type { OrderType } from "../schema.types.ts";
+import type { LanguagePreference, OrderType } from "../schema.types.ts";
 
 // ---------------------------------------------------------------------------
 // Delivery area matching
@@ -21,10 +21,10 @@ function buildDeliveryAreasList(settings: RestaurantSettings): string {
   return `${visibleAreas.join(", ")}${suffix}`;
 }
 
-export function buildDeliveryAreaHint(settings: RestaurantSettings, romanUrdu: boolean): string {
+export function buildDeliveryAreaHint(settings: RestaurantSettings, _langOrRomanUrdu?: boolean | LanguagePreference): string {
   const areas = buildDeliveryAreasList(settings);
   if (!areas) return "";
-  return romanUrdu ? ` Delivery areas: ${areas}.` : ` Delivery areas: ${areas}.`;
+  return ` Delivery areas: ${areas}.`;
 }
 
 export function findMatchingDeliveryArea(address: string, settings: RestaurantSettings): string | null {
@@ -74,24 +74,32 @@ export function findMatchingDeliveryArea(address: string, settings: RestaurantSe
 export function buildEstimatedTimeReply(
   settings: RestaurantSettings,
   orderType: OrderType | null,
-  romanUrdu: boolean,
+  langOrRomanUrdu: boolean | LanguagePreference,
 ): string {
   const prepMinutes = Math.round(Number(settings.estimated_prep_minutes) || 30);
   const deliveryMinutes = Math.round(Number(settings.estimated_delivery_minutes) || 45);
 
+  const isPa = langOrRomanUrdu === "pashto";
+  const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
+
   if (orderType === "pickup") {
-    return romanUrdu
+    if (isPa) return `Pickup prep estimate confirmation baad takreeban ${prepMinutes} minutes day.`;
+    return isUr
       ? `Pickup prep estimate confirmation ke baad takreeban ${prepMinutes} minutes hai.`
       : `Pickup prep estimate is about ${prepMinutes} minutes after confirmation.`;
   }
 
   if (orderType === "dine-in") {
-    return romanUrdu
+    if (isPa) return `Dine-in orders dapara prep estimate takreeban ${prepMinutes} minutes day.`;
+    return isUr
       ? `Dine-in orders ke liye prep estimate takreeban ${prepMinutes} minutes hai.`
       : `Dine-in prep estimate is about ${prepMinutes} minutes.`;
   }
 
-  return romanUrdu
+  if (isPa) {
+    return `Delivery estimate confirmation baad takreeban ${deliveryMinutes} minutes day. Prep time ${prepMinutes} minutes day.`;
+  }
+  return isUr
     ? `Delivery estimate confirmation ke baad takreeban ${deliveryMinutes} minutes hai. Prep time ${prepMinutes} minutes hai.`
     : `Delivery estimate is about ${deliveryMinutes} minutes after confirmation. Prep time is about ${prepMinutes} minutes.`;
 }

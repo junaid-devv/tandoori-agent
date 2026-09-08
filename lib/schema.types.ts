@@ -11,7 +11,7 @@ import type { Json } from "./database.types";
 
 // ---- Enums (mirror db/schema.sql CHECK constraints) ----
 
-export type LanguagePreference = "english" | "roman_urdu";
+export type LanguagePreference = "english" | "roman_urdu" | "pashto";
 export type OrderType = "delivery" | "pickup" | "dine-in";
 export type OrderStatus =
   | "received"

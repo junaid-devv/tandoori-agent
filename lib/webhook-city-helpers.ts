@@ -1,4 +1,5 @@
 import type { BranchSummary } from "./branches";
+import type { LanguagePreference } from "./schema.types";
 
 type MenuCatalogCategoryItem = {
   category: string | null;
@@ -33,7 +34,7 @@ export function dedupeCities(cities: string[]): string[] {
 
 export function buildInteractiveListForCities(
   cities: string[],
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
 ):
   | {
     body: string;
@@ -47,33 +48,46 @@ export function buildInteractiveListForCities(
     return null;
   }
 
+  const isPa = langOrPrefersRomanUrdu === "pashto";
+  const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
+
   const rows = uniqueCities.slice(0, 10).map((city, index) => ({
     id: `city_option_${index + 1}`,
     title: city,
   }));
 
   return {
-    body: prefersRomanUrdu
+    body: isPa
+      ? "Khush raghlay! Awal khpal city select kra."
+      : isUr
       ? "Welcome! Sab se pehle apna city select karein."
       : "Welcome! First, please choose your city.",
-    buttonText: prefersRomanUrdu ? "Select City" : "Select City",
-    sectionTitle: prefersRomanUrdu ? "Cities" : "Cities",
+    buttonText: "Select City",
+    sectionTitle: "Cities",
     rows,
   };
 }
 
-export function getCitySelectionPrompt(cities: string[], prefersRomanUrdu: boolean): string {
+export function getCitySelectionPrompt(cities: string[], langOrPrefersRomanUrdu: boolean | LanguagePreference): string {
   const uniqueCities = dedupeCities(cities);
+  const isPa = langOrPrefersRomanUrdu === "pashto";
+  const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
+
   if (uniqueCities.length === 0) {
-    return prefersRomanUrdu
+    if (isPa) return "Bakhana ghwaarom, da wakht da city list nishta. Lagya baad koshish kra.";
+    return isUr
       ? "Maazrat, abhi city list available nahi hai. Thori dair baad try karein."
       : "Sorry, city options are not available right now. Please try again shortly.";
   }
 
-  const intro = prefersRomanUrdu
+  const intro = isPa
+    ? "Khush raghlay! Awal khpal city select kra:"
+    : isUr
     ? "Welcome! Sab se pehle apna city select karein:"
     : "Welcome! First, please choose your city:";
-  const closing = prefersRomanUrdu
+  const closing = isPa
+    ? "Reply ke da city num rawalega."
+    : isUr
     ? "Reply mein city ka naam bhej dein."
     : "Reply with your city name.";
 
@@ -155,7 +169,7 @@ function getUniqueMenuCategories(menuItems: MenuCatalogCategoryItem[]): string[]
 
 export function buildInteractiveCategoryUI(
   menuItems: MenuCatalogCategoryItem[],
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
   page: number,
 ): {
   interactiveList: { body: string; buttonText: string; sectionTitle?: string; rows: Array<{ id: string; title: string; description?: string }> } | null;
@@ -164,7 +178,12 @@ export function buildInteractiveCategoryUI(
   const categories = getUniqueMenuCategories(menuItems);
   if (categories.length < 2) return { interactiveList: null, replyButtons: null };
 
-  const body = prefersRomanUrdu
+  const isPa = langOrPrefersRomanUrdu === "pashto";
+  const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
+
+  const body = isPa
+    ? "Da menu category select kra:"
+    : isUr
     ? "Menu category select karein:"
     : "Choose a category:";
 
@@ -202,15 +221,15 @@ export function buildInteractiveCategoryUI(
   if (hasMore) {
     rows.push({
       id: `category_more_${safePage + 1}`,
-      title: prefersRomanUrdu ? "More Categories" : "More Categories",
+      title: "More Categories",
     });
   }
 
   return {
     interactiveList: {
       body,
-      buttonText: prefersRomanUrdu ? "Select Category" : "Select Category",
-      sectionTitle: prefersRomanUrdu ? "Categories" : "Categories",
+      buttonText: "Select Category",
+      sectionTitle: "Categories",
       rows,
     },
     replyButtons: null,
@@ -219,8 +238,8 @@ export function buildInteractiveCategoryUI(
 
 export function buildInteractiveCategoryList(
   menuItems: MenuCatalogCategoryItem[],
-  prefersRomanUrdu: boolean,
+  langOrPrefersRomanUrdu: boolean | LanguagePreference,
   page: number = 1,
 ) {
-  return buildInteractiveCategoryUI(menuItems, prefersRomanUrdu, page).interactiveList;
+  return buildInteractiveCategoryUI(menuItems, langOrPrefersRomanUrdu, page).interactiveList;
 }
