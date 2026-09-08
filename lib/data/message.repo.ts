@@ -16,6 +16,7 @@ export interface MessageRow {
   delivery_status: MessageDeliveryStatus | null;
   delivery_error: string | null;
   delivery_status_updated_at: string | null;
+  metadata?: Record<string, any> | null;
   created_at: string;
 }
 
@@ -35,6 +36,7 @@ export const messageRepo = {
     content: string;
     whatsappMsgId?: string | null;
     deliveryStatus?: MessageDeliveryStatus | null;
+    metadata?: Record<string, any> | null;
   }): Promise<MessageRow> {
     const { data, error } = await supabaseAdmin
       .from("messages")
@@ -45,6 +47,7 @@ export const messageRepo = {
         content: input.content,
         whatsapp_msg_id: input.whatsappMsgId ?? null,
         delivery_status: input.deliveryStatus ?? null,
+        metadata: input.metadata ?? {},
       })
       .select("*")
       .single();

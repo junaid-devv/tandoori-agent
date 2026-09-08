@@ -26,7 +26,7 @@ export async function GET(
 
   let query = supabaseAdmin
     .from("messages")
-    .select("id, ingest_seq, conversation_id, role, sender_kind, content, whatsapp_msg_id, created_at, delivery_status, delivery_error, delivery_status_updated_at")
+    .select("id, ingest_seq, conversation_id, role, sender_kind, content, whatsapp_msg_id, created_at, delivery_status, delivery_error, delivery_status_updated_at, metadata")
     .eq("conversation_id", accessibleConversation.id)
     .order("ingest_seq", { ascending: false })
     .limit(limit + 1);
@@ -41,22 +41,87 @@ export async function GET(
     return apiErrorResponse(error, { fallback: "Failed to load messages.", context: "conversation messages GET" });
   }
 
-  const rows = data ?? [];
+  const rows = (data ?? []) as Array<any>;
   const hasMore = rows.length > limit;
-  const messages = (hasMore ? rows.slice(0, limit) : rows).sort((left, right) => {
-    const leftTime = new Date(left.created_at).getTime();
-    const rightTime = new Date(right.created_at).getTime();
-    const leftValid = Number.isFinite(leftTime);
-    const rightValid = Number.isFinite(rightTime);
+  const slicedRows = hasMore ? rows.slice(0, limit) : rows;
 
-    if (leftValid && rightValid && leftTime !== rightTime) {
-      return leftTime - rightTime;
-    }
-    if (leftValid && !rightValid) return -1;
-    if (!leftValid && rightValid) return 1;
+  const messages = slicedRows
+    .map((row) => {
+      const meta = (row.metadata || {}) as Record<string, any>;
+      let replyButtons = meta.replyButtons as Array<{ id: string; title: string }> | undefined;
+      let listSelector = meta.listSelector as { title: string; buttonText: string; rows: Array<{ id: string; title: string; description?: string }> } | undefined;
+      const isVoiceNote = Boolean(meta.isVoiceNote || row.content?.startsWith("🎤") || row.content?.includes("[Voice note"));
+      const audioUrl = meta.audioUrl || (meta.mediaId ? `/api/media/${meta.mediaId}` : null);
 
-    return left.ingest_seq - right.ingest_seq;
-  });
+      // Intelligent reconstruction for older assistant messages that had interactive options sent
+      if (!replyButtons && !listSelector && row.role === "assistant") {
+        const c = row.content || "";
+        if (/order\s+confirm\s+karein|confirm\s+your\s+order|order\s+confirm\s+kaway|confirm.*add\s+more/i.test(c)) {
+          replyButtons = [
+            { id: "confirm:yes", title: "Confirm ✓" },
+            { id: "action:add_more", title: "Add More" },
+          ];
+        } else if (/order\s+kaise\s+chahiye|how\s+would\s+you\s+like|order\s+tsanga\s+ghwaaray/i.test(c)) {
+          replyButtons = [
+            { id: "ordertype:delivery", title: "Delivery" },
+            { id: "ordertype:pickup", title: "Pickup" },
+            { id: "ordertype:dine-in", title: "Dine-in" },
+          ];
+        } else if (/delivery\s+address\?|pichla\s+address|pakhwanay\s+address/i.test(c)) {
+          replyButtons = [
+            { id: "addr:saved", title: "Use Saved" },
+            { id: "addr:new", title: "New Address" },
+          ];
+        } else if (/menu\s+categories|kuma\s+category|kaunsi\s+category|what\s+would\s+you\s+like|nan\s+tse\s+order/i.test(c)) {
+          const bulletItems: string[] = [];
+          for (const line of c.split("\n")) {
+            const trimmed = line.trim();
+            if (trimmed.startsWith("•") || trimmed.startsWith("-")) {
+              bulletItems.push(trimmed.replace(/^[•\-]\s*/, "").trim());
+            }
+          }
+          if (bulletItems.length > 0) {
+            listSelector = {
+              title: "Menu Categories",
+              buttonText: "View Categories",
+              rows: bulletItems.map((cat, idx) => ({ id: `cat:${idx}`, title: cat })),
+            };
+          }
+        }
+      }
+
+      return {
+        id: row.id,
+        ingest_seq: row.ingest_seq,
+        conversation_id: row.conversation_id,
+        role: row.role,
+        sender_kind: row.sender_kind,
+        content: row.content,
+        whatsapp_msg_id: row.whatsapp_msg_id,
+        created_at: row.created_at,
+        delivery_status: row.delivery_status,
+        delivery_error: row.delivery_error,
+        delivery_status_updated_at: row.delivery_status_updated_at,
+        replyButtons,
+        listSelector,
+        audioUrl,
+        isVoiceNote,
+      };
+    })
+    .sort((left, right) => {
+      const leftTime = new Date(left.created_at).getTime();
+      const rightTime = new Date(right.created_at).getTime();
+      const leftValid = Number.isFinite(leftTime);
+      const rightValid = Number.isFinite(rightTime);
+
+      if (leftValid && rightValid && leftTime !== rightTime) {
+        return leftTime - rightTime;
+      }
+      if (leftValid && !rightValid) return -1;
+      if (!leftValid && rightValid) return 1;
+
+      return left.ingest_seq - right.ingest_seq;
+    });
 
   return NextResponse.json({
     messages,

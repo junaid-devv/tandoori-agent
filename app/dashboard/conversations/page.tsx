@@ -14,6 +14,7 @@ import {
   Loader2,
   MessageSquare,
   MessageSquareText,
+  Mic,
   Package,
   PanelRightClose,
   PanelRightOpen,
@@ -27,6 +28,7 @@ import {
   UserCheck,
   UserRound,
   Users,
+  Volume2,
   X,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -128,6 +130,8 @@ interface Message {
     buttonText: string;
     rows: Array<{ id: string; title: string; description?: string }>;
   };
+  audioUrl?: string | null;
+  isVoiceNote?: boolean;
 }
 
 interface MessageResponse {
@@ -233,7 +237,7 @@ function getPreviewMessage(conversation: ConversationPreview) {
   const latest = conversation.messages?.[0];
   if (!latest?.content) return "No messages yet";
   let clean = latest.content.replace(/\\n/g, " ").replace(/\n/g, " ");
-  clean = clean.replace(/\*\*/g, "");
+  clean = clean.replace(/\*\*?/g, "");
   return clean.length > 80 ? `${clean.slice(0, 80)}...` : clean;
 }
 
@@ -249,10 +253,15 @@ function formatMessageDay(dateText: string) {
 function renderMessageContent(content: string) {
   if (!content) return "";
   const text = content.replace(/\\n/g, "\n");
-  const parts = text.split(/\*\*([^*]+)\*\*/g);
+  const regex = /(\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  const parts = text.split(regex);
   return parts.map((part, i) => {
-    if (i % 2 === 1) {
-      return <strong key={i} className="font-extrabold">{part}</strong>;
+    if (!part) return null;
+    if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
+      return <strong key={i} className="font-extrabold">{part.slice(2, -2)}</strong>;
+    }
+    if (part.startsWith("*") && part.endsWith("*") && part.length > 2) {
+      return <strong key={i} className="font-extrabold">{part.slice(1, -1)}</strong>;
     }
     return part;
   });
@@ -540,6 +549,8 @@ export default function ConversationsPage() {
         delivery_status: dm.deliveryStatus || "delivered",
         replyButtons: dm.replyButtons,
         listSelector: dm.listSelector,
+        audioUrl: (dm as any).audioUrl || null,
+        isVoiceNote: (dm as any).isVoiceNote || false,
       })) as Message[];
     }
     return messages;
@@ -1073,56 +1084,186 @@ export default function ConversationsPage() {
                                   isIncoming ? "text-slate-400" : "text-white/60"
                                 )}
                               >
-                                <span className="flex items-center gap-1">
-                                  {isIncoming ? <User size={11} /> : isHuman ? <Users size={11} /> : <Bot size={11} />}
-                                  {isIncoming ? (activeConversation.name || "Customer") : isHuman ? "Staff Operator" : "AI Agent"}
+                                <span className="flex items-center gap-1.5">
+                                  {isIncoming ? (
+                                    message.isVoiceNote ? <Mic size={12} className="text-emerald-500" /> : <User size={11} />
+                                  ) : isHuman ? (
+                                    <Users size={11} />
+                                  ) : (
+                                    <Bot size={11} />
+                                  )}
+                                  <span>
+                                    {isIncoming ? (activeConversation.name || "Customer") : isHuman ? "Staff Operator" : "AI Agent"}
+                                  </span>
+                                  {message.isVoiceNote && (
+                                    <span className={clsx(
+                                      "rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide",
+                                      isIncoming ? "bg-emerald-100 text-emerald-700" : "bg-emerald-500/20 text-emerald-300"
+                                    )}>
+                                      Voice
+                                    </span>
+                                  )}
                                 </span>
                                 <span className="font-medium normal-case tracking-normal opacity-80">
                                   {format(currentDate, "h:mm a")}
                                 </span>
                               </div>
 
+                              {/* Voice Note Audio Player */}
+                              {(message.isVoiceNote || message.audioUrl) && (
+                                <div
+                                  className={clsx(
+                                    "my-2 rounded-xl border p-2.5 sm:p-3 transition-colors",
+                                    isIncoming
+                                      ? "border-emerald-200 bg-emerald-50/70 text-slate-800"
+                                      : "border-white/20 bg-white/10 text-white"
+                                  )}
+                                >
+                                  <div className="mb-2 flex items-center gap-2">
+                                    <div
+                                      className={clsx(
+                                        "flex h-7 w-7 items-center justify-center rounded-full shadow-xs shrink-0",
+                                        isIncoming ? "bg-emerald-600 text-white" : "bg-white text-slate-900"
+                                      )}
+                                    >
+                                      <Mic size={13} />
+                                    </div>
+                                    <div className="min-w-0 flex-1">
+                                      <p className={clsx("text-xs font-bold leading-none", isIncoming ? "text-emerald-950" : "text-white")}>
+                                        WhatsApp Voice Note
+                                      </p>
+                                      <p className={clsx("text-[10px] mt-0.5 truncate", isIncoming ? "text-emerald-700" : "text-white/70")}>
+                                        {message.audioUrl ? "Audio message" : "Recorded audio"}
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  {message.audioUrl ? (
+                                    <div className="mt-1">
+                                      <audio
+                                        controls
+                                        src={message.audioUrl}
+                                        preload="metadata"
+                                        className="h-8 w-full max-w-[280px] sm:max-w-[320px] rounded-md outline-none"
+                                      />
+                                    </div>
+                                  ) : (
+                                    <div className="flex items-center gap-1.5 text-[11px] italic opacity-75">
+                                      <Volume2 size={12} />
+                                      <span>Audio recording expired or hosted on WhatsApp</span>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+
                               {/* Content */}
-                              <div className="whitespace-pre-wrap">{renderMessageContent(message.content)}</div>
+                              {message.content && (
+                                message.isVoiceNote ? (
+                                  <div
+                                    className={clsx(
+                                      "mt-1 rounded-xl border p-2.5 text-xs sm:text-sm",
+                                      isIncoming
+                                        ? "border-emerald-200 bg-emerald-50/40 text-slate-800"
+                                        : "border-white/15 bg-white/5 text-slate-200"
+                                    )}
+                                  >
+                                    <div className="mb-1 flex items-center gap-1 text-[10px] font-bold uppercase tracking-wider text-emerald-600">
+                                      <Sparkles size={11} />
+                                      <span>Transcription</span>
+                                    </div>
+                                    <div className="whitespace-pre-wrap leading-relaxed">
+                                      {renderMessageContent(
+                                        message.content.replace(/^🎤\s*(\[Voice note transcribed\]:\s*)?/i, "").replace(/^"|"$/g, "").trim() || message.content
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="whitespace-pre-wrap">{renderMessageContent(message.content)}</div>
+                                )
+                              )}
 
                               {/* Interactive WhatsApp Reply Buttons */}
                               {message.replyButtons && message.replyButtons.length > 0 && (
-                                <div className="mt-3 flex flex-wrap gap-1.5 border-t border-white/15 pt-2.5">
-                                  {message.replyButtons.map((btn) => (
-                                    <div
-                                      key={btn.id}
-                                      className="flex items-center gap-1.5 rounded-lg border border-emerald-400/30 bg-emerald-500/20 px-2.5 py-1 text-xs font-semibold text-emerald-200"
-                                    >
-                                      <Sparkles size={11} className="text-emerald-300" />
-                                      <span>{btn.title}</span>
-                                    </div>
-                                  ))}
+                                <div className={clsx("mt-3 border-t pt-2.5", isIncoming ? "border-slate-200" : "border-white/15")}>
+                                  <div
+                                    className={clsx(
+                                      "mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider",
+                                      isIncoming ? "text-slate-400" : "text-white/60"
+                                    )}
+                                  >
+                                    <Sparkles size={10} />
+                                    <span>WhatsApp Interactive Buttons</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-1.5">
+                                    {message.replyButtons.map((btn) => (
+                                      <div
+                                        key={btn.id}
+                                        className={clsx(
+                                          "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-xs transition-all",
+                                          isIncoming
+                                            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                                            : "border-emerald-400/30 bg-emerald-500/20 text-emerald-200"
+                                        )}
+                                      >
+                                        <span className="text-[10px]">🔘</span>
+                                        <span>{btn.title}</span>
+                                      </div>
+                                    ))}
+                                  </div>
                                 </div>
                               )}
 
                               {/* Interactive WhatsApp List Selector */}
                               {message.listSelector && (
-                                <div className="mt-3 overflow-hidden rounded-xl border border-white/15 bg-black/40 p-3">
-                                  <div className="mb-2 flex items-center justify-between text-xs font-bold text-slate-200">
-                                    <span className="flex items-center gap-1.5 text-emerald-300">
+                                <div
+                                  className={clsx(
+                                    "mt-3 overflow-hidden rounded-xl border p-3",
+                                    isIncoming
+                                      ? "border-slate-200 bg-slate-50 text-slate-800"
+                                      : "border-white/15 bg-black/40 text-white"
+                                  )}
+                                >
+                                  <div className="mb-2 flex items-center justify-between text-xs font-bold">
+                                    <span className={clsx("flex items-center gap-1.5", isIncoming ? "text-emerald-700" : "text-emerald-300")}>
                                       <Package size={13} />
                                       <span>{message.listSelector.title}</span>
                                     </span>
-                                    <span className="rounded bg-emerald-500/30 px-2 py-0.5 text-[9px] font-bold text-emerald-200 uppercase">
-                                      Interactive List
+                                    <span
+                                      className={clsx(
+                                        "rounded px-2 py-0.5 text-[9px] font-bold uppercase",
+                                        isIncoming
+                                          ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
+                                          : "bg-emerald-500/30 text-emerald-200"
+                                      )}
+                                    >
+                                      {message.listSelector.buttonText || "Interactive List"}
                                     </span>
                                   </div>
                                   <div className="space-y-1.5">
                                     {message.listSelector.rows.map((row) => (
                                       <div
                                         key={row.id}
-                                        className="flex items-center justify-between rounded-lg border border-white/10 bg-white/5 p-2 text-xs"
+                                        className={clsx(
+                                          "flex items-center justify-between rounded-lg border p-2 text-xs",
+                                          isIncoming ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
+                                        )}
                                       >
                                         <div>
-                                          <p className="font-semibold text-white">{row.title}</p>
-                                          {row.description && <p className="text-[11px] text-slate-300">{row.description}</p>}
+                                          <p className={clsx("font-semibold", isIncoming ? "text-slate-800" : "text-white")}>{row.title}</p>
+                                          {row.description && (
+                                            <p className={clsx("text-[11px]", isIncoming ? "text-slate-500" : "text-slate-300")}>
+                                              {row.description}
+                                            </p>
+                                          )}
                                         </div>
-                                        <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-300 border border-emerald-500/30">
+                                        <span
+                                          className={clsx(
+                                            "rounded px-2 py-0.5 text-[10px] font-bold border",
+                                            isIncoming
+                                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                              : "border-emerald-500/30 bg-emerald-500/20 text-emerald-300"
+                                          )}
+                                        >
                                           Select
                                         </span>
                                       </div>

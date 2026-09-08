@@ -613,13 +613,42 @@ async function handleNonText(
 
         console.log(`[voice] Transcribed (${model}): "${transcript}"`);
 
-        // Store with transcript visible in conversation history
+        // Upload audio file to Supabase Storage for permanent dashboard playback
+        let voiceAudioUrl = audioId ? `/api/media/${audioId}` : null;
+        try {
+          const storagePath = `${conversation.id}/${message.id}.${ext}`;
+          const { error: uploadError } = await supabaseAdmin.storage
+            .from("voice-notes")
+            .upload(storagePath, audioBuffer, {
+              contentType: cleanMime,
+              upsert: true,
+            });
+          if (!uploadError) {
+            const { data: publicUrlData } = supabaseAdmin.storage
+              .from("voice-notes")
+              .getPublicUrl(storagePath);
+            if (publicUrlData?.publicUrl) {
+              voiceAudioUrl = publicUrlData.publicUrl;
+            }
+          }
+        } catch (uploadErr) {
+          console.warn("[voice] Could not upload voice note to storage:", uploadErr);
+        }
+
+        // Store with transcript and audioUrl visible in conversation history
         const persistedMsg = await messageRepo.insert({
           conversationId: conversation.id,
           role: "user",
           senderKind: "user",
           content: `🎤 ${transcript}`,
           whatsappMsgId: message.id,
+          metadata: {
+            isVoiceNote: true,
+            audioUrl: voiceAudioUrl,
+            mediaId: audioId,
+            mimeType: cleanMime,
+            transcript,
+          },
         });
 
         // Update language from transcript
@@ -681,7 +710,18 @@ async function handleNonText(
             : isRomanUrdu
             ? "🎤 Voice note mil gaya, lekin samajhne mein mushkil hua. Apna order text mein bhej dein!"
             : "🎤 Got your voice note, but had trouble understanding it. Please type your order!";
-        await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: "[Voice note - transcription failed]", whatsappMsgId: message.id });
+        await messageRepo.insert({
+          conversationId: conversation.id,
+          role: "user",
+          senderKind: "user",
+          content: "[Voice note - transcription failed]",
+          whatsappMsgId: message.id,
+          metadata: {
+            isVoiceNote: true,
+            audioUrl: audioId ? `/api/media/${audioId}` : null,
+            mediaId: audioId,
+          },
+        });
         await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: fallbackMsg });
         return;
       }
@@ -694,7 +734,18 @@ async function handleNonText(
         : isRomanUrdu
         ? "🎤 Voice note mil gaya! Apna order text mein bhej dein, main turant help karunga."
         : "🎤 Got your voice note! Please type your order and I'll help right away.";
-    await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: "[Voice note received]", whatsappMsgId: message.id });
+    await messageRepo.insert({
+      conversationId: conversation.id,
+      role: "user",
+      senderKind: "user",
+      content: "[Voice note received]",
+      whatsappMsgId: message.id,
+      metadata: {
+        isVoiceNote: true,
+        audioUrl: audioId ? `/api/media/${audioId}` : null,
+        mediaId: audioId,
+      },
+    });
     await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: voiceFallback });
     return;
   }

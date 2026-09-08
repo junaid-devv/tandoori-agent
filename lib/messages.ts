@@ -218,6 +218,13 @@ export async function sendAndPersistOutboundInteractiveMessage({
       role: "assistant",
       sender_kind: senderKind,
       content,
+      metadata: {
+        listSelector: {
+          title: interactive.buttonText || interactive.body || "Select Option",
+          buttonText: interactive.buttonText,
+          rows: interactive.rows.map((r) => ({ id: r.id, title: r.title, description: r.description })),
+        },
+      },
       delivery_status: "pending",
       delivery_status_updated_at: new Date().toISOString(),
     })
@@ -282,6 +289,9 @@ export async function sendAndPersistOutboundReplyButtonMessage({
       role: "assistant",
       sender_kind: senderKind,
       content,
+      metadata: {
+        replyButtons: replyButtons.buttons.map((b) => ({ id: b.id, title: b.title })),
+      },
       delivery_status: "pending",
       delivery_status_updated_at: new Date().toISOString(),
     })

@@ -1210,3 +1210,7 @@ alter table contacts add constraint contacts_preferred_language_check check (pre
 -- conversation_states table
 alter table conversation_states drop constraint if exists conversation_states_preferred_language_check;
 alter table conversation_states add constraint conversation_states_preferred_language_check check (preferred_language in ('english', 'roman_urdu', 'pashto')) not valid;
+
+-- messages metadata & voice-notes storage
+alter table messages add column if not exists metadata jsonb default '{}'::jsonb;
+insert into storage.buckets (id, name, public) values ('voice-notes', 'voice-notes', true) on conflict (id) do nothing;

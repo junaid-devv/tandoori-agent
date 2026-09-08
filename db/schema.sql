@@ -138,6 +138,7 @@ create table messages (
   delivery_status text check (delivery_status in ('pending', 'sent', 'delivered', 'read', 'failed')),
   delivery_error text,
   delivery_status_updated_at timestamptz,
+  metadata jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default now()
 );
 
