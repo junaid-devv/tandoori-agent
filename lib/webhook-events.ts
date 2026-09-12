@@ -61,25 +61,36 @@ export async function recordWebhookEvent(input: {
 
   // Single-trip upsert: insert on first delivery, increment received_count on retries.
   // Supabase upsert with ignoreDuplicates:false returns the existing row on conflict.
-  const { data, error } = await supabaseAdmin
+  const payload = {
+    provider: "meta_whatsapp",
+    delivery_key: deliveryKey,
+    raw_body: shouldStoreRawWebhookBody() ? input.rawBody : "[redacted]",
+    payload: input.payload,
+    signature: input.signature,
+    status: "received" as const,
+    attempt_count: 0,
+    received_count: 1,
+    created_at: now,
+    updated_at: now,
+  };
+
+  let { data, error } = await supabaseAdmin
     .from("webhook_events")
-    .upsert(
-      {
-        provider: "meta_whatsapp",
-        delivery_key: deliveryKey,
-        raw_body: shouldStoreRawWebhookBody() ? input.rawBody : "[redacted]",
-        payload: input.payload,
-        signature: input.signature,
-        status: "received",
-        attempt_count: 0,
-        received_count: 1,
-        created_at: now,
-        updated_at: now,
-      },
-      { onConflict: "delivery_key", ignoreDuplicates: false },
-    )
+    .upsert(payload, { onConflict: "delivery_key", ignoreDuplicates: false })
     .select("*")
     .single();
+
+  if (error && (error.message?.includes("Timeout") || error.message?.includes("fetch failed"))) {
+    console.warn("[webhook] Transient gateway timeout on recordWebhookEvent, retrying in 500ms...");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const retry = await supabaseAdmin
+      .from("webhook_events")
+      .upsert(payload, { onConflict: "delivery_key", ignoreDuplicates: false })
+      .select("*")
+      .single();
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error || !data) {
     throw error ?? new Error("Failed to persist webhook event.");
@@ -89,10 +100,21 @@ export async function recordWebhookEvent(input: {
 }
 
 export async function claimWebhookEvent(eventId: string): Promise<WebhookEventRecord | null> {
-  const { data, error } = await supabaseAdmin.rpc("claim_webhook_event", {
+  let { data, error } = await supabaseAdmin.rpc("claim_webhook_event", {
     p_event_id: eventId,
     p_stale_after_seconds: 90,
   });
+
+  if (error && (error.message?.includes("Timeout") || error.message?.includes("fetch failed"))) {
+    console.warn("[webhook] Transient gateway timeout on claimWebhookEvent, retrying in 500ms...");
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const retry = await supabaseAdmin.rpc("claim_webhook_event", {
+      p_event_id: eventId,
+      p_stale_after_seconds: 90,
+    });
+    data = retry.data;
+    error = retry.error;
+  }
 
   if (error) {
     throw error;
