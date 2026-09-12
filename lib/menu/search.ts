@@ -450,10 +450,10 @@ export async function resolveItemDetailed(
     return { kind: "exact", item: exactMatch, confidence: 1.0 };
   }
 
-  // 2) If user specified a size (e.g. "half", "full", "large", "reg", "medium", "xl"), find the candidate matching that size
+  // 2) If user specified a size (e.g. "half", "full", "large", "reg", "medium", "xl"), find ALL candidates matching that size
   if (requestedSize) {
     const s = requestedSize.toLowerCase();
-    const sizeMatch = relevantCandidates.find((c) => {
+    const isSizeMatch = (c: ResolvedMenuItem): boolean => {
       const { variant } = extractBaseItemName(c.name);
       const v = variant ? variant.toLowerCase() : "";
       const n = c.name.toLowerCase();
@@ -477,9 +477,22 @@ export async function resolveItemDetailed(
         (s === "xl" && (v.includes("xl") || v.includes("extra large") || n.includes("xl"))) ||
         (s === "extra large" && (v.includes("xl") || v.includes("extra large") || n.includes("xl")))
       );
-    });
-    if (sizeMatch) {
-      return { kind: "exact", item: sizeMatch, confidence: sizeMatch.similarity ?? 0.9 };
+    };
+    const sizeMatches = relevantCandidates.filter(isSizeMatch);
+    if (sizeMatches.length === 1) {
+      return { kind: "exact", item: sizeMatches[0], confidence: sizeMatches[0].similarity ?? 0.9 };
+    }
+    if (sizeMatches.length > 1) {
+      // Check if these are distinct items (e.g. Vegetarian Pizza Large vs Chicken Pizza Large)
+      // or sub-variants of the same base item
+      const sizeDistinctBases = [...new Set(sizeMatches.map((m) => extractBaseItemName(m.name).baseName.toLowerCase()))];
+      if (sizeDistinctBases.length > 1) {
+        // Multiple DIFFERENT items at this size — present as options to choose
+        return { kind: "ambiguous", query: trimmed, matches: sizeMatches.slice(0, 5) };
+      }
+      // Same base item with multiple sub-variants at this size — show variants
+      sizeMatches.sort((a, b) => a.price - b.price);
+      return { kind: "variants", baseName: sizeDistinctBases[0], variants: sizeMatches };
     }
   }
 
@@ -502,9 +515,12 @@ export async function resolveItemDetailed(
   const candidatesCoveringQuery = relevantCandidates.filter((c) => queryTokensCoveredByName(trimmed, c.name));
   const distinctBases = [...new Set(relevantCandidates.slice(0, 5).map((c) => extractBaseItemName(c.name).baseName.toLowerCase()))];
   const isBroadSingleWord = /^(burger|burgers|pizza|pizzas|shawarma|roll|rolls|paratha|sandwich|sandwiches|pasta|fries|deal|deals|wrap|wraps|salad|salads|shake|shakes|karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|drinks|juice|dessert|fish|boti)$/i.test(trimmed);
+  // Also detect "size + generic dish" patterns like "large pizza", "small burger" — these are equally broad
+  const isBroadSizeQuery = /^(?:small|medium|large|xl|x-large|extra\s*large|reg(?:ular)?|half|full)\s+(burger|burgers|pizza|pizzas|shawarma|roll|rolls|paratha|sandwich|sandwiches|pasta|fries|deal|deals|wrap|wraps|salad|salads|shake|shakes|karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|drinks|juice|dessert|fish|boti)$/i.test(trimmed);
+  const isBroadQuery = isBroadSingleWord || isBroadSizeQuery;
 
   // If multiple distinct dishes match the query (or the query is a broad generic dish/category term):
-  if (distinctBases.length > 1 && (isBroadSingleWord || candidatesCoveringQuery.length > 1)) {
+  if (distinctBases.length > 1 && (isBroadQuery || candidatesCoveringQuery.length > 1)) {
     const matches = (candidatesCoveringQuery.length > 1 ? candidatesCoveringQuery : relevantCandidates).slice(0, 5);
     return { kind: "ambiguous", query: trimmed, matches };
   }
