@@ -179,18 +179,18 @@ export const getDashboardSession = cache(async (): Promise<DashboardSession> => 
 
   if (allowedBranches.length === 0) {
     allowedBranches.push({
-      id: "92de8ae3-eac0-4b31-8e13-a1c3557c7c5c",
-      slug: "cheesybox-wah",
-      name: "Cheesy Box — Wah Branch",
-      city: "Wah Cantt",
-      address: "Wah Cantt (Dine In, Take Away & Delivery)",
+      id: "default-branch-id",
+      slug: "orderiq-central",
+      name: "OrderIQ Central",
+      city: "Islamabad",
+      address: "Sector F-6/2, Islamabad",
     });
   }
 
   return {
     userId: "auto-login-admin",
-    email: "admin@cheesybox.pk",
-    fullName: "Cheesy Box Admin",
+    email: "admin@orderiq.pk",
+    fullName: "OrderIQ Admin",
     role: "admin",
     defaultBranchId: allowedBranches[0]?.id ?? "default-branch-id",
     allowedBranches,
