@@ -1,0 +1,127 @@
+{
+  "restaurant": "Cheezo Bites",
+  "phone": "+923175437133",
+  "categories": [
+    { "name": "Chicken Burger", "sort_order": 1 },
+    { "name": "Beef Burger", "sort_order": 2 },
+    { "name": "Wraps", "sort_order": 3 },
+    { "name": "One Person Deal", "sort_order": 4 },
+    { "name": "Chicken Burger Deals", "sort_order": 5 }
+  ],
+  "items": [
+    {
+      "name": "Reggy Burger",
+      "price": 290,
+      "category": "Chicken Burger",
+      "description": "Chicken Petty, Lettuce, Chilli sauce, Mayo"
+    },
+    {
+      "name": "Crispy Chicken Burger",
+      "price": 420,
+      "category": "Chicken Burger",
+      "description": "Crispy Chicken fillet, Lettuce, Mayo"
+    },
+    {
+      "name": "Crispy Supreme Burger",
+      "price": 680,
+      "category": "Chicken Burger",
+      "description": "Crispy Double Chicken Fillet, Lettuce, Mayo"
+    },
+    {
+      "name": "Saucy Beefy Burger",
+      "price": 690,
+      "category": "Beef Burger",
+      "description": "100 g Patty, chipotle Sauce, Roma Tomato, American Cheese, with butter potato buns"
+    },
+    {
+      "name": "Divine Brust Burger",
+      "price": 790,
+      "category": "Beef Burger",
+      "description": "100 g. Patty, Epic Sauce, Caramelized Onions, Mixed Greens, Pickles, Garlic Mayo, with butter potato bun"
+    },
+    {
+      "name": "Epic Bite Burger",
+      "price": 990,
+      "category": "Beef Burger",
+      "description": "100g x2 Patty, Honey, Jellapeno, Double Cheese Slice, Besto Sauce, Caramelized Onion"
+    },
+    {
+      "name": "Cheezo Smash Burger",
+      "price": 1190,
+      "category": "Beef Burger",
+      "description": "100g x2 crispy smash patty, Caramelized Onions, Double cheese slice, Besto Sauce"
+    },
+    {
+      "name": "Crispy Cheezo Wrap",
+      "price": 420,
+      "category": "Wraps",
+      "description": "Fried Strips, Lettuce, Pickles, Jalapeno, Mayo, Chilli Sauce"
+    },
+    {
+      "name": "Garlic Mayo Wrap",
+      "price": 450,
+      "category": "Wraps",
+      "description": "Chopped Chicken, Tortilla Salad, Sweet Corns, Garlic Mayo, Cheese Slice"
+    },
+    {
+      "name": "Epic Bite Wrap",
+      "price": 550,
+      "category": "Wraps",
+      "description": "Fried Strips, Fries, Chopped Pickles, Lettuce, Epic Sauce, Special Sauce, Cheese Slice"
+    },
+    {
+      "name": "Super Deal 1",
+      "price": 590,
+      "category": "One Person Deal",
+      "description": "1 Chicken Burger, 1 Regular Fries, 1 Regular Drink"
+    },
+    {
+      "name": "Super Deal 2",
+      "price": 690,
+      "category": "One Person Deal",
+      "description": "1 Chicken Burger, 1 Chicken piece, 1 Regular Drink"
+    },
+    {
+      "name": "Super Deal 3",
+      "price": 520,
+      "category": "One Person Deal",
+      "description": "1 Reggy Burger, 1 Regular Fries, 1 Regular Drink"
+    },
+    {
+      "name": "Super Deal 4",
+      "price": 780,
+      "category": "One Person Deal",
+      "description": "1 Chicken Burger, 1 Regular Fries, 1 Chicken Piece, 1 Regular Drink"
+    },
+    {
+      "name": "Mega Crunch Combo 1",
+      "price": 990,
+      "category": "Chicken Burger Deals",
+      "description": "2 Chicken Burger, 2 Regular Drinks, 1 Regular Fries"
+    },
+    {
+      "name": "Mega Crunch Combo 2",
+      "price": 1320,
+      "category": "Chicken Burger Deals",
+      "description": "2 Chicken Burger, 2 Regular Drinks, 2 Chicken pcs, 1 Regular Fries"
+    },
+    {
+      "name": "Triple Mega Crunch Box 1",
+      "price": 1340,
+      "category": "Chicken Burger Deals",
+      "description": "3 Chicken Burger, 1 Liter Drinks, 1 Large Fries"
+    },
+    {
+      "name": "Triple Mega Crunch Box 2",
+      "price": 1550,
+      "category": "Chicken Burger Deals",
+      "description": "3 Chicken Burger, 3 Chicken pcs, 1 Liter Drinks"
+    },
+    {
+      "name": "Family Crunch Box 1",
+      "price": 2150,
+      "category": "Chicken Burger Deals",
+      "description": "5 Chicken Burger, 1 Large Fries, 1.5 Liter Drinks"
+    }
+  ]
+}

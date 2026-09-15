@@ -20,9 +20,9 @@ const varsToSet = {
   NEXT_PUBLIC_APP_CURRENCY: 'Rs.',
   RESTAURANT_BRANCH_MODE: 'single',
   RESTAURANT_TIMEZONE: 'Asia/Karachi',
-  NEXT_PUBLIC_APP_PHONE_DELIVERY: 'Update delivery phone',
-  NEXT_PUBLIC_APP_PHONE_DINE_IN: 'Update dine-in phone',
-  NEXT_PUBLIC_APP_PHONE_DINEIN: 'Update dine-in phone',
+  NEXT_PUBLIC_APP_PHONE_DELIVERY: '+923175437133',
+  NEXT_PUBLIC_APP_PHONE_DINE_IN: '+923175437133',
+  NEXT_PUBLIC_APP_PHONE_DINEIN: '+923175437133',
   NEXT_PUBLIC_AI_PERSONALITY: 'Warm, energetic, and helpful Cheezo Bites ordering assistant',
 
   // Fresh, unique security secrets (NOT copied from other projects)
