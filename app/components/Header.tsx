@@ -16,9 +16,13 @@ import {
   Search,
   Settings,
   ShieldCheck,
+  Bell,
+  BellRing,
+  Download,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { useNotifications } from "@/app/components/dashboard/NotificationHub";
 import { toast } from "sonner";
 
 const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
@@ -42,6 +46,14 @@ export function Header() {
     isSoundEnabled,
     toggleSoundEnabled,
   } = useDashboardContext();
+
+  const {
+    notificationPermission,
+    requestNotificationPermission,
+    isNotificationSupported,
+    isInstallable,
+    installApp,
+  } = useNotifications();
 
   const [branchDropdownOpen, setBranchDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -165,6 +177,40 @@ export function Header() {
           </span>
           <span>AI Agent Live</span>
         </div>
+
+        {/* PWA Install Button */}
+        {isInstallable && (
+          <button
+            onClick={() => void installApp()}
+            title="Install Cheezo Bites Management App on this device"
+            className="flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand/10 px-2.5 py-1 text-xs font-bold text-brand hover:bg-brand/20 transition shadow-sm animate-pulse"
+          >
+            <Download size={13} />
+            <span className="hidden sm:inline">Install App</span>
+          </button>
+        )}
+
+        {/* Native Notification Permission Button */}
+        {isNotificationSupported && notificationPermission !== "granted" && (
+          <button
+            onClick={() => void requestNotificationPermission()}
+            title="Enable push / device sound notifications for new WhatsApp orders & chats"
+            className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition shadow-sm"
+          >
+            <BellRing size={13} className="text-amber-600 animate-bounce" />
+            <span className="hidden md:inline">Enable Alerts</span>
+          </button>
+        )}
+
+        {/* Device Notifications Granted Indicator */}
+        {isNotificationSupported && notificationPermission === "granted" && (
+          <div
+            title="Device notifications active"
+            className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-emerald-600"
+          >
+            <Bell size={15} />
+          </div>
+        )}
 
         {/* Sound Notifications Toggle Button */}
         <button

@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { useNotifications } from "@/app/components/dashboard/NotificationHub";
 
 const baseNavItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
@@ -40,100 +41,24 @@ export function Sidebar() {
     logout,
     isSidebarCollapsed,
     toggleSidebarCollapsed,
-    isSoundEnabled,
   } = useDashboardContext();
+
+  const {
+    unreadMessagesCount,
+    unseenOrdersCount,
+    hasNewOrderAlert,
+    hasNewMessageAlert,
+  } = useNotifications();
 
   const appName = profile.app_name;
   const [firstWord, ...rest] = appName.split(" ");
   const navItems = session.role === "admin" ? adminNavItems : baseNavItems;
-
-  const [globalUnreadCount, setGlobalUnreadCount] = useState(0);
-  const notifiedSetRef = useRef<Set<string>>(new Set());
-
-  const playNotificationSound = () => {
-    if (!isSoundEnabled) return;
-    try {
-      const AudioContextClass = window.AudioContext || ("webkitAudioContext" in window ? window.webkitAudioContext : undefined);
-      if (!AudioContextClass) return;
-      const ctx = new AudioContextClass();
-      const osc = ctx.createOscillator();
-      const gainNode = ctx.createGain();
-
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(880, ctx.currentTime);
-      osc.frequency.exponentialRampToValueAtTime(1760, ctx.currentTime + 0.1);
-
-      gainNode.gain.setValueAtTime(0, ctx.currentTime);
-      gainNode.gain.linearRampToValueAtTime(0.2, ctx.currentTime + 0.02);
-      gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.4);
-
-      osc.connect(gainNode);
-      gainNode.connect(ctx.destination);
-
-      osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.4);
-    } catch (error) {
-      console.error("Audio error", error);
-    }
-  };
 
   useEffect(() => {
     navItems.forEach((item) => {
       router.prefetch(item.href);
     });
   }, [navItems, router]);
-
-  useEffect(() => {
-    const checkNotifications = async () => {
-      if (document.visibilityState !== "visible") return;
-      try {
-        const branchQuery = selectedBranchId === "all" ? "" : `&branch_id=${encodeURIComponent(selectedBranchId)}`;
-        const res = await fetch(`/api/conversations?limit=30&unread_only=1&lite=1${branchQuery}`, {
-          cache: "no-store",
-          headers: { "ngrok-skip-browser-warning": "69420" }
-        });
-        if (!res.ok) return;
-        const data = await res.json();
-
-        let currentUnread = 0;
-        const currentUnreadIds = new Set<string>();
-
-        for (const conv of data) {
-          if (conv.has_unread) {
-            currentUnread++;
-            currentUnreadIds.add(conv.id);
-
-            if (!notifiedSetRef.current.has(conv.id)) {
-              notifiedSetRef.current.add(conv.id);
-              playNotificationSound();
-
-              let latestMsg = conv.messages?.[0]?.content || 'New message!';
-              latestMsg = latestMsg.replace(/\\n/g, " ").replace(/\n/g, " ").replace(/\*\*/g, "");
-              toast.message(`New message from ${conv.name || conv.phone}`, {
-                description: latestMsg.length > 50 ? latestMsg.slice(0, 50) + '...' : latestMsg
-              });
-            }
-          }
-        }
-
-        for (const id of Array.from(notifiedSetRef.current)) {
-          if (!currentUnreadIds.has(id)) {
-            notifiedSetRef.current.delete(id);
-          }
-        }
-        setGlobalUnreadCount(currentUnread);
-      } catch {
-        // Silent retry on next polling tick.
-      }
-    };
-
-    void checkNotifications();
-    const interval = window.setInterval(() => void checkNotifications(), 12000);
-
-    return () => {
-      window.clearInterval(interval);
-    };
-  }, [isSoundEnabled, selectedBranchId]);
 
   const renderBrandMark = (compact = false) => (
     <Link href="/dashboard" className={clsx("flex min-w-0 items-center group", compact ? "justify-center" : "gap-3")}>
@@ -228,9 +153,24 @@ export function Sidebar() {
               >
                 <div className="relative">
                   <Icon size={18} className={clsx("transition-colors", isActive ? "text-brand" : "text-zinc-400")} />
-                  {href === "/dashboard/conversations" && globalUnreadCount > 0 && (
-                    <span className="absolute -top-1 -right-2 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-brand px-0.5 text-[8px] font-black text-white ring-2 ring-zinc-950">
-                      {globalUnreadCount}
+                  {href === "/dashboard/conversations" && (unreadMessagesCount > 0 || hasNewMessageAlert) && (
+                    <span
+                      className={clsx(
+                        "absolute -top-1 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8.5px] font-black text-white ring-2 ring-zinc-950",
+                        hasNewMessageAlert ? "bg-red-500 animate-bounce" : "bg-brand"
+                      )}
+                    >
+                      {unreadMessagesCount > 0 ? unreadMessagesCount : "!"}
+                    </span>
+                  )}
+                  {href === "/dashboard/orders" && (unseenOrdersCount > 0 || hasNewOrderAlert) && (
+                    <span
+                      className={clsx(
+                        "absolute -top-1 -right-2 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[8.5px] font-black text-white ring-2 ring-zinc-950",
+                        hasNewOrderAlert ? "bg-amber-500 animate-bounce" : "bg-zinc-700"
+                      )}
+                    >
+                      {unseenOrdersCount > 0 ? unseenOrdersCount : "!"}
                     </span>
                   )}
                 </div>
@@ -288,9 +228,24 @@ export function Sidebar() {
                   {!isSidebarCollapsed && (
                     <span className="flex items-center gap-2 truncate">
                       {label}
-                      {href === "/dashboard/conversations" && globalUnreadCount > 0 && (
-                        <span className="rounded-full bg-brand px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm">
-                          {globalUnreadCount}
+                      {href === "/dashboard/conversations" && (unreadMessagesCount > 0 || hasNewMessageAlert) && (
+                        <span
+                          className={clsx(
+                            "rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm flex items-center gap-1",
+                            hasNewMessageAlert ? "bg-red-500 animate-pulse" : "bg-brand"
+                          )}
+                        >
+                          {unreadMessagesCount > 0 ? unreadMessagesCount : "New"}
+                        </span>
+                      )}
+                      {href === "/dashboard/orders" && (unseenOrdersCount > 0 || hasNewOrderAlert) && (
+                        <span
+                          className={clsx(
+                            "rounded-full px-1.5 py-0.5 text-[9px] font-bold text-white shadow-sm flex items-center gap-1",
+                            hasNewOrderAlert ? "bg-amber-500 animate-bounce" : "bg-zinc-700"
+                          )}
+                        >
+                          {unseenOrdersCount > 0 ? `${unseenOrdersCount} New` : "New"}
                         </span>
                       )}
                     </span>
@@ -298,8 +253,21 @@ export function Sidebar() {
                 </div>
 
                 {/* Collapsed unread badge dot */}
-                {isSidebarCollapsed && href === "/dashboard/conversations" && globalUnreadCount > 0 && (
-                  <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-brand ring-2 ring-zinc-950 animate-pulse" />
+                {isSidebarCollapsed && href === "/dashboard/conversations" && (unreadMessagesCount > 0 || hasNewMessageAlert) && (
+                  <span
+                    className={clsx(
+                      "absolute top-1.5 right-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-zinc-950",
+                      hasNewMessageAlert ? "bg-red-500 animate-ping" : "bg-brand animate-pulse"
+                    )}
+                  />
+                )}
+                {isSidebarCollapsed && href === "/dashboard/orders" && (unseenOrdersCount > 0 || hasNewOrderAlert) && (
+                  <span
+                    className={clsx(
+                      "absolute top-1.5 right-1.5 h-2.5 w-2.5 rounded-full ring-2 ring-zinc-950",
+                      hasNewOrderAlert ? "bg-amber-500 animate-ping" : "bg-amber-600 animate-pulse"
+                    )}
+                  />
                 )}
 
                 {/* Active indicator bar */}

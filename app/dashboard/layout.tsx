@@ -1,4 +1,5 @@
 import { DashboardProvider } from "@/app/components/dashboard/DashboardProvider";
+import { NotificationProvider } from "@/app/components/dashboard/NotificationHub";
 import { requireDashboardSession } from "@/lib/auth";
 import { Sidebar } from "@/app/components/Sidebar";
 import { Header } from "@/app/components/Header";
@@ -18,11 +19,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
 
   return (
     <DashboardProvider session={session} profile={profile}>
-      <div className="flex h-dvh flex-col overflow-hidden bg-slate-50 text-slate-900 lg:flex-row">
-        <Sidebar />
+      <NotificationProvider>
+        <div className="flex h-dvh flex-col overflow-hidden bg-slate-50 text-slate-900 lg:flex-row">
+          <Sidebar />
 
-        <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          <Header />
+          <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            <Header />
 
           <div
             className="absolute inset-0 pointer-events-none z-0 opacity-[0.02]"
@@ -36,6 +38,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
         </main>
       </div>
+      </NotificationProvider>
     </DashboardProvider>
   );
 }

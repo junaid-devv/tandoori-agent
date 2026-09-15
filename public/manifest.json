@@ -1,0 +1,48 @@
+{
+  "name": "Cheezo Bites — Management Hub",
+  "short_name": "Cheezo Bites",
+  "description": "Real-time AI WhatsApp ordering and management hub for Cheezo Bites",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#09090b",
+  "theme_color": "#E59819",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-maskable-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["food", "business", "productivity"],
+  "shortcuts": [
+    {
+      "name": "Orders",
+      "url": "/dashboard/orders",
+      "description": "View incoming food orders"
+    },
+    {
+      "name": "Live Chat",
+      "url": "/dashboard/conversations",
+      "description": "View live WhatsApp conversations"
+    }
+  ]
+}
