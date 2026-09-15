@@ -152,15 +152,39 @@ export const reply = {
       if (pa(l)) return "Menu da wakht nishta.";
       return ur(l) ? "Menu abhi available nahi." : "Menu not available right now.";
     }
-    const list = items.slice(0, 10).map((i) => {
-      const desc = i.description ? ` (${i.description})` : "";
-      return `• ${i.name} — ${currency} ${i.price}${desc}`;
-    }).join("\n");
+
+    const isDealsCategory = categoryName
+      ? /deal|box|combo/i.test(categoryName)
+      : items.some((i) => /deal|box|combo/i.test(i.name));
+
+    let list = "";
+    if (isDealsCategory) {
+      list = items.slice(0, 10).map((i) => {
+        let breakdown = "";
+        if (i.description) {
+          const parts = i.description.split(/,\s*|\s*\+\s*/).map((p) => p.trim()).filter(Boolean);
+          if (parts.length > 1) {
+            breakdown = "\n" + parts.map((p) => `   ▫️ ${p}`).join("\n");
+          } else {
+            breakdown = `\n   ▫️ ${i.description}`;
+          }
+        }
+        return `🏷️ *${i.name}* — ${currency} ${i.price}${breakdown}`;
+      }).join("\n\n");
+    } else {
+      list = items.slice(0, 10).map((i) => {
+        const desc = i.description ? ` (${i.description})` : "";
+        return `• ${i.name} — ${currency} ${i.price}${desc}`;
+      }).join("\n");
+    }
+
     const header = categoryName
-      ? `*${categoryName.toUpperCase()}* items:`
+      ? (isDealsCategory ? `🔥 *${categoryName.toUpperCase()}*:` : `*${categoryName.toUpperCase()}* items:`)
       : (pa(l) || ur(l) ? "Menu items:" : "Menu items:");
-    const footer = pa(l) ? "Kam item order kawal ghwaaray?" : ur(l) ? "Kaunsa item mangwana chahenge?" : "Which item would you like to order?";
-    return `${header}\n${list}\n\n${footer}`;
+    const footer = isDealsCategory
+      ? (pa(l) ? "Kuma deal order kawal ghwaaray?" : ur(l) ? "Kaunsi deal mangwana chahenge?" : "Which deal would you like to order?")
+      : (pa(l) ? "Kam item order kawal ghwaaray?" : ur(l) ? "Kaunsa item mangwana chahenge?" : "Which item would you like to order?");
+    return `${header}\n\n${list}\n\n${footer}`;
   },
 
   categoryList(l: Lang, categories: string[]): string {

@@ -3,6 +3,7 @@ import {
   OutboundMessageError,
   sendAndPersistOutboundInteractiveMessage,
   sendAndPersistOutboundReplyButtonMessage,
+  sendAndPersistOutboundImageMessage,
   sendAndPersistOutboundMessage,
 } from "./messages";
 import type { WhatsAppInteractiveListPayload, WhatsAppReplyButtonPayload } from "./whatsapp";
@@ -13,13 +14,29 @@ export async function sendAndPersistAssistantMessage({
   content,
   interactiveList,
   replyButtons,
+  mediaUrls,
 }: {
   conversationId: string;
   phone: string;
   content: string;
   interactiveList?: WhatsAppInteractiveListPayload | null;
   replyButtons?: WhatsAppReplyButtonPayload | null;
+  mediaUrls?: string[] | null;
 }) {
+  if (mediaUrls && mediaUrls.length > 0) {
+    for (const url of mediaUrls) {
+      try {
+        await sendAndPersistOutboundImageMessage({
+          conversationId,
+          phone,
+          imageUrl: url,
+          senderKind: "ai",
+        });
+      } catch (err) {
+        console.error(`[assistant-dispatcher] Failed to send image ${url}:`, err);
+      }
+    }
+  }
   if (replyButtons && replyButtons.buttons.length > 0) {
     const buttonPayload: WhatsAppReplyButtonPayload = {
       ...replyButtons,

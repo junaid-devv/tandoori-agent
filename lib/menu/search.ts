@@ -119,7 +119,9 @@ function overlapScore(query: string, candidate: string): number {
 }
 
 export function queryTokensCoveredByName(query: string, name: string): boolean {
-  const qTokens = normalize(query).split(" ").filter((t) => t.length >= 3 && !/^(chicken|mutton|beef|special|pure|desi)$/i.test(t));
+  const qTokens = normalize(query)
+    .split(" ")
+    .filter((t) => (t.length >= 3 || /^\d+$/.test(t)) && !/^(special|pure|desi)$/i.test(t));
   if (qTokens.length === 0) return false;
   const nameNorm = normalize(name);
   return qTokens.every((t) => nameNorm.includes(t));
@@ -515,14 +517,29 @@ export async function resolveItemDetailed(
   const candidatesCoveringQuery = relevantCandidates.filter((c) => queryTokensCoveredByName(trimmed, c.name));
   const distinctBases = [...new Set(relevantCandidates.slice(0, 5).map((c) => extractBaseItemName(c.name).baseName.toLowerCase()))];
   const isBroadSingleWord = /^(burger|burgers|pizza|pizzas|shawarma|roll|rolls|paratha|sandwich|sandwiches|pasta|fries|deal|deals|wrap|wraps|salad|salads|shake|shakes|karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|drinks|juice|dessert|fish|boti)$/i.test(trimmed);
-  // Also detect "size + generic dish" patterns like "large pizza", "small burger" — these are equally broad
-  const isBroadSizeQuery = /^(?:small|medium|large|xl|x-large|extra\s*large|reg(?:ular)?|half|full)\s+(burger|burgers|pizza|pizzas|shawarma|roll|rolls|paratha|sandwich|sandwiches|pasta|fries|deal|deals|wrap|wraps|salad|salads|shake|shakes|karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|drinks|juice|dessert|fish|boti)$/i.test(trimmed);
-  const isBroadQuery = isBroadSingleWord || isBroadSizeQuery;
+  // Also detect "size/protein + generic dish" patterns like "large pizza", "chicken burger", "beef burger", "crispy wrap"
+  const isBroadSizeOrTypeQuery = /^(?:small|medium|large|xl|x-large|extra\s*large|reg(?:ular)?|half|full|chicken|beef|crispy|smash|cheese|special|grilled|zinger)\s+(burger|burgers|pizza|pizzas|shawarma|roll|rolls|paratha|sandwich|sandwiches|pasta|fries|deal|deals|wrap|wraps|salad|salads|shake|shakes|karahi|kabab|tikka|handi|biryani|naan|roti|rice|drink|drinks|juice|dessert|fish|boti)$/i.test(trimmed);
+  const isBroadQuery = isBroadSingleWord || isBroadSizeOrTypeQuery;
 
   // If multiple distinct dishes match the query (or the query is a broad generic dish/category term):
   if (distinctBases.length > 1 && (isBroadQuery || candidatesCoveringQuery.length > 1)) {
     const matches = (candidatesCoveringQuery.length > 1 ? candidatesCoveringQuery : relevantCandidates).slice(0, 5);
     return { kind: "ambiguous", query: trimmed, matches };
+  }
+
+  // Also check if user typed a deal/item with a number (e.g. "deal 1", "combo 1") matching multiple deals
+  if (distinctBases.length > 1) {
+    const numMatch = trimmed.match(/\b\d+\b/);
+    if (numMatch) {
+      const num = numMatch[0];
+      const numMatchingCandidates = relevantCandidates.filter((c) => {
+        const cNums = c.name.match(/\b\d+\b/g);
+        return cNums && cNums.includes(num);
+      });
+      if (numMatchingCandidates.length > 1) {
+        return { kind: "ambiguous", query: trimmed, matches: numMatchingCandidates.slice(0, 5) };
+      }
+    }
   }
 
   // If exactly ONE candidate uniquely covers all query tokens, it is an exact match:

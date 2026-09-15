@@ -126,6 +126,78 @@ export async function sendWhatsAppMessage(to: string, body: string, phoneNumberI
   throw lastError ?? new Error("WhatsApp send failed.");
 }
 
+export async function sendWhatsAppImage(
+  to: string,
+  imageUrl: string,
+  caption?: string,
+  phoneNumberId?: string,
+): Promise<WhatsAppSendResult> {
+  if (process.env.MOCK_WHATSAPP === "true") {
+    console.log(`[MOCK WHATSAPP] Sending image to ${to}: ${imageUrl}${caption ? ` (caption: ${caption})` : ""}`);
+    return {
+      messageId: `wamid.mockImg${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
+      raw: { mock: true },
+    };
+  }
+  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
+  const token = process.env.WHATSAPP_ACCESS_TOKEN;
+
+  if (!phoneId || !token) {
+    throw new Error("WhatsApp credentials are missing.");
+  }
+
+  let lastError: Error | null = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${phoneId}/messages`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          messaging_product: "whatsapp",
+          to,
+          type: "image",
+          image: {
+            link: imageUrl,
+            ...(caption ? { caption: caption.slice(0, 1024) } : {}),
+          },
+        }),
+      });
+
+      const data = (await response.json()) as {
+        error?: { code?: number; message?: string };
+        messages?: Array<{ id?: string }>;
+      };
+
+      if (!response.ok) {
+        const errorMessage = data.error?.message || `WhatsApp image send failed with status ${response.status}`;
+        const error = new Error(errorMessage);
+        if (attempt < 3 && isRetriableStatus(response.status)) {
+          lastError = error;
+          await sleep(attempt * 400);
+          continue;
+        }
+        throw error;
+      }
+
+      return {
+        messageId: data.messages?.[0]?.id ?? null,
+        raw: data,
+      };
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error("Unknown WhatsApp image send failure");
+      if (attempt < 3) {
+        await sleep(attempt * 400);
+        continue;
+      }
+    }
+  }
+
+  throw lastError ?? new Error("WhatsApp image send failed.");
+}
+
 export async function getWhatsAppMediaUrl(mediaId: string): Promise<string> {
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
   if (!token) {

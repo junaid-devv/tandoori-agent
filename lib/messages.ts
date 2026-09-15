@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import {
+  sendWhatsAppImage,
   sendWhatsAppInteractiveList,
   sendWhatsAppMessage,
   sendWhatsAppReplyButtons,
@@ -339,6 +340,67 @@ export async function sendAndPersistOutboundReplyButtonMessage({
     }
 
     throw new OutboundMessageError(message, false, inserted.id);
+  }
+}
+
+export async function sendAndPersistOutboundImageMessage({
+  conversationId,
+  phone,
+  imageUrl,
+  caption,
+  senderKind,
+}: {
+  conversationId: string;
+  phone: string;
+  imageUrl: string;
+  caption?: string;
+  senderKind: Exclude<MessageSenderKind, "user">;
+}) {
+  const content = caption ? `[image: ${imageUrl}]\n${caption}` : `[image: ${imageUrl}]`;
+  const { data: inserted, error: insertError } = await supabaseAdmin
+    .from("messages")
+    .insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      sender_kind: senderKind,
+      content,
+      delivery_status: "pending",
+      delivery_status_updated_at: new Date().toISOString(),
+    })
+    .select("id")
+    .single();
+
+  if (insertError || !inserted) {
+    throw insertError ?? new Error("Failed to persist outbound image message before send.");
+  }
+
+  try {
+    const result = await sendWhatsAppImage(phone, imageUrl, caption);
+    await supabaseAdmin
+      .from("messages")
+      .update({
+        whatsapp_msg_id: result.messageId,
+        delivery_status: "sent",
+        delivery_error: null,
+        delivery_status_updated_at: new Date().toISOString(),
+      })
+      .eq("id", inserted.id);
+
+    return {
+      id: inserted.id,
+      whatsappMessageId: result.messageId,
+    };
+  } catch (error) {
+    const message = toErrorMessage(error);
+    await supabaseAdmin
+      .from("messages")
+      .update({
+        delivery_status: "failed",
+        delivery_error: message,
+        delivery_status_updated_at: new Date().toISOString(),
+      })
+      .eq("id", inserted.id);
+    throw error;
   }
 }
 
