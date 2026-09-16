@@ -17,7 +17,7 @@ function envFallback(name: string, fallback: string) {
 }
 
 export function getFallbackRestaurantProfile(): RestaurantProfile {
-  const appName = envFallback("NEXT_PUBLIC_APP_NAME", "ORDERiQ");
+  const appName = envFallback("NEXT_PUBLIC_APP_NAME", "iQLaunch");
   const supportPhone = envFallback("NEXT_PUBLIC_APP_PHONE_DELIVERY", "");
 
   return {
