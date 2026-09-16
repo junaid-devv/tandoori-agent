@@ -253,10 +253,18 @@ function formatMessageDay(dateText: string) {
 
 function renderMessageContent(content: string) {
   if (!content) return "";
-  const text = content.replace(/\\n/g, "\n");
+  const imageRegex = /\[image:\s*(https?:\/\/[^\]\s]+)\]/g;
+  const images: string[] = [];
+  let match: RegExpExecArray | null;
+  while ((match = imageRegex.exec(content)) !== null) {
+    images.push(match[1]);
+  }
+  const cleanContent = content.replace(imageRegex, "").trim();
+
+  const text = cleanContent.replace(/\\n/g, "\n");
   const regex = /(\*\*[^*]+\*\*|\*[^*]+\*)/g;
   const parts = text.split(regex);
-  return parts.map((part, i) => {
+  const textEl = parts.map((part, i) => {
     if (!part) return null;
     if (part.startsWith("**") && part.endsWith("**") && part.length > 4) {
       return <strong key={i} className="font-extrabold">{part.slice(2, -2)}</strong>;
@@ -266,6 +274,23 @@ function renderMessageContent(content: string) {
     }
     return part;
   });
+
+  return (
+    <>
+      {images.map((imgUrl, idx) => (
+        <div key={idx} className="my-2">
+          <a href={imgUrl} target="_blank" rel="noopener noreferrer">
+            <img
+              src={imgUrl}
+              alt="Menu preview"
+              className="max-h-72 max-w-full rounded-xl border border-slate-200 object-contain shadow-sm hover:opacity-95 transition-opacity cursor-zoom-in"
+            />
+          </a>
+        </div>
+      ))}
+      {textEl}
+    </>
+  );
 }
 
 function pickContact(contact?: CustomerProfile | CustomerProfile[] | null): CustomerProfile | null {

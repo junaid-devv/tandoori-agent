@@ -28,6 +28,7 @@ export interface TurnResult {
   usedSemanticSearch: boolean;
   latencyMs: number;
   interactive?: InteractivePayload | null;
+  mediaUrls?: string[];
 }
 
 export interface RunTurnInput {
@@ -114,7 +115,7 @@ function understandingFromInteractiveId(
       if (val === "view_cart") {
         return { ...base, intents: ["view_cart"], primary_intent: "view_cart" };
       }
-      if (val === "add_more") {
+      if (val === "add_more" || val === "view_menu") {
         return { ...base, intents: ["browse_menu"], primary_intent: "browse_menu" };
       }
       return null;
@@ -620,6 +621,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     usedSemanticSearch: exec.usedSemanticSearch,
     latencyMs,
     interactive: exec.interactive ?? null,
+    mediaUrls: exec.mediaUrls,
   };
 }
 

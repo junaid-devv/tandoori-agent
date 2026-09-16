@@ -1,7 +1,7 @@
 {
-  "name": "Cheezo Bites — Management Hub",
-  "short_name": "Cheezo Bites",
-  "description": "Real-time AI WhatsApp ordering and management hub for Cheezo Bites",
+  "name": "OrderIQ — Management Hub",
+  "short_name": "OrderIQ",
+  "description": "Real-time AI WhatsApp ordering and management hub for OrderIQ",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",

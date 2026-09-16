@@ -179,6 +179,13 @@ interface MenuRow {
 }
 
 function lexicalScore(query: string, row: MenuRow): number {
+  const normQ = normalize(query);
+  const normName = normalize(row.name);
+  const qTokens = normQ.split(" ").filter((t) => t.length >= 3);
+  const nameMatches = qTokens.length > 0 && qTokens.some((t) => normName.includes(t));
+  if (nameMatches) {
+    return Math.max(0.65, overlapScore(query, [row.name, row.category, row.description].filter(Boolean).join(" ")));
+  }
   return overlapScore(query, [row.name, row.category, row.description].filter(Boolean).join(" "));
 }
 

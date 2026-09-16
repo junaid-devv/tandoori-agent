@@ -36,6 +36,11 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { isValidDeliveryAddress } from "@/lib/customer-crm";
 
+export const CHEEZO_BITES_MENU_IMAGES = [
+  "https://ohghccpgpzszmajridmn.supabase.co/storage/v1/object/public/menu-assets/cheezo-bites-deals.jpg",
+  "https://ohghccpgpzszmajridmn.supabase.co/storage/v1/object/public/menu-assets/cheezo-bites-menu.jpg",
+];
+
 export interface ExecutionResult {
   replyText: string;
   statePatch: Partial<ConversationStateRow>;
@@ -43,6 +48,7 @@ export interface ExecutionResult {
   escalate: boolean;
   usedSemanticSearch: boolean;
   interactive?: InteractivePayload | null;
+  mediaUrls?: string[];
 }
 
 interface ExecInput {
@@ -81,6 +87,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   let usedSemantic = false;
   let hasDisambiguation = false;
   let interactive: InteractivePayload | null = null;
+  let mediaUrls: string[] | undefined = undefined;
+
+  const isCheezoBites = /cheezo/i.test(input.appName) || ctx.menu.some((m) => /cheezo/i.test(m.name));
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -210,9 +219,21 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "greet": {
         const wasSalam = /^(aoa|a\.?o\.?a|assalam|salam|سلام|ستړې|ستړی)\b/i.test(input.messageTextForFallback?.trim() ?? "");
         replies.push(reply.greeting(lang, input.appName, input.customerName ?? null, wasSalam));
-        const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
-        if (cats.length > 0) {
-          setInteractive(categoryList(lang, cats, lang === "pashto" ? "Taso sa ghwaray?" : lang === "roman_urdu" ? "Kya mangwana hai?" : "What would you like?"));
+        if (isCheezoBites) {
+          setInteractive({
+            kind: "buttons",
+            payload: {
+              body: lang === "pashto" ? "Menu katlo lapara button khekhey krai:" : lang === "roman_urdu" ? "Menu dekhne ke liye button dabayein:" : "Tap below to view our menu:",
+              buttons: [
+                { id: "action:view_menu", title: "📜 View Menu" },
+              ],
+            },
+          });
+        } else {
+          const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
+          if (cats.length > 0) {
+            setInteractive(categoryList(lang, cats, lang === "pashto" ? "Taso sa ghwaray?" : lang === "roman_urdu" ? "Kya mangwana hai?" : "What would you like?"));
+          }
         }
         break;
       }
@@ -580,19 +601,44 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       }
 
       case "show_menu": {
-        const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
         const categoryQuery =
           (action.payload?.category as string | undefined) ??
           (u.info_query as string | undefined);
 
+        // For Cheezo Bites: when user asks for overall menu or clicks menu button, send the 2 pictures directly!
+        if (isCheezoBites && (!categoryQuery || /^(menu|view_menu|all|deals?)$/i.test(categoryQuery.trim()))) {
+          mediaUrls = [...CHEEZO_BITES_MENU_IMAGES];
+          const menuMsg =
+            lang === "pashto"
+              ? "Da Cheezo Bites mukammal menu aw deals de! 🍔✨ Goraay aw wawayay tse order kawal ghwaaray."
+              : lang === "roman_urdu"
+              ? "Yeh raha Cheezo Bites ka menu aur deals! 🍔✨ Tasweer dekh kar batayein aapko kya order karna hai."
+              : "Here is the Cheezo Bites menu & deals! 🍔✨ Take a look at the pictures and let us know what you would like to order.";
+          replies.push(menuMsg);
+          break;
+        }
+
+        const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
+
         if (categoryQuery) {
           const normQuery = categoryQuery.toLowerCase().trim();
-          const categoryItems = ctx.menu.filter((m) =>
-            m.category && (
-              m.category.toLowerCase().includes(normQuery) ||
-              normQuery.includes(m.category.toLowerCase())
-            )
+          // First attempt exact category match
+          let categoryItems = ctx.menu.filter(
+            (m) => m.category && m.category.toLowerCase() === normQuery
           );
+          // If query mentions "deal", strictly match categories that include "deal" (prevents Chicken Burger leaking into Chicken Burger Deals)
+          if (categoryItems.length === 0 && normQuery.includes("deal")) {
+            categoryItems = ctx.menu.filter(
+              (m) => m.category && m.category.toLowerCase().includes("deal")
+            );
+          }
+          // Fallback: category name contains query
+          if (categoryItems.length === 0) {
+            categoryItems = ctx.menu.filter(
+              (m) => m.category && m.category.toLowerCase().includes(normQuery)
+            );
+          }
+
           if (categoryItems.length > 0) {
             // Natural numeric sort (e.g. DEAL 4 before DEAL 10)
             const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
@@ -605,6 +651,18 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             setInteractive(itemPickList(lang, categoryItems, cur));
             break;
           }
+        }
+
+        if (isCheezoBites) {
+          mediaUrls = [...CHEEZO_BITES_MENU_IMAGES];
+          replies.push(
+            lang === "pashto"
+              ? "Da Cheezo Bites mukammal menu aw deals de! 🍔✨ Goraay aw wawayay tse order kawal ghwaaray."
+              : lang === "roman_urdu"
+              ? "Yeh raha Cheezo Bites ka menu aur deals! 🍔✨ Tasweer dekh kar batayein aapko kya order karna hai."
+              : "Here is the Cheezo Bites menu & deals! 🍔✨ Take a look at the pictures and let us know what you would like to order."
+          );
+          break;
         }
 
         // Generic category list
@@ -1197,5 +1255,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     escalate: false,
     usedSemanticSearch: usedSemantic,
     interactive,
+    mediaUrls,
   };
 }

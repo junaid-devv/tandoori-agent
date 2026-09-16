@@ -401,6 +401,7 @@ async function processOneMessage(
       content: result.replyText,
       interactiveList: result.interactive?.kind === "list" ? result.interactive.payload : null,
       replyButtons: result.interactive?.kind === "buttons" ? result.interactive.payload : null,
+      mediaUrls: result.mediaUrls ?? null,
     });
 
     // Fire-and-forget: touch is low priority, don't block reply delivery
