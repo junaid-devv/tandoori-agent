@@ -1191,95 +1191,100 @@ export default function ConversationsPage() {
                                 )
                               )}
 
-                              {/* Interactive WhatsApp Reply Buttons */}
-                              {message.replyButtons && message.replyButtons.length > 0 && (
-                                <div className={clsx("mt-3 border-t pt-2.5", isIncoming ? "border-slate-200" : "border-white/15")}>
-                                  <div
-                                    className={clsx(
-                                      "mb-1.5 flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wider",
-                                      isIncoming ? "text-slate-400" : "text-white/60"
-                                    )}
-                                  >
-                                    <Sparkles size={10} />
-                                    <span>WhatsApp Interactive Buttons</span>
-                                  </div>
-                                  <div className="flex flex-wrap gap-1.5">
-                                    {message.replyButtons.map((btn) => (
-                                      <div
-                                        key={btn.id}
-                                        className={clsx(
-                                          "flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-semibold shadow-xs transition-all",
-                                          isIncoming
-                                            ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-                                            : "border-emerald-400/30 bg-emerald-500/20 text-emerald-200"
-                                        )}
-                                      >
-                                        <span className="text-[10px]">🔘</span>
-                                        <span>{btn.title}</span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
+                               {/* Interactive WhatsApp Reply Buttons */}
+                               {message.replyButtons && message.replyButtons.length > 0 && (
+                                 <div className={clsx("mt-2 border-t pt-1.5", isIncoming ? "border-slate-200" : "border-white/15")}>
+                                   <div
+                                     className={clsx(
+                                       "mb-1 flex items-center gap-1 text-[9px] font-semibold uppercase tracking-wider",
+                                       isIncoming ? "text-slate-400" : "text-white/60"
+                                     )}
+                                   >
+                                     <Sparkles size={9} />
+                                     <span>Quick Buttons</span>
+                                   </div>
+                                   <div className="flex flex-wrap gap-1">
+                                     {message.replyButtons.map((btn) => (
+                                       <div
+                                         key={btn.id}
+                                         className={clsx(
+                                           "inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-medium shadow-2xs transition-all",
+                                           isIncoming
+                                             ? "border-emerald-300/80 bg-emerald-50 text-emerald-800"
+                                             : "border-emerald-400/30 bg-emerald-500/15 text-emerald-200"
+                                         )}
+                                       >
+                                         <span className="text-[8px] opacity-70">🔘</span>
+                                         <span>{btn.title}</span>
+                                       </div>
+                                     ))}
+                                   </div>
+                                 </div>
+                               )}
 
-                              {/* Interactive WhatsApp List Selector */}
-                              {message.listSelector && (
-                                <div
-                                  className={clsx(
-                                    "mt-3 overflow-hidden rounded-xl border p-3",
-                                    isIncoming
-                                      ? "border-slate-200 bg-slate-50 text-slate-800"
-                                      : "border-white/15 bg-black/40 text-white"
-                                  )}
-                                >
-                                  <div className="mb-2 flex items-center justify-between text-xs font-bold">
-                                    <span className={clsx("flex items-center gap-1.5", isIncoming ? "text-emerald-700" : "text-emerald-300")}>
-                                      <Package size={13} />
-                                      <span>{message.listSelector.title}</span>
-                                    </span>
-                                    <span
-                                      className={clsx(
-                                        "rounded px-2 py-0.5 text-[9px] font-bold uppercase",
-                                        isIncoming
-                                          ? "border border-emerald-200 bg-emerald-100 text-emerald-800"
-                                          : "bg-emerald-500/30 text-emerald-200"
-                                      )}
-                                    >
-                                      {message.listSelector.buttonText || "Interactive List"}
-                                    </span>
-                                  </div>
-                                  <div className="space-y-1.5">
-                                    {message.listSelector.rows.map((row) => (
-                                      <div
-                                        key={row.id}
-                                        className={clsx(
-                                          "flex items-center justify-between rounded-lg border p-2 text-xs",
-                                          isIncoming ? "border-slate-200 bg-white" : "border-white/10 bg-white/5"
-                                        )}
-                                      >
-                                        <div>
-                                          <p className={clsx("font-semibold", isIncoming ? "text-slate-800" : "text-white")}>{row.title}</p>
-                                          {row.description && (
-                                            <p className={clsx("text-[11px]", isIncoming ? "text-slate-500" : "text-slate-300")}>
-                                              {row.description}
-                                            </p>
-                                          )}
-                                        </div>
-                                        <span
-                                          className={clsx(
-                                            "rounded px-2 py-0.5 text-[10px] font-bold border",
-                                            isIncoming
-                                              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                                              : "border-emerald-500/30 bg-emerald-500/20 text-emerald-300"
-                                          )}
-                                        >
-                                          Select
-                                        </span>
-                                      </div>
-                                    ))}
-                                  </div>
-                                </div>
-                              )}
+                               {/* Interactive WhatsApp List Selector */}
+                               {message.listSelector && (
+                                 <div
+                                   className={clsx(
+                                     "mt-2 overflow-hidden rounded-lg border text-xs",
+                                     isIncoming
+                                       ? "border-slate-200 bg-slate-50/80 text-slate-800"
+                                       : "border-white/15 bg-black/30 text-white"
+                                   )}
+                                 >
+                                   <div className={clsx(
+                                     "flex items-center justify-between px-2.5 py-1.5 border-b font-medium text-[11px]",
+                                     isIncoming ? "border-slate-200/80 bg-slate-100/60" : "border-white/10 bg-white/5"
+                                   )}>
+                                     <span className={clsx("flex items-center gap-1 font-semibold", isIncoming ? "text-emerald-700" : "text-emerald-300")}>
+                                       <Package size={12} />
+                                       <span>{message.listSelector.title}</span>
+                                     </span>
+                                     <span
+                                       className={clsx(
+                                         "rounded px-1.5 py-0.2 text-[8.5px] font-bold uppercase tracking-wider",
+                                         isIncoming
+                                           ? "border border-emerald-200 bg-emerald-100/80 text-emerald-800"
+                                           : "bg-emerald-500/25 text-emerald-200"
+                                       )}
+                                     >
+                                       {message.listSelector.buttonText || "List"}
+                                     </span>
+                                   </div>
+                                   <div className="divide-y divide-inherit">
+                                     {message.listSelector.rows.map((row) => (
+                                       <div
+                                         key={row.id}
+                                         className={clsx(
+                                           "flex items-center justify-between gap-2 px-2.5 py-1 text-[11px] transition-colors",
+                                           isIncoming ? "hover:bg-white" : "hover:bg-white/5"
+                                         )}
+                                       >
+                                         <div className="min-w-0 flex-1 truncate">
+                                           <span className={clsx("font-medium", isIncoming ? "text-slate-800" : "text-white")}>
+                                             {row.title}
+                                           </span>
+                                           {row.description && (
+                                             <span className={clsx("ml-1.5 text-[10px]", isIncoming ? "text-slate-500" : "text-slate-400")}>
+                                               · {row.description}
+                                             </span>
+                                           )}
+                                         </div>
+                                         <span
+                                           className={clsx(
+                                             "shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold border",
+                                             isIncoming
+                                               ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                               : "border-emerald-500/30 bg-emerald-500/20 text-emerald-300"
+                                           )}
+                                         >
+                                           Select
+                                         </span>
+                                       </div>
+                                     ))}
+                                   </div>
+                                 </div>
+                               )}
 
                               {/* Delivery Status Indicator */}
                               {!isIncoming && message.delivery_status && (
