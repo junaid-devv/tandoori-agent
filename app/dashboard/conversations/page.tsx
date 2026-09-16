@@ -24,6 +24,7 @@ import {
   SendHorizonal,
   ShoppingCart,
   Sparkles,
+  Trash2,
   User,
   UserCheck,
   UserRound,
@@ -356,6 +357,7 @@ export default function ConversationsPage() {
   const [customerNotes, setCustomerNotes] = useState("");
   const [customerTags, setCustomerTags] = useState("");
   const [savingCustomerProfile, setSavingCustomerProfile] = useState(false);
+  const [clearingMessages, setClearingMessages] = useState(false);
   const [demoState, setDemoState] = useState<DemoControllerState | null>(null);
 
   useEffect(() => {
@@ -658,6 +660,34 @@ export default function ConversationsPage() {
       toast.error(error instanceof Error ? error.message : "Failed to update mode.");
     } finally {
       setModeSaving(false);
+    }
+  };
+
+  const handleClearMessages = async () => {
+    if (!selectedId) return;
+    const confirmed = window.confirm(
+      "Are you sure you want to clear message history for this contact? The contact name and record will stay, but all messages and draft state will be cleared."
+    );
+    if (!confirmed) return;
+
+    setClearingMessages(true);
+    try {
+      const res = await fetch(`/api/conversations/${selectedId}/messages`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to clear messages");
+
+      setMessages([]);
+      await Promise.all([
+        loadConversation(selectedId),
+        loadConversations(true),
+      ]);
+      toast.success("Chat history cleared. Conversation is ready for recording!");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to clear chat history.");
+    } finally {
+      setClearingMessages(false);
     }
   };
 
@@ -1022,26 +1052,41 @@ export default function ConversationsPage() {
                     })}
                   </div>
 
-                  {/* Context & Live Draft Panel Toggle Button */}
-                  <button
-                    onClick={toggleContextPanelOpen}
-                    title={isContextPanelOpen ? "Minimize context panel" : "Expand context & cart panel"}
-                    className={clsx(
-                      "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition shadow-sm",
-                      isContextPanelOpen
-                        ? "border-brand/40 bg-brand/10 text-brand"
-                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                    )}
-                  >
-                    <ShoppingCart size={14} className={isContextPanelOpen ? "text-brand" : "text-slate-500"} />
-                    <span className="hidden sm:inline">Draft ({displayDraftItemCount})</span>
-                    {isContextPanelOpen ? (
-                      <PanelRightClose size={14} className="hidden sm:inline ml-0.5" />
-                    ) : (
-                      <PanelRightOpen size={14} className="hidden sm:inline ml-0.5" />
-                    )}
-                  </button>
-                </div>
+                    {/* Clear Chat History (for recording clean demos without losing contact) */}
+                    <button
+                      onClick={() => void handleClearMessages()}
+                      disabled={clearingMessages}
+                      title="Clear chat messages & reset state (keeps contact name in conversation list)"
+                      className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/70 px-2.5 py-1.5 text-xs font-semibold text-rose-600 transition shadow-sm hover:bg-rose-100/80 hover:text-rose-700 disabled:opacity-50"
+                    >
+                      {clearingMessages ? (
+                        <Loader2 size={13} className="animate-spin text-rose-600" />
+                      ) : (
+                        <Trash2 size={13} className="text-rose-500" />
+                      )}
+                      <span className="hidden sm:inline">Clear Chat</span>
+                    </button>
+
+                    {/* Context & Live Draft Panel Toggle Button */}
+                    <button
+                      onClick={toggleContextPanelOpen}
+                      title={isContextPanelOpen ? "Minimize context panel" : "Expand context & cart panel"}
+                      className={clsx(
+                        "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition shadow-sm",
+                        isContextPanelOpen
+                          ? "border-brand/40 bg-brand/10 text-brand"
+                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                      )}
+                    >
+                      <ShoppingCart size={14} className={isContextPanelOpen ? "text-brand" : "text-slate-500"} />
+                      <span className="hidden sm:inline">Draft ({displayDraftItemCount})</span>
+                      {isContextPanelOpen ? (
+                        <PanelRightClose size={14} className="hidden sm:inline ml-0.5" />
+                      ) : (
+                        <PanelRightOpen size={14} className="hidden sm:inline ml-0.5" />
+                      )}
+                    </button>
+                  </div>
               </div>
             </header>
 

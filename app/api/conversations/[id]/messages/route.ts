@@ -147,3 +147,77 @@ export async function GET(
     nextBeforeSeq: messages[0]?.ingest_seq ?? null,
   });
 }
+
+// DELETE /api/conversations/[id]/messages — clear message history and reset state (keeps contact & conversation)
+export async function DELETE(
+  _req: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const auth = await requireApiSession();
+  if (auth.response || !auth.session) {
+    return auth.response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { id } = await params;
+  const accessibleConversation = await canAccessConversation(auth.session, id);
+  if (!accessibleConversation) {
+    return NextResponse.json({ error: "Conversation not found" }, { status: 404 });
+  }
+
+  // 1. Delete all messages for this conversation
+  const { error: deleteError } = await supabaseAdmin
+    .from("messages")
+    .delete()
+    .eq("conversation_id", accessibleConversation.id);
+
+  if (deleteError) {
+    return apiErrorResponse(deleteError, { fallback: "Failed to delete messages.", context: "conversation messages DELETE" });
+  }
+
+  // 2. Reset conversation_states to fresh greeting state and clean cart/address
+  try {
+    const { stateRepo } = await import("@/lib/data/state.repo");
+    await stateRepo.patch(accessibleConversation.id, {
+      stage: "greeting",
+      resume_stage: null,
+      cart: [],
+      order_type: null,
+      address: null,
+      guests: null,
+      reservation_time: null,
+      pickup_time: null,
+      customer_instructions: null,
+      last_shown_options: [],
+      last_shown_options_at: null,
+      last_shown_category: null,
+      pending_clarification: null,
+      upsell_item_name: null,
+      upsell_item_price: null,
+      upsell_offered: false,
+      declined_upsells: [],
+      summary_sent_at: null,
+      last_error: null,
+      is_bot_active: true,
+      invalid_step_count: 0,
+      consecutive_tool_failures: 0,
+      anger_level: 0,
+      last_intent: null,
+      escalation_reason: null,
+      escalated_at: null,
+    });
+  } catch (err) {
+    console.error("[conversation messages DELETE] Failed to reset conversation state:", err);
+  }
+
+  // 3. Mark conversation unread false and reset mode to agent
+  await supabaseAdmin
+    .from("conversations")
+    .update({
+      has_unread: false,
+      mode: "agent",
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", accessibleConversation.id);
+
+  return NextResponse.json({ success: true, message: "Chat messages cleared and state reset." });
+}
