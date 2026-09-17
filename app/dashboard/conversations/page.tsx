@@ -15,6 +15,7 @@ import {
   MessageSquare,
   MessageSquareText,
   Mic,
+  MoreVertical,
   Package,
   PanelRightClose,
   PanelRightOpen,
@@ -377,6 +378,20 @@ export default function ConversationsPage() {
   const shouldStickToBottomRef = useRef(true);
   const endRef = useRef<HTMLDivElement>(null);
   const messagesViewportRef = useRef<HTMLDivElement>(null);
+  const [optionsMenuOpen, setOptionsMenuOpen] = useState(false);
+  const optionsMenuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (optionsMenuRef.current && !optionsMenuRef.current.contains(e.target as Node)) {
+        setOptionsMenuOpen(false);
+      }
+    }
+    if (optionsMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [optionsMenuOpen]);
 
   const isViewportNearBottom = useCallback(() => {
     const viewport = messagesViewportRef.current;
@@ -729,71 +744,71 @@ export default function ConversationsPage() {
   };
 
   return (
-    <div className="flex h-[calc(100dvh-7.5rem)] min-h-0 sm:min-h-[560px] w-full overflow-hidden rounded-xl sm:rounded-2xl border border-slate-200 bg-white font-sans text-slate-900 shadow-sm">
+    <div className="flex h-full w-full min-h-0 flex-1 overflow-hidden bg-white font-sans text-slate-900 border-t border-slate-200 lg:border-t-0">
       
       {/* ─────────────────────────────────────────────────────────────
-          PANE 1: INBOX LIST (w-80 / 320px)
+          PANE 1: INBOX LIST (w-72 sm:w-80 lg:w-[310px])
          ───────────────────────────────────────────────────────────── */}
       <aside
         className={clsx(
           "flex min-w-0 shrink-0 flex-col border-r border-slate-200 bg-slate-50/50 transition-all duration-300 ease-in-out",
-          selectedId ? "hidden w-full md:flex md:w-80 lg:w-[320px]" : "flex w-full md:w-80 lg:w-[320px]"
+          selectedId ? "hidden w-full md:flex md:w-72 lg:w-80" : "flex w-full md:w-72 lg:w-80"
         )}
       >
         {/* Inbox Header & Search */}
-        <div className="flex-shrink-0 border-b border-slate-200 bg-white p-3 sm:p-4 space-y-3">
+        <div className="flex-shrink-0 border-b border-slate-200 bg-white p-2.5 sm:p-3 space-y-2">
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold tracking-tight text-slate-900">Conversations</h1>
-              <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-bold text-slate-600">
+            <div className="flex items-center gap-1.5">
+              <h1 className="text-base font-bold tracking-tight text-slate-900">Chats</h1>
+              <span className="rounded-full bg-slate-100 px-2 py-0.2 text-xs font-bold text-slate-600">
                 {conversations.length}
               </span>
             </div>
             <button
               onClick={() => void loadConversations(true)}
               disabled={loadingList || refreshing}
-              className="inline-flex h-8 items-center justify-center rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              className="inline-flex h-7 items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50 shadow-2xs"
               title="Refresh conversation list"
             >
-              <RefreshCw size={13} className={clsx("mr-1.5", (loadingList || refreshing) && "animate-spin text-brand")} />
+              <RefreshCw size={11} className={clsx("mr-1", (loadingList || refreshing) && "animate-spin text-brand")} />
               <span>Sync</span>
             </button>
           </div>
 
           {/* Search Box */}
           <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search by customer, phone, message..."
-              className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-2 pl-9 pr-8 text-xs outline-none transition focus:border-brand/40 focus:bg-white focus:ring-2 focus:ring-brand/10"
+              placeholder="Search customer, phone..."
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 pl-8 pr-7 text-xs outline-none transition focus:border-brand/40 focus:bg-white focus:ring-1 focus:ring-brand/20"
             />
             {searchTerm && (
               <button
                 onClick={() => setSearchTerm("")}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               >
-                <X size={13} />
+                <X size={12} />
               </button>
             )}
           </div>
 
           {/* Filter Pills */}
-          <div className="grid grid-cols-4 gap-1 rounded-xl bg-slate-100 p-1 text-[11px] font-semibold">
+          <div className="grid grid-cols-4 gap-0.5 rounded-lg bg-slate-100 p-0.5 text-[11px] font-semibold">
             {[
               { id: "all", label: "All", count: filterCounts.all },
               { id: "unread", label: "Unread", count: filterCounts.unread },
               { id: "human", label: "Human", count: filterCounts.human },
-              { id: "cart", label: "Active", count: filterCounts.cart },
+              { id: "cart", label: "Cart", count: filterCounts.cart },
             ].map((f) => (
               <button
                 key={f.id}
                 onClick={() => setInboxFilter(f.id as typeof inboxFilter)}
                 className={clsx(
-                  "flex items-center justify-center gap-1 rounded-lg py-1.5 transition capitalize",
+                  "flex items-center justify-center gap-1 rounded-md py-1 transition capitalize text-[10.5px]",
                   inboxFilter === f.id
-                    ? "bg-white text-slate-900 font-bold shadow-sm"
+                    ? "bg-white text-slate-900 font-bold shadow-2xs"
                     : "text-slate-500 hover:text-slate-900"
                 )}
               >
@@ -801,7 +816,7 @@ export default function ConversationsPage() {
                 {f.count > 0 && (
                   <span
                     className={clsx(
-                      "rounded-full px-1 py-0.2 text-[9px] font-extrabold",
+                      "rounded-full px-1 py-0.2 text-[8.5px] font-extrabold",
                       f.id === "unread" && f.count > 0
                         ? "bg-red-500 text-white"
                         : inboxFilter === f.id
@@ -818,18 +833,18 @@ export default function ConversationsPage() {
         </div>
 
         {/* Conversation List Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-2 space-y-1 overscroll-contain">
+        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 overscroll-contain">
           {loadingList && conversations.length === 0 ? (
-            <div className="space-y-2 p-1">
+            <div className="space-y-1.5 p-1">
               {Array.from({ length: 6 }).map((_, index) => (
-                <div key={index} className="h-20 animate-pulse rounded-xl bg-slate-100" />
+                <div key={index} className="h-14 animate-pulse rounded-lg bg-slate-100" />
               ))}
             </div>
           ) : filteredConversations.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 px-4 text-center text-slate-400">
-              <MessageSquareText size={36} className="mb-2 opacity-25" />
-              <p className="text-sm font-semibold text-slate-600">No chats found</p>
-              <p className="text-xs text-slate-400 mt-0.5">Try adjusting your filters or search term</p>
+              <MessageSquareText size={32} className="mb-2 opacity-25" />
+              <p className="text-xs font-semibold text-slate-600">No chats found</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Try adjusting search or filter</p>
             </div>
           ) : (
             filteredConversations.map((item) => {
@@ -848,97 +863,69 @@ export default function ConversationsPage() {
                   data-testid={`conversation-item-${item.phone.replace(/[^0-9]/g, "")}`}
                   onClick={() => setSelectedId(item.id)}
                   className={clsx(
-                    "w-full rounded-xl p-2.5 text-left transition-all relative border group",
+                    "w-full rounded-lg p-2 text-left transition-all relative border group",
                     isActive
-                      ? "bg-brand text-white shadow-md border-brand"
-                      : "bg-white text-slate-800 border-slate-100 hover:border-slate-200 hover:bg-slate-50"
+                      ? "bg-brand/10 border-l-[3.5px] border-l-brand border-y-slate-200/70 border-r-slate-200/70 shadow-2xs"
+                      : "bg-white border-transparent hover:border-slate-200 hover:bg-slate-50/80"
                   )}
                 >
-                  <div className="flex items-start gap-2.5">
-                    {/* Avatar with Mode Badge */}
+                  <div className="flex items-center gap-2.5">
+                    {/* Avatar with Status Dot */}
                     <div className="relative shrink-0">
                       <div
                         className={clsx(
-                          "flex h-9 w-9 items-center justify-center rounded-full text-xs font-bold",
-                          isActive ? "bg-white/20 text-white" : "bg-slate-100 text-slate-700"
+                          "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors",
+                          isActive ? "bg-brand text-white" : "bg-slate-100 text-slate-700 group-hover:bg-slate-200"
                         )}
                       >
                         {getConversationInitials(item)}
                       </div>
                       <div
                         className={clsx(
-                          "absolute -bottom-0.5 -right-0.5 flex h-4 w-4 items-center justify-center rounded-full border ring-1",
-                          isActive
-                            ? item.mode === "agent" ? "bg-emerald-500 text-white ring-brand" : "bg-amber-400 text-slate-900 ring-brand"
-                            : item.mode === "agent" ? "bg-emerald-100 text-emerald-700 ring-white" : "bg-amber-100 text-amber-800 ring-white"
+                          "absolute -bottom-0.5 -right-0.5 flex h-3 w-3 items-center justify-center rounded-full border border-white ring-1 ring-white",
+                          item.mode === "agent" ? "bg-emerald-500" : "bg-amber-400"
                         )}
                         title={item.mode === "agent" ? "AI Active" : "Human Mode"}
-                      >
-                        {item.mode === "agent" ? <Bot size={9} /> : <UserRound size={9} />}
-                      </div>
+                      />
                     </div>
 
                     {/* Content */}
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-1.5">
-                        <p className={clsx("truncate text-xs font-bold", isActive ? "text-white" : "text-slate-900")}>
+                      <div className="flex items-center justify-between gap-1">
+                        <p className={clsx("truncate text-xs font-bold", isActive ? "text-brand" : "text-slate-900")}>
                           {getConversationLabel(item)}
                         </p>
-                        <span className={clsx("shrink-0 text-[10px]", isActive ? "text-white/80 font-medium" : "text-slate-400 font-medium")}>
-                          {formatDistanceToNow(new Date(displayTimestamp), { addSuffix: true })}
+                        <span className="shrink-0 text-[10px] text-slate-400 font-medium">
+                          {formatDistanceToNow(new Date(displayTimestamp), { addSuffix: false })}
                         </span>
                       </div>
 
-                      <p className={clsx("mt-0.5 line-clamp-1 text-[11px]", isActive ? "text-white/90" : "text-slate-500")}>
-                        {getPreviewMessage(item)}
-                      </p>
-
-                      {/* Badges Bar */}
-                      <div className="mt-1.5 flex flex-wrap items-center gap-1">
-                        {item.has_unread && (
-                          <span className="inline-flex h-2 w-2 rounded-full bg-red-500 ring-2 ring-white animate-pulse" />
-                        )}
-                        {item.branches?.name && (
-                          <span
-                            className={clsx(
-                              "rounded px-1.5 py-0.2 text-[9px] font-bold uppercase",
-                              isActive ? "bg-white/15 text-white" : "bg-slate-100 text-slate-600"
-                            )}
-                          >
-                            {item.branches.name}
-                          </span>
-                        )}
-                        {activeStep && (
-                          <span
-                            className={clsx(
-                              "rounded px-1.5 py-0.2 text-[9px] font-bold uppercase",
-                              isActive ? "bg-white/15 text-white" : "bg-emerald-50 text-emerald-700"
-                            )}
-                          >
-                            {formatStep(activeStep)}
-                          </span>
-                        )}
-                        {draftLines.length > 0 && (
-                          <span
-                            className={clsx(
-                              "flex items-center gap-0.5 rounded px-1.5 py-0.2 text-[9px] font-bold",
-                              isActive ? "bg-white/20 text-white" : "bg-orange-50 text-brand"
-                            )}
-                          >
-                            <ShoppingCart size={9} />
-                            <span>{draftLines.length}</span>
-                          </span>
-                        )}
-                        {session?.status === "human_handoff" && (
-                          <span
-                            className={clsx(
-                              "rounded px-1.5 py-0.2 text-[9px] font-bold uppercase",
-                              isActive ? "bg-amber-400 text-slate-900" : "bg-amber-100 text-amber-800"
-                            )}
-                          >
-                            Handoff
-                          </span>
-                        )}
+                      <div className="mt-0.5 flex items-center justify-between gap-1.5">
+                        <p className="truncate text-[11px] text-slate-500 flex-1">
+                          {getPreviewMessage(item)}
+                        </p>
+                        
+                        <div className="flex shrink-0 items-center gap-1">
+                          {item.has_unread && (
+                            <span className="inline-flex h-2 w-2 rounded-full bg-red-500 ring-1 ring-white animate-pulse" />
+                          )}
+                          {draftLines.length > 0 && (
+                            <span className="flex items-center gap-0.5 rounded bg-orange-100/80 px-1 py-0.2 text-[8.5px] font-bold text-brand">
+                              <ShoppingCart size={8} />
+                              <span>{draftLines.length}</span>
+                            </span>
+                          )}
+                          {session?.status === "human_handoff" && (
+                            <span className="rounded bg-amber-100 px-1 py-0.2 text-[8.5px] font-bold uppercase text-amber-800">
+                              Handoff
+                            </span>
+                          )}
+                          {activeStep && !session?.status && draftLines.length === 0 && (
+                            <span className="rounded bg-slate-100 px-1 py-0.2 text-[8.5px] font-bold uppercase text-slate-500">
+                              {formatStep(activeStep)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -966,10 +953,10 @@ export default function ConversationsPage() {
         ) : (
           <>
             {/* Chat Top Header */}
-            <header className="flex-shrink-0 border-b border-slate-200 bg-white px-4 py-3 sm:px-6">
-              <div className="flex items-center justify-between gap-3">
+            <header className="flex-shrink-0 border-b border-slate-200 bg-white px-3 py-2 sm:px-5 sm:py-2.5">
+              <div className="flex items-center justify-between gap-2 sm:gap-4">
                 {/* Left: Customer metadata */}
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
                   <button
                     onClick={() => {
                       setSelectedId(null);
@@ -977,41 +964,50 @@ export default function ConversationsPage() {
                         window.history.replaceState(null, "", "/dashboard/conversations");
                       }
                     }}
-                    className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 md:hidden"
+                    className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 md:hidden"
                     title="Back to inbox"
                   >
                     <ArrowLeft size={16} />
                   </button>
 
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-brand/10 font-bold text-brand text-sm">
-                    {getConversationInitials(activeConversation)}
+                  <div className="relative shrink-0">
+                    <div className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-full bg-brand/10 font-bold text-brand text-xs sm:text-sm">
+                      {getConversationInitials(activeConversation)}
+                    </div>
+                    <span
+                      className={clsx(
+                        "absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-white",
+                        activeConversation.mode === "agent" ? "bg-emerald-500" : "bg-amber-400"
+                      )}
+                      title={activeConversation.mode === "agent" ? "AI Agent Live" : "Human Agent"}
+                    />
                   </div>
 
-                  <div className="min-w-0">
-                    <div className="flex items-center gap-2">
-                      <h2 className="truncate text-base font-bold leading-tight text-slate-900">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 sm:gap-2">
+                      <h2 className="truncate text-sm sm:text-base font-bold leading-tight text-slate-900">
                         {getConversationLabel(activeConversation)}
                       </h2>
                       {activeConversation.branches?.name && (
-                        <span className="hidden sm:inline-block rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-slate-600">
+                        <span className="hidden xl:inline-block rounded bg-slate-100 px-1.5 py-0.2 text-[10px] font-semibold text-slate-600 truncate max-w-[140px]">
                           {activeConversation.branches.name}
                         </span>
                       )}
                     </div>
 
-                    <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                    <div className="flex items-center gap-1.5 text-[11px] sm:text-xs text-slate-500">
                       <button
                         onClick={() => copyToClipboard(activeConversation.phone, "Phone number")}
-                        className="flex items-center gap-1 hover:text-brand transition"
+                        className="flex items-center gap-1 hover:text-brand transition truncate"
                         title="Click to copy phone number"
                       >
-                        <Phone size={11} className="text-slate-400" />
-                        <span>{activeConversation.phone}</span>
-                        <Copy size={10} className="opacity-40" />
+                        <Phone size={10} className="text-slate-400 shrink-0" />
+                        <span className="truncate">{activeConversation.phone}</span>
+                        <Copy size={9} className="opacity-40 shrink-0" />
                       </button>
                       <span>&bull;</span>
-                      <span className="flex items-center gap-1 font-semibold text-emerald-700">
-                        <Sparkles size={11} className="text-emerald-500" />
+                      <span className="flex items-center gap-1 font-semibold text-emerald-700 shrink-0">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 shrink-0" />
                         <span>{formatStep(displayWorkflowStep)}</span>
                       </span>
                     </div>
@@ -1019,9 +1015,9 @@ export default function ConversationsPage() {
                 </div>
 
                 {/* Right: AI / Human Switch & Context Panel Toggle */}
-                <div className="flex items-center gap-2 sm:gap-3 shrink-0">
-                  {/* AI / Human Takeover Switch */}
-                  <div className="flex items-center rounded-xl border border-slate-200 bg-slate-100 p-1 shadow-inner">
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                  {/* AI / Human Segmented Switch */}
+                  <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5">
                     {(["agent", "human"] as ConversationMode[]).map((mode) => {
                       const isActive = activeConversation.mode === mode;
                       const isTargetLoading = modeSaving && !isActive;
@@ -1033,18 +1029,18 @@ export default function ConversationsPage() {
                           onClick={() => void handleModeChange(mode)}
                           disabled={modeSaving}
                           className={clsx(
-                            "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200",
+                            "flex items-center gap-1 rounded-md px-2 py-1 text-xs font-bold transition-all",
                             isActive
-                              ? "bg-white text-slate-900 shadow-sm"
+                              ? "bg-white text-slate-900 shadow-2xs"
                               : "text-slate-500 hover:text-slate-800"
                           )}
                         >
                           {isTargetLoading ? (
-                            <Loader2 size={13} className="animate-spin text-brand" />
+                            <Loader2 size={12} className="animate-spin text-brand" />
                           ) : mode === "agent" ? (
-                            <Bot size={13} className={isActive ? "text-emerald-600" : "text-slate-400"} />
+                            <Bot size={12} className={isActive ? "text-emerald-600" : "text-slate-400"} />
                           ) : (
-                            <UserRound size={13} className={isActive ? "text-amber-600" : "text-slate-400"} />
+                            <UserRound size={12} className={isActive ? "text-amber-600" : "text-slate-400"} />
                           )}
                           <span className="hidden sm:inline">{mode === "agent" ? "AI Bot" : "Human"}</span>
                         </button>
@@ -1052,55 +1048,91 @@ export default function ConversationsPage() {
                     })}
                   </div>
 
-                    {/* Clear Chat History (for recording clean demos without losing contact) */}
+                  {/* Context & Live Draft Panel Toggle Button */}
+                  <button
+                    onClick={toggleContextPanelOpen}
+                    title={isContextPanelOpen ? "Close order drawer" : "Open order draft drawer"}
+                    className={clsx(
+                      "flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold transition shadow-2xs",
+                      isContextPanelOpen
+                        ? "border-brand bg-brand/10 text-brand"
+                        : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                    )}
+                  >
+                    <ShoppingCart size={13} className={isContextPanelOpen ? "text-brand" : "text-slate-500"} />
+                    <span className="hidden sm:inline">Draft</span>
+                    {displayDraftItemCount > 0 && (
+                      <span className="rounded-full bg-brand px-1.5 py-0.2 text-[8.5px] font-extrabold text-white">
+                        {displayDraftItemCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* More Options Dropdown (...) */}
+                  <div className="relative" ref={optionsMenuRef}>
                     <button
-                      onClick={() => void handleClearMessages()}
-                      disabled={clearingMessages}
-                      title="Clear chat messages & reset state (keeps contact name in conversation list)"
-                      className="flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50/70 px-2.5 py-1.5 text-xs font-semibold text-rose-600 transition shadow-sm hover:bg-rose-100/80 hover:text-rose-700 disabled:opacity-50"
+                      onClick={() => setOptionsMenuOpen((prev) => !prev)}
+                      className="flex h-7 w-7 sm:h-8 sm:w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 hover:bg-slate-50 transition shadow-2xs"
+                      title="More actions"
                     >
-                      {clearingMessages ? (
-                        <Loader2 size={13} className="animate-spin text-rose-600" />
-                      ) : (
-                        <Trash2 size={13} className="text-rose-500" />
-                      )}
-                      <span className="hidden sm:inline">Clear Chat</span>
+                      <MoreVertical size={14} />
                     </button>
 
-                    {/* Context & Live Draft Panel Toggle Button */}
-                    <button
-                      onClick={toggleContextPanelOpen}
-                      title={isContextPanelOpen ? "Minimize context panel" : "Expand context & cart panel"}
-                      className={clsx(
-                        "flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition shadow-sm",
-                        isContextPanelOpen
-                          ? "border-brand/40 bg-brand/10 text-brand"
-                          : "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
-                      )}
-                    >
-                      <ShoppingCart size={14} className={isContextPanelOpen ? "text-brand" : "text-slate-500"} />
-                      <span className="hidden sm:inline">Draft ({displayDraftItemCount})</span>
-                      {isContextPanelOpen ? (
-                        <PanelRightClose size={14} className="hidden sm:inline ml-0.5" />
-                      ) : (
-                        <PanelRightOpen size={14} className="hidden sm:inline ml-0.5" />
-                      )}
-                    </button>
+                    {optionsMenuOpen && (
+                      <div className="absolute right-0 top-full mt-1 w-48 rounded-xl border border-slate-200 bg-white p-1 shadow-lg ring-1 ring-black/5 z-50 animate-in fade-in-0 zoom-in-95">
+                        <button
+                          onClick={() => {
+                            setOptionsMenuOpen(false);
+                            copyToClipboard(activeConversation.phone, "Phone number");
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition"
+                        >
+                          <Copy size={13} className="text-slate-400" />
+                          <span>Copy Phone</span>
+                        </button>
+
+                        <button
+                          onClick={() => {
+                            setOptionsMenuOpen(false);
+                            toggleContextPanelOpen();
+                          }}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 hover:bg-slate-50 transition lg:hidden"
+                        >
+                          <Info size={13} className="text-slate-400" />
+                          <span>Order Draft & Notes</span>
+                        </button>
+
+                        <div className="my-1 border-t border-slate-100" />
+
+                        <button
+                          onClick={() => {
+                            setOptionsMenuOpen(false);
+                            void handleClearMessages();
+                          }}
+                          disabled={clearingMessages}
+                          className="flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-rose-600 hover:bg-rose-50 transition"
+                        >
+                          <Trash2 size={13} className="text-rose-500" />
+                          <span>Clear Chat History</span>
+                        </button>
+                      </div>
+                    )}
                   </div>
+                </div>
               </div>
             </header>
 
             {/* Messages Viewport */}
             <div
               ref={messagesViewportRef}
-              className="flex-1 overflow-y-auto px-4 py-6 sm:px-6 overscroll-contain bg-slate-50/40"
+              className="flex-1 overflow-y-auto px-2.5 py-3 sm:px-4 sm:py-4 overscroll-contain bg-slate-50/40"
             >
               {hasMoreMessages && (
-                <div className="mb-6 flex justify-center">
+                <div className="mb-4 flex justify-center">
                   <button
                     onClick={() => selectedId && oldestLoadedIngestSeq != null && void loadMessages(selectedId, oldestLoadedIngestSeq)}
                     disabled={loadingOlder || oldestLoadedIngestSeq == null}
-                    className="rounded-full bg-white border border-slate-200 px-4 py-1.5 text-xs font-semibold text-slate-600 shadow-sm hover:bg-slate-50 disabled:opacity-50"
+                    className="rounded-full bg-white border border-slate-200 px-3 py-1 text-[11px] font-semibold text-slate-600 shadow-2xs hover:bg-slate-50 disabled:opacity-50"
                   >
                     {loadingOlder ? "Loading older history..." : "Load earlier messages"}
                   </button>
@@ -1112,7 +1144,7 @@ export default function ConversationsPage() {
                   <Loader2 size={24} className="animate-spin text-brand" />
                 </div>
               ) : (
-                <div className="mx-auto max-w-3xl space-y-5">
+                <div className="mx-auto max-w-3xl space-y-2.5 sm:space-y-3">
                   {displayMessages.map((message, index) => {
                     const currentDate = new Date(message.created_at);
                     const previousDate = index > 0 ? new Date(displayMessages[index - 1].created_at) : null;
@@ -1124,16 +1156,16 @@ export default function ConversationsPage() {
                     return (
                       <div key={message.id} data-testid="message-bubble">
                         {showDayDivider && (
-                          <div className="mb-6 mt-3 flex items-center justify-center">
-                            <span className="rounded-full border border-slate-200 bg-white px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-500 shadow-sm">
+                          <div className="mb-4 mt-2 flex items-center justify-center">
+                            <span className="rounded-full border border-slate-200 bg-white px-3 py-0.5 text-[9.5px] font-bold uppercase tracking-wider text-slate-500 shadow-2xs">
                               {formatMessageDay(message.created_at)}
                             </span>
                           </div>
                         )}
 
                         {isSystem ? (
-                          <div className="flex justify-center my-2">
-                            <div className="max-w-md rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-center text-xs font-medium text-amber-900 shadow-sm">
+                          <div className="flex justify-center my-1.5">
+                            <div className="max-w-md rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-center text-xs font-medium text-amber-900 shadow-2xs">
                               {renderMessageContent(message.content)}
                             </div>
                           </div>
@@ -1141,7 +1173,7 @@ export default function ConversationsPage() {
                           <div className={clsx("flex", isIncoming ? "justify-start" : "justify-end")}>
                             <div
                               className={clsx(
-                                "relative max-w-[90%] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm sm:max-w-[78%] sm:px-5 sm:py-3.5",
+                                "relative max-w-[92%] rounded-2xl px-3.5 py-2 text-xs sm:text-sm leading-relaxed shadow-xs sm:max-w-[80%] sm:px-4 sm:py-2.5",
                                 isIncoming
                                   ? "rounded-tl-xs border border-slate-200 bg-white text-slate-800"
                                   : isHuman
@@ -1152,7 +1184,7 @@ export default function ConversationsPage() {
                               {/* Header Label */}
                               <div
                                 className={clsx(
-                                  "mb-1 flex items-center justify-between gap-3 text-[10px] font-bold uppercase tracking-wider",
+                                  "mb-1 flex items-center justify-between gap-2 text-[9.5px] font-bold uppercase tracking-wider",
                                   isIncoming ? "text-slate-400" : "text-white/60"
                                 )}
                               >
@@ -1267,57 +1299,57 @@ export default function ConversationsPage() {
                                  </div>
                                )}
 
-                               {/* Interactive WhatsApp List Selector */}
+                               {/* Interactive WhatsApp List Selector (HORIZONTAL TRACK) */}
                                {message.listSelector && (
                                  <div
                                    className={clsx(
-                                     "mt-2 overflow-hidden rounded-lg border text-xs",
+                                     "mt-2 overflow-hidden rounded-xl border text-xs",
                                      isIncoming
-                                       ? "border-slate-200 bg-slate-50/80 text-slate-800"
-                                       : "border-white/15 bg-black/30 text-white"
+                                       ? "border-slate-200 bg-slate-50/90 text-slate-800"
+                                       : "border-white/15 bg-black/40 text-white"
                                    )}
                                  >
                                    <div className={clsx(
-                                     "flex items-center justify-between px-2.5 py-1.5 border-b font-medium text-[11px]",
-                                     isIncoming ? "border-slate-200/80 bg-slate-100/60" : "border-white/10 bg-white/5"
+                                     "flex items-center justify-between px-2.5 py-1 border-b font-medium text-[10.5px]",
+                                     isIncoming ? "border-slate-200/80 bg-slate-100/70" : "border-white/10 bg-white/5"
                                    )}>
                                      <span className={clsx("flex items-center gap-1 font-semibold", isIncoming ? "text-emerald-700" : "text-emerald-300")}>
-                                       <Package size={12} />
+                                       <Package size={11} />
                                        <span>{message.listSelector.title}</span>
                                      </span>
                                      <span
                                        className={clsx(
-                                         "rounded px-1.5 py-0.2 text-[8.5px] font-bold uppercase tracking-wider",
+                                         "rounded px-1.5 py-0.2 text-[8px] font-bold uppercase tracking-wider",
                                          isIncoming
                                            ? "border border-emerald-200 bg-emerald-100/80 text-emerald-800"
                                            : "bg-emerald-500/25 text-emerald-200"
                                        )}
                                      >
-                                       {message.listSelector.buttonText || "List"}
+                                       {message.listSelector.rows.length} Options
                                      </span>
                                    </div>
-                                   <div className="divide-y divide-inherit">
+
+                                   {/* Touch and mouse scrollable horizontal options track */}
+                                   <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto p-1.5 overscroll-x-contain">
                                      {message.listSelector.rows.map((row) => (
                                        <div
                                          key={row.id}
                                          className={clsx(
-                                           "flex items-center justify-between gap-2 px-2.5 py-1 text-[11px] transition-colors",
-                                           isIncoming ? "hover:bg-white" : "hover:bg-white/5"
+                                           "shrink-0 inline-flex items-center gap-1.5 rounded-lg border px-2 py-0.5 text-[11px] transition-all shadow-2xs",
+                                           isIncoming
+                                             ? "border-slate-200 bg-white text-slate-800 hover:border-brand/40"
+                                             : "border-white/15 bg-white/10 text-white hover:bg-white/15"
                                          )}
                                        >
-                                         <div className="min-w-0 flex-1 truncate">
-                                           <span className={clsx("font-medium", isIncoming ? "text-slate-800" : "text-white")}>
-                                             {row.title}
+                                         <span className="font-semibold">{row.title}</span>
+                                         {row.description && (
+                                           <span className={clsx("text-[9.5px]", isIncoming ? "text-slate-400" : "text-emerald-300/70")}>
+                                             · {row.description}
                                            </span>
-                                           {row.description && (
-                                             <span className={clsx("ml-1.5 text-[10px]", isIncoming ? "text-slate-500" : "text-slate-400")}>
-                                               · {row.description}
-                                             </span>
-                                           )}
-                                         </div>
+                                         )}
                                          <span
                                            className={clsx(
-                                             "shrink-0 rounded px-1.5 py-0.5 text-[9px] font-semibold border",
+                                             "rounded px-1 py-0.2 text-[8px] font-bold uppercase border",
                                              isIncoming
                                                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
                                                : "border-emerald-500/30 bg-emerald-500/20 text-emerald-300"
@@ -1372,45 +1404,58 @@ export default function ConversationsPage() {
             </div>
 
             {/* Bottom Floating Composer & Takeover Controls */}
-            <div className="flex-shrink-0 border-t border-slate-200 bg-white p-3 sm:p-4">
-              <div className="mx-auto max-w-3xl space-y-3">
+            <div className="flex-shrink-0 border-t border-slate-200 bg-white p-2 sm:p-2.5">
+              <div className="mx-auto max-w-3xl">
                 {activeConversation.mode === "agent" ? (
-                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-3.5 shadow-sm">
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-500 text-white shadow-sm">
-                        <Bot size={16} />
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-1.5 shadow-2xs">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-2xs">
+                        <Bot size={13} />
                       </div>
-                      <div>
-                        <p className="text-xs font-bold text-emerald-950">AI Agent Active</p>
-                        <p className="text-[11px] text-emerald-700">The assistant is actively responding to this customer automatically.</p>
+                      <div className="min-w-0 flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-emerald-950 truncate">AI Agent Active</span>
+                        <span className="hidden sm:inline text-xs text-emerald-700 truncate">&bull; Responding automatically</span>
                       </div>
                     </div>
                     <button
                       onClick={() => void handleModeChange("human")}
                       disabled={modeSaving}
-                      className="inline-flex w-full sm:w-auto items-center justify-center gap-1.5 rounded-xl bg-slate-900 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-slate-800 disabled:opacity-50"
+                      className="shrink-0 inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-1 text-xs font-bold text-white shadow-2xs transition hover:bg-slate-800 disabled:opacity-50"
                     >
-                      {modeSaving ? <Loader2 size={13} className="animate-spin" /> : <UserCheck size={13} />}
-                      Take Over to Reply
+                      {modeSaving ? <Loader2 size={12} className="animate-spin" /> : <UserCheck size={12} />}
+                      <span>Take Over</span>
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-2">
-                    {/* Canned Quick Replies */}
-                    <div className="no-scrollbar flex gap-1.5 overflow-x-auto pb-1">
+                  <div className="space-y-1.5">
+                    {/* Canned Quick Replies (Horizontal Scroll) */}
+                    <div className="no-scrollbar flex items-center gap-1 overflow-x-auto pb-0.5">
+                      <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
+                        Quick:
+                      </span>
                       {CANNED_RESPONSES.slice(0, 4).map((reply, i) => (
                         <button
                           key={i}
                           onClick={() => setComposer(reply)}
-                          className="shrink-0 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1 text-[11px] font-medium text-slate-700 transition hover:border-brand/40 hover:bg-white"
+                          className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 transition hover:border-brand/40 hover:bg-white hover:text-slate-900"
                         >
-                          {reply.slice(0, 32)}...
+                          {reply.slice(0, 26)}...
                         </button>
                       ))}
                     </div>
 
                     {/* Composer Input Box */}
-                    <div className="flex flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm focus-within:border-brand focus-within:ring-2 focus-within:ring-brand/10 transition">
+                    <div className="flex items-end gap-1.5 rounded-xl border border-slate-200 bg-slate-50/60 p-1.5 focus-within:border-brand focus-within:bg-white focus-within:ring-2 focus-within:ring-brand/10 transition">
+                      <button
+                        onClick={() => void handleModeChange("agent")}
+                        disabled={modeSaving}
+                        className="shrink-0 flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
+                        title="Return control to AI bot"
+                      >
+                        <Bot size={13} className="text-emerald-600" />
+                        <span className="hidden sm:inline text-[11px]">AI</span>
+                      </button>
+
                       <textarea
                         value={composer}
                         onChange={(event) => setComposer(event.target.value)}
@@ -1420,34 +1465,19 @@ export default function ConversationsPage() {
                             void handleSend();
                           }
                         }}
-                        rows={2}
-                        placeholder="Type a manual WhatsApp message... (Press Enter to send, Shift+Enter for new line)"
-                        className="w-full resize-none bg-transparent px-4 py-3 text-sm outline-none placeholder:text-slate-400 font-sans"
+                        rows={1}
+                        placeholder="Type a manual WhatsApp message... (Enter to send)"
+                        className="max-h-24 min-h-[32px] w-full resize-none bg-transparent px-2 py-1 text-xs sm:text-sm outline-none placeholder:text-slate-400 font-sans"
                       />
 
-                      <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-3 py-2">
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => void handleModeChange("agent")}
-                            disabled={modeSaving}
-                            className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
-                            title="Release control back to AI agent"
-                          >
-                            <Bot size={13} className="text-emerald-600" />
-                            <span>Return to AI</span>
-                          </button>
-                          <span className="text-[11px] text-slate-400 hidden sm:inline">Manual Mode Active</span>
-                        </div>
-
-                        <button
-                          onClick={() => void handleSend()}
-                          disabled={sending || !composer.trim()}
-                          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-brand px-4 py-1.5 text-xs font-bold text-white shadow-sm transition hover:bg-brand-hover disabled:opacity-50"
-                        >
-                          {sending ? <Loader2 size={13} className="animate-spin" /> : <SendHorizonal size={13} />}
-                          <span>Send Message</span>
-                        </button>
-                      </div>
+                      <button
+                        onClick={() => void handleSend()}
+                        disabled={sending || !composer.trim()}
+                        className="shrink-0 flex h-8 w-8 sm:w-auto sm:px-3 items-center justify-center gap-1 rounded-lg bg-brand text-white font-bold text-xs shadow-2xs hover:bg-brand-hover disabled:opacity-40 transition"
+                      >
+                        {sending ? <Loader2 size={13} className="animate-spin" /> : <SendHorizonal size={13} />}
+                        <span className="hidden sm:inline">Send</span>
+                      </button>
                     </div>
                   </div>
                 )}
@@ -1461,16 +1491,24 @@ export default function ConversationsPage() {
           PANE 3: DOCKABLE CONTEXT & LIVE CART PANEL (Right)
          ───────────────────────────────────────────────────────────── */}
       {isContextPanelOpen && activeConversation && (
-        <aside className="hidden lg:flex w-80 xl:w-[340px] shrink-0 flex-col border-l border-slate-200 bg-white shadow-sm overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3.5">
-            <div className="flex items-center gap-2">
-              <ShoppingCart size={16} className="text-brand" />
-              <h3 className="font-bold text-slate-900 text-sm">Customer & Order Context</h3>
-            </div>
-            <button
-              onClick={toggleContextPanelOpen}
-              className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
+        <>
+          {/* Mobile Overlay Backdrop */}
+          <div
+            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs lg:hidden animate-in fade-in-0 duration-200"
+            onClick={toggleContextPanelOpen}
+          />
+
+          {/* Drawer Panel */}
+          <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col border-l border-slate-200 bg-white shadow-2xl transition-transform lg:static lg:z-auto lg:w-80 xl:w-[320px] lg:shadow-none overflow-hidden animate-in slide-in-from-right duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <ShoppingCart size={15} className="text-brand" />
+                <h3 className="font-bold text-slate-900 text-sm">Order Draft & Profile</h3>
+              </div>
+              <button
+                onClick={toggleContextPanelOpen}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition"
               title="Minimize panel"
             >
               <X size={16} />
@@ -1614,7 +1652,8 @@ export default function ConversationsPage() {
               )}
             </div>
           </div>
-        </aside>
+          </aside>
+        </>
       )}
     </div>
   );

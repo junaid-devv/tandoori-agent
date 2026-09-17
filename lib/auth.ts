@@ -180,8 +180,8 @@ export const getDashboardSession = cache(async (): Promise<DashboardSession> => 
   if (allowedBranches.length === 0) {
     allowedBranches.push({
       id: "default-branch-id",
-      slug: "orderiq-central",
-      name: "OrderIQ Central",
+      slug: "iqlaunch-central",
+      name: "iQLaunch Central",
       city: "Islamabad",
       address: "Sector F-6/2, Islamabad",
     });
@@ -189,8 +189,8 @@ export const getDashboardSession = cache(async (): Promise<DashboardSession> => 
 
   return {
     userId: "auto-login-admin",
-    email: "admin@orderiq.pk",
-    fullName: "OrderIQ Admin",
+    email: "admin@iqlaunch.pk",
+    fullName: "iQLaunch Admin",
     role: "admin",
     defaultBranchId: allowedBranches[0]?.id ?? "default-branch-id",
     allowedBranches,
