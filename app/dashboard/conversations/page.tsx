@@ -863,10 +863,10 @@ export default function ConversationsPage() {
                   data-testid={`conversation-item-${item.phone.replace(/[^0-9]/g, "")}`}
                   onClick={() => setSelectedId(item.id)}
                   className={clsx(
-                    "w-full rounded-lg p-2 text-left transition-all relative border group",
+                    "w-full rounded-lg px-2.5 py-2 text-left transition-colors relative border",
                     isActive
-                      ? "bg-brand/10 border-l-[3.5px] border-l-brand border-y-slate-200/70 border-r-slate-200/70 shadow-2xs"
-                      : "bg-white border-transparent hover:border-slate-200 hover:bg-slate-50/80"
+                      ? "bg-slate-100 border-slate-200/90 shadow-2xs"
+                      : "bg-white border-transparent hover:border-slate-100 hover:bg-slate-50"
                   )}
                 >
                   <div className="flex items-center gap-2.5">
@@ -875,7 +875,7 @@ export default function ConversationsPage() {
                       <div
                         className={clsx(
                           "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors",
-                          isActive ? "bg-brand text-white" : "bg-slate-100 text-slate-700 group-hover:bg-slate-200"
+                          isActive ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 group-hover:bg-slate-200"
                         )}
                       >
                         {getConversationInitials(item)}
@@ -892,7 +892,7 @@ export default function ConversationsPage() {
                     {/* Content */}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1">
-                        <p className={clsx("truncate text-xs font-bold", isActive ? "text-brand" : "text-slate-900")}>
+                        <p className="truncate text-xs font-bold text-slate-900">
                           {getConversationLabel(item)}
                         </p>
                         <span className="shrink-0 text-[10px] text-slate-400 font-medium">
@@ -910,7 +910,7 @@ export default function ConversationsPage() {
                             <span className="inline-flex h-2 w-2 rounded-full bg-red-500 ring-1 ring-white animate-pulse" />
                           )}
                           {draftLines.length > 0 && (
-                            <span className="flex items-center gap-0.5 rounded bg-orange-100/80 px-1 py-0.2 text-[8.5px] font-bold text-brand">
+                            <span className="flex items-center gap-0.5 rounded bg-slate-200/80 px-1 py-0.2 text-[8.5px] font-bold text-slate-700">
                               <ShoppingCart size={8} />
                               <span>{draftLines.length}</span>
                             </span>
@@ -1177,7 +1177,7 @@ export default function ConversationsPage() {
                                 isIncoming
                                   ? "rounded-tl-xs border border-slate-200 bg-white text-slate-800"
                                   : isHuman
-                                    ? "rounded-tr-xs bg-brand text-white"
+                                    ? "rounded-tr-xs bg-slate-800 text-white"
                                     : "rounded-tr-xs bg-slate-900 text-white"
                               )}
                             >

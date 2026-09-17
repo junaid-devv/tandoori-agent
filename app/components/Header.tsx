@@ -167,62 +167,19 @@ export function Header() {
         )}
       </div>
 
-      {/* Right: Realtime status badges, Audio toggle & User profile */}
-      <div className="flex items-center gap-2 sm:gap-4">
-        {/* Realtime AI Status Pill */}
-        <div className="hidden sm:flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50/80 px-2.5 py-1 text-[11px] font-semibold text-emerald-800">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
-          </span>
-          <span>AI Agent Live</span>
-        </div>
-
-        {/* PWA Install Button */}
-        {isInstallable && (
-          <button
-            onClick={() => void installApp()}
-            title="Install Cheezo Bites Management App on this device"
-            className="flex items-center gap-1.5 rounded-lg border border-brand/40 bg-brand/10 px-2.5 py-1 text-xs font-bold text-brand hover:bg-brand/20 transition shadow-sm animate-pulse"
-          >
-            <Download size={13} />
-            <span className="hidden sm:inline">Install App</span>
-          </button>
-        )}
-
-        {/* Native Notification Permission Button */}
-        {isNotificationSupported && notificationPermission !== "granted" && (
-          <button
-            onClick={() => void requestNotificationPermission()}
-            title="Enable push / device sound notifications for new WhatsApp orders & chats"
-            className="flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition shadow-sm"
-          >
-            <BellRing size={13} className="text-amber-600 animate-bounce" />
-            <span className="hidden md:inline">Enable Alerts</span>
-          </button>
-        )}
-
-        {/* Device Notifications Granted Indicator */}
-        {isNotificationSupported && notificationPermission === "granted" && (
-          <div
-            title="Device notifications active"
-            className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-emerald-600"
-          >
-            <Bell size={15} />
-          </div>
-        )}
-
-        {/* Sound Notifications Toggle Button */}
+      {/* Right: Sound toggle & User profile */}
+      <div className="flex items-center gap-2 sm:gap-3">
+        {/* Sound Notifications Toggle */}
         <button
           onClick={() => {
             toggleSoundEnabled();
-            toast.message(isSoundEnabled ? "Sound notifications muted" : "Sound notifications unmuted");
+            toast.message(isSoundEnabled ? "Sounds muted" : "Sounds active");
           }}
-          title={isSoundEnabled ? "Mute notification sounds" : "Unmute notification sounds"}
+          title={isSoundEnabled ? "Mute sounds" : "Unmute sounds"}
           className={clsx(
             "flex h-8 w-8 items-center justify-center rounded-lg border text-xs transition",
             isSoundEnabled
-              ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+              ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 shadow-2xs"
               : "border-amber-200 bg-amber-50 text-amber-700"
           )}
           aria-label={isSoundEnabled ? "Mute sounds" : "Unmute sounds"}
@@ -230,24 +187,15 @@ export function Header() {
           {isSoundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
         </button>
 
-        {/* Settings Quick Shortcut */}
-        <Link
-          href="/dashboard/settings"
-          title="Store Settings"
-          className="hidden sm:flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-        >
-          <Settings size={15} />
-        </Link>
-
         {/* User Pill */}
         <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-brand text-[10px] font-bold text-white">
+          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-white">
             {(session.fullName || session.email || "U").charAt(0).toUpperCase()}
           </div>
-          <span className="hidden md:inline text-xs font-semibold text-slate-800 truncate max-w-[100px]">
+          <span className="text-xs font-semibold text-slate-800 truncate max-w-[110px]">
             {session.fullName || session.email || "Staff"}
           </span>
-          <span className="rounded bg-slate-200/70 px-1 py-0.2 text-[9px] font-bold uppercase text-slate-600">
+          <span className="rounded bg-slate-200/80 px-1 py-0.2 text-[9px] font-bold uppercase text-slate-600">
             {session.role === "admin" ? "Admin" : "Staff"}
           </span>
         </div>
