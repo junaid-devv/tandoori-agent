@@ -40,3 +40,12 @@ body {
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Prevent auto-zooming on focus in mobile browsers (iOS WebKit / Android) */
+@media screen and (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}

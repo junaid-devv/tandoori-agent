@@ -150,15 +150,6 @@ interface DraftLine {
   notes?: string | null;
 }
 
-const CANNED_RESPONSES = [
-  "Salam! How may I assist you with your order today?",
-  "Your order has been received and is being prepared with care.",
-  "Our delivery rider has been dispatched to your address.",
-  "Please share your complete delivery address or street landmark.",
-  "Could you please confirm if this order is for Delivery, Pickup, or Dine-in?",
-  "Thank you for reaching out! We appreciate your patience.",
-];
-
 function pickState(
   state?: ConversationState | ConversationState[] | null
 ): ConversationState | null {
@@ -782,7 +773,7 @@ export default function ConversationsPage() {
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search customer, phone..."
-              className="w-full rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 pl-8 pr-7 text-xs outline-none transition focus:border-brand/40 focus:bg-white focus:ring-1 focus:ring-brand/20"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 pl-8 pr-7 text-base sm:text-xs outline-none transition focus:border-brand/40 focus:bg-white focus:ring-1 focus:ring-brand/20"
             />
             {searchTerm && (
               <button
@@ -1427,58 +1418,40 @@ export default function ConversationsPage() {
                     </button>
                   </div>
                 ) : (
-                  <div className="space-y-1.5">
-                    {/* Canned Quick Replies (Horizontal Scroll) */}
-                    <div className="no-scrollbar flex items-center gap-1 overflow-x-auto pb-0.5">
-                      <span className="shrink-0 text-[10px] font-bold uppercase tracking-wider text-slate-400 mr-1">
-                        Quick:
-                      </span>
-                      {CANNED_RESPONSES.slice(0, 4).map((reply, i) => (
-                        <button
-                          key={i}
-                          onClick={() => setComposer(reply)}
-                          className="shrink-0 rounded-md border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] font-medium text-slate-600 transition hover:border-brand/40 hover:bg-white hover:text-slate-900"
-                        >
-                          {reply.slice(0, 26)}...
-                        </button>
-                      ))}
-                    </div>
+                  /* Composer Input Box */
+                  <div className="flex items-end gap-1.5 rounded-xl border border-slate-200 bg-slate-50/60 p-1.5 focus-within:border-brand focus-within:bg-white focus-within:ring-2 focus-within:ring-brand/10 transition">
+                    <button
+                      onClick={() => void handleModeChange("agent")}
+                      disabled={modeSaving}
+                      className="shrink-0 flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
+                      title="Return control to AI bot"
+                    >
+                      <Bot size={13} className="text-emerald-600" />
+                      <span className="hidden sm:inline text-[11px]">AI</span>
+                    </button>
 
-                    {/* Composer Input Box */}
-                    <div className="flex items-end gap-1.5 rounded-xl border border-slate-200 bg-slate-50/60 p-1.5 focus-within:border-brand focus-within:bg-white focus-within:ring-2 focus-within:ring-brand/10 transition">
-                      <button
-                        onClick={() => void handleModeChange("agent")}
-                        disabled={modeSaving}
-                        className="shrink-0 flex h-8 items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 transition"
-                        title="Return control to AI bot"
-                      >
-                        <Bot size={13} className="text-emerald-600" />
-                        <span className="hidden sm:inline text-[11px]">AI</span>
-                      </button>
+                    <textarea
+                      value={composer}
+                      onChange={(event) => setComposer(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" && !event.shiftKey) {
+                          event.preventDefault();
+                          void handleSend();
+                        }
+                      }}
+                      rows={1}
+                      placeholder="Type a manual WhatsApp message... (Enter to send)"
+                      className="max-h-24 min-h-[36px] w-full resize-none bg-transparent px-2 py-1 text-base sm:text-sm outline-none placeholder:text-slate-400 font-sans"
+                    />
 
-                      <textarea
-                        value={composer}
-                        onChange={(event) => setComposer(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter" && !event.shiftKey) {
-                            event.preventDefault();
-                            void handleSend();
-                          }
-                        }}
-                        rows={1}
-                        placeholder="Type a manual WhatsApp message... (Enter to send)"
-                        className="max-h-24 min-h-[32px] w-full resize-none bg-transparent px-2 py-1 text-xs sm:text-sm outline-none placeholder:text-slate-400 font-sans"
-                      />
-
-                      <button
-                        onClick={() => void handleSend()}
-                        disabled={sending || !composer.trim()}
-                        className="shrink-0 flex h-8 w-8 sm:w-auto sm:px-3 items-center justify-center gap-1 rounded-lg bg-brand text-white font-bold text-xs shadow-2xs hover:bg-brand-hover disabled:opacity-40 transition"
-                      >
-                        {sending ? <Loader2 size={13} className="animate-spin" /> : <SendHorizonal size={13} />}
-                        <span className="hidden sm:inline">Send</span>
-                      </button>
-                    </div>
+                    <button
+                      onClick={() => void handleSend()}
+                      disabled={sending || !composer.trim()}
+                      className="shrink-0 flex h-8 w-8 sm:w-auto sm:px-3 items-center justify-center gap-1 rounded-lg bg-brand text-white font-bold text-xs shadow-2xs hover:bg-brand-hover disabled:opacity-40 transition"
+                    >
+                      {sending ? <Loader2 size={13} className="animate-spin" /> : <SendHorizonal size={13} />}
+                      <span className="hidden sm:inline">Send</span>
+                    </button>
                   </div>
                 )}
               </div>
@@ -1545,7 +1518,7 @@ export default function ConversationsPage() {
                   value={customerTags}
                   onChange={(event) => setCustomerTags(event.target.value)}
                   placeholder="e.g. VIP, frequent, spicy"
-                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-brand/40"
+                  className="w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-base sm:text-xs outline-none focus:border-brand/40"
                 />
               </div>
 
@@ -1557,7 +1530,7 @@ export default function ConversationsPage() {
                   onChange={(event) => setCustomerNotes(event.target.value)}
                   rows={2}
                   placeholder="Preferences, allergy, delivery instructions..."
-                  className="w-full resize-none rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs outline-none focus:border-brand/40"
+                  className="w-full resize-none rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-base sm:text-xs outline-none focus:border-brand/40"
                 />
               </div>
 
