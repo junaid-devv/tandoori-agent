@@ -501,6 +501,15 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         info_query: trimmed,
         notes: "fast_path_payment",
       };
+    } else if (
+      /^(?:menu|view\s*menu|show\s*menu|all\s*menu|full\s*menu|deals?|offers?|menu\s*(?:dikhao|dekhna|bhejo|card|list|kya\s*hai|dein|send|plz|please)?|kya\s*(?:hai|milega|milta\s*hai)|what(?:'?s|\s+is)\s+(?:on\s+the\s+)?menu)$/i.test(trimmed)
+    ) {
+      understanding = {
+        ...makeBase(ctx.state.preferred_language),
+        intents: ["browse_menu"],
+        primary_intent: "browse_menu",
+        notes: "fast_path_menu_request",
+      };
     } else if (ctx.menu && ctx.menu.length > 0) {
       const lower = trimmed.toLowerCase();
       const ORDER_SIGNALS = /\b(order|deliver|delivery|bhejo|krdo|kardo|chahiye|mangwana|pack|parcel|add|dal|daal|bhej|de do|dena|rakho)\b/i;
