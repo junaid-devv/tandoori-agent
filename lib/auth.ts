@@ -155,50 +155,39 @@ async function loadAllowedBranches(userId: string, role: StaffRole): Promise<Bra
     .filter((branch): branch is BranchSummary => branch != null);
 }
 
-export const getDashboardSession = cache(async (): Promise<DashboardSession> => {
-  let allowedBranches: BranchSummary[] = [];
-  try {
-    const { data: branches } = await supabaseAdmin
-      .from("branches")
-      .select("id, slug, name, city, address")
-      .eq("is_active", true)
-      .order("name", { ascending: true });
+export const getDashboardSession = cache(async (): Promise<DashboardSession | null> => {
+  const cookieStore = await cookies();
+  const accessToken = cookieStore.get(ACCESS_COOKIE)?.value;
+  const user = await getVerifiedUser(accessToken);
+  if (!user) return null;
 
-    if (branches && branches.length > 0) {
-      allowedBranches = branches.map((b) => ({
-        id: b.id,
-        slug: b.slug,
-        name: b.name,
-        city: b.city,
-        address: b.address,
-      }));
-    }
-  } catch (err) {
-    console.error("[auth] Branch query error:", err);
-  }
+  const profile = await loadStaffProfile(user.id);
+  const role: StaffRole = profile?.role ?? "admin";
+  const fullName = profile?.full_name ?? (user.user_metadata?.full_name as string | undefined) ?? user.email?.split("@")[0] ?? "Administrator";
 
-  if (allowedBranches.length === 0) {
-    allowedBranches.push({
-      id: "default-branch-id",
-      slug: "iqlaunch-central",
-      name: "iQLaunch Central",
-      city: "Islamabad",
-      address: "Sector F-6/2, Islamabad",
-    });
-  }
+  const allowedBranches = await loadAllowedBranches(user.id, role);
+  const defaultBranchId =
+    profile?.default_branch_id && allowedBranches.some((branch) => branch.id === profile.default_branch_id)
+      ? profile.default_branch_id
+      : allowedBranches[0]?.id ?? null;
 
   return {
-    userId: "auto-login-admin",
-    email: "admin@iqlaunch.pk",
-    fullName: "iQLaunch Admin",
-    role: "admin",
-    defaultBranchId: allowedBranches[0]?.id ?? "default-branch-id",
+    userId: user.id,
+    email: user.email ?? null,
+    fullName,
+    role,
+    defaultBranchId,
     allowedBranches,
   };
 });
 
 export async function requireDashboardSession(): Promise<DashboardSession> {
-  return await getDashboardSession();
+  const session = await getDashboardSession();
+  if (!session) {
+    redirect("/login");
+  }
+
+  return session;
 }
 
 export function isBranchAllowed(session: DashboardSession, branchId: string | null) {

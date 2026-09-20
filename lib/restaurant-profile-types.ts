@@ -1,5 +1,7 @@
 export type BranchMode = "single" | "multiple";
 
+export type MenuDisplayMode = "interactive_list" | "menu_pictures" | "text_only";
+
 export interface RestaurantProfile {
   id: string;
   app_name: string;
@@ -16,4 +18,7 @@ export interface RestaurantProfile {
   delivery_phone: string;
   dine_in_phone: string;
   ai_personality_default: string;
+  menu_display_mode: MenuDisplayMode;
+  menu_card_images: string[];
+  whatsapp_provider: "meta" | "wa_akg" | "none";
 }

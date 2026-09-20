@@ -31,9 +31,9 @@ type DashboardContextValue = {
 };
 
 const STORAGE_KEY = "restaurant-agent-selected-branch";
-const SIDEBAR_COLLAPSED_KEY = "orderiq-sidebar-collapsed";
-const SOUND_ENABLED_KEY = "orderiq-sound-enabled";
-const CONTEXT_PANEL_KEY = "orderiq-context-panel-open";
+const SIDEBAR_COLLAPSED_KEY = "dashboard-sidebar-collapsed";
+const SOUND_ENABLED_KEY = "dashboard-sound-enabled";
+const CONTEXT_PANEL_KEY = "dashboard-context-panel-open";
 const DashboardContext = createContext<DashboardContextValue | null>(null);
 
 function getInitialBranchId(session: DashboardSession, profile: RestaurantProfile): SelectedBranchId {

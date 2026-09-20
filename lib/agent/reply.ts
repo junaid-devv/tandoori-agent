@@ -546,4 +546,12 @@ export const reply = {
       ? `Maafi — ye address hamare delivery area mein nahi hai.${list}\nDoosra address bhejein ya Pickup choose karein.`
       : `Sorry — that address isn't in our delivery zone.${list}\nPlease send an address in our delivery area or choose Pickup.`;
   },
+
+  menuPictureInvite(l: Lang, appName: string): string {
+    if (pa(l))
+      return `Da ${appName} mukammal menu aw deals de! 🍔✨ Goraay aw wawayay tse order kawal ghwaaray.`;
+    if (ur(l))
+      return `Yeh raha ${appName} ka menu aur deals! 🍔✨ Tasweer dekh kar batayein kya order karna hai.`;
+    return `Here is the ${appName} menu & deals! 🍔✨ Take a look and let us know what you'd like to order.`;
+  },
 };

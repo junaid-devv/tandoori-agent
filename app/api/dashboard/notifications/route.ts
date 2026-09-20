@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { apiErrorResponse } from "@/lib/api-utils";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,9 @@ export async function GET(req: NextRequest) {
       serverTime: new Date().toISOString(),
     });
   } catch (err: unknown) {
-    const message = err instanceof Error ? err.message : "Failed to fetch notification metrics";
-    return NextResponse.json({ error: message }, { status: 500 });
+    return apiErrorResponse(err, {
+      fallback: "Failed to fetch notification metrics",
+      context: "dashboard notifications GET",
+    });
   }
 }

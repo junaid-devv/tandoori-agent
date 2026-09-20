@@ -36,10 +36,6 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { isValidDeliveryAddress } from "@/lib/customer-crm";
 
-export const CHEEZO_BITES_MENU_IMAGES = [
-  "https://ohghccpgpzszmajridmn.supabase.co/storage/v1/object/public/menu-assets/cheezo-bites-deals.jpg",
-  "https://ohghccpgpzszmajridmn.supabase.co/storage/v1/object/public/menu-assets/cheezo-bites-menu.jpg",
-];
 
 export interface ExecutionResult {
   replyText: string;
@@ -62,6 +58,8 @@ interface ExecInput {
   currency: string;
   customerName?: string | null;
   messageTextForFallback?: string;
+  menuDisplayMode?: string;
+  menuCardImages?: string[];
 }
 
 export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
@@ -89,7 +87,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   let interactive: InteractivePayload | null = null;
   let mediaUrls: string[] | undefined = undefined;
 
-  const isCheezoBites = /cheezo/i.test(input.appName) || ctx.menu.some((m) => /cheezo/i.test(m.name));
 
   // ── Helpers ──────────────────────────────────────────────────────────────
 
@@ -219,7 +216,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "greet": {
         const wasSalam = /^(aoa|a\.?o\.?a|assalam|salam|سلام|ستړې|ستړی)\b/i.test(input.messageTextForFallback?.trim() ?? "");
         replies.push(reply.greeting(lang, input.appName, input.customerName ?? null, wasSalam));
-        if (isCheezoBites) {
+        if (input.menuDisplayMode === "menu_pictures") {
           setInteractive({
             kind: "buttons",
             payload: {
@@ -605,16 +602,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           (action.payload?.category as string | undefined) ??
           (u.info_query as string | undefined);
 
-        // For Cheezo Bites: when user asks for overall menu or clicks menu button, send the 2 pictures directly!
-        if (isCheezoBites && (!categoryQuery || /^(menu|view_menu|all|deals?)$/i.test(categoryQuery.trim()))) {
-          mediaUrls = [...CHEEZO_BITES_MENU_IMAGES];
-          const menuMsg =
-            lang === "pashto"
-              ? "Da Cheezo Bites mukammal menu aw deals de! 🍔✨ Goraay aw wawayay tse order kawal ghwaaray."
-              : lang === "roman_urdu"
-              ? "Yeh raha Cheezo Bites ka menu aur deals! 🍔✨ Tasweer dekh kar batayein aapko kya order karna hai."
-              : "Here is the Cheezo Bites menu & deals! 🍔✨ Take a look at the pictures and let us know what you would like to order.";
-          replies.push(menuMsg);
+        // Menu pictures mode: send menu card images directly
+        if (input.menuDisplayMode === "menu_pictures" && input.menuCardImages?.length && (!categoryQuery || /^(menu|view_menu|all|deals?)$/i.test(categoryQuery.trim()))) {
+          mediaUrls = [...input.menuCardImages];
+          replies.push(reply.menuPictureInvite(lang, input.appName));
           break;
         }
 
@@ -653,15 +644,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           }
         }
 
-        if (isCheezoBites) {
-          mediaUrls = [...CHEEZO_BITES_MENU_IMAGES];
-          replies.push(
-            lang === "pashto"
-              ? "Da Cheezo Bites mukammal menu aw deals de! 🍔✨ Goraay aw wawayay tse order kawal ghwaaray."
-              : lang === "roman_urdu"
-              ? "Yeh raha Cheezo Bites ka menu aur deals! 🍔✨ Tasweer dekh kar batayein aapko kya order karna hai."
-              : "Here is the Cheezo Bites menu & deals! 🍔✨ Take a look at the pictures and let us know what you would like to order."
-          );
+        // Fallback to menu pictures if configured
+        if (input.menuDisplayMode === "menu_pictures" && input.menuCardImages?.length) {
+          mediaUrls = [...input.menuCardImages];
+          replies.push(reply.menuPictureInvite(lang, input.appName));
           break;
         }
 

@@ -43,6 +43,8 @@ export interface RunTurnInput {
   currency: string;
   customerName?: string | null;
   trivial?: boolean;
+  menuDisplayMode?: string;
+  menuCardImages?: string[];
 }
 
 const NUMERIC_RE = /^\s*(\d{1,2})\s*$/;
@@ -572,6 +574,8 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     currency: input.currency || (ctx.settings as unknown as { currency?: string })?.currency || "Rs.",
     customerName: input.customerName ?? null,
     messageTextForFallback: input.messageText,
+    menuDisplayMode: input.menuDisplayMode,
+    menuCardImages: input.menuCardImages,
   });
   t.exec = Date.now() - execStart;
 

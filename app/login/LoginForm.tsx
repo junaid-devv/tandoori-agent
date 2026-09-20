@@ -60,14 +60,14 @@ export function LoginForm({ profile }: { profile: RestaurantProfile }) {
 
       <form className="mt-8 space-y-5" onSubmit={handleSubmit}>
         <label className="block">
-          <span className="mb-2 block text-sm font-medium text-slate-200">Email</span>
+          <span className="mb-2 block text-sm font-medium text-slate-200">Username or Email</span>
           <input
-            type="email"
-            autoComplete="email"
+            type="text"
+            autoComplete="username"
             value={email}
             onChange={(event) => setEmail(event.target.value)}
             className="w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/20"
-            placeholder="staff@restaurant.com"
+            placeholder="admin or email"
             required
           />
         </label>

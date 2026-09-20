@@ -375,6 +375,8 @@ async function processOneMessage(
       currency: profile.currency || "Rs.",
       customerName: contactName || contact.name || null,
       trivial: isTrivialMessage(incomingContent),
+      menuDisplayMode: profile.menu_display_mode,
+      menuCardImages: profile.menu_card_images,
     });
 
     if (result.escalate) {
@@ -679,6 +681,8 @@ async function handleNonText(
             appName: profile.app_name || "Restaurant",
             currency: profile.currency || "Rs.",
             customerName: customerName || null,
+            menuDisplayMode: profile.menu_display_mode,
+            menuCardImages: profile.menu_card_images,
           });
           if (result.escalate) {
             await escalateToHuman({ conversationId: conversation.id, branchId: activeBranch.id, phone: message.from, reason: result.intent, language: transcriptLang });

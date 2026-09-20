@@ -16,6 +16,7 @@ import {
   Users,
   PanelLeftClose,
   PanelLeftOpen,
+  MessageCircle,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
@@ -25,6 +26,7 @@ const baseNavItems = [
   { href: "/dashboard", label: "Overview", icon: LayoutDashboard },
   { href: "/dashboard/conversations", label: "Conversations", icon: MessageSquare },
   { href: "/dashboard/orders", label: "Orders", icon: ShoppingBag },
+  { href: "/dashboard/whatsapp", label: "WhatsApp", icon: MessageCircle },
   { href: "/dashboard/analytics", label: "Analytics", icon: BarChart3 },
   { href: "/dashboard/menu", label: "Menu Editor", icon: UtensilsCrossed },
   { href: "/dashboard/settings", label: "Settings", icon: Settings },

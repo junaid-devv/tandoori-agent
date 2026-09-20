@@ -63,11 +63,11 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       }
 
       // Restore last seen timestamp from localStorage
-      const storedOrderSeen = localStorage.getItem("orderiq_last_seen_orders_at");
+      const storedOrderSeen = localStorage.getItem("dashboard_last_seen_orders_at");
       if (storedOrderSeen) {
         lastSeenOrderTimeRef.current = Number(storedOrderSeen);
       }
-      const storedMsgSeen = localStorage.getItem("orderiq_last_seen_messages_at");
+      const storedMsgSeen = localStorage.getItem("dashboard_last_seen_messages_at");
       if (storedMsgSeen) {
         lastSeenMessageTimeRef.current = Number(storedMsgSeen);
       }
@@ -82,7 +82,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
       const handleAppInstalled = () => {
         setIsInstallable(false);
         setDeferredPrompt(null);
-        toast.success("Cheezo Bites App installed successfully!");
+        toast.success(`${profile.app_name} installed successfully!`);
       };
 
       window.addEventListener("beforeinstallprompt", handleBeforeInstall);
@@ -188,7 +188,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const now = Date.now();
     lastSeenOrderTimeRef.current = now;
     if (typeof window !== "undefined") {
-      localStorage.setItem("orderiq_last_seen_orders_at", String(now));
+      localStorage.setItem("dashboard_last_seen_orders_at", String(now));
     }
   }, []);
 
@@ -198,7 +198,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     const now = Date.now();
     lastSeenMessageTimeRef.current = now;
     if (typeof window !== "undefined") {
-      localStorage.setItem("orderiq_last_seen_messages_at", String(now));
+      localStorage.setItem("dashboard_last_seen_messages_at", String(now));
     }
   }, []);
 

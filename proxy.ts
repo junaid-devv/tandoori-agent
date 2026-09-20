@@ -148,9 +148,25 @@ export async function proxy(request: NextRequest) {
         return response;
       }
 
-      const response = NextResponse.next();
+      const response = NextResponse.redirect(new URL("/login", request.url));
       clearAuthCookies(response);
       return response;
+    }
+  }
+
+  // Strict route guards
+  if (request.nextUrl.pathname.startsWith("/dashboard")) {
+    const accessToken = request.cookies.get(ACCESS_COOKIE)?.value;
+    const refreshToken = request.cookies.get(REFRESH_COOKIE)?.value;
+    if (!accessToken && !refreshToken) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+  }
+
+  if (request.nextUrl.pathname === "/login") {
+    const accessToken = request.cookies.get(ACCESS_COOKIE)?.value;
+    if (accessToken) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
     }
   }
 

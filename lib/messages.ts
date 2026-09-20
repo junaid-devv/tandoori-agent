@@ -12,13 +12,18 @@ export type MessageSenderKind = "user" | "ai" | "human" | "system";
 export type MessageDeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
 
 export class OutboundMessageError extends Error {
+  readonly messageSent: boolean;
+  readonly persistedMessageId: string | null;
+
   constructor(
     message: string,
-    public readonly messageSent: boolean,
-    public readonly persistedMessageId: string | null = null,
+    messageSent: boolean,
+    persistedMessageId: string | null = null,
   ) {
     super(message);
     this.name = "OutboundMessageError";
+    this.messageSent = messageSent;
+    this.persistedMessageId = persistedMessageId;
   }
 }
 

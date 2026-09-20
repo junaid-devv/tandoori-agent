@@ -33,7 +33,9 @@
     "demo:record": "node --no-warnings --experimental-strip-types demo/playwright/record-product-demo.ts",
     "demo:record:headed": "node --no-warnings --experimental-strip-types demo/playwright/record-product-demo-headed.ts",
     "demo:debug": "npx playwright test --config=demo/playwright/playwright.demo.config.ts --debug",
-    "db:clear-chat": "node --no-warnings --experimental-strip-types scripts/clear_chat.ts"
+    "db:clear-chat": "node --no-warnings --experimental-strip-types scripts/clear_chat.ts",
+    "test:wa-akg": "node scripts/test-wa-akg-webhook.mjs",
+    "verify:wa-akg": "node --no-warnings --import ./scripts/alias-register.mjs --experimental-strip-types scripts/verify-wa-akg-pipeline.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",

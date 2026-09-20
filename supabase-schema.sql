@@ -27,6 +27,9 @@ create table if not exists restaurant_profiles (
   delivery_phone text not null default 'Update delivery phone',
   dine_in_phone text not null default 'Update dine-in phone',
   ai_personality_default text not null default 'Warm & Professional',
+  menu_display_mode text not null default 'interactive_list' check (menu_display_mode in ('interactive_list', 'menu_pictures', 'text_only')),
+  menu_card_images jsonb not null default '[]'::jsonb,
+  whatsapp_provider text not null default 'none' check (whatsapp_provider in ('meta', 'wa_akg', 'none')),
   updated_at timestamptz not null default now()
 );
 

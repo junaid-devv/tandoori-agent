@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, useCallback } from "react";
+import Link from "next/link";
 import {
   Bot,
   CheckCircle2,
@@ -321,6 +322,25 @@ export default function SettingsPage() {
             </button>
           )}
         </div>
+      </div>
+
+      {/* WhatsApp Integration Shortcut Banner */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-xs">
+        <div className="flex items-center gap-3">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white font-bold shrink-0">
+            <Phone size={18} />
+          </div>
+          <div>
+            <h4 className="text-xs sm:text-sm font-bold text-emerald-950">WhatsApp Bot & QR Connection Hub</h4>
+            <p className="text-[11px] text-emerald-700">Scan QR codes, connect phone numbers, and monitor gateway status directly.</p>
+          </div>
+        </div>
+        <Link
+          href="/dashboard/whatsapp"
+          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors shrink-0"
+        >
+          Manage WhatsApp
+        </Link>
       </div>
 
       {/* Categorized Tab Navigation Bar */}

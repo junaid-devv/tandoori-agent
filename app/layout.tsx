@@ -19,7 +19,7 @@ const geistMono = Geist_Mono({
 export async function generateViewport(): Promise<Viewport> {
   const profile = await getRestaurantProfile();
   return {
-    themeColor: profile.brand_color || "#E59819",
+    themeColor: profile.brand_color || "#EA580C",
     width: "device-width",
     initialScale: 1,
     maximumScale: 1,
@@ -32,7 +32,7 @@ export async function generateMetadata(): Promise<Metadata> {
   return {
     title: `${profile.app_name} - Agent Dashboard`,
     description: `WhatsApp AI ordering agent dashboard for ${profile.app_name}`,
-    manifest: "/manifest.json",
+    manifest: "/manifest.webmanifest",
     appleWebApp: {
       capable: true,
       statusBarStyle: "black-translucent",

@@ -27,6 +27,8 @@ import {
   Check,
   Terminal,
   Radio,
+  Image as ImageIcon,
+  Smartphone,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useDashboardContext } from "./DashboardProvider";
@@ -480,6 +482,212 @@ export default function AdminConsole() {
                 <Field label="Default AI Tone">
                   <textarea value={profileDraft.ai_personality_default} onChange={(event) => updateProfileDraft("ai_personality_default", event.target.value)} rows={3} className={clsx(inputCls, "resize-none")} />
                 </Field>
+              </div>
+            </div>
+          </div>
+
+          {/* Menu Display & WhatsApp Engine Configuration */}
+          <div className="grid gap-5 lg:grid-cols-2">
+            {/* Menu Display Mode */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-600 text-white">
+                  <ImageIcon size={16} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">Menu Display Format</h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Configure what happens when a customer asks for the menu or deals via WhatsApp.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                {[
+                  {
+                    value: "interactive_list",
+                    title: "Interactive List",
+                    body: "Interactive category buttons & picker lists in WhatsApp.",
+                  },
+                  {
+                    value: "menu_pictures",
+                    title: "Menu Pictures",
+                    body: "Directly sends high-res menu cards & deals pictures (Cheezo Bites style).",
+                  },
+                  {
+                    value: "text_only",
+                    title: "Text Only",
+                    body: "Plain text formatted items and prices without widgets.",
+                  },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      updateProfileDraft(
+                        "menu_display_mode",
+                        option.value as RestaurantProfile["menu_display_mode"],
+                      )
+                    }
+                    className={clsx(
+                      "rounded-xl border p-3.5 text-left transition-colors flex flex-col justify-between",
+                      (profileDraft.menu_display_mode || "interactive_list") === option.value
+                        ? "border-orange-600 bg-orange-50/70 text-orange-950 font-medium"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300",
+                    )}
+                  >
+                    <div>
+                      <span className="block text-xs font-bold text-slate-900">{option.title}</span>
+                      <span className="mt-1 block text-[11px] leading-relaxed text-slate-500">
+                        {option.body}
+                      </span>
+                    </div>
+                    {(profileDraft.menu_display_mode || "interactive_list") === option.value && (
+                      <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-orange-600 uppercase tracking-wider">
+                        <Check size={12} /> Selected
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              {/* Menu Card Images when menu_pictures is enabled */}
+              {profileDraft.menu_display_mode === "menu_pictures" && (
+                <div className="mt-5 rounded-xl border border-orange-200 bg-orange-50/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <FieldLabel>Menu Card Image URLs (Deals & Food Cards)</FieldLabel>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = Array.isArray(profileDraft.menu_card_images) ? [...profileDraft.menu_card_images] : [];
+                        updateProfileDraft("menu_card_images", [...current, ""]);
+                      }}
+                      className="inline-flex items-center gap-1 rounded-lg bg-orange-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-orange-700 transition-colors"
+                    >
+                      <Plus size={12} /> Add Image URL
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500">
+                    Provide public HTTPS URLs for full menu cards. When users ask &quot;menu&quot; or &quot;deals&quot;, these pictures are sent automatically.
+                  </p>
+
+                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    {(profileDraft.menu_card_images && profileDraft.menu_card_images.length > 0) ? (
+                      profileDraft.menu_card_images.map((url, idx) => (
+                        <div key={idx} className="flex items-center gap-2">
+                          <input
+                            type="url"
+                            value={url}
+                            onChange={(e) => {
+                              const updated = [...profileDraft.menu_card_images];
+                              updated[idx] = e.target.value;
+                              updateProfileDraft("menu_card_images", updated);
+                            }}
+                            placeholder="https://your-storage-bucket.com/menu.jpg"
+                            className={clsx(inputCls, "text-xs py-2")}
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = profileDraft.menu_card_images.filter((_, i) => i !== idx);
+                              updateProfileDraft("menu_card_images", updated);
+                            }}
+                            className="p-2 text-slate-400 hover:text-red-500 transition-colors shrink-0"
+                            title="Remove image"
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
+                      ))
+                    ) : (
+                      <p className="text-xs text-slate-400 italic py-2">
+                        No menu image URLs added yet. Click &quot;Add Image URL&quot; above to add one.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* WhatsApp Gateway Engine */}
+            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+              <div className="flex items-start gap-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white">
+                  <Smartphone size={16} />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-slate-900">WhatsApp Gateway Provider</h2>
+                  <p className="mt-1 text-xs text-slate-400">
+                    Choose which messaging transport layer powers this restaurant&apos;s AI agent.
+                  </p>
+                </div>
+              </div>
+
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+                {[
+                  {
+                    value: "wa_akg",
+                    title: "WA-AKG (Self-Hosted)",
+                    badge: "Baileys Web",
+                    body: "Self-hosted WhatsApp Web session with QR code connection on port 3001.",
+                  },
+                  {
+                    value: "meta",
+                    title: "Meta Cloud API",
+                    badge: "Official API",
+                    body: "Official Meta WhatsApp Business Cloud API with phone number ID and webhook.",
+                  },
+                  {
+                    value: "none",
+                    title: "Disabled",
+                    badge: "Off",
+                    body: "WhatsApp automation disabled for this project instance.",
+                  },
+                ].map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() =>
+                      updateProfileDraft(
+                        "whatsapp_provider",
+                        option.value as RestaurantProfile["whatsapp_provider"],
+                      )
+                    }
+                    className={clsx(
+                      "rounded-xl border p-3.5 text-left transition-colors flex flex-col justify-between",
+                      (profileDraft.whatsapp_provider || "none") === option.value
+                        ? "border-emerald-600 bg-emerald-50/70 text-emerald-950 font-medium"
+                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300",
+                    )}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-1">
+                        <span className="block text-xs font-bold text-slate-900">{option.title}</span>
+                      </div>
+                      <span className="mt-1 inline-block rounded bg-slate-200/70 px-1.5 py-0.5 text-[9px] font-bold text-slate-600 uppercase">
+                        {option.badge}
+                      </span>
+                      <span className="mt-1.5 block text-[11px] leading-relaxed text-slate-500">
+                        {option.body}
+                      </span>
+                    </div>
+                    {(profileDraft.whatsapp_provider || "none") === option.value && (
+                      <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
+                        <Check size={12} /> Active
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 space-y-1">
+                <p className="font-semibold text-slate-800">Connection status:</p>
+                <p>
+                  To manage QR codes, pairing codes, or Meta webhooks for this provider, head over to the{" "}
+                  <a href="/dashboard/whatsapp" className="font-semibold text-orange-600 hover:underline">
+                    WhatsApp Gateway Manager
+                  </a>.
+                </p>
               </div>
             </div>
           </div>

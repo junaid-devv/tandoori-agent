@@ -2,7 +2,7 @@ import "server-only";
 
 import { ApiRequestError } from "./api-utils";
 import { getCached, invalidateCache, setCached } from "./cache";
-import type { BranchMode, RestaurantProfile } from "./restaurant-profile-types";
+import type { BranchMode, MenuDisplayMode, RestaurantProfile } from "./restaurant-profile-types";
 import { supabaseAdmin } from "./supabase-admin";
 
 const PROFILE_CACHE_KEY = "restaurant_profile:default";
@@ -17,7 +17,7 @@ function envFallback(name: string, fallback: string) {
 }
 
 export function getFallbackRestaurantProfile(): RestaurantProfile {
-  const appName = envFallback("NEXT_PUBLIC_APP_NAME", "iQLaunch");
+  const appName = envFallback("NEXT_PUBLIC_APP_NAME", "Restaurant Agent");
   const supportPhone = envFallback("NEXT_PUBLIC_APP_PHONE_DELIVERY", "");
 
   return {
@@ -36,6 +36,9 @@ export function getFallbackRestaurantProfile(): RestaurantProfile {
     delivery_phone: supportPhone,
     dine_in_phone: envFallback("NEXT_PUBLIC_APP_PHONE_DINE_IN", supportPhone),
     ai_personality_default: "Warm & Professional",
+    menu_display_mode: (process.env.MENU_DISPLAY_MODE as MenuDisplayMode) || "interactive_list",
+    menu_card_images: process.env.MENU_CARD_IMAGES ? JSON.parse(process.env.MENU_CARD_IMAGES) : [],
+    whatsapp_provider: (process.env.WHATSAPP_PROVIDER as "meta" | "wa_akg" | "none") || "none",
   };
 }
 
@@ -65,6 +68,9 @@ function normalizeProfileRow(row: Partial<RestaurantProfile> | null | undefined)
     delivery_phone: row.delivery_phone?.trim() || fallback.delivery_phone,
     dine_in_phone: row.dine_in_phone?.trim() || fallback.dine_in_phone,
     ai_personality_default: row.ai_personality_default?.trim() || fallback.ai_personality_default,
+    menu_display_mode: (["interactive_list", "menu_pictures", "text_only"].includes(row.menu_display_mode as string) ? row.menu_display_mode : fallback.menu_display_mode) as MenuDisplayMode,
+    menu_card_images: Array.isArray(row.menu_card_images) ? row.menu_card_images : fallback.menu_card_images,
+    whatsapp_provider: (["meta", "wa_akg", "none"].includes(row.whatsapp_provider as string) ? row.whatsapp_provider : fallback.whatsapp_provider) as "meta" | "wa_akg" | "none",
   };
 }
 
@@ -102,7 +108,10 @@ function validateBranchMode(value: unknown): BranchMode {
 }
 
 export function validateRestaurantProfileInput(input: Partial<RestaurantProfile>) {
-  return {
+  const VALID_DISPLAY_MODES = new Set(["interactive_list", "menu_pictures", "text_only"]);
+  const VALID_WA_PROVIDERS = new Set(["meta", "wa_akg", "none"]);
+
+  const base: Record<string, unknown> = {
     app_name: validateRequiredText(input.app_name, "Restaurant name", 80),
     dashboard_title: validateRequiredText(input.dashboard_title, "Dashboard title", 120),
     logo_url: validateOptionalText(input.logo_url, "Logo URL", 500),
@@ -118,6 +127,30 @@ export function validateRestaurantProfileInput(input: Partial<RestaurantProfile>
     dine_in_phone: validateRequiredText(input.dine_in_phone, "Dine-in phone", 40),
     ai_personality_default: validateRequiredText(input.ai_personality_default, "Default AI tone", 240),
   };
+
+  // New white-label fields — only include if provided (partial updates)
+  if (input.menu_display_mode !== undefined) {
+    const mode = String(input.menu_display_mode).trim();
+    if (!VALID_DISPLAY_MODES.has(mode)) {
+      throw new ApiRequestError("Menu display mode must be interactive_list, menu_pictures, or text_only.", 400);
+    }
+    base.menu_display_mode = mode;
+  }
+  if (input.menu_card_images !== undefined) {
+    if (!Array.isArray(input.menu_card_images)) {
+      throw new ApiRequestError("Menu card images must be an array of URLs.", 400);
+    }
+    base.menu_card_images = input.menu_card_images;
+  }
+  if (input.whatsapp_provider !== undefined) {
+    const provider = String(input.whatsapp_provider).trim();
+    if (!VALID_WA_PROVIDERS.has(provider)) {
+      throw new ApiRequestError("WhatsApp provider must be meta, wa_akg, or none.", 400);
+    }
+    base.whatsapp_provider = provider;
+  }
+
+  return base;
 }
 
 export async function getRestaurantProfile(): Promise<RestaurantProfile> {
