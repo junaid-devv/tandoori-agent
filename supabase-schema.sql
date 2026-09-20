@@ -1100,3 +1100,18 @@ as $$
   order by mie.embedding <=> query_embedding
   limit greatest(match_count, 1);
 $$;
+
+-- Storage Bucket for Menu Cards and Food Assets
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('menu-assets', 'menu-assets', true, 10485760, array['image/jpeg', 'image/png', 'image/webp', 'image/jpg'])
+on conflict (id) do update set public = true;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies 
+    where schemaname = 'storage' and tablename = 'objects' and policyname = 'Public Access to Menu Assets'
+  ) then
+    create policy "Public Access to Menu Assets" on storage.objects for select using (bucket_id = 'menu-assets');
+  end if;
+end $$;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback } from "react";
+import { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { clsx } from "clsx";
 import {
   Loader2,
@@ -29,6 +29,8 @@ import {
   Radio,
   Image as ImageIcon,
   Smartphone,
+  UploadCloud,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useDashboardContext } from "./DashboardProvider";
@@ -121,6 +123,12 @@ export default function AdminConsole() {
   const [passwordDrafts, setPasswordDrafts] = useState<Record<string, string>>({});
   const [expandedBranch, setExpandedBranch] = useState<string | null>(null);
   const [expandedStaff, setExpandedStaff] = useState<string | null>(null);
+
+  // Menu card images upload state
+  const [uploadingMenuImages, setUploadingMenuImages] = useState(false);
+  const menuFileInputRef = useRef<HTMLInputElement | null>(null);
+  const [showManualUrlInput, setShowManualUrlInput] = useState(false);
+  const [manualUrlInput, setManualUrlInput] = useState("");
 
   // Diagnostics state
   const [diagnosticsData, setDiagnosticsData] = useState<{
@@ -265,6 +273,73 @@ export default function AdminConsole() {
     } finally {
       setSavingProfile(false);
     }
+  }
+
+  async function handleMenuImageUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingMenuImages(true);
+    const formData = new FormData();
+    for (let i = 0; i < files.length; i++) {
+      formData.append("files", files[i]);
+    }
+
+    try {
+      const res = await fetch("/api/admin/menu-images", {
+        method: "POST",
+        body: formData,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to upload menu images.");
+
+      updateProfileDraft("menu_card_images", data.allImages);
+      setProfile({ ...profileDraft, menu_card_images: data.allImages });
+      invalidateCache("/api/admin/restaurant-profile");
+      toast.success(`Uploaded ${data.uploadedCount} menu card${data.uploadedCount > 1 ? "s" : ""} to storage & synced with database!`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to upload menu images.");
+    } finally {
+      setUploadingMenuImages(false);
+      if (menuFileInputRef.current) menuFileInputRef.current.value = "";
+    }
+  }
+
+  async function handleDeleteMenuImage(imageUrl: string) {
+    try {
+      const res = await fetch("/api/admin/menu-images", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ imageUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to delete image.");
+
+      updateProfileDraft("menu_card_images", data.allImages);
+      setProfile({ ...profileDraft, menu_card_images: data.allImages });
+      invalidateCache("/api/admin/restaurant-profile");
+      toast.success("Menu card image removed.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to delete image.");
+    }
+  }
+
+  function handleAddManualUrl() {
+    const url = manualUrlInput.trim();
+    if (!url) return;
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      toast.error("Please enter a valid HTTP/HTTPS URL.");
+      return;
+    }
+    const current = Array.isArray(profileDraft.menu_card_images) ? [...profileDraft.menu_card_images] : [];
+    if (current.includes(url)) {
+      toast.error("This image URL is already added.");
+      return;
+    }
+    const updated = [...current, url];
+    updateProfileDraft("menu_card_images", updated);
+    setManualUrlInput("");
+    toast.success("Image URL added to draft. Click 'Save Profile' to persist.");
   }
 
   if (session.role !== "admin") return null;
@@ -553,58 +628,152 @@ export default function AdminConsole() {
 
               {/* Menu Card Images when menu_pictures is enabled */}
               {profileDraft.menu_display_mode === "menu_pictures" && (
-                <div className="mt-5 rounded-xl border border-orange-200 bg-orange-50/40 p-4 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <FieldLabel>Menu Card Image URLs (Deals & Food Cards)</FieldLabel>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const current = Array.isArray(profileDraft.menu_card_images) ? [...profileDraft.menu_card_images] : [];
-                        updateProfileDraft("menu_card_images", [...current, ""]);
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-orange-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-orange-700 transition-colors"
-                    >
-                      <Plus size={12} /> Add Image URL
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-slate-500">
-                    Provide public HTTPS URLs for full menu cards. When users ask &quot;menu&quot; or &quot;deals&quot;, these pictures are sent automatically.
-                  </p>
+                <div className="mt-5 rounded-xl border border-orange-200 bg-orange-50/50 p-4 space-y-4">
+                  {/* Hidden file input supporting multiple images */}
+                  <input
+                    ref={menuFileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/jpeg,image/png,image/webp,image/jpg"
+                    className="hidden"
+                    onChange={handleMenuImageUpload}
+                  />
 
-                  <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                    {(profileDraft.menu_card_images && profileDraft.menu_card_images.length > 0) ? (
-                      profileDraft.menu_card_images.map((url, idx) => (
-                        <div key={idx} className="flex items-center gap-2">
-                          <input
-                            type="url"
-                            value={url}
-                            onChange={(e) => {
-                              const updated = [...profileDraft.menu_card_images];
-                              updated[idx] = e.target.value;
-                              updateProfileDraft("menu_card_images", updated);
-                            }}
-                            placeholder="https://your-storage-bucket.com/menu.jpg"
-                            className={clsx(inputCls, "text-xs py-2")}
-                          />
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const updated = profileDraft.menu_card_images.filter((_, i) => i !== idx);
-                              updateProfileDraft("menu_card_images", updated);
-                            }}
-                            className="p-2 text-slate-400 hover:text-red-500 transition-colors shrink-0"
-                            title="Remove image"
-                          >
-                            <Trash2 size={15} />
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      <p className="text-xs text-slate-400 italic py-2">
-                        No menu image URLs added yet. Click &quot;Add Image URL&quot; above to add one.
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <FieldLabel>Menu Card Pictures ({Array.isArray(profileDraft.menu_card_images) ? profileDraft.menu_card_images.length : 0} configured)</FieldLabel>
+                      <p className="text-[11px] text-slate-500">
+                        Upload your full menu cards or deals photos. When customers say &quot;menu&quot; or tap &quot;View Menu&quot;, the agent sends <strong>all</strong> of these pictures.
                       </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => menuFileInputRef.current?.click()}
+                        disabled={uploadingMenuImages}
+                        className="inline-flex items-center gap-1.5 rounded-lg bg-orange-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-orange-700 disabled:opacity-50 transition-all"
+                      >
+                        {uploadingMenuImages ? (
+                          <>
+                            <Loader2 size={13} className="animate-spin" /> Uploading...
+                          </>
+                        ) : (
+                          <>
+                            <UploadCloud size={14} /> Upload Pictures
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setShowManualUrlInput(!showManualUrlInput)}
+                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 transition-colors"
+                      >
+                        {showManualUrlInput ? "Hide URL Input" : "Add by URL"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Manual URL entry if needed */}
+                  {showManualUrlInput && (
+                    <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white p-2">
+                      <input
+                        type="url"
+                        value={manualUrlInput}
+                        onChange={(e) => setManualUrlInput(e.target.value)}
+                        placeholder="https://your-domain.com/menu-card.jpg"
+                        className={clsx(inputCls, "py-1.5 text-xs")}
+                      />
+                      <button
+                        type="button"
+                        onClick={handleAddManualUrl}
+                        className="shrink-0 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition-colors"
+                      >
+                        Add URL
+                      </button>
+                    </div>
+                  )}
+
+                  {/* Upload Dropzone / Banner */}
+                  <div
+                    onClick={() => !uploadingMenuImages && menuFileInputRef.current?.click()}
+                    className={clsx(
+                      "flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-4 text-center cursor-pointer transition-all",
+                      uploadingMenuImages
+                        ? "border-orange-400 bg-orange-100/50 cursor-not-allowed"
+                        : "border-orange-300 bg-white/80 hover:border-orange-500 hover:bg-white",
+                    )}
+                  >
+                    {uploadingMenuImages ? (
+                      <div className="flex items-center gap-2 text-sm font-medium text-orange-700">
+                        <Loader2 size={18} className="animate-spin" /> Uploading to Supabase Storage & syncing DB...
+                      </div>
+                    ) : (
+                      <>
+                        <UploadCloud size={24} className="text-orange-600 mb-1" />
+                        <span className="text-xs font-semibold text-slate-800">
+                          Click to select multiple menu pictures
+                        </span>
+                        <span className="text-[11px] text-slate-400 mt-0.5">
+                          Supports JPG, PNG, WebP (up to 10MB per file)
+                        </span>
+                      </>
                     )}
                   </div>
+
+                  {/* Visual Gallery of Menu Cards */}
+                  {Array.isArray(profileDraft.menu_card_images) && profileDraft.menu_card_images.length > 0 ? (
+                    <div>
+                      <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">
+                        Active Menu Cards ({profileDraft.menu_card_images.length})
+                      </div>
+                      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                        {profileDraft.menu_card_images.map((url, idx) => (
+                          <div
+                            key={url}
+                            className="group relative overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xs transition-all hover:shadow-md"
+                          >
+                            <div className="relative h-32 w-full bg-slate-100">
+                              <img
+                                src={url}
+                                alt={`Menu Card ${idx + 1}`}
+                                className="h-full w-full object-cover"
+                                loading="lazy"
+                              />
+                              <span className="absolute top-1.5 left-1.5 rounded-md bg-zinc-950/75 px-1.5 py-0.5 text-[10px] font-bold text-white backdrop-blur-xs">
+                                Card #{idx + 1}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-between p-2 text-xs">
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center gap-1 truncate text-[11px] text-slate-500 hover:text-slate-800"
+                                title="Open full image"
+                              >
+                                <ExternalLink size={11} /> View Full
+                              </a>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteMenuImage(url)}
+                                className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[11px] font-medium text-red-600 hover:bg-red-50 transition-colors"
+                                title="Remove menu card"
+                              >
+                                <Trash2 size={12} /> Remove
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800 border border-amber-200/60">
+                      ⚠️ <strong>No menu cards uploaded yet.</strong> Click &quot;Upload Pictures&quot; above to select and upload your restaurant&apos;s menu cards.
+                    </div>
+                  )}
                 </div>
               )}
             </div>
