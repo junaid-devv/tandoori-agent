@@ -598,12 +598,21 @@ export default function AdminConsole() {
                   <button
                     key={option.value}
                     type="button"
-                    onClick={() =>
-                      updateProfileDraft(
-                        "menu_display_mode",
-                        option.value as RestaurantProfile["menu_display_mode"],
-                      )
-                    }
+                    onClick={async () => {
+                      const nextMode = option.value as RestaurantProfile["menu_display_mode"];
+                      updateProfileDraft("menu_display_mode", nextMode);
+                      try {
+                        await fetch("/api/admin/restaurant-profile", {
+                          method: "PATCH",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ menu_display_mode: nextMode }),
+                        });
+                        invalidateCache("/api/admin/restaurant-profile");
+                        toast.success(`Display mode saved: ${option.title}`);
+                      } catch (err) {
+                        toast.error("Failed to auto-save display mode.");
+                      }
+                    }}
                     className={clsx(
                       "rounded-xl border p-3.5 text-left transition-colors flex flex-col justify-between",
                       (profileDraft.menu_display_mode || "interactive_list") === option.value

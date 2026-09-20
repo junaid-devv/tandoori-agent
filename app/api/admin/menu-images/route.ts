@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 import { requireAdminApiSession } from "@/lib/admin-request";
-import { apiErrorResponse } from "@/lib/api-utils";
+import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { invalidateCache } from "@/lib/cache";
@@ -99,6 +99,7 @@ export async function POST(req: NextRequest) {
       .from("restaurant_profiles")
       .update({
         menu_card_images: updatedImages,
+        menu_display_mode: "menu_pictures",
         updated_at: new Date().toISOString(),
       })
       .eq("id", "default");
@@ -130,7 +131,7 @@ export async function DELETE(req: NextRequest) {
   if (auth.response) return auth.response;
 
   try {
-    const body = (await req.json()) as { imageUrl?: string };
+    const body = await readLimitedJsonBody<{ imageUrl?: string }>(req, 16 * 1024);
     const { imageUrl } = body;
 
     if (!imageUrl) {

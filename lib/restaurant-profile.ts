@@ -6,7 +6,7 @@ import type { BranchMode, MenuDisplayMode, RestaurantProfile } from "./restauran
 import { supabaseAdmin } from "./supabase-admin";
 
 const PROFILE_CACHE_KEY = "restaurant_profile:default";
-const PROFILE_CACHE_TTL_MS = 15 * 60 * 1000;
+const PROFILE_CACHE_TTL_MS = 10 * 1000; // 10 seconds (absorbs bursts without holding stale settings)
 const DEFAULT_PROFILE_ID = "default";
 
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;

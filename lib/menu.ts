@@ -1,4 +1,5 @@
 import { getCached, invalidateCache, setCached } from "./cache";
+import { cache as coreCache } from "./core/cache";
 import {
   isMenuScheduleAvailable,
   normalizeAvailabilityDays,
@@ -53,7 +54,7 @@ export type MenuCatalogItem = {
   available_end_time?: string | null;
 };
 
-const MENU_CACHE_TTL_MS = 15 * 60 * 1000;
+const MENU_CACHE_TTL_MS = 30 * 1000; // 30 seconds (allows fast propagation of menu updates across requests)
 
 function normalizeWhitespace(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -216,6 +217,7 @@ export function invalidateMenuCache(branchId?: string): void {
   if (!branchId) return;
   invalidateCache(getMenuCatalogCacheKey(branchId));
   invalidateCache(getMenuAiCacheKey(branchId));
+  void coreCache.del(`menu:${branchId}`).catch(() => {});
 }
 
 export async function applyMenuCatalog(branchId: string, items: MenuItem[], replaceAll = false) {

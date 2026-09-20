@@ -18,7 +18,7 @@ import type { RestaurantSettings } from "@/lib/settings";
 import type { ConversationStateRow } from "@/lib/schema.types";
 import type { StateView } from "./state-machine";
 
-const MENU_TTL_MS = Number(process.env.MENU_CACHE_TTL_MS) || 5 * 60_000;
+const MENU_TTL_MS = Number(process.env.MENU_CACHE_TTL_MS) || 30_000;
 const SETTINGS_TTL_MS = Number(process.env.SETTINGS_CACHE_TTL_MS) || 60_000;
 
 export interface TurnContext {
