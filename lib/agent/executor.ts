@@ -601,6 +601,18 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const categoryQuery =
           (action.payload?.category as string | undefined) ??
           (u.info_query as string | undefined);
+        const isAddMore = Boolean(
+          action.payload?.isAddMore ||
+          u.notes === "fast_path_add_more" ||
+          (categoryQuery && /^(add_more|aur\s*add|add\s*more)$/i.test(categoryQuery.trim()))
+        );
+
+        // When customer clicks "Add More" or asks to add more in menu_pictures mode,
+        // ask what they want to add instead of re-sending picture cards
+        if (isAddMore && input.menuDisplayMode === "menu_pictures") {
+          replies.push(reply.askAddMore(lang));
+          break;
+        }
 
         // Menu pictures mode: send menu card images directly
         if (input.menuDisplayMode === "menu_pictures" && input.menuCardImages?.length && (!categoryQuery || /^(menu|view_menu|all|deals?)$/i.test(categoryQuery.trim()))) {

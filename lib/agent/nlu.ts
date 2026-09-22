@@ -154,6 +154,7 @@ const SYSTEM_RULES = [
   "",
   "QUANTITY RULES — VERY IMPORTANT:",
   "- '2 aur add karo / 2 or add karo / 2 aur dal do' means ADD 2 MORE (delta), NOT set quantity to 2. Use intent `add_items` with the qty being the additional amount. Add notes='add_delta' so executor knows it's a delta.",
+  "- When the customer wants to add more items in general without naming a dish or quantity (e.g. 'aur add karna hai', 'add more', 'kuch aur add karna hai', 'or kia add krna hai'), use intent `browse_menu` with `info_query: 'add_more'` and `notes: 'fast_path_add_more'`.",
   "- '3 kar do / quantity 3 kar do / sirf 3 chahiye' means SET quantity TO 3. Use intent `update_quantity`.",
   "- If the customer says a number with an item name and no context item in cart, default to `add_items`.",
   "- If the customer just says a number like '2' or '1' after being shown a list, it's a list selection (handled before NLU).",

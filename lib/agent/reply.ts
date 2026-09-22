@@ -554,4 +554,10 @@ export const reply = {
       return `Yeh raha ${appName} ka menu aur deals! 🍔✨ Tasweer dekh kar batayein kya order karna hai.`;
     return `Here is the ${appName} menu & deals! 🍔✨ Take a look and let us know what you'd like to order.`;
   },
+
+  askAddMore(l: Lang): string {
+    if (pa(l)) return "Nor tse add kawal ghwaaray?";
+    if (ur(l)) return "Aur kya add karna hai? Batayein! 😊";
+    return "What would you like to add? 😊";
+  },
 };

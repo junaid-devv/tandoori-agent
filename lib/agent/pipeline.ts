@@ -73,7 +73,7 @@ function makeBase(language: TurnUnderstanding["language"]): TurnUnderstanding {
  * Deterministic interpretation of an interactive tap id.
  * Returns a synthesized understanding so we skip the NLU LLM call entirely.
  */
-function understandingFromInteractiveId(
+export function understandingFromInteractiveId(
   id: string,
   language: TurnUnderstanding["language"],
   lastShownOptions: Array<{ id: string; name: string; price: number }>,
@@ -117,8 +117,23 @@ function understandingFromInteractiveId(
       if (val === "view_cart") {
         return { ...base, intents: ["view_cart"], primary_intent: "view_cart" };
       }
-      if (val === "add_more" || val === "view_menu") {
-        return { ...base, intents: ["browse_menu"], primary_intent: "browse_menu" };
+      if (val === "add_more") {
+        return {
+          ...base,
+          intents: ["browse_menu"],
+          primary_intent: "browse_menu",
+          info_query: "add_more",
+          notes: "fast_path_add_more",
+        };
+      }
+      if (val === "view_menu") {
+        return {
+          ...base,
+          intents: ["browse_menu"],
+          primary_intent: "browse_menu",
+          info_query: "view_menu",
+          notes: "fast_path_view_menu",
+        };
       }
       return null;
 
@@ -315,11 +330,14 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         primary_intent: "confirm_order",
         notes: "fast_path_checkout",
       };
-    } else if (/^(aur dalein|aur add karein|add more|aur kuch)$/i.test(trimmed)) {
+    } else if (
+      /^(?:(?:kuch\s+)?(?:aur|or)\s+(?:(?:kya|kia)\s+add\s+k(?:ar|r|a)?na\s+h(?:ai)?|add\s+(?:karein|karen|k(?:ar|r|a)?na\s+h(?:ai)?|k(?:ar|r|a)?na|k(?:ar|r)?do|karo|bhejo|dalein|dalen)|dalein|dalen|daalain|daalo|dalo|kuch(?:\s+add\s+k(?:ar|r|a)?na\s+h(?:ai)?)?|mangwana\s+h(?:ai)?|lena\s+h(?:ai)?|add)|kuch\s+(?:aur|or)\s+add\s+k(?:ar|r|a)?na\s+h(?:ai)?|add\s*more(?:\s+items?)?|want\s+to\s+add\s+more|nor\s+(?:tse\s+)?add(?:\s+kawal(?:\s+ghwaram)?)?)[!.]*$/i.test(trimmed)
+    ) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
         intents: ["browse_menu"],
         primary_intent: "browse_menu",
+        info_query: "add_more",
         notes: "fast_path_add_more",
       };
     } else if (/^(wapas jao|go back|back|cart dekhein|view cart)$/i.test(trimmed)) {
