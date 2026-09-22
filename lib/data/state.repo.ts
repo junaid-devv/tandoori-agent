@@ -29,7 +29,7 @@ function defaults(conversationId: string): ConversationStateRow {
     reservation_time: null,
     pickup_time: null,
     customer_instructions: null,
-    preferred_language: "english",
+    preferred_language: "roman_urdu",
     last_shown_options: [],
     last_shown_options_at: null,
     last_shown_category: null,

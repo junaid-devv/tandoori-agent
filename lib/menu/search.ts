@@ -46,7 +46,7 @@ const EMBEDDING_API_KEY = process.env.MENU_EMBEDDING_API_KEY || process.env.OPEN
 // reduction. We MUST request the same dimensionality used to store menu
 // embeddings AND the DB column (vector(1536)), or cosine similarity is invalid.
 const EMBEDDING_DIMENSIONS = Number(process.env.MENU_EMBEDDING_DIMENSIONS) || 1536;
-const SIMILARITY_THRESHOLD = Number(process.env.MENU_MATCH_THRESHOLD) || 0.60;
+const SIMILARITY_THRESHOLD = Number(process.env.MENU_MATCH_THRESHOLD) || 0.48;
 const QUERY_EMBEDDING_TTL_MS = Number(process.env.MENU_QUERY_EMBEDDING_TTL_MS) || 10 * 60_000;
 const MIN_EMBEDDABLE_LEN = 3; // shorter than this -> lexical fallback
 
@@ -85,17 +85,47 @@ function normalize(value: string): string {
     .trim();
   // Common Pakistani phonetic variations / transliterations
   v = v
+    .replace(/\b(saji|sajji|sajje|sajy|sajjy|saaji|saajji)\b/g, "sajji")
     .replace(/\b(nan|non|naans|nans)\b/g, "naan")
     .replace(/\b(krahi|karai|kadai|kadhai)\b/g, "karahi")
     .replace(/\b(bryani|biryany|baryani|biryanis)\b/g, "biryani")
     .replace(/\b(handee|handy)\b/g, "handi")
-    .replace(/\b(tika|tikkah)\b/g, "tikka")
-    .replace(/\b(kebab|kabaab|kababs|kebabs)\b/g, "kabab")
+    .replace(/\b(tika|tikkah|teeka|teekah)\b/g, "tikka")
+    .replace(/\b(kebab|kabaab|kababs|kebabs|kebabz|kababz|kbb)\b/g, "kabab")
+    .replace(/\b(boti|botiyan|botti|boty)\b/g, "boti")
+    .replace(/\b(mali|mlai|malaee|malaii)\b/g, "malai")
+    .replace(/\b(chawl|chaawal|chawal|chawall|rice)\b/g, "chawal")
+    .replace(/\b(baghair|begair|bghair|bina|without)\b/g, "baghair")
+    .replace(/\b(qalmi|kalmi|qulmi|kulmi)\b/g, "qalmi")
+    .replace(/\b(reshmi|rehsmi|reshme)\b/g, "reshmi")
     .replace(/\b(rogni|roghani)\b/g, "roghni")
     .replace(/\b(cremy|cremi)\b/g, "creamy")
     .replace(/\b(raitah|rayta|raitaa)\b/g, "raita")
-    .replace(/\b(coldring|colddrink|cooldrink)\b/g, "cold drink");
+    .replace(/\b(machli|machhli|machliyan)\b/g, "fish")
+    .replace(/\b(rohu|rohuu)\b/g, "rahu")
+    .replace(/\b(peice|peices|peec|peace)\b/g, "piece")
+    .replace(/\b(cheast|seena)\b/g, "chest")
+    .replace(/\b(tang|taang)\b/g, "leg")
+    .replace(/\b(sadah|plain)\b/g, "sada")
+    .replace(/\b(paani|water)\b/g, "pani")
+    .replace(/\b(coldring|colddrink|cooldrink|botal)\b/g, "cold drink");
   return v;
+}
+
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  if (!a.length) return b.length;
+  if (!b.length) return a.length;
+  const d: number[][] = [];
+  for (let i = 0; i <= a.length; i++) d[i] = [i];
+  for (let j = 0; j <= b.length; j++) d[0][j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + cost);
+    }
+  }
+  return d[a.length][b.length];
 }
 function compact(value: string): string {
   return normalize(value).replace(/\s+/g, "");
@@ -251,7 +281,8 @@ export async function searchMenu(
     return { matches, method: matches.length ? "lexical" : "none", usedEmbedding: false };
   }
 
-  const embedding = await embedQuery(trimmed);
+  const normQuery = normalize(trimmed);
+  const embedding = await embedQuery(normQuery || trimmed);
   if (!embedding) {
     const matches = await lexicalFallback();
     return { matches, method: matches.length ? "lexical" : "none", usedEmbedding: false };
@@ -361,10 +392,11 @@ export type ItemResolutionResult =
 
 function isCandidateRelevant(query: string, candidate: ResolvedMenuItem): boolean {
   const sim = candidate.similarity ?? 0;
-  if (sim >= 0.72) return true;
+  if (sim >= 0.62) return true;
 
   const qTokens = normalize(query).split(" ").filter((t) => t.length >= 3);
   const nameNorm = normalize(candidate.name);
+  const nameTokens = nameNorm.split(" ").filter((t) => t.length >= 3);
   const catNorm = normalize(candidate.category || "");
   const descNorm = normalize(candidate.description || "");
 
@@ -377,7 +409,19 @@ function isCandidateRelevant(query: string, candidate: ResolvedMenuItem): boolea
 
   // Token overlap in name or category
   const matchesToken = qTokens.some((t) => nameNorm.includes(t) || catNorm.includes(t) || descNorm.includes(t));
-  if (matchesToken && sim >= 0.30) return true;
+  if (matchesToken && sim >= 0.25) return true;
+
+  // Fuzzy token match (typo tolerance)
+  const matchesFuzzyToken = qTokens.some((qt) => {
+    return nameTokens.some((nt) => {
+      const maxLen = Math.max(qt.length, nt.length);
+      const maxDist = maxLen >= 6 ? 2 : 1;
+      return editDistance(qt, nt) <= maxDist;
+    });
+  });
+  if (matchesFuzzyToken) return true;
+
+  if (sim >= 0.48) return true;
 
   return false;
 }
@@ -472,13 +516,14 @@ export async function resolveItemDetailed(
   });
 
   if (exactMatch) {
-    const { variant } = extractBaseItemName(exactMatch.name);
-    if (variant || requestedSize) {
+    if (requestedSize) {
       return { kind: "exact", item: exactMatch, confidence: 1.0 };
     }
+    // User did not specify a size. Check if there are multiple size variants of this base item:
+    const baseName = extractBaseItemName(exactMatch.name).baseName.toLowerCase();
     const sameBaseVariants = relevantCandidates.filter((c) => {
       const cBase = extractBaseItemName(c.name);
-      return cBase.baseName.toLowerCase() === extractBaseItemName(exactMatch.name).baseName.toLowerCase() && cBase.variant !== null;
+      return cBase.baseName.toLowerCase() === baseName && cBase.variant !== null;
     });
     if (sameBaseVariants.length > 1) {
       sameBaseVariants.sort((a, b) => a.price - b.price);

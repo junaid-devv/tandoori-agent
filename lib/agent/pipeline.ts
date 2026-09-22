@@ -187,13 +187,13 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     GREETING_RE.test(input.messageText.trim())
   ) {
     const isPashtoGreeting = /^(?:stare?\s*mashay|pa\s*khe[ri]r?|tsanga\s*ye)/i.test(input.messageText.trim());
-    const isUrduGreeting = /^(?:g|ji|jee|haan|hanji|kese|kia\s*hal|kaise)/i.test(input.messageText.trim());
+    const isUrduGreeting = /^(?:g|ji|jee|haan|hanji|kese|kia\s*hal|kya\s*hal|kaise|aoa|a\.?o\.?a|salam|slam|ass?al[a-z\s'-]*|adaab)/i.test(input.messageText.trim());
     // Greet in Pashto if person previously communicated in Pashto OR used a Pashto greeting
     const langToUse = isPashtoGreeting || ctx.state.preferred_language === "pashto"
       ? "pashto"
-      : isUrduGreeting
+      : isUrduGreeting || ctx.state.preferred_language === "roman_urdu"
       ? "roman_urdu"
-      : ctx.state.preferred_language;
+      : ctx.state.preferred_language || "roman_urdu";
     understanding = {
       ...makeBase(langToUse),
       intents: ["greeting"],
@@ -523,7 +523,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       /^(?:menu|view\s*menu|show\s*menu|all\s*menu|full\s*menu|deals?|offers?|menu\s*(?:dikhao|dekhna|bhejo|card|list|kya\s*hai|dein|send|plz|please)?|kya\s*(?:hai|milega|milta\s*hai)|what(?:'?s|\s+is)\s+(?:on\s+the\s+)?menu)$/i.test(trimmed)
     ) {
       understanding = {
-        ...makeBase(ctx.state.preferred_language),
+        ...makeBase(ctx.state.preferred_language || "roman_urdu"),
         intents: ["browse_menu"],
         primary_intent: "browse_menu",
         notes: "fast_path_menu_request",
