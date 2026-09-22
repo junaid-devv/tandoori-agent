@@ -475,6 +475,8 @@ export async function resolveItemDetailed(
         v === s ||
         v.includes(s) ||
         s.includes(v) ||
+        n.startsWith(`${s} `) ||
+        n.startsWith(s) ||
         n.includes(`(${s}`) ||
         n.includes(` ${s} `) ||
         n.endsWith(` ${s}`) ||
