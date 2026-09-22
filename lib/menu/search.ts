@@ -306,30 +306,46 @@ export async function searchMenu(
 // Variant & Disambiguation Helpers
 // ---------------------------------------------------------------------
 const VARIANT_WORDS =
-  "full|half|quarter|single|double|small|medium|large|extra\\s*large|xl|reg(?:ular)?|med(?:ium)?|lar(?:ge)?|\\d+[\"']|\\w+\\s*\\d+[\"']|1\\s*kg|0?\\.5\\s*kg|half\\s*kg|\\d+\\s*pcs?|tin|glass|bottle|boneless|b\\/l|with\\s*cheese";
+  "full|half|quarter|single|double|small|medium|large|extra\\s*large|xl|reg(?:ular)?|med(?:ium)?|lar(?:ge)?|\\d+[\"']|\\w+\\s*\\d+[\"']|1\\s*kg|0?\\.5\\s*kg|half\\s*kg|\\d+\\s*pcs?|tin|glass|bottle|boneless|b\\/l|with\\s*cheese|1\\.5\\s*l(?:itre|iter)?|half\\s*l(?:itre|iter)?";
 
-const VARIANT_PATTERN = new RegExp(
+const VARIANT_SUFFIX_PATTERN = new RegExp(
   `(?:\\s*(?:[\\(\\[\\{]|\\s+-\\s+|\\s+\\/\\s+)(${VARIANT_WORDS})[\\)\\]\\}]?|\\s+(${VARIANT_WORDS}))\\s*$`,
   "i"
 );
 
-const SIZE_WORDS_PATTERN =
-  /\b(full|half|quarter|single|double|small|medium|large|extra\s*large|xl|reg(?:ular)?|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle|derh|dedh|dehr|aadha|half\s*l(?:itre|iter)?|1\.5\s*l(?:itre|iter)?|1\.5|0?\.5)\b/i;
+const VARIANT_PREFIX_PATTERN = new RegExp(
+  `^(${VARIANT_WORDS})\\s+`,
+  "i"
+);
 
 export function extractBaseItemName(fullName: string): { baseName: string; variant: string | null } {
-  const match = fullName.match(VARIANT_PATTERN);
-  const variant = match ? (match[1] || match[2]) : null;
-  if (match && variant) {
-    const base = fullName.slice(0, match.index).trim();
-    return { baseName: base || fullName.trim(), variant: variant.trim().toLowerCase() };
+  // Suffix variant: "Chicken Karahi (Half)", "Pizza Large"
+  const suffixMatch = fullName.match(VARIANT_SUFFIX_PATTERN);
+  const suffixVariant = suffixMatch ? (suffixMatch[1] || suffixMatch[2]) : null;
+  if (suffixMatch && suffixVariant) {
+    const base = fullName.slice(0, suffixMatch.index).trim();
+    return { baseName: base || fullName.trim(), variant: suffixVariant.trim().toLowerCase() };
   }
+
+  // Prefix variant: "Half Sajji", "1.5 Litre Pani"
+  const prefixMatch = fullName.match(VARIANT_PREFIX_PATTERN);
+  if (prefixMatch && prefixMatch[1]) {
+    const base = fullName.slice(prefixMatch[0].length).trim();
+    return { baseName: base || fullName.trim(), variant: prefixMatch[1].trim().toLowerCase() };
+  }
+
   return { baseName: fullName.trim(), variant: null };
 }
+
+const SIZE_WORDS_PATTERN =
+  /\b(full|half|quarter|single|double|small|medium|large|extra\s*large|xl|reg(?:ular)?|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle|derh|dedh|dehr|aadha|half\s*l(?:itre|iter)?|1\.5\s*l(?:itre|iter)?|1\.5|0?\.5|1\s*kg|half\s*kg)\b/i;
 
 export function extractSizeFromQuery(query: string, explicitSize?: string | null): string | null {
   const q = (explicitSize || query).toLowerCase();
   if (/\b(1\.5|derh|dedh|dehr|1\.5\s*l(?:itre|iter)?)\b/i.test(q)) return "1.5 litre";
-  if (/\b(half\s*l(?:itre|iter)?|aadha\s*l(?:itre|iter)?|0\.5)\b/i.test(q)) return "half litre";
+  if (/\b(half\s*l(?:itre|iter)?|aadha\s*l(?:itre|iter)?|0\.5\s*l(?:itre|iter)?)\b/i.test(q)) return "half litre";
+  if (/\b(1\s*kg|aik\s*kilo|ek\s*kilo|1\s*kilo)\b/i.test(q)) return "1 kg";
+  if (/\b(half\s*kg|aadha\s*kilo|0\.5\s*kg)\b/i.test(q)) return "0.5 kg";
   if (/\b(half|aadha|aadhi)\b/i.test(q)) return "half";
   if (/\b(quarter|chauthai|pao|paao)\b/i.test(q)) return "quarter";
   if (/\b(full|poori|poora)\b/i.test(q)) return "full";
@@ -435,13 +451,24 @@ export async function resolveItemDetailed(
     return { kind: "not_found", query: trimmed, suggestions: [] };
   }
 
-  // 1) Direct exact name match (e.g. "RAITA" -> item "RAITA", "Coke" -> "Coke", "Chicken Handi" -> "CHICKEN HANDI (BONELESS)")
+  // 1) Direct exact name match (e.g. "RAITA" -> item "RAITA", "Half Sajji" -> "Half Sajji", "1.5 Litre Pani" -> "1.5 Litre Pani")
+  const combinedQ1 = requestedSize ? `${requestedSize} ${baseQuery || trimmed}` : trimmed;
+  const combinedQ2 = requestedSize ? `${baseQuery || trimmed} ${requestedSize}` : trimmed;
+  const normCombinedQ1 = normalize(combinedQ1);
+  const normCombinedQ2 = normalize(combinedQ2);
+
   const exactMatch = relevantCandidates.find((c) => {
     const normCand = normalize(c.name);
     const normBaseCand = normalize(extractBaseItemName(c.name).baseName);
     const normQ = normalize(trimmed);
     const normBaseQ = normalize(baseQuery);
-    return normCand === normQ || normCand === normBaseQ || normBaseCand === normQ || normBaseCand === normBaseQ;
+    return (
+      normCand === normQ ||
+      normCand === normBaseQ ||
+      normCand === normCombinedQ1 ||
+      normCand === normCombinedQ2 ||
+      (!requestedSize && (normBaseCand === normQ || normBaseCand === normBaseQ))
+    );
   });
 
   if (exactMatch) {
@@ -460,7 +487,7 @@ export async function resolveItemDetailed(
     return { kind: "exact", item: exactMatch, confidence: 1.0 };
   }
 
-  // 2) If user specified a size (e.g. "half", "full", "large", "reg", "medium", "xl"), find ALL candidates matching that size
+  // 2) If user specified a size (e.g. "half", "full", "large", "reg", "medium", "xl", "1.5 litre"), find ALL candidates matching that size
   if (requestedSize) {
     const s = requestedSize.toLowerCase();
     const isSizeMatch = (c: ResolvedMenuItem): boolean => {
@@ -495,6 +522,15 @@ export async function resolveItemDetailed(
       return { kind: "exact", item: sizeMatches[0], confidence: sizeMatches[0].similarity ?? 0.9 };
     }
     if (sizeMatches.length > 1) {
+      // Check if one of the size matches is an exact match to the combined query
+      const exactInSize = sizeMatches.find((m) => {
+        const mNorm = normalize(m.name);
+        return mNorm === normCombinedQ1 || mNorm === normCombinedQ2 || mNorm === normalize(trimmed);
+      });
+      if (exactInSize) {
+        return { kind: "exact", item: exactInSize, confidence: 1.0 };
+      }
+
       // Check if these are distinct items (e.g. Vegetarian Pizza Large vs Chicken Pizza Large)
       // or sub-variants of the same base item
       const sizeDistinctBases = [...new Set(sizeMatches.map((m) => extractBaseItemName(m.name).baseName.toLowerCase()))];
