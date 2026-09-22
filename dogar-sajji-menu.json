@@ -1,0 +1,187 @@
+{
+  "restaurant": "Dogar Sajji & BBQ",
+  "restaurant_urdu": "ڈوگر سجی اینڈ بار بی کیو",
+  "tagline": "آپ کا پسندیدہ ذائقہ مرکز",
+  "city": "Pindi Bhattian",
+  "phone": "+923377622091",
+  "categories": [
+    { "name": "BBQ (بار بی کیو)", "sort_order": 1 },
+    { "name": "Fish (مچھلی)", "sort_order": 2 },
+    { "name": "Sabji Chawal (سبجی چاول)", "sort_order": 3 },
+    { "name": "Sabji Baghair Chawal (سبجی بغیر چاول)", "sort_order": 4 },
+    { "name": "Chicken Pieces (چکن پیس)", "sort_order": 5 },
+    { "name": "Drinks & Extras (مشروبات)", "sort_order": 6 }
+  ],
+  "items": [
+    {
+      "name": "Qalmi Tikka",
+      "price": 1650,
+      "category": "BBQ (بار بی کیو)",
+      "description": "قلمی ٹکہ - مزیدار نرم ٹکے، مصالحہ دار، فی کلو | Juicy spiced tikka pieces, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Afghani Boti",
+      "price": 1650,
+      "category": "BBQ (بار بی کیو)",
+      "description": "افغانی بوٹی - کریمی افغانی مصالحے والی بوٹی، فی کلو | Creamy Afghani-style marinated boti, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Kabab",
+      "price": 1500,
+      "category": "BBQ (بار بی کیو)",
+      "description": "کباب - روایتی سیخ کباب، فی کلو | Traditional seekh kabab, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Reshmi Kabab",
+      "price": 1500,
+      "category": "BBQ (بار بی کیو)",
+      "description": "ریشمی کباب - نرم و ملائم ریشم جیسے کباب، فی کلو | Silky smooth reshmi kabab, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Cheese Kabab",
+      "price": 1500,
+      "category": "BBQ (بار بی کیو)",
+      "description": "چیز کباب - پنیر بھرے کباب، فی کلو | Cheese-stuffed kabab, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Malai Boti",
+      "price": 1500,
+      "category": "BBQ (بار بی کیو)",
+      "description": "ملائی بوٹی - کریمی ملائی دار بوٹی، فی کلو | Creamy malai boti, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Green Boti",
+      "price": 1650,
+      "category": "BBQ (بار بی کیو)",
+      "description": "گرین بوٹی - ہری مرچ اور دھنیے والی بوٹی، فی کلو | Green chili & coriander boti, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Sada Kabab",
+      "price": 1200,
+      "category": "BBQ (بار بی کیو)",
+      "description": "سادہ کباب - سادہ روایتی کباب، فی کلو | Plain traditional kabab, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Sada Tikka",
+      "price": 1200,
+      "category": "BBQ (بار بی کیو)",
+      "description": "سادہ ٹکہ - سادہ چکن ٹکہ، فی کلو | Plain chicken tikka, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Fish Special Kala Rahu",
+      "price": 1400,
+      "category": "Fish (مچھلی)",
+      "description": "فش اسپیشل کالا رہو - تازہ کالا رہو مچھلی، فی کلو | Fresh Kala Rahu fish, special recipe, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Fry Fish",
+      "price": 1400,
+      "category": "Fish (مچھلی)",
+      "description": "فرائی فش - کرسپی فرائی مچھلی، فی کلو | Crispy fried fish, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Grill Fish",
+      "price": 1400,
+      "category": "Fish (مچھلی)",
+      "description": "گرل فش - گرل کی ہوئی مچھلی، فی کلو | Grilled fish, per kg",
+      "unit": "per kg"
+    },
+    {
+      "name": "Full Sabji Chawal",
+      "price": 1950,
+      "category": "Sabji Chawal (سبجی چاول)",
+      "description": "فل سبجی چاول - مکمل سبجی چاولوں کے ساتھ | Full portion sabji with rice"
+    },
+    {
+      "name": "Half Sabji Chawal",
+      "price": 1050,
+      "category": "Sabji Chawal (سبجی چاول)",
+      "description": "ہاف سبجی چاول - آدھی سبجی چاولوں کے ساتھ | Half portion sabji with rice"
+    },
+    {
+      "name": "Quarter Sabji Chawal",
+      "price": 600,
+      "category": "Sabji Chawal (سبجی چاول)",
+      "description": "کوارٹر سبجی چاول - چوتھائی سبجی چاولوں کے ساتھ | Quarter portion sabji with rice"
+    },
+    {
+      "name": "Full Sabji",
+      "price": 1600,
+      "category": "Sabji Baghair Chawal (سبجی بغیر چاول)",
+      "description": "فل سبجی - مکمل سبجی بغیر چاول | Full portion sabji without rice"
+    },
+    {
+      "name": "Half Sabji",
+      "price": 800,
+      "category": "Sabji Baghair Chawal (سبجی بغیر چاول)",
+      "description": "ہاف سبجی - آدھی سبجی بغیر چاول | Half portion sabji without rice"
+    },
+    {
+      "name": "Quarter Sabji",
+      "price": 400,
+      "category": "Sabji Baghair Chawal (سبجی بغیر چاول)",
+      "description": "کوارٹر سبجی - چوتھائی سبجی بغیر چاول | Quarter portion sabji without rice"
+    },
+    {
+      "name": "Leg Piece",
+      "price": 500,
+      "category": "Chicken Pieces (چکن پیس)",
+      "description": "لیگ پیس - چکن ٹانگ کا پیس، فی پیس | Chicken leg piece, per piece",
+      "unit": "per piece"
+    },
+    {
+      "name": "Chest Piece",
+      "price": 550,
+      "category": "Chicken Pieces (چکن پیس)",
+      "description": "چیسٹ پیس - چکن چھاتی کا پیس، فی پیس | Chicken chest piece, per piece",
+      "unit": "per piece"
+    },
+    {
+      "name": "Mint Raita",
+      "price": 80,
+      "category": "Drinks & Extras (مشروبات)",
+      "description": "منٹ رائتہ - تازہ پودینے والا رائتہ | Fresh mint raita"
+    },
+    {
+      "name": "Sauce",
+      "price": 80,
+      "category": "Drinks & Extras (مشروبات)",
+      "description": "سوس - چٹنی / ساس | Dipping sauce"
+    },
+    {
+      "name": "Half Litre Pani",
+      "price": 70,
+      "category": "Drinks & Extras (مشروبات)",
+      "description": "ہاف لیٹر پانی - منرل واٹر | Half litre mineral water"
+    },
+    {
+      "name": "1.5 Litre Pani",
+      "price": 120,
+      "category": "Drinks & Extras (مشروبات)",
+      "description": "ڈیڑھ لیٹر پانی - بڑی بوتل منرل واٹر | 1.5 litre mineral water"
+    },
+    {
+      "name": "1.5 Litre Pepsi",
+      "price": 220,
+      "category": "Drinks & Extras (مشروبات)",
+      "description": "ڈیڑھ لیٹر پیپسی - بڑی بوتل کولڈ ڈرنک | 1.5 litre Pepsi cold drink"
+    },
+    {
+      "name": "NR Can",
+      "price": 80,
+      "category": "Drinks & Extras (مشروبات)",
+      "description": "این آر کین - چھوٹی کولڈ ڈرنک | NR can cold drink"
+    }
+  ]
+}
