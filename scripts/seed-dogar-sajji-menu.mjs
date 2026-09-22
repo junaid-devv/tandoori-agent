@@ -206,7 +206,7 @@ async function setupBranchAndProfile(userId) {
       opening_time: "11:00 AM",
       closing_time: "02:00 AM",
       min_delivery_amount: 0,
-      delivery_enabled: false,
+      delivery_enabled: true,
       city: CITY,
       phone_delivery: PHONE,
       phone_dine_in: PHONE,
