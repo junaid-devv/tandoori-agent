@@ -198,22 +198,17 @@ export async function POST(req: NextRequest) {
   const cleanText = incomingContent.trim();
   console.log(`[wa-akg-webhook] Inbound message from ${phone} (${contactName || "Customer"}): "${cleanText}"`);
 
-  // Process in background and return 200 OK immediately to gateway
-  const runBackground = async () => {
-    console.log(`[wa-akg-webhook] Background runner started for ${phone}...`);
-    try {
-      await processWaAkgMessage({
-        phone,
-        messageId,
-        contactName,
-        text: cleanText,
-      });
-    } catch (error) {
-      console.error("[wa-akg-webhook] Background processing error:", error);
-    }
-  };
-
-  void runBackground();
+  // Process message and reply
+  try {
+    await processWaAkgMessage({
+      phone,
+      messageId,
+      contactName,
+      text: cleanText,
+    });
+  } catch (error) {
+    console.error("[wa-akg-webhook] Processing error:", error);
+  }
 
   return NextResponse.json({ status: "received", messageId });
 }
