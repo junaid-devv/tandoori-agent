@@ -333,7 +333,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             } else {
               const ans = await grounded(`customer wants "${query}" which is not on the menu. State that it is not available and suggest our actual menu categories.`);
               replies.push(ans ?? reply.notFound(lang, query, [], cats));
-              if (cats.length > 0) {
+              if (cats.length > 0 && cart.length === 0 && input.menuDisplayMode !== "menu_pictures") {
                 setInteractive(categoryList(lang, cats, lang === "pashto" ? "Menu katal ghwaray?" : lang === "roman_urdu" ? "Menu dekhna chahenge?" : "What would you like?"));
               }
             }
@@ -1247,7 +1247,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   finalReplies = finalReplies.filter((line, idx, arr) => idx === 0 || line !== arr[idx - 1]);
 
   return {
-    replyText: finalReplies.join("\n").trim() || reply.clarify(lang, "fallback"),
+    replyText: finalReplies.map((r) => r.trim()).filter(Boolean).join("\n\n") || reply.clarify(lang, "fallback"),
     statePatch: patch,
     placeOrder,
     escalate: false,

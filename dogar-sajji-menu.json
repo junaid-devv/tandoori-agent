@@ -7,8 +7,8 @@
   "categories": [
     { "name": "BBQ (بار بی کیو)", "sort_order": 1 },
     { "name": "Fish (مچھلی)", "sort_order": 2 },
-    { "name": "Sabji Chawal (سبجی چاول)", "sort_order": 3 },
-    { "name": "Sabji Baghair Chawal (سبجی بغیر چاول)", "sort_order": 4 },
+    { "name": "Sajji Chawal (سجی چاول)", "sort_order": 3 },
+    { "name": "Sajji Baghair Chawal (سجی بغیر چاول)", "sort_order": 4 },
     { "name": "Chicken Pieces (چکن پیس)", "sort_order": 5 },
     { "name": "Drinks & Extras (مشروبات)", "sort_order": 6 }
   ],
@@ -98,40 +98,40 @@
       "unit": "per kg"
     },
     {
-      "name": "Full Sabji Chawal",
+      "name": "Full Sajji Chawal",
       "price": 1950,
-      "category": "Sabji Chawal (سبجی چاول)",
-      "description": "فل سبجی چاول - مکمل سبجی چاولوں کے ساتھ | Full portion sabji with rice"
+      "category": "Sajji Chawal (سجی چاول)",
+      "description": "فل سجی چاول - مکمل سجی چاولوں کے ساتھ | Full portion sajji with rice"
     },
     {
-      "name": "Half Sabji Chawal",
+      "name": "Half Sajji Chawal",
       "price": 1050,
-      "category": "Sabji Chawal (سبجی چاول)",
-      "description": "ہاف سبجی چاول - آدھی سبجی چاولوں کے ساتھ | Half portion sabji with rice"
+      "category": "Sajji Chawal (سجی چاول)",
+      "description": "ہاف سجی چاول - آدھی سجی چاولوں کے ساتھ | Half portion sajji with rice"
     },
     {
-      "name": "Quarter Sabji Chawal",
+      "name": "Quarter Sajji Chawal",
       "price": 600,
-      "category": "Sabji Chawal (سبجی چاول)",
-      "description": "کوارٹر سبجی چاول - چوتھائی سبجی چاولوں کے ساتھ | Quarter portion sabji with rice"
+      "category": "Sajji Chawal (سجی چاول)",
+      "description": "کوارٹر سجی چاول - چوتھائی سجی چاولوں کے ساتھ | Quarter portion sajji with rice"
     },
     {
-      "name": "Full Sabji",
+      "name": "Full Sajji",
       "price": 1600,
-      "category": "Sabji Baghair Chawal (سبجی بغیر چاول)",
-      "description": "فل سبجی - مکمل سبجی بغیر چاول | Full portion sabji without rice"
+      "category": "Sajji Baghair Chawal (سجی بغیر چاول)",
+      "description": "فل سجی - مکمل سجی بغیر چاول | Full portion sajji without rice"
     },
     {
-      "name": "Half Sabji",
+      "name": "Half Sajji",
       "price": 800,
-      "category": "Sabji Baghair Chawal (سبجی بغیر چاول)",
-      "description": "ہاف سبجی - آدھی سبجی بغیر چاول | Half portion sabji without rice"
+      "category": "Sajji Baghair Chawal (سجی بغیر چاول)",
+      "description": "ہاف سجی - آدھی سجی بغیر چاول | Half portion sajji without rice"
     },
     {
-      "name": "Quarter Sabji",
+      "name": "Quarter Sajji",
       "price": 400,
-      "category": "Sabji Baghair Chawal (سبجی بغیر چاول)",
-      "description": "کوارٹر سبجی - چوتھائی سبجی بغیر چاول | Quarter portion sabji without rice"
+      "category": "Sajji Baghair Chawal (سجی بغیر چاول)",
+      "description": "کوارٹر سجی - چوتھائی سجی بغیر چاول | Quarter portion sajji without rice"
     },
     {
       "name": "Leg Piece",

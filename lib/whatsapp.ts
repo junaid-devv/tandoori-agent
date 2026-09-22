@@ -372,12 +372,24 @@ export async function sendWhatsAppInteractiveList(
 
   if (isWaAkgProvider()) {
     const listBody = payload.body.trim();
-    const section = payload.sectionTitle?.trim() || "Options";
-    const formattedRows = payload.rows
-      .slice(0, 10)
-      .map((r, i) => `${i + 1}. *${r.title}*${r.description ? `\n   ${r.description}` : ""}`)
-      .join("\n\n");
-    const fullText = `${listBody}\n\n*${section}*:\n${formattedRows}\n\n👉 *Reply with the number or name of your choice.*`;
+    const rows = payload.rows.slice(0, 8);
+
+    // If listBody already lists these items (e.g. from disambiguation text),
+    // don't duplicate them below
+    const alreadyListsItems = rows.length > 0 && rows.some((r) => listBody.includes(r.title));
+    if (alreadyListsItems) {
+      return sendWaAkgMessage(to, `${listBody}\n\n_Reply with number or name_`);
+    }
+
+    const section = payload.sectionTitle ? `*${payload.sectionTitle.trim()}*:\n` : "";
+    const formattedRows = rows
+      .map((r, i) => `${i + 1}. *${r.title}*${r.description ? ` (${r.description.replace(/\s+/g, " ").trim()})` : ""}`)
+      .join("\n");
+
+    const fullText = listBody
+      ? `${listBody}\n\n${section}${formattedRows}\n\n_Reply with number or name_`
+      : `${section}${formattedRows}\n\n_Reply with number or name_`;
+
     return sendWaAkgMessage(to, fullText);
   }
 
@@ -482,10 +494,24 @@ export async function sendWhatsAppReplyButtons(
   }
 
   if (isWaAkgProvider()) {
-    const header = payload.headerText ? `*${payload.headerText}*\n\n` : "";
-    const footer = payload.footerText ? `\n\n_${payload.footerText}_` : "";
-    const buttons = payload.buttons.map((b, i) => `${i + 1}️⃣ ${b.title}`).join("\n");
-    const fullText = `${header}${payload.body}\n\n${buttons}${footer}\n\n👉 *Reply with 1, 2, or 3.*`;
+    const body = payload.body.trim();
+    const count = payload.buttons.length;
+
+    if (count === 1) {
+      const btn = payload.buttons[0];
+      const fullText = `${body}\n\n_Type *1* for ${btn.title}, ya direct apna order batayein._`;
+      return sendWaAkgMessage(to, fullText);
+    }
+
+    if (count === 2) {
+      const b1 = payload.buttons[0];
+      const b2 = payload.buttons[1];
+      const fullText = `${body}\n\n👉 *1* - ${b1.title}  |  *2* - ${b2.title}\n_(Reply *1* ya *2*)_`;
+      return sendWaAkgMessage(to, fullText);
+    }
+
+    const btnLines = payload.buttons.map((b, i) => `*${i + 1}* - ${b.title}`).join("\n");
+    const fullText = `${body}\n\n${btnLines}\n\n_Reply with number (1-${count})_`;
     return sendWaAkgMessage(to, fullText);
   }
 

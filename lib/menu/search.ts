@@ -314,7 +314,7 @@ const VARIANT_PATTERN = new RegExp(
 );
 
 const SIZE_WORDS_PATTERN =
-  /\b(full|half|quarter|single|double|small|medium|large|extra\s*large|xl|reg(?:ular)?|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle)\b/i;
+  /\b(full|half|quarter|single|double|small|medium|large|extra\s*large|xl|reg(?:ular)?|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle|derh|dedh|dehr|aadha|half\s*l(?:itre|iter)?|1\.5\s*l(?:itre|iter)?|1\.5|0?\.5)\b/i;
 
 export function extractBaseItemName(fullName: string): { baseName: string; variant: string | null } {
   const match = fullName.match(VARIANT_PATTERN);
@@ -327,12 +327,13 @@ export function extractBaseItemName(fullName: string): { baseName: string; varia
 }
 
 export function extractSizeFromQuery(query: string, explicitSize?: string | null): string | null {
-  if (explicitSize && explicitSize.trim()) {
-    const s = explicitSize.trim().toLowerCase();
-    const m = s.match(SIZE_WORDS_PATTERN);
-    return m ? m[1].toLowerCase() : s;
-  }
-  const match = query.match(SIZE_WORDS_PATTERN);
+  const q = (explicitSize || query).toLowerCase();
+  if (/\b(1\.5|derh|dedh|dehr|1\.5\s*l(?:itre|iter)?)\b/i.test(q)) return "1.5 litre";
+  if (/\b(half\s*l(?:itre|iter)?|aadha\s*l(?:itre|iter)?|0\.5)\b/i.test(q)) return "half litre";
+  if (/\b(half|aadha|aadhi)\b/i.test(q)) return "half";
+  if (/\b(quarter|chauthai|pao|paao)\b/i.test(q)) return "quarter";
+  if (/\b(full|poori|poora)\b/i.test(q)) return "full";
+  const match = q.match(SIZE_WORDS_PATTERN);
   return match ? match[1].toLowerCase() : null;
 }
 
