@@ -241,7 +241,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   // Guard: skip if the message looks like a question — route to NLU for info handling instead.
   // Also only run when in browsing or building_cart stages to prevent checkout detail hijacking.
   const QUESTION_SIGNALS =
-    /(\?|kia\s*hai|kya\s*hai|kia\s*h|kya\s*h|\bkia\b|\bkya\b|kaisa|details|batao|bata|what\s*is|how\s*much|kitne|mein\s*kya|main\s*kia|mein\s*kia|main\s*kya|ingredients|contains|mila|milta)/i;
+    /(\?|kia\s*hai|kya\s*hai|kia\s*h|kya\s*h|\bkia\b|\bkya\b|kaisa|details|batao|bata|what\s*is|how\s*much|kitne|kitnay|kitna|rate|price|cost|bhav|bhao|tsomra|kya\s*rate|kia\s*rate|ka\s*rate|ki\s*hai|mein\s*kya|main\s*kia|mein\s*kia|main\s*kya|ingredients|contains|mila|milta)/i;
   if (!understanding && isBrowsingOrBuildingCart && ctx.state.last_shown_options.length > 0 && ctx.state.last_shown_options_at) {
     const ageMs = Date.now() - new Date(ctx.state.last_shown_options_at).getTime();
     const OPTION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
@@ -485,7 +485,10 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
         info_query: trimmed,
         notes: "fast_path_order_status",
       };
-    } else if (/(?:delivery\s+(?:kis\s+time|kab|timing|time|available\s+hogi|hogi|chal|available)|kab\s+(?:tak\s+)?deliver\s+(?:hoga|hogi)|delivery\s+timing|delivery\s+charges|delivery\s+fee)/i.test(trimmed) && !/karahi|biryani|burger|tikka|kabab|pizza|bhejo|krdo|kardo/i.test(trimmed)) {
+    } else if (
+      /(?:delivery\s+(?:kis\s+time|kab|timing|time|available\s+hogi|hogi|chal|available)|kab\s+(?:tak\s+)?(?:deliver\s+(?:hoga|hogi)|a(?:ye|jae)ga|milega|pohnchega)|k(?:i|t)n(?:i|a)\s*(?:d(?:e|a)y?r|time|waqt)|delivery\s*time|delivery\s*timing|delivery\s*charges|delivery\s*fee)/i.test(trimmed) &&
+      !/karahi|biryani|burger|tikka|kabab|pizza|bhejo|krdo|kardo/i.test(trimmed)
+    ) {
       understanding = {
         ...makeBase(ctx.state.preferred_language),
         intents: ["ask_delivery_info"],

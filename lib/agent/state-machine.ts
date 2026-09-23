@@ -177,7 +177,15 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   }
 
   // 4) Cart mutations (non-linear — can happen from any stage)
-  if (u.intents.includes("add_items") && u.items.length > 0) {
+  const isPureInfo =
+    u.primary_intent === "ask_item_info" ||
+    u.primary_intent === "browse_menu" ||
+    u.primary_intent === "ask_hours_or_location" ||
+    u.primary_intent === "ask_delivery_info" ||
+    u.primary_intent === "ask_payment" ||
+    u.primary_intent === "ask_recommendation" ||
+    u.primary_intent === "general_question";
+  if (u.intents.includes("add_items") && u.items.length > 0 && !isPureInfo) {
     actions.push({ kind: "add_items", payload: { items: u.items } });
     if (!view.upsell_offered) {
       actions.push({ kind: "offer_upsell" });

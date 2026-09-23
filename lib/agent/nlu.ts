@@ -22,12 +22,16 @@ import type { LanguagePreference } from "@/lib/schema.types";
 // Config
 // ---------------------------------------------------------------------
 function getNluModel(): string {
-  if (process.env.GROQ_API_KEY) return "qwen/qwen3.8-27b";
   if (process.env.ORDER_AGENT_NLU_MODEL) return process.env.ORDER_AGENT_NLU_MODEL;
+  if (process.env.GROQ_API_KEY) return "qwen/qwen3.8-27b";
   return process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
 }
-const NLU_MAX_TOKENS = Number(process.env.ORDER_AGENT_NLU_MAX_TOKENS) || 400;
-const NLU_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 25_000;
+function getNluFallbackModel(): string {
+  if (process.env.GROQ_API_KEY) return "openai/gpt-oss-20b";
+  return process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
+}
+const NLU_MAX_TOKENS = Number(process.env.ORDER_AGENT_NLU_MAX_TOKENS) || 600;
+const NLU_TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 15_000;
 const NLU_CACHE_TTL_MS = Number(process.env.NLU_CACHE_TTL_MS) || 5 * 60_000;
 
 let client: OpenAI | null = null;
@@ -169,6 +173,8 @@ const SYSTEM_RULES = [
   "",
   "SIZE / PORTIONS: When the customer mentions 'half', 'full', 'quarter', 'single', 'double', 'large', 'small', 'medium', '6 pcs', '4 pcs', capture it in `size` (e.g. '1 half chicken karahi' -> size: 'half').",
   "FOOD ITEMS & DISH MENTIONS: If the customer mentions, asks about, or wants any food item, dish, or cuisine (e.g. 'pizza', 'karahi', 'biryani', 'burger', 'pasta', 'beef kabab', 'chai', 'dessert', 'chicken handi'), NEVER return `unknown`. If they simply name or ask about a food item (e.g. 'pizza', 'karahi', 'beef kabab'), set intent to `add_items` (with `items: [{ query: ... }]`) or `ask_item_info` (with `info_query`). Menu availability, variant selection, and disambiguation are handled downstream.",
+  "PRICE / MENU INQUIRY VS ORDERING — CRITICAL: When the customer asks about the price, rate, or cost of an item (e.g. 'X ka rate kya h', 'X kitne ka hai', 'price of X', 'X tsomra day', 'X ka kya rate hai') WITHOUT an explicit ordering word (like 'bhej do', 'kardo', 'chahiye', 'pack kar do', 'order', 'de do', 'mangwana'): set intent to `ask_item_info`, put the question in `info_query`, and LEAVE `items` EMPTY (`items: []`). NEVER put items into `items` when the customer is only asking about prices or inquiring!",
+  "ORDER CORRECTION / REPLACEMENT: When the customer clarifies what they want, e.g. 'quarter with rice keh raha hoon' or 'chawal wali saji bol raha hoon', extract the intended item into `items: [{ query: 'quarter with rice', qty: 1 }]` with intent `add_items`.",
   "ORDER TYPE: if the customer says 'deliver karo / deliver krdo / delivery chahiye / ghar pe bhejo / ye deliver karo / deliver kra / kora ta warkawa' (even without specifying an address), use intent `set_order_type` with `order_type: 'delivery'`. Do NOT use `unknown`.",
   "CORRECTION PATTERN — VERY IMPORTANT: When the customer says 'X not Y', 'X chahiye Y nahi', 'Y nahi X chahiye', 'not Y, X chahiye', or any variant meaning they want X and NOT Y — X is the item they WANT (add_items) and Y is the item they do NOT want (remove_items). The FIRST-named correction is typically what they WANT. Example: 'Pizza not french fries' = add_items(pizza) + remove_items(french_fries). Example: 'Zinger nahi biryani chahiye' = add_items(biryani) + remove_items(zinger). Never confuse the direction.",
   "ADDRESS EXTRACTION: If the customer mentions any delivery location, area, sector, street, phase, or society — including short sector/area codes (e.g. 'i10', 'i-10', 'g-11', 'f7', 'e11', 'Askari 10', 'Model Town', 'DHA Phase 5', 'Bahria Town', 'Gulberg', 'F-7/2 Islamabad', 'House 29 Street 4') — ALWAYS extract it into `address`, include intent `provide_address` and set `order_type: 'delivery'`.",
@@ -483,6 +489,37 @@ const FEW_SHOT: Array<{ user: string; assistant: Partial<TurnUnderstanding> }> =
     },
   },
   {
+    user: "Full saji chawal ka rate kya h",
+    assistant: {
+      intents: ["ask_item_info"],
+      primary_intent: "ask_item_info",
+      language: "roman_urdu",
+      info_query: "price of full saji chawal",
+      items: [],
+    },
+  },
+  {
+    user: "1 kilo malai boti ka kya rate h",
+    assistant: {
+      intents: ["ask_item_info"],
+      primary_intent: "ask_item_info",
+      language: "roman_urdu",
+      info_query: "price of 1 kilo malai boti",
+      items: [],
+    },
+  },
+  {
+    user: "Quarter with rice kh rha hon khali quater without rice 400 ka h or quater saji with rice 600 ka h",
+    assistant: {
+      intents: ["add_items"],
+      primary_intent: "add_items",
+      language: "roman_urdu",
+      items: [
+        { query: "quarter with rice", qty: 1, size: "quarter", addons: [], notes: null },
+      ],
+    },
+  },
+  {
     user: "best item konsa available hai",
     assistant: {
       intents: ["ask_recommendation"],
@@ -705,8 +742,9 @@ function buildMessages(input: NluInput): OpenAI.Chat.Completions.ChatCompletionM
     optStr ? `OPTIONS:${optStr}` : "",
   ].filter(Boolean).join(" ");
 
-  const examplesText = FEW_SHOT.slice(0, 25)
-    .map((ex) => `Customer: "${ex.user}" => ${JSON.stringify(fillDefaults(ex.assistant))}`)
+  // Pick 14 relevant examples and serialize concise non-null fields
+  const examplesText = FEW_SHOT.slice(0, 14)
+    .map((ex) => `Customer: "${ex.user}" => ${JSON.stringify(ex.assistant)}`)
     .join("\n");
 
   return [
@@ -886,6 +924,25 @@ export function coerceUnderstanding(
     obj.items = [];
   }
 
+  // 3b. Price inquiry safeguard: If user is asking about price / rate / info, DO NOT add items to cart
+  const isPriceOrInfoQuery =
+    obj.primary_intent === "ask_item_info" ||
+    (typeof obj.info_query === "string" && /(?:price|rate|cost|kitn|bhav|bhao|tsomra|kya\s*rate|kia\s*rate)/i.test(obj.info_query));
+
+  if (isPriceOrInfoQuery) {
+    const rawInputText = (typeof obj.notes === "string" ? obj.notes : "") + " " + String(obj.info_query || "");
+    const hasOrderingVerb = /\b(bhej|kardo|kar do|krdo|chahiye|mangwa|dal do|daal do|pack|order|de do|rakho)\b/i.test(rawInputText);
+    if (!hasOrderingVerb) {
+      obj.items = [];
+      if (Array.isArray(obj.intents)) {
+        obj.intents = obj.intents.filter((i) => i !== "add_items");
+      }
+      if (obj.primary_intent === "add_items") {
+        obj.primary_intent = "ask_item_info";
+      }
+    }
+  }
+
   // If primary_intent is unknown but items or info_query exist, backfill intent
   if (obj.primary_intent === "unknown") {
     if (Array.isArray(obj.items) && obj.items.length > 0) {
@@ -971,17 +1028,40 @@ export async function understandTurn(input: NluInput): Promise<TurnUnderstanding
   }
 
   try {
-    const completion = await withTimeout(
-      getClient().chat.completions.create({
-        model: getNluModel(),
-        temperature: 0,
-        max_tokens: NLU_MAX_TOKENS,
-        response_format: { type: "json_object" },
-        messages: buildMessages(cleaned),
-      }),
-      NLU_TIMEOUT_MS,
-      "understand",
-    );
+    let completion;
+    const primaryModel = getNluModel();
+    const fallbackModel = getNluFallbackModel();
+
+    try {
+      completion = await withTimeout(
+        getClient().chat.completions.create({
+          model: primaryModel,
+          temperature: 0,
+          max_tokens: NLU_MAX_TOKENS,
+          response_format: { type: "json_object" },
+          messages: buildMessages(cleaned),
+        }),
+        NLU_TIMEOUT_MS,
+        "understand",
+      );
+    } catch (primaryErr) {
+      if (primaryModel !== fallbackModel) {
+        console.warn(`[nlu] Primary model ${primaryModel} failed (${primaryErr}). Trying fallback ${fallbackModel}...`);
+        completion = await withTimeout(
+          getClient().chat.completions.create({
+            model: fallbackModel,
+            temperature: 0,
+            max_tokens: NLU_MAX_TOKENS,
+            response_format: { type: "json_object" },
+            messages: buildMessages(cleaned),
+          }),
+          NLU_TIMEOUT_MS,
+          "understand_fallback",
+        );
+      } else {
+        throw primaryErr;
+      }
+    }
 
     const rawContent = completion.choices[0]?.message?.content ?? "{}";
     const obj = parseJsonObject(rawContent);

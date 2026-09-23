@@ -16,7 +16,7 @@ import type { AgentAction, Transition } from "./state-machine";
 import type { TurnUnderstanding } from "./nlu";
 import { reply } from "./reply";
 import { addToCart, removeFromCart, updateQuantity, cartSubtotal } from "./cart";
-import { searchMenu, resolveItem, resolveItemDetailed, extractBaseItemName } from "@/lib/menu/search";
+import { searchMenu, resolveItem, resolveItemDetailed, extractBaseItemName, extractSizeFromQuery } from "@/lib/menu/search";
 import { orderRepo } from "@/lib/data/order.repo";
 import { groundedAnswer } from "./answer";
 import {
@@ -293,6 +293,30 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               replies.push(reply.itemUnavailable(lang, resolved.name));
               continue;
             }
+            // Sibling variant swap check (e.g. Quarter Sajji <-> Quarter Sajji Chawal):
+            const rawMsg = input.messageTextForFallback || "";
+            const isSwapClarification =
+              Boolean(rawMsg && /(?:kh\s*rha\s*h|keh\s*raha|bol\s*raha|change|badal|replace|wali|wala|not|nahi|without|with\s*rice|sath\s*chawal)/i.test(rawMsg)) ||
+              (cart.length === 1 && !/(?:aur|mazeed|ek\s*aur|bhi|also|plus)/i.test(rawMsg));
+
+            const siblingItem = isSwapClarification
+              ? cart.find((ci) => {
+                  if (ci.menu_item_id === resolved.id) return false;
+                  const ciNorm = ci.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                  const resNorm = resolved.name.toLowerCase().replace(/[^a-z0-9]/g, "");
+                  if (ciNorm.includes("sajji") && resNorm.includes("sajji")) {
+                    const ciSize = extractSizeFromQuery(ci.name);
+                    const resSize = extractSizeFromQuery(resolved.name);
+                    return Boolean(ciSize && resSize && ciSize === resSize);
+                  }
+                  return false;
+                })
+              : null;
+
+            if (siblingItem) {
+              cart = cart.filter((ci) => ci.menu_item_id !== siblingItem.menu_item_id);
+            }
+
             cart = addToCart(cart, {
               menu_item_id: resolved.id,
               name: resolved.name,
@@ -303,7 +327,16 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               notes: m.notes ?? null,
             });
             const cartItem = cart.find((ci) => ci.menu_item_id === resolved.id);
-            added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1), notes: m.notes ?? null });
+            if (siblingItem) {
+              const swapMsg = lang === "pashto"
+                ? `✅ *${siblingItem.name}* badal sho pa *${resolved.name}*. Total: ${cur} ${cartSubtotal(cart)}`
+                : lang === "roman_urdu"
+                ? `✅ *${siblingItem.name}* ko *${resolved.name}* se update kar diya gaya hai. Total: ${cur} ${cartSubtotal(cart)}`
+                : `✅ Updated *${siblingItem.name}* to *${resolved.name}*. Total: ${cur} ${cartSubtotal(cart)}`;
+              replies.push(swapMsg);
+            } else {
+              added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1), notes: m.notes ?? null });
+            }
           } else if (res.kind === "variants") {
             // Item has multiple sizes (e.g. Half / Full) and user did not specify size
             hasDisambiguation = true;
@@ -411,7 +444,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       case "answer_delivery_info": {
         const queryStr = String(action.payload?.query ?? u.info_query ?? input.messageTextForFallback ?? "").toLowerCase();
-        if (/kitna\s+time|time\s+kitna|how\s+much\s+time|delivery\s+time|kab\s+tak\s+pohanch|kitni\s+der|der\s+lag|دیر|وقت|ٹائم|څومره\s+وخت|کله\s+رسیږي/i.test(queryStr)) {
+        if (/k(?:i|t)n(?:i|a)\s*(?:d(?:e|a)y?r|time|waqt)|time\s+kitna|how\s+much\s+time|delivery\s+time|kab\s+tak\s*(?:pohanch|a(?:ye|jae)ga|milega)|kitni\s+der|der\s+lag|دیر|وقت|ٹائم|څومره\s+وخت|کله\s+رسیږي/i.test(queryStr)) {
           const estDelivery = Math.round(Number(ctx.settings?.estimated_delivery_minutes) || 45);
           replies.push(
             lang === "pashto"
@@ -1214,13 +1247,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "fallback":
       default:
         if (replies.length === 0) {
+          replies.push(reply.clarify(lang, "fallback"));
           if (cart.length > 0) {
-            const addr = patch.address ?? ctx.state.address;
-            replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null, ctx.settings));
             setInteractive(cartActionButtons(lang, { hideViewCart: true }));
           } else {
             const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
-            replies.push(reply.clarify(lang, "fallback"));
             if (cats.length) setInteractive(categoryList(lang, cats));
           }
         }

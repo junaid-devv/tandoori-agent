@@ -86,6 +86,7 @@ function normalize(value: string): string {
   // Common Pakistani phonetic variations / transliterations
   v = v
     .replace(/\b(saji|sajji|sajje|sajy|sajjy|saaji|saajji)\b/g, "sajji")
+    .replace(/\b(quater|quator|quatir|qtr|qauter)\b/g, "quarter")
     .replace(/\b(nan|non|naans|nans)\b/g, "naan")
     .replace(/\b(krahi|karai|kadai|kadhai)\b/g, "karahi")
     .replace(/\b(bryani|biryany|baryani|biryanis)\b/g, "biryani")
@@ -94,8 +95,11 @@ function normalize(value: string): string {
     .replace(/\b(kebab|kabaab|kababs|kebabs|kebabz|kababz|kbb)\b/g, "kabab")
     .replace(/\b(boti|botiyan|botti|boty)\b/g, "boti")
     .replace(/\b(mali|mlai|malaee|malaii)\b/g, "malai")
+    .replace(/\b(with\s*rice|with\s*chawal|sath\s*chawal|chawal\s*(?:ke|k|kay)\s*sath|chawal\s*sath)\b/g, "chawal")
+    .replace(/\b(without\s*rice|without\s*chawal|baghair\s*rice|bina\s*rice|baghair\s*chawal|bina\s*chawal)\b/g, "baghair chawal")
     .replace(/\b(chawl|chaawal|chawal|chawall|rice)\b/g, "chawal")
     .replace(/\b(baghair|begair|bghair|bina|without)\b/g, "baghair")
+    .replace(/\b(khali|sirf|only)\b/g, "")
     .replace(/\b(qalmi|kalmi|qulmi|kulmi)\b/g, "qalmi")
     .replace(/\b(reshmi|rehsmi|reshme)\b/g, "reshmi")
     .replace(/\b(rogni|roghani)\b/g, "roghni")
@@ -108,7 +112,10 @@ function normalize(value: string): string {
     .replace(/\b(tang|taang)\b/g, "leg")
     .replace(/\b(sadah|plain)\b/g, "sada")
     .replace(/\b(paani|water)\b/g, "pani")
-    .replace(/\b(coldring|colddrink|cooldrink|botal)\b/g, "cold drink");
+    .replace(/\b(coldring|colddrink|cooldrink|botal)\b/g, "cold drink")
+    .replace(/\bwith\b/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
   return v;
 }
 
@@ -562,7 +569,7 @@ export async function resolveItemDetailed(
         (s === "extra large" && (v.includes("xl") || v.includes("extra large") || n.includes("xl")))
       );
     };
-    const sizeMatches = relevantCandidates.filter(isSizeMatch);
+    let sizeMatches = relevantCandidates.filter(isSizeMatch);
     if (sizeMatches.length === 1) {
       return { kind: "exact", item: sizeMatches[0], confidence: sizeMatches[0].similarity ?? 0.9 };
     }
@@ -574,6 +581,47 @@ export async function resolveItemDetailed(
       });
       if (exactInSize) {
         return { kind: "exact", item: exactInSize, confidence: 1.0 };
+      }
+
+      // Attribute disambiguation (e.g. "with rice" / "chawal" vs "without rice" / "baghair chawal")
+      const normTrimmed = normalize(trimmed);
+      const wantsChawal = normTrimmed.includes("chawal") && !normTrimmed.includes("baghair");
+      const wantsBaghair = normTrimmed.includes("baghair") || normTrimmed.includes("sada");
+
+      if (wantsChawal) {
+        const chawalMatches = sizeMatches.filter(
+          (m) =>
+            m.name.toLowerCase().includes("chawal") ||
+            (m.category && m.category.toLowerCase().includes("chawal") && !m.category.toLowerCase().includes("baghair")),
+        );
+        if (chawalMatches.length === 1) {
+          return { kind: "exact", item: chawalMatches[0], confidence: 1.0 };
+        }
+        if (chawalMatches.length > 1) sizeMatches = chawalMatches;
+      } else if (wantsBaghair) {
+        const baghairMatches = sizeMatches.filter(
+          (m) =>
+            !m.name.toLowerCase().includes("chawal") ||
+            (m.category && m.category.toLowerCase().includes("baghair")),
+        );
+        if (baghairMatches.length === 1) {
+          return { kind: "exact", item: baghairMatches[0], confidence: 1.0 };
+        }
+        if (baghairMatches.length > 1) sizeMatches = baghairMatches;
+      }
+
+      // Check token coverage: if exactly one candidate has all query tokens, it's an exact match
+      const qTokens = normTrimmed
+        .split(" ")
+        .filter((t) => t.length >= 3 && !["sada", "baghair", "sajji"].includes(t));
+      if (qTokens.length > 0) {
+        const fullCover = sizeMatches.filter((m) => {
+          const mNorm = normalize(m.name);
+          return qTokens.every((t) => mNorm.includes(t));
+        });
+        if (fullCover.length === 1) {
+          return { kind: "exact", item: fullCover[0], confidence: 0.95 };
+        }
       }
 
       // Check if these are distinct items (e.g. Vegetarian Pizza Large vs Chicken Pizza Large)
