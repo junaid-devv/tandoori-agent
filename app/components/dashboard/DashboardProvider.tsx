@@ -25,6 +25,10 @@ type DashboardContextValue = {
   toggleSidebarCollapsed: () => void;
   isSoundEnabled: boolean;
   toggleSoundEnabled: () => void;
+  isAutoPrintEnabled: boolean;
+  toggleAutoPrintEnabled: () => void;
+  receiptPaperWidth: "58mm" | "80mm";
+  setReceiptPaperWidth: (width: "58mm" | "80mm") => void;
   isContextPanelOpen: boolean;
   toggleContextPanelOpen: () => void;
   logout: () => Promise<void>;
@@ -33,6 +37,8 @@ type DashboardContextValue = {
 const STORAGE_KEY = "restaurant-agent-selected-branch";
 const SIDEBAR_COLLAPSED_KEY = "dashboard-sidebar-collapsed";
 const SOUND_ENABLED_KEY = "dashboard-sound-enabled";
+const AUTO_PRINT_ENABLED_KEY = "dashboard-autoprint-enabled";
+const RECEIPT_WIDTH_KEY = "dashboard-receipt-paper-width";
 const CONTEXT_PANEL_KEY = "dashboard-context-panel-open";
 const DashboardContext = createContext<DashboardContextValue | null>(null);
 
@@ -105,6 +111,17 @@ export function DashboardProvider({
     return window.localStorage.getItem(SOUND_ENABLED_KEY) !== "false";
   });
 
+  const [isAutoPrintEnabled, setIsAutoPrintEnabled] = useState<boolean>(() => {
+    if (typeof window === "undefined") return false;
+    return window.localStorage.getItem(AUTO_PRINT_ENABLED_KEY) === "true";
+  });
+
+  const [receiptPaperWidth, setReceiptPaperWidthState] = useState<"58mm" | "80mm">(() => {
+    if (typeof window === "undefined") return "80mm";
+    const stored = window.localStorage.getItem(RECEIPT_WIDTH_KEY);
+    return stored === "58mm" ? "58mm" : "80mm";
+  });
+
   const [isContextPanelOpen, setIsContextPanelOpen] = useState<boolean>(() => {
     if (typeof window === "undefined") return true;
     return window.localStorage.getItem(CONTEXT_PANEL_KEY) !== "false";
@@ -142,6 +159,19 @@ export function DashboardProvider({
           return next;
         });
       },
+      isAutoPrintEnabled,
+      toggleAutoPrintEnabled: () => {
+        setIsAutoPrintEnabled((prev) => {
+          const next = !prev;
+          window.localStorage.setItem(AUTO_PRINT_ENABLED_KEY, String(next));
+          return next;
+        });
+      },
+      receiptPaperWidth,
+      setReceiptPaperWidth: (width: "58mm" | "80mm") => {
+        setReceiptPaperWidthState(width);
+        window.localStorage.setItem(RECEIPT_WIDTH_KEY, width);
+      },
       isContextPanelOpen,
       toggleContextPanelOpen: () => {
         setIsContextPanelOpen((prev) => {
@@ -158,7 +188,18 @@ export function DashboardProvider({
         });
       },
     };
-  }, [isContextPanelOpen, isSidebarCollapsed, isSoundEnabled, profileState, router, selectedBranch, selectedBranchId, session]);
+  }, [
+    isAutoPrintEnabled,
+    isContextPanelOpen,
+    isSidebarCollapsed,
+    isSoundEnabled,
+    profileState,
+    receiptPaperWidth,
+    router,
+    selectedBranch,
+    selectedBranchId,
+    session,
+  ]);
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;
 }

@@ -15,22 +15,16 @@ import {
   Volume2,
   VolumeX,
   Bell,
-  Sparkles,
-  Zap,
   Building2,
   Check,
-  AlertTriangle,
-  Server,
-  Layers,
-  Activity,
   Trash2,
-  Sliders,
-  ShieldCheck,
+  Printer,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { toast } from "sonner";
+import { printTestReceipt } from "@/lib/thermal-printer";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 type SettingsTab = "operations" | "delivery" | "ai_brand" | "contacts" | "database" | "notifications";
@@ -129,6 +123,10 @@ export default function SettingsPage() {
     selectedBranch,
     isSoundEnabled,
     toggleSoundEnabled,
+    isAutoPrintEnabled,
+    toggleAutoPrintEnabled,
+    receiptPaperWidth,
+    setReceiptPaperWidth,
   } = useDashboardContext();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("operations");
@@ -265,13 +263,34 @@ export default function SettingsPage() {
     }
   };
 
+  const [testingPrint, setTestingPrint] = useState(false);
+
+  const handleTestPrint = async () => {
+    setTestingPrint(true);
+    try {
+      const ok = await printTestReceipt(
+        profile.app_name,
+        receiptPaperWidth
+      );
+      if (ok) {
+        toast.success("Test receipt sent to printer!");
+      } else {
+        toast.error("Could not trigger print job.");
+      }
+    } catch {
+      toast.error("Failed to print test receipt.");
+    } finally {
+      setTestingPrint(false);
+    }
+  };
+
   const tabs: { key: SettingsTab; label: string; icon: React.ReactNode; badge?: string }[] = [
     { key: "operations", label: "Store & Hours", icon: <Store size={15} /> },
     { key: "delivery", label: "Delivery & Zones", icon: <Truck size={15} />, badge: settings.delivery_enabled ? "ON" : "OFF" },
     { key: "ai_brand", label: "AI Tone & Voice", icon: <Bot size={15} /> },
     { key: "contacts", label: "Contact & Location", icon: <Phone size={15} /> },
     { key: "database", label: "Database & Stats", icon: <Database size={15} /> },
-    { key: "notifications", label: "Alerts & Audio", icon: <Bell size={15} /> },
+    { key: "notifications", label: "Alerts & Printer", icon: <Bell size={15} /> },
   ];
 
   if (selectedBranchId === "all") {
@@ -889,58 +908,174 @@ export default function SettingsPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 6: NOTIFICATIONS & AUDIO
+          TAB 6: NOTIFICATIONS & PRINTER
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "notifications" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Audio Alerts & Notification Preferences</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Control browser sounds when new customer WhatsApp messages or orders arrive.
-            </p>
-          </div>
-
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+        <div className="space-y-6">
+          {/* Audio Alerts Card */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
             <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-900 text-sm">Dashboard Chime Sound</span>
-                <span
-                  className={clsx(
-                    "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                    isSoundEnabled
-                      ? "bg-emerald-100 text-emerald-800"
-                      : "bg-slate-200 text-slate-700"
-                  )}
-                >
-                  {isSoundEnabled ? "Enabled" : "Muted"}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Plays a pleasant sound chime when a new message arrives from a customer.
+              <h3 className="text-base font-bold text-slate-900">Audio Alerts & Notification Preferences</h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Control browser sounds when new customer WhatsApp messages or orders arrive.
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 text-sm">Dashboard Chime Sound</span>
+                  <span
+                    className={clsx(
+                      "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                      isSoundEnabled
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-slate-200 text-slate-700"
+                    )}
+                  >
+                    {isSoundEnabled ? "Enabled" : "Muted"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Plays a pleasant sound chime when a new message arrives from a customer.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={playTestSound}
+                  className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                >
+                  Play Test Chime
+                </button>
+                <button
+                  type="button"
+                  onClick={toggleSoundEnabled}
+                  className={clsx(
+                    "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition",
+                    isSoundEnabled
+                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                      : "bg-slate-800 text-white hover:bg-slate-900"
+                  )}
+                >
+                  {isSoundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
+                  <span>{isSoundEnabled ? "Sound ON" : "Sound Muted"}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Thermal Receipt Printing Card */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <Printer size={18} className="text-brand" />
+                  <h3 className="text-base font-bold text-slate-900">Thermal Receipt Printer & Hardware</h3>
+                </div>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Automatically print order receipts to your attached default POS printer when orders are confirmed.
+                </p>
+              </div>
               <button
                 type="button"
-                onClick={playTestSound}
-                className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                onClick={handleTestPrint}
+                disabled={testingPrint}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition disabled:opacity-50"
               >
-                Play Test Chime
+                <Printer size={14} className={testingPrint ? "animate-pulse text-brand" : "text-slate-500"} />
+                <span>{testingPrint ? "Sending..." : "Print Test Receipt"}</span>
               </button>
+            </div>
+
+            {/* Row 1: Auto-Print Toggle */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="font-bold text-slate-900 text-sm">Auto-Print Incoming Orders</span>
+                  <span
+                    className={clsx(
+                      "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
+                      isAutoPrintEnabled
+                        ? "bg-emerald-100 text-emerald-800"
+                        : "bg-slate-200 text-slate-700"
+                    )}
+                  >
+                    {isAutoPrintEnabled ? "Active" : "Disabled"}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Automatically sends kitchen receipts to your attached printer the moment an order is confirmed via WhatsApp or the dashboard.
+                </p>
+              </div>
+
               <button
                 type="button"
-                onClick={toggleSoundEnabled}
+                onClick={toggleAutoPrintEnabled}
                 className={clsx(
                   "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition",
-                  isSoundEnabled
+                  isAutoPrintEnabled
                     ? "bg-emerald-600 text-white hover:bg-emerald-700"
                     : "bg-slate-800 text-white hover:bg-slate-900"
                 )}
               >
-                {isSoundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
-                <span>{isSoundEnabled ? "Sound ON" : "Sound Muted"}</span>
+                <Printer size={14} />
+                <span>{isAutoPrintEnabled ? "Auto-Print ON" : "Auto-Print OFF"}</span>
               </button>
+            </div>
+
+            {/* Row 2: Paper Width Selector */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
+              <div>
+                <span className="font-bold text-slate-900 text-sm">Receipt Paper Roll Width</span>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Choose the roll width matching your thermal receipt printer.
+                </p>
+              </div>
+
+              <div className="inline-flex rounded-xl bg-white p-1 border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setReceiptPaperWidth("80mm")}
+                  className={clsx(
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                    receiptPaperWidth === "80mm"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  80mm (Standard POS)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReceiptPaperWidth("58mm")}
+                  className={clsx(
+                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
+                    receiptPaperWidth === "58mm"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-600 hover:text-slate-900"
+                  )}
+                >
+                  58mm (Compact Roll)
+                </button>
+              </div>
+            </div>
+
+            {/* Row 3: Windows Default Printer & Silent Kiosk Mode Explanation */}
+            <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4 text-xs text-sky-900 space-y-1.5">
+              <div className="font-bold text-sky-950 flex items-center gap-1.5">
+                <span>💡 Automatic Hardware Detection & Zero-Click Silent Printing</span>
+              </div>
+              <p className="text-sky-800 leading-relaxed">
+                • <strong>Attached Printer:</strong> The system automatically prints to your <strong>Windows Default Printer</strong>. You do not need to configure drivers or enter model numbers.
+              </p>
+              <p className="text-sky-800 leading-relaxed">
+                • <strong>Silent Printing:</strong> To skip the browser print preview popup entirely so orders print instantly without clicking &quot;Print&quot;, launch Chrome or Edge with the flag:
+                <code className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 font-mono text-[11px] text-sky-900 border border-sky-200">
+                  chrome.exe --kiosk-printing
+                </code>
+              </p>
             </div>
           </div>
         </div>

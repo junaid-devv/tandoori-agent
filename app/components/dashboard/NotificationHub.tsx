@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
 import { playOrderConfirmedChime, playNewMessageChime } from "@/lib/audio-chimes";
+import { printOrderReceipt } from "@/lib/thermal-printer";
 import { useDashboardContext } from "./DashboardProvider";
 
 export type NotificationContextType = {
@@ -35,7 +36,13 @@ export function useNotifications() {
 
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const { selectedBranchId, isSoundEnabled, profile } = useDashboardContext();
+  const {
+    selectedBranchId,
+    isSoundEnabled,
+    isAutoPrintEnabled,
+    receiptPaperWidth,
+    profile,
+  } = useDashboardContext();
 
   const [unreadMessagesCount, setUnreadMessagesCount] = useState(0);
   const [unseenOrdersCount, setUnseenOrdersCount] = useState(0);
@@ -181,6 +188,29 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     if (isSoundEnabled) playNewMessageChime();
   }, [isSoundEnabled]);
 
+  // Auto-print receipt trigger
+  const triggerAutoPrint = useCallback(
+    async (orderId: string, orderNumber: number) => {
+      if (!isAutoPrintEnabled) return;
+      try {
+        const res = await fetch(`/api/orders/${orderId}`);
+        if (!res.ok) {
+          console.warn(`[AutoPrint] Could not fetch order #${orderNumber} for printing`);
+          return;
+        }
+        const fullOrder = await res.json();
+        await printOrderReceipt(fullOrder, {
+          paperWidth: receiptPaperWidth,
+          restaurantName: profile.app_name,
+        });
+        toast.success(`🖨️ Receipt sent to printer for Order #${orderNumber}!`);
+      } catch (err) {
+        console.error(`[AutoPrint] Error printing receipt for order #${orderNumber}:`, err);
+      }
+    },
+    [isAutoPrintEnabled, receiptPaperWidth, profile]
+  );
+
   // Mark Orders Seen
   const markOrdersSeen = useCallback(() => {
     setHasNewOrderAlert(false);
@@ -254,6 +284,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
                 tag: `order-${order.id}`,
                 url: "/dashboard/orders",
               });
+
+              void triggerAutoPrint(order.id, order.orderNumber);
             }
           }
         }
@@ -337,6 +369,8 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
               tag: `order-${newOrder.id}`,
               url: "/dashboard/orders",
             });
+
+            void triggerAutoPrint(newOrder.id, Number(newOrder.order_number));
           }
         }
       )
@@ -374,7 +408,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [playOrderSound, playMessageSound, triggerDeviceNotification]);
+  }, [playOrderSound, playMessageSound, triggerDeviceNotification, triggerAutoPrint]);
 
   const value = {
     unreadMessagesCount,

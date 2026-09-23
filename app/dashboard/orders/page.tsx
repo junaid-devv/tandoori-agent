@@ -24,12 +24,14 @@ import {
   UserCheck,
   UtensilsCrossed,
   X,
+  Printer,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { format, formatDistanceToNow } from "date-fns";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { toast } from "sonner";
+import { printOrderReceipt } from "@/lib/thermal-printer";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
 type OrderStatus = "received" | "preparing" | "out_for_delivery" | "delivered" | "cancelled";
@@ -166,13 +168,33 @@ function formatElapsedTime(createdAt: string) {
 }
 
 export default function OrdersPage() {
-  const { selectedBranchId, selectedBranch } = useDashboardContext();
+  const {
+    selectedBranchId,
+    selectedBranch,
+    profile,
+    receiptPaperWidth,
+  } = useDashboardContext();
   const [activeTab, setActiveTab] = useState<FilterTab>("active");
   const [viewMode, setViewMode] = useState<ViewMode>("cards");
   const [searchTerm, setSearchTerm] = useState("");
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [assignees, setAssignees] = useState<Record<string, string>>({});
+
+  const handlePrintOrder = async (order: Order, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    try {
+      await printOrderReceipt(order as any, {
+        paperWidth: receiptPaperWidth,
+        restaurantName: profile.app_name,
+        branchName: order.branches?.name || selectedBranch?.name,
+      });
+      toast.success(`🖨️ Printing receipt for Order #${order.order_number}`);
+    } catch (err) {
+      console.error("Failed to print receipt:", err);
+      toast.error("Failed to trigger print job");
+    }
+  };
 
   const ordersUrl = useMemo(() => {
     const branchQuery = selectedBranchId === "all" ? "" : `&branch_id=${encodeURIComponent(selectedBranchId)}`;
@@ -466,6 +488,7 @@ export default function OrdersPage() {
           orders={filteredOrders}
           savingId={savingId}
           onStatusChange={handleStatusChange}
+          onPrint={handlePrintOrder}
         />
       ) : (
         <div className="space-y-3">
@@ -731,6 +754,17 @@ export default function OrdersPage() {
                             />
                           </div>
 
+                          {/* Print Receipt Button */}
+                          <button
+                            data-testid={`order-print-${order.order_number}`}
+                            onClick={(e) => void handlePrintOrder(order, e)}
+                            className="flex h-8 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition active:scale-95 shadow-2xs"
+                            title="Print thermal receipt"
+                          >
+                            <Printer size={13} className="mr-1 text-slate-500" />
+                            <span>Print</span>
+                          </button>
+
                           {/* Expand Details Toggle */}
                           <button
                             data-testid={`order-expand-${order.order_number}`}
@@ -791,9 +825,19 @@ export default function OrdersPage() {
                             <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                               Itemized Receipt
                             </h3>
-                            <span className="text-xs font-medium text-slate-500">
-                              {totalItems} total units
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs font-medium text-slate-500">
+                                {totalItems} total units
+                              </span>
+                              <button
+                                type="button"
+                                onClick={(e) => void handlePrintOrder(order, e)}
+                                className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-semibold text-slate-700 hover:bg-slate-100 transition active:scale-95 shadow-2xs"
+                              >
+                                <Printer size={12} className="text-slate-500" />
+                                <span>Print Receipt</span>
+                              </button>
+                            </div>
                           </div>
 
                           <div className="divide-y divide-slate-100 text-xs">
@@ -956,10 +1000,12 @@ function KitchenBoardView({
   orders,
   savingId,
   onStatusChange,
+  onPrint,
 }: {
   orders: Order[];
   savingId: string | null;
   onStatusChange: (order: Order, nextStatus: OrderStatus) => Promise<void>;
+  onPrint?: (order: Order, e?: React.MouseEvent) => void;
 }) {
   const columns: Array<{
     status: OrderStatus;
@@ -1069,19 +1115,32 @@ function KitchenBoardView({
                         </p>
                       )}
 
-                      {/* Action Button */}
-                      {col.nextStatus && col.actionLabel && (
-                        <button
-                          onClick={() => void onStatusChange(order, col.nextStatus!)}
-                          disabled={savingId === order.id}
-                          className={clsx(
-                            "w-full rounded-xl py-2 text-xs font-semibold shadow-xs transition active:scale-98 disabled:opacity-50",
-                            col.btnClass
-                          )}
-                        >
-                          {col.actionLabel}
-                        </button>
-                      )}
+                      {/* Action Button & Print */}
+                      <div className="flex items-center gap-2">
+                        {onPrint && (
+                          <button
+                            type="button"
+                            onClick={(e) => onPrint(order, e)}
+                            className="flex h-8 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition active:scale-95 shrink-0 shadow-2xs"
+                            title="Print thermal ticket"
+                          >
+                            <Printer size={13} className="mr-1 text-slate-500" />
+                            <span>Print</span>
+                          </button>
+                        )}
+                        {col.nextStatus && col.actionLabel && (
+                          <button
+                            onClick={() => void onStatusChange(order, col.nextStatus!)}
+                            disabled={savingId === order.id}
+                            className={clsx(
+                              "flex-1 rounded-xl py-2 text-xs font-semibold shadow-xs transition active:scale-98 disabled:opacity-50",
+                              col.btnClass
+                            )}
+                          >
+                            {col.actionLabel}
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })
