@@ -50,7 +50,7 @@ async function checkTableColumns(table: string, columns: string): Promise<Health
 
 async function checkDatabaseShape(): Promise<HealthCheck> {
   const checks = await Promise.all([
-    checkTableColumns("restaurant_profiles", "id, app_name, brand_color, branch_mode, default_branch_id"),
+    checkTableColumns("restaurant_profiles", "id, name, brand_color, branch_mode"),
     checkTableColumns("branches", "id, city, address"),
     checkTableColumns("restaurant_settings", "branch_id, delivery_areas, estimated_prep_minutes, estimated_delivery_minutes"),
     checkTableColumns("messages", "id, whatsapp_msg_id, delivery_status, delivery_status_updated_at, delivery_error"),
@@ -81,7 +81,6 @@ export async function GET(req: NextRequest) {
     supabaseServiceKey: { ok: hasConfiguredSecret("SUPABASE_SERVICE_ROLE_KEY") },
     whatsappCredentials: {
       ok:
-        hasConfiguredSecret("WHATSAPP_PHONE_NUMBER_ID") &&
         hasConfiguredSecret("WHATSAPP_ACCESS_TOKEN") &&
         (hasConfiguredSecret("WHATSAPP_APP_SECRET") || hasConfiguredSecret("META_APP_SECRET")) &&
         hasConfiguredSecret("WHATSAPP_VERIFY_TOKEN"),
