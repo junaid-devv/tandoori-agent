@@ -118,8 +118,10 @@ function toMeridiemLabel(value: string): string {
 
 export default function SettingsPage() {
   const {
+    session,
     profile,
     selectedBranchId,
+    setSelectedBranchId,
     selectedBranch,
     isSoundEnabled,
     toggleSoundEnabled,
@@ -164,6 +166,13 @@ export default function SettingsPage() {
       setSettings((current) => ({ ...current, ...cachedSettings }));
     }
   }, [cachedSettings]);
+
+  // Auto-select branch if there is only 1 branch available
+  useEffect(() => {
+    if (selectedBranchId === "all" && session.allowedBranches.length === 1) {
+      setSelectedBranchId(session.allowedBranches[0].id);
+    }
+  }, [selectedBranchId, session.allowedBranches, setSelectedBranchId]);
 
   // Load database telemetry
   const loadDatabaseStats = useCallback(async () => {
@@ -300,13 +309,43 @@ export default function SettingsPage() {
           title="Store Settings"
           description="Branch-level operations, delivery zones, AI tone, and database insights."
         />
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-900 shadow-sm">
-          <Building2 size={32} className="mx-auto mb-2 text-amber-600" />
-          <h3 className="font-bold text-base">Select a Specific Branch</h3>
-          <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto">
-            You are currently viewing &ldquo;All Branches&rdquo;. Please choose a specific location from the top branch switcher to edit its operational rules and settings.
-          </p>
-        </div>
+        {session.allowedBranches.length > 0 ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-900 shadow-sm">
+            <Building2 size={32} className="mx-auto mb-2 text-amber-600" />
+            <h3 className="font-bold text-base">Select a Branch to Configure</h3>
+            <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto">
+              You are currently viewing &ldquo;All Branches&rdquo;. Store settings (operating hours, delivery radius, menu rules) are configured per branch. Select one below to edit:
+            </p>
+            <div className="mt-4 flex flex-wrap justify-center gap-2">
+              {session.allowedBranches.map((branch) => (
+                <button
+                  key={branch.id}
+                  onClick={() => setSelectedBranchId(branch.id)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700 transition"
+                >
+                  <Store size={14} />
+                  Configure {branch.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-900 shadow-sm">
+            <Building2 size={32} className="mx-auto mb-2 text-amber-600" />
+            <h3 className="font-bold text-base">No Branches Found</h3>
+            <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto">
+              This restaurant does not have any active branches yet. Go to the Admin Center to add your first branch or onboard a restaurant client.
+            </p>
+            <div className="mt-4 flex justify-center">
+              <Link
+                href="/dashboard/admin"
+                className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700 transition"
+              >
+                Go to Admin Center
+              </Link>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

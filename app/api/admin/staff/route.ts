@@ -22,7 +22,7 @@ export async function GET() {
 
   try {
     if (!auth.session.restaurantId) {
-      return NextResponse.json({ error: "No restaurant context." }, { status: 400 });
+      return NextResponse.json([]);
     }
     const staff = await listStaffMembers(auth.session.restaurantId);
     return NextResponse.json(staff);

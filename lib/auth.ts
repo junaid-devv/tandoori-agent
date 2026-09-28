@@ -11,7 +11,14 @@ export type StaffRole = "super_admin" | "admin" | "branch_staff";
 
 export interface DashboardSession {
   userId: string;
-  restaurantId: string | null; // null for super_admin (cross-restaurant access)
+  restaurantId: string | null;
+  availableRestaurants?: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    logoUrl: string | null;
+    brandColor: string;
+  }>;
   email: string | null;
   fullName: string | null;
   role: StaffRole;
@@ -116,11 +123,17 @@ async function loadStaffProfile(userId: string): Promise<StaffProfileRow | null>
 
 async function loadAllowedBranches(userId: string, role: StaffRole, restaurantId: string | null): Promise<BranchSummary[]> {
   if (role === "super_admin") {
-    const { data, error } = await supabaseAdmin
+    let query = supabaseAdmin
       .from("branches")
       .select("id, slug, name, city, address")
       .eq("is_active", true)
       .order("name", { ascending: true });
+
+    if (restaurantId) {
+      query = query.eq("restaurant_id", restaurantId);
+    }
+
+    const { data, error } = await query;
 
     if (error) {
       console.error("[auth] Failed to load super admin branches:", error);
@@ -165,11 +178,11 @@ async function loadAllowedBranches(userId: string, role: StaffRole, restaurantId
       return branch
         ? {
             id: branch.id,
-          slug: branch.slug,
-          name: branch.name,
-          city: branch.city,
-          address: branch.address,
-        }
+            slug: branch.slug,
+            name: branch.name,
+            city: branch.city,
+            address: branch.address,
+          }
         : null;
     })
     .filter((branch): branch is BranchSummary => branch != null);
@@ -185,7 +198,39 @@ export const getDashboardSession = cache(async (): Promise<DashboardSession | nu
   const role: StaffRole = profile?.role ?? "admin";
   const fullName = profile?.full_name ?? (user.user_metadata?.full_name as string | undefined) ?? user.email?.split("@")[0] ?? "Administrator";
 
-  const allowedBranches = await loadAllowedBranches(user.id, role, profile?.restaurant_id ?? null);
+  let activeRestaurantId: string | null = profile?.restaurant_id ?? null;
+  let availableRestaurants: Array<{
+    id: string;
+    name: string;
+    slug: string;
+    logoUrl: string | null;
+    brandColor: string;
+  }> = [];
+
+  if (role === "super_admin") {
+    const { data: restaurants } = await supabaseAdmin
+      .from("restaurant_profiles")
+      .select("id, name, slug, logo_url, brand_color")
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+
+    availableRestaurants = (restaurants ?? []).map((r) => ({
+      id: r.id,
+      name: r.name,
+      slug: r.slug,
+      logoUrl: r.logo_url,
+      brandColor: r.brand_color,
+    }));
+
+    const cookieRestaurantId = cookieStore.get("dashboard-active-restaurant")?.value;
+    if (cookieRestaurantId && availableRestaurants.some((r) => r.id === cookieRestaurantId)) {
+      activeRestaurantId = cookieRestaurantId;
+    } else {
+      activeRestaurantId = availableRestaurants[0]?.id ?? null;
+    }
+  }
+
+  const allowedBranches = await loadAllowedBranches(user.id, role, activeRestaurantId);
   const defaultBranchId =
     profile?.default_branch_id && allowedBranches.some((branch) => branch.id === profile.default_branch_id)
       ? profile.default_branch_id
@@ -193,7 +238,8 @@ export const getDashboardSession = cache(async (): Promise<DashboardSession | nu
 
   return {
     userId: user.id,
-    restaurantId: profile?.restaurant_id ?? null,
+    restaurantId: activeRestaurantId,
+    availableRestaurants,
     email: user.email ?? null,
     fullName,
     role,

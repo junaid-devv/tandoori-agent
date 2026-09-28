@@ -43,7 +43,12 @@ const CONTEXT_PANEL_KEY = "dashboard-context-panel-open";
 const DashboardContext = createContext<DashboardContextValue | null>(null);
 
 function getInitialBranchId(session: DashboardSession, profile: RestaurantProfile): SelectedBranchId {
-  const adminCanViewAll = session.role === "admin" && profile.branch_mode === "multiple";
+  // If there's only 1 branch, always select it directly!
+  if (session.allowedBranches.length === 1) {
+    return session.allowedBranches[0].id;
+  }
+
+  const adminCanViewAll = (session.role === "admin" || session.role === "super_admin") && profile.branch_mode === "multiple";
   const profileDefaultBranchId =
     profile.default_branch_id && session.allowedBranches.some((branch) => branch.id === profile.default_branch_id)
       ? profile.default_branch_id
@@ -66,13 +71,16 @@ function resolveStoredBranchId(
   rawValue: string | null,
 ): SelectedBranchId | null {
   if (!rawValue) return null;
-  const adminCanViewAll = session.role === "admin" && profile.branch_mode === "multiple";
+  const adminCanViewAll = (session.role === "admin" || session.role === "super_admin") && profile.branch_mode === "multiple";
 
   if (!adminCanViewAll && rawValue === "all") {
     return null;
   }
 
   if (rawValue === "all") {
+    if (session.allowedBranches.length === 1) {
+      return session.allowedBranches[0].id;
+    }
     return adminCanViewAll ? "all" : null;
   }
 

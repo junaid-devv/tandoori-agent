@@ -10,6 +10,10 @@ interface CreateRestaurantBody {
   slug?: string;
   city?: string;
   brandColor?: string;
+  logoUrl?: string;
+  supportPhone?: string;
+  aiPersonality?: string;
+  menuDisplayMode?: "interactive_list" | "menu_pictures" | "text_only";
   primaryBranchName?: string;
   primaryBranchAddress?: string;
   adminEmail: string;
@@ -133,6 +137,11 @@ export async function POST(req: NextRequest) {
         slug,
         city,
         brand_color: brandColor,
+        logo_url: body.logoUrl?.trim() || null,
+        support_phone: body.supportPhone?.trim() || "",
+        delivery_phone: body.supportPhone?.trim() || "",
+        ai_personality: body.aiPersonality?.trim() || "Warm & Professional",
+        menu_display_mode: body.menuDisplayMode || "interactive_list",
         dashboard_title: `${name} Dashboard`,
         is_active: true,
       })
@@ -219,7 +228,7 @@ export async function POST(req: NextRequest) {
         branch_id: branch.id,
       });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       message: `Restaurant "${name}" created successfully! 🎉`,
       restaurant: {
@@ -239,6 +248,15 @@ export async function POST(req: NextRequest) {
         role: "admin",
       },
     });
+
+    response.cookies.set("dashboard-active-restaurant", restaurant.id, {
+      path: "/",
+      httpOnly: true,
+      sameSite: "lax",
+      maxAge: 60 * 60 * 24 * 30, // 30 days
+    });
+
+    return response;
   } catch (error) {
     return apiErrorResponse(error, {
       fallback: "Failed to create restaurant client.",

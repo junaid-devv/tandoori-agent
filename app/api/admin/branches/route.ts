@@ -21,7 +21,7 @@ export async function GET() {
 
   try {
     if (!auth.session.restaurantId) {
-      return NextResponse.json({ error: "No restaurant context." }, { status: 400 });
+      return NextResponse.json([]);
     }
     const branches = await listBranchesWithStats(auth.session.restaurantId);
     return NextResponse.json(branches);

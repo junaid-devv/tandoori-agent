@@ -31,13 +31,14 @@ import {
   Smartphone,
   UploadCloud,
   ExternalLink,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useDashboardContext } from "./DashboardProvider";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 import type { RestaurantProfile } from "@/lib/restaurant-profile-types";
 
-type Tab = "branding" | "branches" | "staff" | "ai_config" | "diagnostics" | "safety";
+type Tab = "restaurants" | "branding" | "branches" | "staff" | "ai_config" | "diagnostics" | "safety";
 
 type BranchSummary = {
   id: string;
@@ -107,10 +108,101 @@ function colorInputValue(value: string) {
 
 export default function AdminConsole() {
   const { session, profile, setProfile, selectedBranchId, selectedBranch, setSelectedBranchId, logout } = useDashboardContext();
-  const [tab, setTab] = useState<Tab>("branding");
+  const [tab, setTab] = useState<Tab>(session.role === "super_admin" ? "restaurants" : "branding");
   const [branches, setBranches] = useState<BranchSummary[]>([]);
   const [staff, setStaff] = useState<StaffSummary[]>([]);
   const [profileDraft, setProfileDraft] = useState<RestaurantProfile>(profile);
+
+  // Super Admin Tenant Management State
+  const [restaurants, setRestaurants] = useState<any[]>([]);
+  const [loadingRestaurants, setLoadingRestaurants] = useState(false);
+  const [showNewRestaurantModal, setShowNewRestaurantModal] = useState(false);
+  const [creatingRestaurant, setCreatingRestaurant] = useState(false);
+  const [newRestaurant, setNewRestaurant] = useState({
+    name: "",
+    city: "Islamabad",
+    brandColor: "#EA580C",
+    logoUrl: "",
+    supportPhone: "",
+    aiPersonality: "Warm & Professional",
+    menuDisplayMode: "interactive_list" as "interactive_list" | "menu_pictures" | "text_only",
+    primaryBranchName: "Main Branch",
+    primaryBranchAddress: "",
+    adminFullName: "",
+    adminEmail: "",
+    adminPassword: "",
+  });
+
+  const loadRestaurants = useCallback(async () => {
+    setLoadingRestaurants(true);
+    try {
+      const res = await fetch("/api/admin/restaurants");
+      if (res.ok) {
+        const data = await res.json();
+        setRestaurants(data);
+      }
+    } catch {
+      toast.error("Failed to load restaurants.");
+    } finally {
+      setLoadingRestaurants(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (session.role === "super_admin") {
+      void loadRestaurants();
+    }
+  }, [session.role, loadRestaurants]);
+
+  async function handleCreateNewRestaurant(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newRestaurant.name.trim()) {
+      toast.error("Restaurant name is required.");
+      return;
+    }
+    if (!newRestaurant.adminEmail.trim() || !newRestaurant.adminPassword.trim()) {
+      toast.error("Admin email and password are required.");
+      return;
+    }
+    if (newRestaurant.adminPassword.length < 8) {
+      toast.error("Password must be at least 8 characters.");
+      return;
+    }
+
+    setCreatingRestaurant(true);
+    try {
+      const res = await fetch("/api/admin/restaurants", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newRestaurant),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to create restaurant.");
+
+      toast.success(data.message || `Restaurant "${newRestaurant.name}" created! 🎉`);
+      setShowNewRestaurantModal(false);
+      window.location.reload();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to create restaurant.");
+    } finally {
+      setCreatingRestaurant(false);
+    }
+  }
+
+  async function handleSwitchTenant(restaurantId: string) {
+    try {
+      const res = await fetch("/api/admin/switch-restaurant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ restaurantId }),
+      });
+      if (!res.ok) throw new Error("Failed to switch restaurant.");
+      toast.success("Switched active restaurant!");
+      window.location.reload();
+    } catch {
+      toast.error("Failed to switch restaurant.");
+    }
+  }
 
   const [creatingBranch, setCreatingBranch] = useState(false);
   const [creatingStaff, setCreatingStaff] = useState(false);
@@ -342,9 +434,12 @@ export default function AdminConsole() {
     toast.success("Image URL added to draft. Click 'Save Profile' to persist.");
   }
 
-  if (session.role !== "admin") return null;
+  if (session.role !== "admin" && session.role !== "super_admin") return null;
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
+    ...(session.role === "super_admin"
+      ? [{ key: "restaurants" as Tab, label: "Client Tenants", icon: <Building2 size={15} /> }]
+      : []),
     { key: "branding", label: "Branding", icon: <Palette size={15} /> },
     { key: "branches", label: "Branches", icon: <GitBranch size={15} /> },
     { key: "staff", label: "Staff", icon: <Users size={15} /> },
@@ -426,7 +521,180 @@ export default function AdminConsole() {
         ))}
       </div>
 
-      {/* ────────── BRANCHES TAB ────────── */}
+      {/* ────────── CLIENT TENANTS TAB (SUPER ADMIN) ────────── */}
+      {tab === "restaurants" && session.role === "super_admin" && (
+        <section className="space-y-6">
+          {/* Header Card */}
+          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-bold text-slate-900">Client Restaurant Tenants</h2>
+                  <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-bold text-purple-800">
+                    {restaurants.length} {restaurants.length === 1 ? "Client" : "Clients"}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-slate-500">
+                  Manage multi-tenant client accounts. Create client credentials, configure custom logos, menu styles, and switch directly into any client&apos;s dashboard view to finalize configuration.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void loadRestaurants()}
+                  disabled={loadingRestaurants}
+                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
+                  title="Refresh clients list"
+                >
+                  <RefreshCw size={13} className={clsx(loadingRestaurants && "animate-spin")} />
+                  Refresh
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowNewRestaurantModal(true)}
+                  className="inline-flex items-center gap-2 rounded-xl bg-purple-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-purple-800"
+                >
+                  <Plus size={15} />
+                  Onboard New Restaurant
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Tenants Grid or Empty State */}
+          {loadingRestaurants ? (
+            <div className="flex h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white">
+              <Loader2 size={24} className="animate-spin text-purple-600" />
+            </div>
+          ) : restaurants.length === 0 ? (
+            <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-8 text-center sm:p-12">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-50 text-purple-600">
+                <Building2 size={28} />
+              </div>
+              <h3 className="mt-4 text-base font-bold text-slate-900">No Restaurant Clients Yet</h3>
+              <p className="mx-auto mt-1.5 max-w-md text-xs text-slate-500">
+                You haven&apos;t onboarded any restaurant clients yet. Create your first client with custom branding, initial branches, and administrator credentials.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowNewRestaurantModal(true)}
+                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-purple-700 px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-purple-800"
+              >
+                <Plus size={15} />
+                Onboard First Restaurant
+              </button>
+            </div>
+          ) : (
+            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+              {restaurants.map((rest) => {
+                const isCurrent = rest.id === session.restaurantId;
+                const branchCount = rest.branches?.length ?? 0;
+                const hasWhatsApp = rest.whatsapp_configs?.length > 0;
+
+                return (
+                  <div
+                    key={rest.id}
+                    className={clsx(
+                      "flex flex-col justify-between rounded-2xl border bg-white p-5 shadow-xs transition-all",
+                      isCurrent
+                        ? "border-purple-500 ring-2 ring-purple-100"
+                        : "border-slate-200 hover:border-slate-300"
+                    )}
+                  >
+                    <div>
+                      {/* Top Row: Brand Color & Active Status */}
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <div
+                            className="h-4 w-4 rounded-full border border-black/10 shadow-2xs shrink-0"
+                            style={{ backgroundColor: rest.brand_color || "#EA580C" }}
+                            title={`Brand color: ${rest.brand_color}`}
+                          />
+                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                            {rest.city || "Pakistan"}
+                          </span>
+                        </div>
+                        {isCurrent ? (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold text-purple-800">
+                            <span className="h-1.5 w-1.5 rounded-full bg-purple-600 animate-pulse" />
+                            Currently Active
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            Active Tenant
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Restaurant Title & Slug */}
+                      <div className="mt-3.5 flex items-start gap-3">
+                        {rest.logo_url ? (
+                          <img
+                            src={rest.logo_url}
+                            alt={rest.name}
+                            className="h-11 w-11 rounded-xl border border-slate-100 object-cover shrink-0 bg-slate-50"
+                            onError={(e) => {
+                              (e.target as HTMLElement).style.display = "none";
+                            }}
+                          />
+                        ) : (
+                          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-50 text-purple-700 shrink-0 font-bold text-base">
+                            {rest.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <h3 className="truncate font-bold text-slate-900 text-sm sm:text-base">
+                            {rest.name}
+                          </h3>
+                          <p className="truncate text-[11px] text-slate-400 font-mono">
+                            /{rest.slug}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Meta Pills */}
+                      <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
+                          <GitBranch size={12} className="text-slate-400" />
+                          <span>{branchCount} {branchCount === 1 ? "branch" : "branches"}</span>
+                        </div>
+                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
+                          <Radio size={12} className={hasWhatsApp ? "text-emerald-500" : "text-slate-400"} />
+                          <span>{hasWhatsApp ? "WhatsApp Live" : "WhatsApp Pending"}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bottom Action */}
+                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
+                      <span className="text-[10px] text-slate-400">
+                        ID: <span className="font-mono">{rest.id.slice(0, 8)}...</span>
+                      </span>
+                      {isCurrent ? (
+                        <span className="text-xs font-semibold text-purple-700">
+                          Viewing this restaurant
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void handleSwitchTenant(rest.id)}
+                          className="inline-flex items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700 transition hover:bg-purple-100"
+                        >
+                          Switch Dashboard
+                          <ChevronRight size={13} />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
+
+      {/* ────────── BRANDING TAB ────────── */}
       {tab === "branding" && (
         <section className="space-y-5">
           <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -1781,6 +2049,278 @@ export default function AdminConsole() {
             </div>
           </div>
         </section>
+      )}
+
+      {/* ────────── ONBOARD NEW RESTAURANT MODAL (SUPER ADMIN) ────────── */}
+      {showNewRestaurantModal && session.role === "super_admin" && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-xs">
+          <div className="relative my-8 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 text-purple-700">
+                  <Building2 size={18} />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-900">Onboard New Restaurant Client</h3>
+                  <p className="text-xs text-slate-400">Configure branding, initial branch, and create handover credentials.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowNewRestaurantModal(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleCreateNewRestaurant} className="max-h-[80vh] overflow-y-auto p-6 space-y-6">
+              {/* Section 1: Restaurant Identity */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-800 mb-3 flex items-center gap-1.5">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-100 text-[10px]">1</span>
+                  Restaurant Identity &amp; Branding
+                </h4>
+                <div className="grid gap-3.5 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <Field label="Restaurant Name *">
+                      <input
+                        required
+                        value={newRestaurant.name}
+                        onChange={(e) => setNewRestaurant({ ...newRestaurant, name: e.target.value })}
+                        className={inputCls}
+                        placeholder="e.g. Tandoori Nights or Cheezo Bites"
+                      />
+                    </Field>
+                  </div>
+
+                  <div>
+                    <Field label="City">
+                      <select
+                        value={newRestaurant.city}
+                        onChange={(e) => setNewRestaurant({ ...newRestaurant, city: e.target.value })}
+                        className={selectCls}
+                      >
+                        <option value="Islamabad">Islamabad</option>
+                        <option value="Rawalpindi">Rawalpindi</option>
+                        <option value="Lahore">Lahore</option>
+                        <option value="Karachi">Karachi</option>
+                        <option value="Peshawar">Peshawar</option>
+                      </select>
+                    </Field>
+                  </div>
+
+                  <div>
+                    <Field label="Brand Theme Color">
+                      <div className="flex gap-2">
+                        <input
+                          type="color"
+                          value={colorInputValue(newRestaurant.brandColor)}
+                          onChange={(e) => setNewRestaurant({ ...newRestaurant, brandColor: e.target.value.toUpperCase() })}
+                          className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1"
+                        />
+                        <input
+                          value={newRestaurant.brandColor}
+                          onChange={(e) => setNewRestaurant({ ...newRestaurant, brandColor: e.target.value })}
+                          className={inputCls}
+                          placeholder="#EA580C"
+                        />
+                      </div>
+                    </Field>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <Field label="Logo Image URL (Optional)">
+                      <div className="flex gap-2">
+                        <input
+                          value={newRestaurant.logoUrl}
+                          onChange={(e) => setNewRestaurant({ ...newRestaurant, logoUrl: e.target.value })}
+                          className={inputCls}
+                          placeholder="https://example.com/logo.png"
+                        />
+                        {newRestaurant.logoUrl && (
+                          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                            <img
+                              src={newRestaurant.logoUrl}
+                              alt="Preview"
+                              className="h-full w-full object-cover"
+                              onError={(e) => {
+                                (e.target as HTMLElement).style.display = "none";
+                              }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    </Field>
+                  </div>
+
+                  <div className="sm:col-span-2">
+                    <Field label="Support / WhatsApp Phone Number">
+                      <input
+                        value={newRestaurant.supportPhone}
+                        onChange={(e) => setNewRestaurant({ ...newRestaurant, supportPhone: e.target.value })}
+                        className={inputCls}
+                        placeholder="e.g. +923001234567"
+                      />
+                    </Field>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 2: Menu & AI Setup */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-800 mb-3 flex items-center gap-1.5">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-100 text-[10px]">2</span>
+                  WhatsApp Menu &amp; AI Tone
+                </h4>
+                <div className="grid gap-3.5 sm:grid-cols-2">
+                  <div>
+                    <Field label="Menu Display Mode">
+                      <select
+                        value={newRestaurant.menuDisplayMode}
+                        onChange={(e) =>
+                          setNewRestaurant({
+                            ...newRestaurant,
+                            menuDisplayMode: e.target.value as "interactive_list" | "menu_pictures" | "text_only",
+                          })
+                        }
+                        className={selectCls}
+                      >
+                        <option value="interactive_list">Interactive Buttons &amp; Lists</option>
+                        <option value="menu_pictures">Menu Pictures &amp; Flyers</option>
+                        <option value="text_only">Plain Text Formatted</option>
+                      </select>
+                    </Field>
+                  </div>
+
+                  <div>
+                    <Field label="AI Voice Tone">
+                      <select
+                        value={newRestaurant.aiPersonality}
+                        onChange={(e) => setNewRestaurant({ ...newRestaurant, aiPersonality: e.target.value })}
+                        className={selectCls}
+                      >
+                        <option value="Warm & Professional">Warm &amp; Professional</option>
+                        <option value="Fast & Direct">Fast &amp; Direct</option>
+                        <option value="Friendly & Casual">Friendly &amp; Casual</option>
+                        <option value="Premium & Polished">Premium &amp; Polished</option>
+                      </select>
+                    </Field>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: Primary Branch */}
+              <div>
+                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-800 mb-3 flex items-center gap-1.5">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-100 text-[10px]">3</span>
+                  Primary Branch Outlet
+                </h4>
+                <div className="grid gap-3.5 sm:grid-cols-2">
+                  <div>
+                    <Field label="Primary Branch Name">
+                      <input
+                        value={newRestaurant.primaryBranchName}
+                        onChange={(e) => setNewRestaurant({ ...newRestaurant, primaryBranchName: e.target.value })}
+                        className={inputCls}
+                        placeholder="e.g. Main Branch or F-7 Markaz"
+                      />
+                    </Field>
+                  </div>
+                  <div>
+                    <Field label="Branch Physical Address">
+                      <input
+                        value={newRestaurant.primaryBranchAddress}
+                        onChange={(e) => setNewRestaurant({ ...newRestaurant, primaryBranchAddress: e.target.value })}
+                        className={inputCls}
+                        placeholder="e.g. Shop 4, Jinnah Super Market"
+                      />
+                    </Field>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 4: Client Admin Credentials */}
+              <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-4">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-900 mb-3 flex items-center gap-1.5">
+                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-200 text-purple-900 text-[10px]">4</span>
+                  Client Admin Login Credentials (To Handover)
+                </h4>
+                <p className="text-[11px] text-purple-700 mb-3">
+                  These credentials will allow the restaurant owner or manager to log into their dashboard. They will only see their own restaurant.
+                </p>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <div>
+                    <Field label="Admin Full Name">
+                      <input
+                        value={newRestaurant.adminFullName}
+                        onChange={(e) => setNewRestaurant({ ...newRestaurant, adminFullName: e.target.value })}
+                        className={inputCls}
+                        placeholder="e.g. Rashid Khan"
+                      />
+                    </Field>
+                  </div>
+                  <div>
+                    <Field label="Admin Email *">
+                      <input
+                        required
+                        type="email"
+                        value={newRestaurant.adminEmail}
+                        onChange={(e) => setNewRestaurant({ ...newRestaurant, adminEmail: e.target.value })}
+                        className={inputCls}
+                        placeholder="owner@restaurant.com"
+                      />
+                    </Field>
+                  </div>
+                  <div>
+                    <Field label="Admin Password *">
+                      <input
+                        required
+                        type="password"
+                        minLength={8}
+                        value={newRestaurant.adminPassword}
+                        onChange={(e) => setNewRestaurant({ ...newRestaurant, adminPassword: e.target.value })}
+                        className={inputCls}
+                        placeholder="Min. 8 characters"
+                      />
+                    </Field>
+                  </div>
+                </div>
+              </div>
+
+              {/* Footer Actions */}
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowNewRestaurantModal(false)}
+                  disabled={creatingRestaurant}
+                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={creatingRestaurant}
+                  className="inline-flex items-center gap-2 rounded-xl bg-purple-700 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-purple-800 transition disabled:opacity-50"
+                >
+                  {creatingRestaurant ? (
+                    <>
+                      <Loader2 size={14} className="animate-spin" />
+                      Provisioning Client...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle2 size={14} />
+                      Create Restaurant &amp; Provision Admin
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
     </div>
   );
