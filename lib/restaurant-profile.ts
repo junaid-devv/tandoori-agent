@@ -38,7 +38,7 @@ export function getFallbackRestaurantProfile(): RestaurantProfile {
     ai_personality_default: "Warm & Professional",
     menu_display_mode: (process.env.MENU_DISPLAY_MODE as MenuDisplayMode) || "interactive_list",
     menu_card_images: process.env.MENU_CARD_IMAGES ? JSON.parse(process.env.MENU_CARD_IMAGES) : [],
-    whatsapp_provider: (process.env.WHATSAPP_PROVIDER as "meta" | "wa_akg" | "none") || "none",
+    whatsapp_provider: (process.env.WHATSAPP_PROVIDER as "meta" | "none") || "meta",
   };
 }
 
@@ -70,7 +70,7 @@ function normalizeProfileRow(row: Partial<RestaurantProfile> | null | undefined)
     ai_personality_default: row.ai_personality_default?.trim() || fallback.ai_personality_default,
     menu_display_mode: (["interactive_list", "menu_pictures", "text_only"].includes(row.menu_display_mode as string) ? row.menu_display_mode : fallback.menu_display_mode) as MenuDisplayMode,
     menu_card_images: Array.isArray(row.menu_card_images) ? row.menu_card_images : fallback.menu_card_images,
-    whatsapp_provider: (["meta", "wa_akg", "none"].includes(row.whatsapp_provider as string) ? row.whatsapp_provider : fallback.whatsapp_provider) as "meta" | "wa_akg" | "none",
+    whatsapp_provider: (["meta", "none"].includes(row.whatsapp_provider as string) ? row.whatsapp_provider : "meta") as "meta" | "none",
   };
 }
 
@@ -109,7 +109,7 @@ function validateBranchMode(value: unknown): BranchMode {
 
 export function validateRestaurantProfileInput(input: Partial<RestaurantProfile>) {
   const VALID_DISPLAY_MODES = new Set(["interactive_list", "menu_pictures", "text_only"]);
-  const VALID_WA_PROVIDERS = new Set(["meta", "wa_akg", "none"]);
+  const VALID_WA_PROVIDERS = new Set(["meta", "none"]);
 
   const base: Record<string, unknown> = {
     app_name: validateRequiredText(input.app_name, "Restaurant name", 80),
@@ -145,7 +145,7 @@ export function validateRestaurantProfileInput(input: Partial<RestaurantProfile>
   if (input.whatsapp_provider !== undefined) {
     const provider = String(input.whatsapp_provider).trim();
     if (!VALID_WA_PROVIDERS.has(provider)) {
-      throw new ApiRequestError("WhatsApp provider must be meta, wa_akg, or none.", 400);
+      throw new ApiRequestError("WhatsApp provider must be meta or none.", 400);
     }
     base.whatsapp_provider = provider;
   }

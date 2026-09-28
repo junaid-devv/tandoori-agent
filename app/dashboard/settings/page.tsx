@@ -350,8 +350,8 @@ export default function SettingsPage() {
             <Phone size={18} />
           </div>
           <div>
-            <h4 className="text-xs sm:text-sm font-bold text-emerald-950">WhatsApp Bot & QR Connection Hub</h4>
-            <p className="text-[11px] text-emerald-700">Scan QR codes, connect phone numbers, and monitor gateway status directly.</p>
+            <h4 className="text-xs sm:text-sm font-bold text-emerald-950">Meta WhatsApp Cloud API & Coexistence Hub</h4>
+            <p className="text-[11px] text-emerald-700">Manage your official Meta WhatsApp Business connection, Embedded Signup, and phone app coexistence.</p>
           </div>
         </div>
         <Link

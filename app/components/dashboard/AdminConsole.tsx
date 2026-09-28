@@ -801,19 +801,13 @@ export default function AdminConsole() {
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 {[
                   {
-                    value: "wa_akg",
-                    title: "WA-AKG (Self-Hosted)",
-                    badge: "Baileys Web",
-                    body: "Self-hosted WhatsApp Web session with QR code connection on port 3001.",
-                  },
-                  {
                     value: "meta",
-                    title: "Meta Cloud API",
-                    badge: "Official API",
-                    body: "Official Meta WhatsApp Business Cloud API with phone number ID and webhook.",
+                    title: "Meta Cloud API (Official)",
+                    badge: "Coexistence Active",
+                    body: "Official Meta WhatsApp Business Cloud API with Embedded Signup, Coexistence, and Webhooks.",
                   },
                   {
                     value: "none",

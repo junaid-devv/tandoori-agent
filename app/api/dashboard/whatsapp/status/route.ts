@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/branch-request";
 import { apiErrorResponse } from "@/lib/api-utils";
-import { getWaAkgFullStatus } from "@/lib/wa-akg-client";
-import { isWaAkgProvider } from "@/lib/whatsapp";
+import { getRestaurantProfile } from "@/lib/restaurant-profile";
 
 export const dynamic = "force-dynamic";
 
@@ -13,23 +12,64 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const isWaAkg = isWaAkgProvider();
-    const waAkgStatus = await getWaAkgFullStatus();
+    const profile = await getRestaurantProfile();
+    const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || null;
+    const token = process.env.WHATSAPP_ACCESS_TOKEN || "";
+    const wabaId = process.env.WHATSAPP_WABA_ID || null;
+    const appId = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || null;
+    const configId = process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID || process.env.WHATSAPP_CONFIG_ID || null;
 
-    const metaConfigured = Boolean(
-      process.env.WHATSAPP_PHONE_NUMBER_ID &&
-      process.env.WHATSAPP_ACCESS_TOKEN &&
-      process.env.WHATSAPP_ACCESS_TOKEN.length > 20
+    const isMetaConfigured = Boolean(
+      phoneId &&
+      token &&
+      token.length > 20
     );
 
+    let displayPhoneNumber: string | null = null;
+    let verifiedName: string | null = null;
+    let qualityRating: string | null = null;
+    let status: string = isMetaConfigured ? "CONNECTED" : "NOT_CONFIGURED";
+
+    // Optionally probe Meta Graph API to verify live token and phone status
+    if (isMetaConfigured && phoneId) {
+      try {
+        const metaRes = await fetch(
+          `https://graph.facebook.com/v22.0/${encodeURIComponent(phoneId)}?fields=verified_name,display_phone_number,quality_rating,code_verification_status`,
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            cache: "no-store",
+          }
+        );
+        if (metaRes.ok) {
+          const metaData = await metaRes.json();
+          displayPhoneNumber = metaData.display_phone_number || null;
+          verifiedName = metaData.verified_name || null;
+          qualityRating = metaData.quality_rating || null;
+          status = "CONNECTED";
+        } else {
+          status = "AUTH_ERROR";
+        }
+      } catch {
+        // Network timeout / offline
+      }
+    }
+
     return NextResponse.json({
-      activeProvider: isWaAkg ? "wa_akg" : "meta",
+      activeProvider: "meta",
+      whatsappEnabled: profile.whatsapp_provider !== "none",
       metaConfig: {
-        configured: metaConfigured,
-        phoneNumberId: process.env.WHATSAPP_PHONE_NUMBER_ID || null,
+        configured: isMetaConfigured,
+        status,
+        phoneNumberId: phoneId,
+        wabaId,
+        appId,
+        configId,
+        displayPhoneNumber: displayPhoneNumber || profile.delivery_phone || null,
+        verifiedName: verifiedName || profile.app_name || null,
+        qualityRating,
         verifyTokenSet: Boolean(process.env.WHATSAPP_VERIFY_TOKEN),
+        coexistenceEnabled: true,
       },
-      waAkg: waAkgStatus,
     });
   } catch (error) {
     return apiErrorResponse(error, {

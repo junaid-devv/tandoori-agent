@@ -56,11 +56,6 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs = WH
   }
 }
 
-export function isWaAkgProvider(): boolean {
-  const provider = (process.env.WHATSAPP_PROVIDER || "").trim().toLowerCase();
-  return provider === "wa_akg" || provider === "wa-akg";
-}
-
 // Set of message IDs recently sent by our bot (to avoid self-echo processing)
 const sentMessageIds = new Map<string, number>(); // messageId -> timestamp
 const SENT_MESSAGE_TTL_MS = 10 * 60 * 1000; // 10 minutes
@@ -90,84 +85,6 @@ export function isBotSentMessageId(messageId: string | null | undefined): boolea
   return true;
 }
 
-function normalizeWaJid(to: string): string {
-  if (to.includes("@")) return to;
-  const digits = to.replace(/[^0-9]/g, "");
-  return `${digits}@s.whatsapp.net`;
-}
-
-async function sendWaAkgMessage(to: string, body: string): Promise<WhatsAppSendResult> {
-  const baseUrl = (process.env.WA_AKG_BASE_URL || "http://localhost:3001").replace(/\/+$/, "");
-  const apiKey = process.env.WA_AKG_API_KEY || "";
-  const sessionId = process.env.WA_AKG_SESSION_ID || "default";
-  const jid = normalizeWaJid(to);
-
-  const response = await fetchWithTimeout(
-    `${baseUrl}/api/messages/${encodeURIComponent(sessionId)}/${encodeURIComponent(jid)}/send`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { "X-API-Key": apiKey } : {}),
-      },
-      body: JSON.stringify({
-        message: {
-          text: body,
-        },
-      }),
-    },
-  );
-
-  const data = (await response.json().catch(() => ({}))) as Record<string, any>;
-  if (!response.ok) {
-    throw new Error(data?.error || data?.message || `WA-AKG send failed with status ${response.status}`);
-  }
-
-  const messageId = data?.data?.key?.id || data?.id || `wa-akg-${Date.now()}`;
-  recordSentMessageId(messageId);
-
-  return {
-    messageId,
-    raw: data,
-  };
-}
-
-async function sendWaAkgImage(to: string, imageUrl: string, caption?: string): Promise<WhatsAppSendResult> {
-  const baseUrl = (process.env.WA_AKG_BASE_URL || "http://localhost:3001").replace(/\/+$/, "");
-  const apiKey = process.env.WA_AKG_API_KEY || "";
-  const sessionId = process.env.WA_AKG_SESSION_ID || "default";
-  const jid = normalizeWaJid(to);
-
-  const response = await fetchWithTimeout(
-    `${baseUrl}/api/messages/${encodeURIComponent(sessionId)}/${encodeURIComponent(jid)}/send`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { "X-API-Key": apiKey } : {}),
-      },
-      body: JSON.stringify({
-        message: {
-          image: { url: imageUrl },
-          ...(caption ? { caption } : {}),
-        },
-      }),
-    },
-  );
-
-  const data = (await response.json().catch(() => ({}))) as Record<string, any>;
-  if (!response.ok) {
-    throw new Error(data?.error || data?.message || `WA-AKG image send failed with status ${response.status}`);
-  }
-
-  const messageId = data?.data?.key?.id || data?.id || `wa-akg-${Date.now()}`;
-  recordSentMessageId(messageId);
-  return {
-    messageId,
-    raw: data,
-  };
-}
-
 export async function sendWhatsAppMessage(to: string, body: string, phoneNumberId?: string): Promise<WhatsAppSendResult> {
   if (process.env.MOCK_WHATSAPP === "true") {
     console.log(`[MOCK WHATSAPP] Sending text message to ${to}:`, body);
@@ -175,10 +92,6 @@ export async function sendWhatsAppMessage(to: string, body: string, phoneNumberI
       messageId: `wamid.mockText${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
       raw: { mock: true },
     };
-  }
-
-  if (isWaAkgProvider()) {
-    return sendWaAkgMessage(to, body);
   }
 
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
@@ -227,8 +140,11 @@ export async function sendWhatsAppMessage(to: string, body: string, phoneNumberI
         throw error;
       }
 
+      const sentId = data.messages?.[0]?.id ?? null;
+      recordSentMessageId(sentId);
+
       return {
-        messageId: data.messages?.[0]?.id ?? null,
+        messageId: sentId,
         raw: data,
       };
     } catch (error) {
@@ -255,10 +171,6 @@ export async function sendWhatsAppImage(
       messageId: `wamid.mockImg${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
       raw: { mock: true },
     };
-  }
-
-  if (isWaAkgProvider()) {
-    return sendWaAkgImage(to, imageUrl, caption);
   }
 
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
@@ -370,29 +282,6 @@ export async function sendWhatsAppInteractiveList(
     };
   }
 
-  if (isWaAkgProvider()) {
-    const listBody = payload.body.trim();
-    const rows = payload.rows.slice(0, 8);
-
-    // If listBody already lists these items (e.g. from disambiguation text),
-    // don't duplicate them below
-    const alreadyListsItems = rows.length > 0 && rows.some((r) => listBody.includes(r.title));
-    if (alreadyListsItems) {
-      return sendWaAkgMessage(to, `${listBody}\n\n_Reply with number or name_`);
-    }
-
-    const section = payload.sectionTitle ? `*${payload.sectionTitle.trim()}*:\n` : "";
-    const formattedRows = rows
-      .map((r, i) => `${i + 1}. *${r.title}*${r.description ? ` (${r.description.replace(/\s+/g, " ").trim()})` : ""}`)
-      .join("\n");
-
-    const fullText = listBody
-      ? `${listBody}\n\n${section}${formattedRows}\n\n_Reply with number or name_`
-      : `${section}${formattedRows}\n\n_Reply with number or name_`;
-
-    return sendWaAkgMessage(to, fullText);
-  }
-
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
@@ -464,8 +353,11 @@ export async function sendWhatsAppInteractiveList(
         throw error;
       }
 
+      const sentId = data.messages?.[0]?.id ?? null;
+      recordSentMessageId(sentId);
+
       return {
-        messageId: data.messages?.[0]?.id ?? null,
+        messageId: sentId,
         raw: data,
       };
     } catch (error) {
@@ -491,28 +383,6 @@ export async function sendWhatsAppReplyButtons(
       messageId: `wamid.mockBtn${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
       raw: { mock: true },
     };
-  }
-
-  if (isWaAkgProvider()) {
-    const body = payload.body.trim();
-    const count = payload.buttons.length;
-
-    if (count === 1) {
-      const btn = payload.buttons[0];
-      const fullText = `${body}\n\n_Type *1* for ${btn.title}, ya direct apna order batayein._`;
-      return sendWaAkgMessage(to, fullText);
-    }
-
-    if (count === 2) {
-      const b1 = payload.buttons[0];
-      const b2 = payload.buttons[1];
-      const fullText = `${body}\n\n👉 *1* - ${b1.title}  |  *2* - ${b2.title}\n_(Reply *1* ya *2*)_`;
-      return sendWaAkgMessage(to, fullText);
-    }
-
-    const btnLines = payload.buttons.map((b, i) => `*${i + 1}* - ${b.title}`).join("\n");
-    const fullText = `${body}\n\n${btnLines}\n\n_Reply with number (1-${count})_`;
-    return sendWaAkgMessage(to, fullText);
   }
 
   const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;

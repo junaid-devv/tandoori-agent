@@ -49,13 +49,16 @@ import {
   recordWebhookEvent,
 } from "@/lib/webhook-events";
 import {
+  downloadWhatsAppMedia,
+  getWhatsAppMediaUrl,
+  isBotSentMessageId,
+  recordSentMessageId,
   sendWhatsAppInteractiveList,
   sendWhatsAppMessage,
 } from "@/lib/whatsapp";
 import { normalizeText } from "@/lib/order-text-utils";
 import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import type { LanguagePreference } from "@/lib/schema.types";
-import { downloadWhatsAppMedia, getWhatsAppMediaUrl } from "@/lib/whatsapp";
 import { processUniversityWebhookMessage } from "@/lib/university/pipeline";
 
 export const runtime = "nodejs";
@@ -69,9 +72,12 @@ const ORDER_FRESH_START_AFTER_INACTIVITY_MS = 2 * 60 * 60 * 1000; // 2 hours
 type IncomingWhatsAppMessage = {
   id: string;
   from: string;
+  to?: string;
+  recipient_id?: string;
   type: string;
   timestamp: string;
   text?: { body?: string };
+  image?: { id?: string; mime_type?: string; caption?: string };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
   interactive?: {
     type?: "button_reply" | "list_reply";
@@ -90,12 +96,16 @@ type IncomingWhatsAppStatus = {
 
 type IncomingEnvelope = {
   entry?: Array<{
+    id?: string;
     changes?: Array<{
+      field?: string;
       value?: {
+        messaging_product?: string;
         metadata?: { phone_number_id?: string; display_phone_number?: string };
-        contacts?: Array<{ profile?: { name?: string } }>;
+        contacts?: Array<{ profile?: { name?: string }; wa_id?: string }>;
         messages?: IncomingWhatsAppMessage[];
         statuses?: IncomingWhatsAppStatus[];
+        message_echoes?: IncomingWhatsAppMessage[];
       };
     }>;
   }>;
@@ -203,6 +213,20 @@ async function processWebhook(body: unknown) {
     await updateDeliveryStatuses(statusEvents);
   }
 
+  // Fetch branches + profile in parallel with short process-level cache
+  const [branches, profile] = await Promise.all([getCachedBranches(), getCachedProfile()]);
+
+  // 2) Coexistence: smb_message_echoes (owner replied manually from WhatsApp Business phone app)
+  const echoes = extractEchoes(body);
+  for (const { message, customerPhone } of echoes) {
+    try {
+      await processEchoMessage(message, customerPhone, branches, profile);
+    } catch (error) {
+      console.error("[webhook-coexistence] Failed to process echo:", { customerPhone, error });
+    }
+  }
+
+  // 3) Normal incoming customer messages
   const events = extractMessages(body);
   if (events.length === 0) return;
 
@@ -227,8 +251,6 @@ async function processWebhook(body: unknown) {
     return;
   }
 
-  // Fetch branches + profile in parallel with short process-level cache
-  const [branches, profile] = await Promise.all([getCachedBranches(), getCachedProfile()]);
   const cityGroups = await buildCityBranchGroups(branches);
 
   for (const { message, contactName } of events) {
@@ -238,6 +260,92 @@ async function processWebhook(body: unknown) {
       console.error("[webhook] Failed to process message:", { from: message.from, error });
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// Coexistence Echo Processing (Restaurant Owner replying from Phone App)
+// ---------------------------------------------------------------------------
+async function processEchoMessage(
+  message: IncomingWhatsAppMessage,
+  customerPhone: string,
+  branches: BranchRecord[],
+  profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
+) {
+  recordSentMessageId(message.id);
+
+  const contact = await upsertContact(customerPhone, "");
+  let activeBranch: BranchRecord | null = contact.active_branch_id
+    ? (branches.find((b) => b.id === contact.active_branch_id) ?? null)
+    : null;
+
+  if (!activeBranch && profile.branch_mode !== "multiple") {
+    const def = pickDefaultBranch(branches, profile.default_branch_id ?? null);
+    if (def) {
+      await contactRepo.setActiveBranch(contact.id, def.id);
+      contact.active_branch_id = def.id;
+      activeBranch = def;
+    }
+  }
+
+  if (!activeBranch && branches.length > 0) {
+    activeBranch = branches[0];
+  }
+
+  if (!activeBranch) {
+    console.warn("[webhook-coexistence] No branch available for customer echo:", customerPhone);
+    return;
+  }
+
+  const conversation = await conversationRepo.ensure({
+    contactId: contact.id,
+    branchId: activeBranch.id,
+    phone: customerPhone,
+    name: contact.name,
+  });
+
+  const content =
+    message.text?.body?.trim() ||
+    (message.type === "image"
+      ? `[Image: ${message.image?.caption || "Sent from phone"}]`
+      : `[Sent from phone: ${message.type}]`);
+
+  const existing = await messageRepo.getByWhatsappId(message.id);
+  if (existing) return;
+
+  await messageRepo.insert({
+    conversationId: conversation.id,
+    role: "assistant",
+    senderKind: "human",
+    content,
+    whatsappMsgId: message.id,
+    deliveryStatus: "sent",
+    metadata: {
+      source: "coexistence_echo",
+      sender_device: "whatsapp_business_mobile_app",
+      timestamp: message.timestamp,
+    },
+  });
+
+  // Hand off to human: pause AI bot turns so owner has uninterrupted control
+  const now = new Date().toISOString();
+  await supabaseAdmin
+    .from("conversations")
+    .update({
+      mode: "human",
+      has_unread: false,
+      updated_at: now,
+    })
+    .eq("id", conversation.id);
+
+  await stateRepo.patch(conversation.id, {
+    stage: "human",
+    is_bot_active: false,
+    escalation_reason: "Manual reply from WhatsApp Business mobile app (Coexistence)",
+    escalated_at: now,
+    last_intent: "human_manual_reply",
+  });
+
+  console.log(`[webhook-coexistence] Recorded owner reply to ${customerPhone}: "${content}". Bot paused.`);
 }
 
 // ---------------------------------------------------------------------------
@@ -807,11 +915,41 @@ function extractMessages(body: unknown): Array<{ message: IncomingWhatsAppMessag
   const out: Array<{ message: IncomingWhatsAppMessage; contactName: string; phoneNumberId?: string }> = [];
   for (const entry of envelope.entry ?? []) {
     for (const change of entry.changes ?? []) {
+      const field = change.field;
+      // Ignore coexistence echoes and sync events here (handled separately)
+      if (field === "smb_message_echoes" || field === "history" || field === "smb_app_state_sync") {
+        continue;
+      }
       const value = change.value;
       const contactName = value?.contacts?.[0]?.profile?.name ?? "";
       const phoneNumberId = value?.metadata?.phone_number_id;
       for (const msg of value?.messages ?? []) {
+        if (isBotSentMessageId(msg.id)) continue;
         out.push({ message: msg, contactName, phoneNumberId });
+      }
+    }
+  }
+  return out;
+}
+
+function extractEchoes(body: unknown): Array<{ message: IncomingWhatsAppMessage; customerPhone: string; phoneNumberId?: string }> {
+  const envelope = body as IncomingEnvelope;
+  const out: Array<{ message: IncomingWhatsAppMessage; customerPhone: string; phoneNumberId?: string }> = [];
+  for (const entry of envelope.entry ?? []) {
+    for (const change of entry.changes ?? []) {
+      const isEchoField = change.field === "smb_message_echoes";
+      const value = change.value;
+      const msgs = value?.message_echoes || (isEchoField ? value?.messages : []);
+      if (!msgs || msgs.length === 0) continue;
+
+      const phoneNumberId = value?.metadata?.phone_number_id;
+      const defaultRecipient = value?.contacts?.[0]?.wa_id || "";
+
+      for (const msg of msgs) {
+        if (isBotSentMessageId(msg.id)) continue;
+        const customerPhone = msg.to || msg.recipient_id || defaultRecipient;
+        if (!customerPhone) continue;
+        out.push({ message: msg, customerPhone, phoneNumberId });
       }
     }
   }
