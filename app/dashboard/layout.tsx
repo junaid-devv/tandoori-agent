@@ -13,10 +13,8 @@ export default async function DashboardLayout({ children }: { children: React.Re
     return <>{children}</>;
   }
 
-  const [session, profile] = await Promise.all([
-    requireDashboardSession(),
-    getRestaurantProfile(),
-  ]);
+  const session = await requireDashboardSession();
+  const profile = await getRestaurantProfile(session.restaurantId ?? undefined);
 
   return (
     <DashboardProvider session={session} profile={profile}>

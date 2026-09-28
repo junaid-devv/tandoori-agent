@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Read current profile and append new image URLs
-    const currentProfile = await getRestaurantProfile();
+    const currentProfile = await getRestaurantProfile(auth.session.restaurantId ?? undefined);
     const existingImages = Array.isArray(currentProfile.menu_card_images) ? currentProfile.menu_card_images : [];
     const updatedImages = [...existingImages, ...uploadedUrls];
 
@@ -102,14 +102,14 @@ export async function POST(req: NextRequest) {
         menu_display_mode: "menu_pictures",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", "default");
+      .eq("id", auth.session.restaurantId);
 
     if (dbError) {
       console.error("[menu-images] DB update error:", dbError);
       throw new Error(`Failed to update restaurant profile: ${dbError.message}`);
     }
 
-    invalidateCache("restaurant_profile:default");
+    invalidateCache(`restaurant_profile:${auth.session.restaurantId}`);
 
     return NextResponse.json({
       success: true,
@@ -138,7 +138,7 @@ export async function DELETE(req: NextRequest) {
       return NextResponse.json({ error: "Image URL is required." }, { status: 400 });
     }
 
-    const currentProfile = await getRestaurantProfile();
+    const currentProfile = await getRestaurantProfile(auth.session.restaurantId ?? undefined);
     const existingImages = Array.isArray(currentProfile.menu_card_images) ? currentProfile.menu_card_images : [];
     const updatedImages = existingImages.filter((img) => img !== imageUrl);
 
@@ -149,7 +149,7 @@ export async function DELETE(req: NextRequest) {
         menu_card_images: updatedImages,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", "default");
+      .eq("id", auth.session.restaurantId);
 
     if (dbError) {
       throw new Error(`Failed to update restaurant profile: ${dbError.message}`);
@@ -163,7 +163,7 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
-    invalidateCache("restaurant_profile:default");
+    invalidateCache(`restaurant_profile:${auth.session.restaurantId}`);
 
     return NextResponse.json({
       success: true,

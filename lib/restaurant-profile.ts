@@ -153,43 +153,54 @@ export function validateRestaurantProfileInput(input: Partial<RestaurantProfile>
   return base;
 }
 
-export async function getRestaurantProfile(): Promise<RestaurantProfile> {
-  const cached = getCached<RestaurantProfile>(PROFILE_CACHE_KEY);
+export async function getRestaurantProfile(restaurantId?: string): Promise<RestaurantProfile> {
+  const profileId = restaurantId || DEFAULT_PROFILE_ID;
+  const cacheKey = `restaurant_profile:${profileId}`;
+  const cached = getCached<RestaurantProfile>(cacheKey);
   if (cached) return cached;
 
   try {
-    const { data, error } = await supabaseAdmin
-      .from("restaurant_profiles")
-      .select("*")
-      .eq("id", DEFAULT_PROFILE_ID)
-      .maybeSingle();
+    let query = supabaseAdmin.from("restaurant_profiles").select("*");
+    
+    if (restaurantId) {
+      query = query.eq("id", restaurantId);
+    } else {
+      // Cross-restaurant or no specific restaurant: load first active profile
+      query = query.order("created_at", { ascending: true }).limit(1);
+    }
+    
+    const { data, error } = await query.maybeSingle();
 
-    if (error) {
-      console.warn("[restaurant-profile] Falling back to env defaults:", error.message);
+    if (error && restaurantId) {
+      console.warn(`[restaurant-profile] Failed to load profile ${restaurantId}:`, error.message);
+      throw error;
+    } else if (error || !data) {
+      console.warn("[restaurant-profile] Falling back to env defaults:", error?.message || "No profile found");
       const fallback = getFallbackRestaurantProfile();
-      setCached(PROFILE_CACHE_KEY, fallback, PROFILE_CACHE_TTL_MS);
+      setCached(cacheKey, fallback, PROFILE_CACHE_TTL_MS);
       return fallback;
     }
 
     const profile = normalizeProfileRow(data);
-    setCached(PROFILE_CACHE_KEY, profile, PROFILE_CACHE_TTL_MS);
+    setCached(cacheKey, profile, PROFILE_CACHE_TTL_MS);
     return profile;
   } catch (error) {
     console.warn("[restaurant-profile] Falling back to env defaults:", error);
     const fallback = getFallbackRestaurantProfile();
-    setCached(PROFILE_CACHE_KEY, fallback, PROFILE_CACHE_TTL_MS);
+    setCached(cacheKey, fallback, PROFILE_CACHE_TTL_MS);
     return fallback;
   }
 }
 
-export async function updateRestaurantProfile(input: Partial<RestaurantProfile>) {
+export async function updateRestaurantProfile(restaurantId: string, input: Partial<RestaurantProfile>) {
   const validated = validateRestaurantProfileInput(input);
+  const cacheKey = `restaurant_profile:${restaurantId}`;
 
   const { data, error } = await supabaseAdmin
     .from("restaurant_profiles")
     .upsert(
       {
-        id: DEFAULT_PROFILE_ID,
+        id: restaurantId,
         ...validated,
         updated_at: new Date().toISOString(),
       },
@@ -203,7 +214,7 @@ export async function updateRestaurantProfile(input: Partial<RestaurantProfile>)
   }
 
   const profile = normalizeProfileRow(data);
-  invalidateCache(PROFILE_CACHE_KEY);
-  setCached(PROFILE_CACHE_KEY, profile, PROFILE_CACHE_TTL_MS);
+  invalidateCache(cacheKey);
+  setCached(cacheKey, profile, PROFILE_CACHE_TTL_MS);
   return profile;
 }

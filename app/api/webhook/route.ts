@@ -25,6 +25,7 @@ import { sendAndPersistAssistantMessage } from "@/lib/assistant-dispatcher";
 import { getMenuCatalog } from "@/lib/menu";
 import { getRestaurantSettings } from "@/lib/settings";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
+import { getRestaurantByPhoneNumberId, type RestaurantContext } from "@/lib/restaurant-resolver";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { saveCustomerAddressFromOrder, updateCustomerOrderStats } from "@/lib/customer-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -189,20 +190,23 @@ async function processWebhookEventInBackground(eventId: string) {
 // These rarely change and are safe to cache for a few seconds across concurrent
 // requests. Full invalidation on admin save handles correctness.
 // ---------------------------------------------------------------------------
-let _branchesCache: { data: BranchRecord[]; at: number } | null = null;
-let _profileCache: { data: Awaited<ReturnType<typeof getRestaurantProfile>>; at: number } | null = null;
+const _branchesCacheMap = new Map<string, { data: BranchRecord[]; at: number }>();
+const _profileCacheMap = new Map<string, { data: Awaited<ReturnType<typeof getRestaurantProfile>>; at: number }>();
 const BRANCH_CACHE_MS = 10_000; // 10 seconds
 
-async function getCachedBranches(): Promise<BranchRecord[]> {
-  if (_branchesCache && Date.now() - _branchesCache.at < BRANCH_CACHE_MS) return _branchesCache.data;
-  const data = await getActiveBranches();
-  _branchesCache = { data, at: Date.now() };
+async function getCachedBranches(restaurantId: string): Promise<BranchRecord[]> {
+  const cached = _branchesCacheMap.get(restaurantId);
+  if (cached && Date.now() - cached.at < BRANCH_CACHE_MS) return cached.data;
+  const data = await getActiveBranches(restaurantId);
+  _branchesCacheMap.set(restaurantId, { data, at: Date.now() });
   return data;
 }
-async function getCachedProfile(): Promise<Awaited<ReturnType<typeof getRestaurantProfile>>> {
-  if (_profileCache && Date.now() - _profileCache.at < BRANCH_CACHE_MS) return _profileCache.data;
-  const data = await getRestaurantProfile();
-  _profileCache = { data, at: Date.now() };
+
+async function getCachedProfile(restaurantId: string): Promise<Awaited<ReturnType<typeof getRestaurantProfile>>> {
+  const cached = _profileCacheMap.get(restaurantId);
+  if (cached && Date.now() - cached.at < BRANCH_CACHE_MS) return cached.data;
+  const data = await getRestaurantProfile(restaurantId);
+  _profileCacheMap.set(restaurantId, { data, at: Date.now() });
   return data;
 }
 
@@ -213,14 +217,24 @@ async function processWebhook(body: unknown) {
     await updateDeliveryStatuses(statusEvents);
   }
 
-  // Fetch branches + profile in parallel with short process-level cache
-  const [branches, profile] = await Promise.all([getCachedBranches(), getCachedProfile()]);
-
   // 2) Coexistence: smb_message_echoes (owner replied manually from WhatsApp Business phone app)
   const echoes = extractEchoes(body);
-  for (const { message, customerPhone } of echoes) {
+  for (const { message, customerPhone, phoneNumberId } of echoes) {
     try {
-      await processEchoMessage(message, customerPhone, branches, profile);
+      if (!phoneNumberId) {
+        console.warn("[webhook] Missing phone_number_id for echo, skipping");
+        continue;
+      }
+      const restaurantCtx = await getRestaurantByPhoneNumberId(phoneNumberId);
+      if (!restaurantCtx) {
+        console.warn("[webhook] Unknown phone_number_id for echo, skipping:", phoneNumberId);
+        continue;
+      }
+      const [branches, profile] = await Promise.all([
+        getCachedBranches(restaurantCtx.restaurantId),
+        getCachedProfile(restaurantCtx.restaurantId),
+      ]);
+      await processEchoMessage(message, customerPhone, branches, profile, phoneNumberId, restaurantCtx.restaurantId);
     } catch (error) {
       console.error("[webhook-coexistence] Failed to process echo:", { customerPhone, error });
     }
@@ -251,11 +265,23 @@ async function processWebhook(body: unknown) {
     return;
   }
 
-  const cityGroups = await buildCityBranchGroups(branches);
-
-  for (const { message, contactName } of events) {
+  for (const { message, contactName, phoneNumberId } of events) {
     try {
-      await processOneMessage(message, contactName, branches, cityGroups, profile);
+      if (!phoneNumberId) {
+        console.warn("[webhook] Missing phone_number_id, skipping");
+        continue;
+      }
+      const restaurantCtx = await getRestaurantByPhoneNumberId(phoneNumberId);
+      if (!restaurantCtx) {
+        console.warn("[webhook] Unknown phone_number_id, skipping:", phoneNumberId);
+        continue;
+      }
+      const [branches, profile] = await Promise.all([
+        getCachedBranches(restaurantCtx.restaurantId),
+        getCachedProfile(restaurantCtx.restaurantId),
+      ]);
+      const cityGroups = await buildCityBranchGroups(branches);
+      await processOneMessage(message, contactName, branches, cityGroups, profile, phoneNumberId, restaurantCtx.restaurantId);
     } catch (error) {
       console.error("[webhook] Failed to process message:", { from: message.from, error });
     }
@@ -270,10 +296,12 @@ async function processEchoMessage(
   customerPhone: string,
   branches: BranchRecord[],
   profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
+  phoneNumberId: string,
+  restaurantId: string,
 ) {
   recordSentMessageId(message.id);
 
-  const contact = await upsertContact(customerPhone, "");
+  const contact = await upsertContact(customerPhone, "", restaurantId);
   let activeBranch: BranchRecord | null = contact.active_branch_id
     ? (branches.find((b) => b.id === contact.active_branch_id) ?? null)
     : null;
@@ -357,9 +385,11 @@ async function processOneMessage(
   branches: BranchRecord[],
   cityGroups: CityBranchGroup[],
   profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
+  phoneNumberId: string,
+  restaurantId: string,
 ) {
   const phone = message.from;
-  const contact = await upsertContact(phone, contactName);
+  const contact = await upsertContact(phone, contactName, restaurantId);
   const incomingContent = await extractContent(message);
   const detectedLang = inferLanguagePreference(
     incomingContent ?? "",
@@ -512,6 +542,7 @@ async function processOneMessage(
       interactiveList: result.interactive?.kind === "list" ? result.interactive.payload : null,
       replyButtons: result.interactive?.kind === "buttons" ? result.interactive.payload : null,
       mediaUrls: result.mediaUrls ?? null,
+      phoneNumberId,
     });
 
     // Fire-and-forget: touch is low priority, don't block reply delivery
@@ -903,8 +934,8 @@ function normalizeDeliveryStatus(v: string): import("@/lib/schema.types").Messag
 // ---------------------------------------------------------------------------
 // Contact / conversation upsert (thin wrappers)
 // ---------------------------------------------------------------------------
-async function upsertContact(phone: string, name: string | null) {
-  return contactRepo.upsertByPhone({ phone, name });
+async function upsertContact(phone: string, name: string | null, restaurantId: string) {
+  return contactRepo.upsertByPhone({ restaurantId, phone, name });
 }
 
 // ---------------------------------------------------------------------------

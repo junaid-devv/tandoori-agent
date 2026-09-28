@@ -21,7 +21,10 @@ export async function GET() {
   }
 
   try {
-    const staff = await listStaffMembers();
+    if (!auth.session.restaurantId) {
+      return NextResponse.json({ error: "No restaurant context." }, { status: 400 });
+    }
+    const staff = await listStaffMembers(auth.session.restaurantId);
     return NextResponse.json(staff);
   } catch (error) {
     return apiErrorResponse(error, { fallback: "Failed to load staff.", context: "admin staff GET" });
@@ -35,8 +38,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    if (!auth.session.restaurantId) {
+      return NextResponse.json({ error: "No restaurant context." }, { status: 400 });
+    }
     const body = await readLimitedJsonBody<StaffBody>(req, STAFF_BODY_LIMIT_BYTES);
-    const userId = await createStaffAccount({
+    const userId = await createStaffAccount(auth.session.restaurantId, {
       email: body.email ?? "",
       password: body.password ?? "",
       fullName: body.full_name ?? "",

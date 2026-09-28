@@ -1,13 +1,14 @@
 -- =====================================================================
--- Tandoori Agent — Consolidated Schema (rebuilt from scratch, Phase 2)
--- Single source of truth. Apply on a fresh Supabase/Postgres database.
+-- ORDERiQ — Production Multi-Tenant Schema
+-- Single source of truth for the shared Supabase database.
 --
--- Design notes:
---   * No append-only "add column if not exists" history. Real create tables.
---   * `user_sessions` MERGED into `conversation_states` (one state store).
---   * State model reflects the target FSM (see REBUILD_PLAN.md §2.3):
---       stage-based, non-linear, single jsonb-friendly row per conversation.
---   * pgvector is the real menu-search path (HNSW index).
+-- Architecture:
+--   * Multi-tenant SaaS: restaurant_profiles is the tenant root.
+--   * All branches, contacts, staff scoped by restaurant_id.
+--   * whatsapp_configs maps Meta phone_number_id → restaurant.
+--   * Conversations, orders, menu inherit restaurant scope via branch_id.
+--   * RLS: service_role only (app uses service key server-side).
+--   * pgvector for semantic menu search (HNSW index).
 --   * Functions: place_order_from_payload, match_menu_items_by_embedding,
 --     check_rate_limit, claim_webhook_event.
 -- =====================================================================
@@ -26,40 +27,67 @@ begin
 end;
 $$;
 
--- ---------------------------------------------------------------------
--- branches / profile / settings
--- ---------------------------------------------------------------------
-create table branches (
+-- =====================================================================
+-- TENANT: restaurant_profiles
+-- =====================================================================
+create table restaurant_profiles (
   id uuid primary key default gen_random_uuid(),
-  slug text not null unique,
   name text not null,
-  city text not null default 'City',
-  address text not null default '',
+  slug text not null unique,
+  dashboard_title text not null default 'Dashboard',
+  logo_url text,
+  brand_color text not null default '#EA580C',
+  brand_hover_color text not null default '#C2410C',
+  city text not null default 'Islamabad',
+  currency text not null default 'Rs.',
+  timezone text not null default 'Asia/Karachi',
+  branch_mode text not null default 'single' check (branch_mode in ('single', 'multiple')),
+  support_phone text not null default '',
+  delivery_phone text not null default '',
+  dine_in_phone text not null default '',
+  ai_personality text not null default 'Warm & Professional',
+  menu_display_mode text not null default 'interactive_list' check (menu_display_mode in ('interactive_list', 'menu_pictures', 'text_only')),
+  menu_card_images jsonb not null default '[]'::jsonb check (jsonb_typeof(menu_card_images) = 'array'),
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
-create table restaurant_profiles (
-  id text primary key default 'default',
-  app_name text not null default 'Restaurant Agent',
-  dashboard_title text not null default 'Restaurant Dashboard',
-  logo_url text,
-  brand_color text not null default '#EA580C',
-  brand_hover_color text not null default '#C2410C',
-  city text not null default 'City',
-  currency text not null default 'Rs.',
-  timezone text not null default 'Asia/Karachi',
-  branch_mode text not null default 'single' check (branch_mode in ('single', 'multiple')),
-  default_branch_id uuid references branches(id) on delete set null,
-  support_phone text not null default 'Update support phone',
-  delivery_phone text not null default 'Update delivery phone',
-  dine_in_phone text not null default 'Update dine-in phone',
-  ai_personality_default text not null default 'Warm & Professional',
+-- =====================================================================
+-- WHATSAPP CONFIG (Meta Tech Provider phone → restaurant mapping)
+-- =====================================================================
+create table whatsapp_configs (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references restaurant_profiles(id) on delete cascade,
+  waba_id text not null,
+  phone_number_id text not null unique,
+  display_phone_number text,
+  verified_name text,
+  is_active boolean not null default true,
+  connected_at timestamptz default now(),
+  created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
-insert into restaurant_profiles (id) values ('default') on conflict (id) do nothing;
 
+-- =====================================================================
+-- BRANCHES (scoped by restaurant)
+-- =====================================================================
+create table branches (
+  id uuid primary key default gen_random_uuid(),
+  restaurant_id uuid not null references restaurant_profiles(id) on delete cascade,
+  slug text not null,
+  name text not null,
+  city text not null default 'Islamabad',
+  address text not null default '',
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (restaurant_id, slug)
+);
+
+-- =====================================================================
+-- RESTAURANT SETTINGS (1:1 with branch)
+-- =====================================================================
 create table restaurant_settings (
   id integer generated by default as identity primary key,
   branch_id uuid not null unique references branches(id) on delete cascade,
@@ -72,19 +100,40 @@ create table restaurant_settings (
   delivery_areas jsonb not null default '[]'::jsonb check (jsonb_typeof(delivery_areas) = 'array'),
   estimated_prep_minutes integer not null default 30 check (estimated_prep_minutes between 5 and 240),
   estimated_delivery_minutes integer not null default 45 check (estimated_delivery_minutes between 5 and 240),
-  city text not null default 'City',
-  phone_delivery text not null default 'Update delivery phone',
-  phone_dine_in text not null default 'Update dine-in phone',
+  city text not null default 'Islamabad',
+  phone_delivery text not null default '',
+  phone_dine_in text not null default '',
   ai_personality text not null default 'Warm & Professional',
   updated_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------
--- customers
--- ---------------------------------------------------------------------
+-- =====================================================================
+-- STAFF / AUTH (scoped by restaurant)
+-- =====================================================================
+create table staff_profiles (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  restaurant_id uuid references restaurant_profiles(id) on delete cascade,
+  full_name text,
+  role text not null default 'branch_staff' check (role in ('super_admin', 'admin', 'branch_staff')),
+  default_branch_id uuid references branches(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table staff_branch_access (
+  user_id uuid not null references auth.users(id) on delete cascade,
+  branch_id uuid not null references branches(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  primary key (user_id, branch_id)
+);
+
+-- =====================================================================
+-- CONTACTS (scoped by restaurant — same phone can exist in multiple restaurants)
+-- =====================================================================
 create table contacts (
   id uuid primary key default gen_random_uuid(),
-  phone text not null unique,
+  restaurant_id uuid not null references restaurant_profiles(id) on delete cascade,
+  phone text not null,
   name text,
   active_branch_id uuid references branches(id) on delete set null,
   preferred_language text not null default 'english' check (preferred_language in ('english', 'roman_urdu', 'pashto')),
@@ -93,7 +142,8 @@ create table contacts (
   total_orders integer not null default 0 check (total_orders >= 0),
   last_order_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  unique (restaurant_id, phone)
 );
 
 create table customer_addresses (
@@ -110,9 +160,9 @@ create table customer_addresses (
   unique (contact_id, branch_id, address_key)
 );
 
--- ---------------------------------------------------------------------
--- conversations / messages
--- ---------------------------------------------------------------------
+-- =====================================================================
+-- CONVERSATIONS / MESSAGES
+-- =====================================================================
 create table conversations (
   id uuid primary key default gen_random_uuid(),
   contact_id uuid not null references contacts(id) on delete cascade,
@@ -142,9 +192,9 @@ create table messages (
   created_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------
--- menu (+ categories + embeddings)
--- ---------------------------------------------------------------------
+-- =====================================================================
+-- MENU (+ categories + embeddings)
+-- =====================================================================
 create table menu_categories (
   id uuid primary key default gen_random_uuid(),
   branch_id uuid not null references branches(id) on delete cascade,
@@ -161,7 +211,7 @@ create table menu_items (
   category_id uuid references menu_categories(id) on delete set null,
   name text not null,
   price numeric not null check (price >= 0),
-  category text,                        -- denormalized label (kept for fast reads / legacy render)
+  category text,
   description text,
   is_available boolean not null default true,
   available_days jsonb not null default '[]'::jsonb check (jsonb_typeof(available_days) = 'array'),
@@ -191,12 +241,9 @@ create table menu_uploads (
   created_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------
--- conversation_states  (SINGLE state store; user_sessions merged in)
--- Target FSM: greeting|browsing|building_cart|choosing_order_type
---   |collecting_delivery|collecting_dinein|collecting_pickup
---   |confirming|placed|post_order|human
--- ---------------------------------------------------------------------
+-- =====================================================================
+-- CONVERSATION STATES (FSM — 1:1 with conversations)
+-- =====================================================================
 create table conversation_states (
   conversation_id uuid primary key references conversations(id) on delete cascade,
 
@@ -223,11 +270,11 @@ create table conversation_states (
   -- preferences / language
   preferred_language text not null default 'english' check (preferred_language in ('english', 'roman_urdu', 'pashto')),
 
-  -- ephemeral turn context (for deterministic fast-path selection)
+  -- ephemeral turn context
   last_shown_options jsonb not null default '[]'::jsonb check (jsonb_typeof(last_shown_options) = 'array'),
   last_shown_options_at timestamptz,
   last_shown_category text,
-  pending_clarification jsonb,          -- { kind, options[] } | null
+  pending_clarification jsonb,
 
   -- upsell
   upsell_item_name text,
@@ -235,7 +282,7 @@ create table conversation_states (
   upsell_offered boolean not null default false,
   declined_upsells jsonb not null default '[]'::jsonb check (jsonb_typeof(declined_upsells) = 'array'),
 
-  -- idempotency / processing guard (needed by webhook dedup + place_order)
+  -- idempotency / processing guard
   summary_sent_at timestamptz,
   last_user_whatsapp_msg_id text,
   last_processed_user_message_id text,
@@ -245,7 +292,7 @@ create table conversation_states (
   processing_started_at timestamptz,
   last_error text,
 
-  -- observability / handoff (absorbed from user_sessions)
+  -- observability / handoff
   is_bot_active boolean not null default true,
   invalid_step_count integer not null default 0 check (invalid_step_count >= 0),
   consecutive_tool_failures integer not null default 0 check (consecutive_tool_failures >= 0),
@@ -258,9 +305,9 @@ create table conversation_states (
   updated_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------
--- orders
--- ---------------------------------------------------------------------
+-- =====================================================================
+-- ORDERS
+-- =====================================================================
 create table orders (
   id uuid primary key default gen_random_uuid(),
   branch_id uuid not null references branches(id) on delete cascade,
@@ -306,9 +353,9 @@ create table order_items (
   created_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------
--- agent observability (renamed from order_agent_turns; kept per decision)
--- ---------------------------------------------------------------------
+-- =====================================================================
+-- AGENT OBSERVABILITY
+-- =====================================================================
 create table agent_turns (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references conversations(id) on delete cascade,
@@ -328,25 +375,9 @@ create table agent_turns (
   created_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------
--- staff / auth
--- ---------------------------------------------------------------------
-create table staff_profiles (
-  user_id uuid primary key references auth.users(id) on delete cascade,
-  full_name text,
-  role text not null default 'branch_staff' check (role in ('admin', 'branch_staff')),
-  default_branch_id uuid references branches(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create table staff_branch_access (
-  user_id uuid not null references auth.users(id) on delete cascade,
-  branch_id uuid not null references branches(id) on delete cascade,
-  created_at timestamptz not null default now(),
-  primary key (user_id, branch_id)
-);
-
+-- =====================================================================
+-- STAFF ALERTS
+-- =====================================================================
 create table staff_alerts (
   id uuid primary key default gen_random_uuid(),
   conversation_id uuid not null references conversations(id) on delete cascade,
@@ -360,9 +391,9 @@ create table staff_alerts (
   updated_at timestamptz not null default now()
 );
 
--- ---------------------------------------------------------------------
--- infra: webhook dedup + rate limiting
--- ---------------------------------------------------------------------
+-- =====================================================================
+-- INFRA: webhook dedup + rate limiting
+-- =====================================================================
 create table webhook_events (
   id uuid primary key default gen_random_uuid(),
   provider text not null default 'meta_whatsapp',
@@ -394,6 +425,13 @@ create table rate_limits (
 -- =====================================================================
 -- INDEXES
 -- =====================================================================
+-- tenant lookups
+create index idx_whatsapp_configs_restaurant on whatsapp_configs(restaurant_id);
+create index idx_branches_restaurant on branches(restaurant_id);
+create index idx_contacts_restaurant on contacts(restaurant_id);
+create index idx_staff_profiles_restaurant on staff_profiles(restaurant_id);
+
+-- operational indexes
 create index idx_contacts_active_branch on contacts(active_branch_id);
 create index idx_customer_addresses_contact_branch on customer_addresses(contact_id, branch_id, last_used_at desc);
 create index idx_conversations_branch_updated on conversations(branch_id, updated_at desc);
@@ -420,9 +458,11 @@ create index idx_rate_limits_updated_at on rate_limits(updated_at);
 -- =====================================================================
 -- updated_at triggers
 -- =====================================================================
-create trigger t_branches_updated before update on branches for each row execute function update_updated_at_column();
 create trigger t_restaurant_profiles_updated before update on restaurant_profiles for each row execute function update_updated_at_column();
+create trigger t_whatsapp_configs_updated before update on whatsapp_configs for each row execute function update_updated_at_column();
+create trigger t_branches_updated before update on branches for each row execute function update_updated_at_column();
 create trigger t_restaurant_settings_updated before update on restaurant_settings for each row execute function update_updated_at_column();
+create trigger t_staff_profiles_updated before update on staff_profiles for each row execute function update_updated_at_column();
 create trigger t_contacts_updated before update on contacts for each row execute function update_updated_at_column();
 create trigger t_customer_addresses_updated before update on customer_addresses for each row execute function update_updated_at_column();
 create trigger t_conversations_updated before update on conversations for each row execute function update_updated_at_column();
@@ -431,7 +471,6 @@ create trigger t_menu_items_updated before update on menu_items for each row exe
 create trigger t_menu_item_embeddings_updated before update on menu_item_embeddings for each row execute function update_updated_at_column();
 create trigger t_conversation_states_updated before update on conversation_states for each row execute function update_updated_at_column();
 create trigger t_orders_updated before update on orders for each row execute function update_updated_at_column();
-create trigger t_staff_profiles_updated before update on staff_profiles for each row execute function update_updated_at_column();
 create trigger t_staff_alerts_updated before update on staff_alerts for each row execute function update_updated_at_column();
 create trigger t_webhook_events_updated before update on webhook_events for each row execute function update_updated_at_column();
 create trigger t_rate_limits_updated before update on rate_limits for each row execute function update_updated_at_column();
@@ -612,7 +651,7 @@ end;
 $$;
 
 -- =====================================================================
--- FUNCTION: match_menu_items_by_embedding  (THE vector search path)
+-- FUNCTION: match_menu_items_by_embedding  (vector search)
 -- =====================================================================
 create or replace function match_menu_items_by_embedding(
   branch_uuid uuid,
@@ -733,9 +772,10 @@ do $$
 declare t text;
 begin
   foreach t in array array[
-    'branches','restaurant_profiles','restaurant_settings','contacts','customer_addresses',
+    'restaurant_profiles','whatsapp_configs','branches','restaurant_settings',
+    'staff_profiles','staff_branch_access','contacts','customer_addresses',
     'conversations','messages','menu_categories','menu_items','menu_item_embeddings','menu_uploads',
-    'conversation_states','orders','order_items','agent_turns','staff_profiles','staff_branch_access',
+    'conversation_states','orders','order_items','agent_turns',
     'staff_alerts','webhook_events','rate_limits'
   ]
   loop
@@ -774,7 +814,28 @@ begin
 end $$;
 
 -- =====================================================================
--- realtime
+-- STORAGE: menu-assets bucket
+-- =====================================================================
+insert into storage.buckets (id, name, public) values ('menu-assets', 'menu-assets', true)
+on conflict (id) do nothing;
+
+do $$
+begin
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'storage' and tablename = 'objects' and policyname = 'Public Access to Menu Assets'
+  ) then
+    create policy "Public Access to Menu Assets" on storage.objects
+      for select using (bucket_id = 'menu-assets');
+  end if;
+end $$;
+
+-- voice-notes bucket
+insert into storage.buckets (id, name, public) values ('voice-notes', 'voice-notes', false)
+on conflict (id) do nothing;
+
+-- =====================================================================
+-- REALTIME
 -- =====================================================================
 do $$
 begin

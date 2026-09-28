@@ -10,6 +10,7 @@ export async function canAccessConversation(session: DashboardSession, conversat
     .maybeSingle();
 
   if (error || !data) return null;
+  if (session.role === "super_admin") return data;
   return isBranchAllowed(session, data.branch_id) ? data : null;
 }
 
@@ -21,6 +22,7 @@ export async function canAccessOrder(session: DashboardSession, orderId: string)
     .maybeSingle();
 
   if (error || !data) return null;
+  if (session.role === "super_admin") return data;
   return isBranchAllowed(session, data.branch_id) ? data : null;
 }
 
@@ -32,5 +34,6 @@ export async function canAccessMenuItem(session: DashboardSession, menuItemId: s
     .maybeSingle();
 
   if (error || !data) return null;
+  if (session.role === "super_admin") return data;
   return isBranchAllowed(session, data.branch_id) ? data : null;
 }

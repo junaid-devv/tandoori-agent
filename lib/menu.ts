@@ -159,7 +159,7 @@ function getMenuAiCacheKey(branchId: string) {
   return `menu_ai:${branchId}`;
 }
 
-export async function getMenuCatalog(branchId: string): Promise<MenuCatalogItem[]> {
+export async function getMenuCatalog(branchId: string, restaurantId?: string): Promise<MenuCatalogItem[]> {
   const cacheKey = getMenuCatalogCacheKey(branchId);
   const cached = getCached<MenuCatalogItem[]>(cacheKey);
   if (cached) return cached;
@@ -176,7 +176,7 @@ export async function getMenuCatalog(branchId: string): Promise<MenuCatalogItem[
     return [];
   }
 
-  const profile = await getRestaurantProfile();
+  const profile = await getRestaurantProfile(restaurantId);
   const items = data.map((item) => ({
     id: item.id,
     name: item.name,
@@ -200,12 +200,12 @@ export async function getMenuCatalog(branchId: string): Promise<MenuCatalogItem[
   return items;
 }
 
-export async function getMenuForAI(branchId: string): Promise<string | null> {
+export async function getMenuForAI(branchId: string, restaurantId?: string): Promise<string | null> {
   const cacheKey = getMenuAiCacheKey(branchId);
   const cached = getCached<string>(cacheKey);
   if (cached) return cached;
 
-  const items = await getMenuCatalog(branchId);
+  const items = await getMenuCatalog(branchId, restaurantId);
   const formatted = formatMenuForAI(items);
   if (formatted) {
     setCached(cacheKey, formatted, MENU_CACHE_TTL_MS);

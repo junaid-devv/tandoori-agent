@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/branch-request";
 import { apiErrorResponse } from "@/lib/api-utils";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
@@ -12,10 +13,22 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const profile = await getRestaurantProfile();
-    const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || null;
+    const profile = await getRestaurantProfile(auth.session.restaurantId ?? undefined);
+    
+    const targetRestaurantId =
+      auth.session.restaurantId || new URL(req.url).searchParams.get("restaurant_id");
+
+    const { data: config } = targetRestaurantId
+      ? await supabaseAdmin
+          .from("whatsapp_configs")
+          .select("*")
+          .eq("restaurant_id", targetRestaurantId)
+          .maybeSingle()
+      : { data: null };
+
+    const phoneId = config?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID || null;
     const token = process.env.WHATSAPP_ACCESS_TOKEN || "";
-    const wabaId = process.env.WHATSAPP_WABA_ID || null;
+    const wabaId = config?.waba_id || process.env.WHATSAPP_WABA_ID || null;
     const appId = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || null;
     const configId = process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID || process.env.WHATSAPP_CONFIG_ID || null;
 

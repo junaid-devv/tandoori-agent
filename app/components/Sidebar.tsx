@@ -54,7 +54,7 @@ export function Sidebar() {
 
   const appName = profile.app_name;
   const [firstWord, ...rest] = appName.split(" ");
-  const navItems = session.role === "admin" ? adminNavItems : baseNavItems;
+  const navItems = (session.role === "admin" || session.role === "super_admin") ? adminNavItems : baseNavItems;
 
   useEffect(() => {
     navItems.forEach((item) => {
@@ -304,7 +304,7 @@ export function Sidebar() {
                       {session.fullName || session.email || "Staff User"}
                     </p>
                     <p className="text-[8px] font-bold uppercase tracking-[0.18em] text-zinc-500">
-                      {session.role === "admin" ? "Admin" : "Branch Staff"}
+                      {session.role === "super_admin" ? "Super Admin" : session.role === "admin" ? "Admin" : "Branch Staff"}
                     </p>
                   </div>
                 </div>

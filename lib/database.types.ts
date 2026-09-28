@@ -29,7 +29,7 @@ export type WorkflowStep =
 
 export type MessageSenderKind = "user" | "ai" | "human" | "system";
 export type MessageDeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
-export type StaffRole = "admin" | "branch_staff";
+export type StaffRole = "super_admin" | "admin" | "branch_staff";
 export type StaffAlertKind =
   | "human_handoff"
   | "tool_validation"
@@ -42,9 +42,84 @@ export type StaffAlertStatus = "open" | "acknowledged" | "resolved";
 export interface Database {
   public: {
     Tables: {
+      restaurant_profiles: {
+        Row: {
+          id: string;
+          name: string;
+          slug: string;
+          dashboard_title: string;
+          logo_url: string | null;
+          brand_color: string;
+          brand_hover_color: string;
+          city: string;
+          currency: string;
+          timezone: string;
+          branch_mode: "single" | "multiple";
+          support_phone: string;
+          delivery_phone: string;
+          dine_in_phone: string;
+          ai_personality: string;
+          menu_display_mode: "interactive_list" | "menu_pictures" | "text_only";
+          menu_card_images: Json;
+          is_active: boolean;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          slug: string;
+          dashboard_title?: string;
+          logo_url?: string | null;
+          brand_color?: string;
+          brand_hover_color?: string;
+          city?: string;
+          currency?: string;
+          timezone?: string;
+          branch_mode?: "single" | "multiple";
+          support_phone?: string;
+          delivery_phone?: string;
+          dine_in_phone?: string;
+          ai_personality?: string;
+          menu_display_mode?: "interactive_list" | "menu_pictures" | "text_only";
+          menu_card_images?: Json;
+          is_active?: boolean;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["restaurant_profiles"]["Insert"]>;
+      };
+      whatsapp_configs: {
+        Row: {
+          id: string;
+          restaurant_id: string;
+          waba_id: string;
+          phone_number_id: string;
+          display_phone_number: string | null;
+          verified_name: string | null;
+          is_active: boolean;
+          connected_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          restaurant_id: string;
+          waba_id: string;
+          phone_number_id: string;
+          display_phone_number?: string | null;
+          verified_name?: string | null;
+          is_active?: boolean;
+          connected_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["public"]["Tables"]["whatsapp_configs"]["Insert"]>;
+      };
       branches: {
         Row: {
           id: string;
+          restaurant_id: string;
           slug: string;
           name: string;
           city: string;
@@ -55,6 +130,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          restaurant_id: string;
           slug: string;
           name: string;
           city: string;
@@ -68,6 +144,7 @@ export interface Database {
       contacts: {
         Row: {
           id: string;
+          restaurant_id: string;
           phone: string;
           name: string | null;
           active_branch_id: string | null;
@@ -81,6 +158,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
+          restaurant_id: string;
           phone: string;
           name?: string | null;
           active_branch_id?: string | null;
@@ -474,6 +552,7 @@ export interface Database {
       staff_profiles: {
         Row: {
           user_id: string;
+          restaurant_id: string | null;
           full_name: string | null;
           role: StaffRole;
           default_branch_id: string | null;
@@ -482,6 +561,7 @@ export interface Database {
         };
         Insert: {
           user_id: string;
+          restaurant_id?: string | null;
           full_name?: string | null;
           role?: StaffRole;
           default_branch_id?: string | null;

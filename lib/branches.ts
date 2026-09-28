@@ -46,12 +46,18 @@ export function isBranchChangeRequest(messageText: string): boolean {
   ].some((pattern) => normalized.includes(pattern));
 }
 
-export async function getActiveBranches(): Promise<BranchRecord[]> {
-  const { data, error } = await supabaseAdmin
+export async function getActiveBranches(restaurantId?: string): Promise<BranchRecord[]> {
+  let query = supabaseAdmin
     .from("branches")
     .select("id, slug, name, city, address, is_active, created_at, updated_at")
     .eq("is_active", true)
     .order("name", { ascending: true });
+
+  if (restaurantId) {
+    query = query.eq("restaurant_id", restaurantId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error("[branches] Failed to load active branches:", error);

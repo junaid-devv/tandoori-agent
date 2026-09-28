@@ -13,7 +13,7 @@ export async function GET() {
   }
 
   try {
-    const profile = await getRestaurantProfile();
+    const profile = await getRestaurantProfile(auth.session.restaurantId ?? undefined);
     return NextResponse.json(profile);
   } catch (error) {
     return apiErrorResponse(error, {
@@ -31,7 +31,7 @@ export async function PATCH(req: NextRequest) {
 
   try {
     const body = await readLimitedJsonBody<Partial<RestaurantProfile>>(req, PROFILE_BODY_LIMIT_BYTES);
-    const profile = await updateRestaurantProfile(body);
+    const profile = await updateRestaurantProfile(auth.session.restaurantId ?? "", body);
     return NextResponse.json(profile);
   } catch (error) {
     return apiErrorResponse(error, {

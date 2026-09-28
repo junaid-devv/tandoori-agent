@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: confirmationError }, { status: 400 });
     }
 
-    await wipeOperationalData({ branchId: body.branch_id?.trim() || null });
+    await wipeOperationalData(auth.session.restaurantId ?? "", { branchId: body.branch_id?.trim() || null });
     return NextResponse.json({ success: true });
   } catch (error) {
     return apiErrorResponse(error, {

@@ -32,6 +32,7 @@ type OutboundMessageParams = {
   phone: string;
   content: string;
   senderKind: Exclude<MessageSenderKind, "user">;
+  phoneNumberId?: string;
 };
 
 type OutboundInteractiveMessageParams = OutboundMessageParams & {
@@ -82,6 +83,7 @@ export async function sendAndPersistOutboundMessage({
   phone,
   content,
   senderKind,
+  phoneNumberId,
 }: OutboundMessageParams) {
   const chunks = splitWhatsAppText(content);
   let firstResult: { id: string; whatsappMessageId: string | null } | null = null;
@@ -95,6 +97,7 @@ export async function sendAndPersistOutboundMessage({
         phone,
         content: chunkContent,
         senderKind,
+        phoneNumberId,
       });
       firstResult ??= result;
       sentAtLeastOneChunk = true;
@@ -119,6 +122,7 @@ async function sendAndPersistSingleOutboundMessage({
   phone,
   content,
   senderKind,
+  phoneNumberId,
 }: OutboundMessageParams) {
   const { data: inserted, error: insertError } = await supabaseAdmin
     .from("messages")
@@ -138,7 +142,7 @@ async function sendAndPersistSingleOutboundMessage({
   }
 
   try {
-    const result = await sendWhatsAppMessage(phone, content);
+    const result = await sendWhatsAppMessage(phone, content, phoneNumberId);
     const { error: updateError } = await supabaseAdmin
       .from("messages")
       .update({
@@ -216,6 +220,7 @@ export async function sendAndPersistOutboundInteractiveMessage({
   content,
   senderKind,
   interactive,
+  phoneNumberId,
 }: OutboundInteractiveMessageParams) {
   const { data: inserted, error: insertError } = await supabaseAdmin
     .from("messages")
@@ -242,7 +247,7 @@ export async function sendAndPersistOutboundInteractiveMessage({
   }
 
   try {
-    const result = await sendWhatsAppInteractiveList(phone, interactive);
+    const result = await sendWhatsAppInteractiveList(phone, interactive, phoneNumberId);
     const { error: updateError } = await supabaseAdmin
       .from("messages")
       .update({
@@ -287,6 +292,7 @@ export async function sendAndPersistOutboundReplyButtonMessage({
   content,
   senderKind,
   replyButtons,
+  phoneNumberId,
 }: OutboundReplyButtonMessageParams) {
   const { data: inserted, error: insertError } = await supabaseAdmin
     .from("messages")
@@ -309,7 +315,7 @@ export async function sendAndPersistOutboundReplyButtonMessage({
   }
 
   try {
-    const result = await sendWhatsAppReplyButtons(phone, replyButtons);
+    const result = await sendWhatsAppReplyButtons(phone, replyButtons, phoneNumberId);
     const { error: updateError } = await supabaseAdmin
       .from("messages")
       .update({
@@ -354,12 +360,14 @@ export async function sendAndPersistOutboundImageMessage({
   imageUrl,
   caption,
   senderKind,
+  phoneNumberId,
 }: {
   conversationId: string;
   phone: string;
   imageUrl: string;
   caption?: string;
   senderKind: Exclude<MessageSenderKind, "user">;
+  phoneNumberId?: string;
 }) {
   const content = caption ? `[image: ${imageUrl}]\n${caption}` : `[image: ${imageUrl}]`;
   const { data: inserted, error: insertError } = await supabaseAdmin
@@ -380,7 +388,7 @@ export async function sendAndPersistOutboundImageMessage({
   }
 
   try {
-    const result = await sendWhatsAppImage(phone, imageUrl, caption);
+    const result = await sendWhatsAppImage(phone, imageUrl, caption, phoneNumberId);
     await supabaseAdmin
       .from("messages")
       .update({

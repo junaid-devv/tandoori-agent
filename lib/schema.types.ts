@@ -45,7 +45,7 @@ export type MessageRole = "user" | "assistant";
 export type MessageSenderKind = "user" | "ai" | "human" | "system";
 export type MessageDeliveryStatus = "pending" | "sent" | "delivered" | "read" | "failed";
 
-export type StaffRole = "admin" | "branch_staff";
+export type StaffRole = "super_admin" | "admin" | "branch_staff";
 export type StaffAlertKind =
   | "human_handoff"
   | "tool_validation"

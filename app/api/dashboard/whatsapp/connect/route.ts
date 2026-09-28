@@ -89,6 +89,16 @@ export async function POST(req: NextRequest) {
       console.warn("[whatsapp-connect] Could not fetch phone details:", e);
     }
 
+    const targetRestaurantId =
+      auth.session.restaurantId || new URL(req.url).searchParams.get("restaurant_id");
+
+    if (!targetRestaurantId) {
+      return NextResponse.json(
+        { error: "No restaurant context found. Please specify a restaurant." },
+        { status: 400 },
+      );
+    }
+
     // 4) Update restaurant profile to enable Meta Cloud API
     await supabaseAdmin
       .from("restaurant_profiles")
@@ -96,7 +106,23 @@ export async function POST(req: NextRequest) {
         whatsapp_provider: "meta",
         updated_at: new Date().toISOString(),
       })
-      .eq("id", "default");
+      .eq("id", targetRestaurantId);
+
+    // 5) Upsert into whatsapp_configs mapping phone_number_id to restaurant
+    await supabaseAdmin
+      .from("whatsapp_configs")
+      .upsert(
+        {
+          phone_number_id: phoneNumberId,
+          restaurant_id: targetRestaurantId,
+          waba_id: wabaId,
+          display_phone_number: displayPhoneNumber,
+          verified_name: verifiedName,
+          is_active: true,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "phone_number_id" },
+      );
 
     return NextResponse.json({
       success: true,

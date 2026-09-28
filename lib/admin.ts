@@ -114,13 +114,14 @@ async function replaceBranchAssignments(userId: string, branchIds: string[]) {
   }
 }
 
-export async function listBranchesWithStats(): Promise<AdminBranchSummary[]> {
+export async function listBranchesWithStats(restaurantId: string): Promise<AdminBranchSummary[]> {
   const [{ data: branches, error: branchError }, { data: conversations, error: conversationError }, { data: orders, error: orderError }, { data: menuItems, error: menuError }] =
     await Promise.all([
       supabaseAdmin
         .from("branches")
         .select("id, slug, name, city, address, is_active, created_at, updated_at")
-        .order("name", { ascending: true }),
+        .order("name", { ascending: true })
+        .eq("restaurant_id", restaurantId),
       supabaseAdmin.from("conversations").select("branch_id, has_unread"),
       supabaseAdmin.from("orders").select("branch_id, status"),
       supabaseAdmin.from("menu_items").select("branch_id"),
@@ -150,7 +151,7 @@ export async function listBranchesWithStats(): Promise<AdminBranchSummary[]> {
   });
 }
 
-export async function createBranch(input: BranchMutationInput) {
+export async function createBranch(restaurantId: string, input: BranchMutationInput) {
   const name = input.name.trim();
   const city = input.city.trim();
   const address = input.address.trim();
@@ -164,6 +165,7 @@ export async function createBranch(input: BranchMutationInput) {
   const { data, error } = await supabaseAdmin
     .from("branches")
     .insert({
+      restaurant_id: restaurantId,
       name,
       slug,
       city,
@@ -290,12 +292,13 @@ export async function deleteBranch(branchId: string) {
   }
 }
 
-export async function listStaffMembers(): Promise<AdminStaffSummary[]> {
+export async function listStaffMembers(restaurantId: string): Promise<AdminStaffSummary[]> {
   const [{ data: profiles, error: profileError }, { data: assignments, error: assignmentError }, usersResult] = await Promise.all([
     supabaseAdmin
       .from("staff_profiles")
       .select("user_id, full_name, role, default_branch_id, created_at, updated_at")
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .eq("restaurant_id", restaurantId),
     supabaseAdmin.from("staff_branch_access").select("user_id, branch_id"),
     supabaseAdmin.auth.admin.listUsers({ page: 1, perPage: 1000 }),
   ]);
@@ -334,7 +337,7 @@ export async function listStaffMembers(): Promise<AdminStaffSummary[]> {
   }));
 }
 
-export async function createStaffAccount(input: CreateStaffInput) {
+export async function createStaffAccount(restaurantId: string, input: CreateStaffInput) {
   const email = input.email.trim().toLowerCase();
   const password = input.password.trim();
   const fullName = input.fullName.trim();
@@ -363,6 +366,7 @@ export async function createStaffAccount(input: CreateStaffInput) {
   const { error: profileError } = await supabaseAdmin.from("staff_profiles").upsert(
     {
       user_id: userId,
+      restaurant_id: restaurantId,
       full_name: fullName,
       role: normalized.role,
       default_branch_id: normalized.defaultBranchId,
@@ -474,7 +478,7 @@ function throwIfSupabaseError(error: { message?: string } | null, operation: str
   }
 }
 
-export async function wipeOperationalData(options: { branchId?: string | null } = {}) {
+export async function wipeOperationalData(restaurantId: string, options: { branchId?: string | null } = {}) {
   const branchId = options.branchId ?? null;
 
   if (branchId) {
@@ -500,18 +504,23 @@ export async function wipeOperationalData(options: { branchId?: string | null } 
     return;
   }
 
-  const { error: orderError } = await supabaseAdmin.from("orders").delete().neq("id", "");
+  const { data: branches } = await supabaseAdmin.from("branches").select("id").eq("restaurant_id", restaurantId);
+  const branchIds = (branches ?? []).map((b) => b.id);
+
+  if (branchIds.length === 0) return;
+
+  const { error: orderError } = await supabaseAdmin.from("orders").delete().in("branch_id", branchIds);
   throwIfSupabaseError(orderError, "Failed to delete orders");
 
-  const { error: uploadError } = await supabaseAdmin.from("menu_uploads").delete().neq("id", "");
+  const { error: uploadError } = await supabaseAdmin.from("menu_uploads").delete().in("branch_id", branchIds);
   throwIfSupabaseError(uploadError, "Failed to delete menu uploads");
 
-  const { error: menuError } = await supabaseAdmin.from("menu_items").delete().neq("id", "");
+  const { error: menuError } = await supabaseAdmin.from("menu_items").delete().in("branch_id", branchIds);
   throwIfSupabaseError(menuError, "Failed to delete menu items");
 
-  const { error: conversationError } = await supabaseAdmin.from("conversations").delete().neq("id", "");
+  const { error: conversationError } = await supabaseAdmin.from("conversations").delete().in("branch_id", branchIds);
   throwIfSupabaseError(conversationError, "Failed to delete conversations");
 
-  const { error: contactError } = await supabaseAdmin.from("contacts").delete().neq("id", "");
+  const { error: contactError } = await supabaseAdmin.from("contacts").delete().in("active_branch_id", branchIds);
   throwIfSupabaseError(contactError, "Failed to delete contacts");
 }

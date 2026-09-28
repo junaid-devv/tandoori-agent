@@ -21,12 +21,12 @@ export interface ContactRow {
 }
 
 export const contactRepo = {
-  async getByPhone(phone: string): Promise<ContactRow | null> {
-    const { data, error } = await supabaseAdmin
-      .from("contacts")
-      .select("*")
-      .eq("phone", phone)
-      .maybeSingle();
+  async getByPhone(phone: string, restaurantId?: string): Promise<ContactRow | null> {
+    let query = supabaseAdmin.from("contacts").select("*").eq("phone", phone);
+    if (restaurantId) {
+      query = query.eq("restaurant_id", restaurantId);
+    }
+    const { data, error } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (error) throw error;
     return (data as ContactRow) ?? null;
   },
@@ -41,8 +41,9 @@ export const contactRepo = {
     return (data as ContactRow) ?? null;
   },
 
-  /** Upsert by phone (unique). Returns the row. */
+  /** Upsert by phone (unique per restaurant). Returns the row. */
   async upsertByPhone(input: {
+    restaurantId: string;
     phone: string;
     name?: string | null;
     active_branch_id?: string | null;
@@ -51,11 +52,12 @@ export const contactRepo = {
       .from("contacts")
       .upsert(
         {
+          restaurant_id: input.restaurantId,
           phone: input.phone,
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.active_branch_id !== undefined ? { active_branch_id: input.active_branch_id } : {}),
         },
-        { onConflict: "phone" },
+        { onConflict: "restaurant_id,phone" },
       )
       .select("*")
       .single();

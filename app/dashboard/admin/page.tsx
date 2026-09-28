@@ -4,7 +4,7 @@ import { requireDashboardSession } from "@/lib/auth";
 
 export default async function AdminPage() {
   const session = await requireDashboardSession();
-  if (session.role !== "admin") {
+  if (session.role !== "admin" && session.role !== "super_admin") {
     redirect("/dashboard");
   }
 

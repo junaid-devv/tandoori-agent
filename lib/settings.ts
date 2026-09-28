@@ -46,8 +46,8 @@ const DEFAULT_SETTINGS = {
   timezone: process.env.RESTAURANT_TIMEZONE?.trim() || "Asia/Karachi",
 };
 
-async function getDefaultSettings() {
-  const profile = await getRestaurantProfile();
+async function getDefaultSettings(restaurantId?: string) {
+  const profile = await getRestaurantProfile(restaurantId);
   return {
     ...DEFAULT_SETTINGS,
     city: profile.city,

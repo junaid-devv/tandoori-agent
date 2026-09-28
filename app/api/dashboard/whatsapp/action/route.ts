@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin
         .from("restaurant_profiles")
         .update({ whatsapp_provider: "none", updated_at: new Date().toISOString() })
-        .eq("id", "default");
+        .eq("id", auth.session.restaurantId);
 
       return NextResponse.json({
         success: true,
@@ -59,7 +59,7 @@ export async function POST(req: NextRequest) {
       await supabaseAdmin
         .from("restaurant_profiles")
         .update({ whatsapp_provider: "meta", updated_at: new Date().toISOString() })
-        .eq("id", "default");
+        .eq("id", auth.session.restaurantId);
 
       return NextResponse.json({
         success: true,

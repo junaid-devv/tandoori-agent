@@ -94,7 +94,7 @@ export async function sendWhatsAppMessage(to: string, body: string, phoneNumberI
     };
   }
 
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
+  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {
@@ -173,7 +173,7 @@ export async function sendWhatsAppImage(
     };
   }
 
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
+  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {
@@ -282,7 +282,7 @@ export async function sendWhatsAppInteractiveList(
     };
   }
 
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
+  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {
@@ -385,7 +385,7 @@ export async function sendWhatsAppReplyButtons(
     };
   }
 
-  const phoneId = process.env.WHATSAPP_PHONE_NUMBER_ID || phoneNumberId;
+  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
   const token = process.env.WHATSAPP_ACCESS_TOKEN;
 
   if (!phoneId || !token) {

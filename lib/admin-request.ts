@@ -10,7 +10,29 @@ export async function requireAdminApiSession() {
     };
   }
 
-  if (session.role !== "admin") {
+  if (session.role !== "admin" && session.role !== "super_admin") {
+    return {
+      response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
+      session: null,
+    };
+  }
+
+  return {
+    response: null,
+    session,
+  };
+}
+
+export async function requireSuperAdminSession() {
+  const session = await getDashboardSession();
+  if (!session) {
+    return {
+      response: NextResponse.json({ error: "Unauthorized" }, { status: 401 }),
+      session: null,
+    };
+  }
+
+  if (session.role !== "super_admin") {
     return {
       response: NextResponse.json({ error: "Forbidden" }, { status: 403 }),
       session: null,

@@ -15,6 +15,7 @@ export async function sendAndPersistAssistantMessage({
   interactiveList,
   replyButtons,
   mediaUrls,
+  phoneNumberId,
 }: {
   conversationId: string;
   phone: string;
@@ -22,6 +23,7 @@ export async function sendAndPersistAssistantMessage({
   interactiveList?: WhatsAppInteractiveListPayload | null;
   replyButtons?: WhatsAppReplyButtonPayload | null;
   mediaUrls?: string[] | null;
+  phoneNumberId?: string;
 }) {
   if (mediaUrls && mediaUrls.length > 0) {
     for (const url of mediaUrls) {
@@ -31,6 +33,7 @@ export async function sendAndPersistAssistantMessage({
           phone,
           imageUrl: url,
           senderKind: "ai",
+          phoneNumberId,
         });
       } catch (err) {
         console.error(`[assistant-dispatcher] Failed to send image ${url}:`, err);
@@ -49,6 +52,7 @@ export async function sendAndPersistAssistantMessage({
         content,
         senderKind: "ai",
         replyButtons: buttonPayload,
+        phoneNumberId,
       });
       return;
     } catch (error) {
@@ -59,6 +63,7 @@ export async function sendAndPersistAssistantMessage({
           phone,
           content: `${content}\n\n${buildReplyButtonFallbackText(buttonPayload)}`,
           senderKind: "ai",
+          phoneNumberId,
         });
         return;
       }
@@ -79,6 +84,7 @@ export async function sendAndPersistAssistantMessage({
         content,
         senderKind: "ai",
         interactive: interactivePayload,
+        phoneNumberId,
       });
       return;
     } catch (error) {
@@ -89,6 +95,7 @@ export async function sendAndPersistAssistantMessage({
           phone,
           content: `${content}\n\n${buildInteractiveFallbackText(interactivePayload)}`,
           senderKind: "ai",
+          phoneNumberId,
         });
         return;
       }
@@ -102,6 +109,7 @@ export async function sendAndPersistAssistantMessage({
     phone,
     content,
     senderKind: "ai",
+    phoneNumberId,
   });
 }
 

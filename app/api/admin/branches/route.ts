@@ -20,7 +20,10 @@ export async function GET() {
   }
 
   try {
-    const branches = await listBranchesWithStats();
+    if (!auth.session.restaurantId) {
+      return NextResponse.json({ error: "No restaurant context." }, { status: 400 });
+    }
+    const branches = await listBranchesWithStats(auth.session.restaurantId);
     return NextResponse.json(branches);
   } catch (error) {
     return apiErrorResponse(error, { fallback: "Failed to load branches.", context: "admin branches GET" });
@@ -34,8 +37,11 @@ export async function POST(req: NextRequest) {
   }
 
   try {
+    if (!auth.session.restaurantId) {
+      return NextResponse.json({ error: "No restaurant context." }, { status: 400 });
+    }
     const body = await readLimitedJsonBody<BranchBody>(req, BRANCH_BODY_LIMIT_BYTES);
-    const branch = await createBranch({
+    const branch = await createBranch(auth.session.restaurantId, {
       name: body.name ?? "",
       slug: body.slug ?? null,
       city: body.city ?? "",
