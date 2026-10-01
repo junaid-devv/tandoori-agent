@@ -147,6 +147,7 @@ export async function POST(req: NextRequest) {
   try {
     rawBody = await req.text();
     if (process.env.MOCK_WHATSAPP !== "true" && !isValidWhatsAppSignature(rawBody, signature)) {
+      console.warn("[webhook] Incoming POST rejected with 401 Unauthorized due to signature mismatch.");
       return new Response("Unauthorized", { status: 401 });
     }
     body = JSON.parse(rawBody) as unknown;
@@ -1050,12 +1051,32 @@ function toIso(timestamp: string): string {
 }
 
 function isValidWhatsAppSignature(rawBody: string, sig: string | null): boolean {
-  const secret = process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET;
-  if (!secret) { console.error("[webhook] Missing WHATSAPP_APP_SECRET"); return false; }
-  if (!sig?.startsWith("sha256=")) { console.error("[webhook] Missing signature header"); return false; }
-  const expected = `sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`;
-  const eb = Buffer.from(expected), rb = Buffer.from(sig.trim());
-  return eb.length === rb.length && timingSafeEqual(eb, rb);
+  const secretEnv = process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET;
+  if (!secretEnv) {
+    console.error("[webhook] Missing WHATSAPP_APP_SECRET in environment variables");
+    return false;
+  }
+  if (!sig?.startsWith("sha256=")) {
+    console.error("[webhook] Missing or malformed x-hub-signature-256 header:", sig);
+    return false;
+  }
+
+  // Support multiple comma-separated secrets (e.g. during app transition or multi-app setups)
+  const secrets = secretEnv.split(",").map((s) => s.trim()).filter(Boolean);
+  const rb = Buffer.from(sig.trim());
+
+  for (const secret of secrets) {
+    const expected = `sha256=${createHmac("sha256", secret).update(rawBody).digest("hex")}`;
+    const eb = Buffer.from(expected);
+    if (eb.length === rb.length && timingSafeEqual(eb, rb)) {
+      return true;
+    }
+  }
+
+  console.error(
+    `[webhook] 401 Signature mismatch. Received: ${sig?.slice(0, 16)}... Ensure WHATSAPP_APP_SECRET matches App ID: ${process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID}`
+  );
+  return false;
 }
 
 // ---------------------------------------------------------------------------

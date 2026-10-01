@@ -171,33 +171,41 @@ export async function sendWhatsAppMessage(
       };
 
       if (!response.ok) {
-        // Fallback for Meta code 131047 (Customer 24h window closed): send default template
+        // Fallback for Meta code 131047 (Customer 24h window closed): send approved template
         if (data.error?.code === 131047) {
-          console.log("[whatsapp] Customer 24h window is closed. Falling back to hello_world template...");
-          const templateRes = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${phoneId}/messages`, {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              messaging_product: "whatsapp",
-              to,
-              type: "template",
-              template: {
-                name: "hello_world",
-                language: { code: "en_US" },
-              },
-            }),
-          });
-          const templateData = (await templateRes.json()) as { messages?: Array<{ id?: string }> };
-          if (templateRes.ok && templateData.messages?.[0]?.id) {
-            const sentId = templateData.messages[0].id;
-            recordSentMessageId(sentId);
-            return {
-              messageId: sentId,
-              raw: templateData,
-            };
+          console.log("[whatsapp] Customer 24h window is closed. Falling back to approved greeting template...");
+          const templateNames = ["restaurant_greeting", "hello_world"];
+          for (const templateName of templateNames) {
+            try {
+              const templateRes = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${phoneId}/messages`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                  messaging_product: "whatsapp",
+                  to,
+                  type: "template",
+                  template: {
+                    name: templateName,
+                    language: { code: "en_US" },
+                  },
+                }),
+              });
+              const templateData = (await templateRes.json()) as { messages?: Array<{ id?: string }>; error?: { message?: string } };
+              if (templateRes.ok && templateData.messages?.[0]?.id) {
+                const sentId = templateData.messages[0].id;
+                recordSentMessageId(sentId);
+                return {
+                  messageId: sentId,
+                  raw: templateData,
+                };
+              }
+              console.warn(`[whatsapp] Template ${templateName} failed:`, templateData.error?.message);
+            } catch (err) {
+              console.warn(`[whatsapp] Template ${templateName} error:`, err);
+            }
           }
         }
 
