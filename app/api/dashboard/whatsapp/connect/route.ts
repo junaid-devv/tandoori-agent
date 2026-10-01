@@ -13,13 +13,46 @@ interface ConnectWhatsAppBody {
 
 export async function POST(req: NextRequest) {
   const auth = await requireApiSession();
-  if (auth.response) {
+  if (auth.response || !auth.session) {
     return auth.response;
+  }
+
+  // 1) Role-Based Access Control: Only admins and super admins can configure WhatsApp
+  if (auth.session.role === "branch_staff") {
+    return NextResponse.json(
+      { error: "Forbidden: Only restaurant administrators or platform owners can configure WhatsApp integrations." },
+      { status: 403 }
+    );
   }
 
   try {
     const body = await readLimitedJsonBody<ConnectWhatsAppBody>(req, 32 * 1024);
     let { code, wabaId, phoneNumberId } = body;
+
+    // Tenant Isolation: regular admins are strictly restricted to their own restaurantId
+    let targetRestaurantId = auth.session.restaurantId;
+    if (auth.session.role === "super_admin") {
+      const queryRestaurantId = new URL(req.url).searchParams.get("restaurant_id");
+      if (queryRestaurantId) {
+        targetRestaurantId = queryRestaurantId;
+      }
+    }
+
+    if (!targetRestaurantId) {
+      const { data: firstRest } = await supabaseAdmin
+        .from("restaurant_profiles")
+        .select("id")
+        .limit(1)
+        .maybeSingle();
+      targetRestaurantId = firstRest?.id;
+    }
+
+    if (!targetRestaurantId) {
+      return NextResponse.json(
+        { error: "No restaurant context found. Please specify a restaurant." },
+        { status: 400 },
+      );
+    }
 
     const appId = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID;
     const appSecret = process.env.META_APP_SECRET || process.env.WHATSAPP_APP_SECRET;
@@ -137,24 +170,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // 5) Fetch phone details if not already fetched
-    if (!displayPhoneNumber || !verifiedName) {
-      try {
-        const phoneRes = await fetch(
-          `https://graph.facebook.com/v22.0/${encodeURIComponent(phoneNumberId)}?fields=id,display_phone_number,verified_name`,
-          {
-            headers: { Authorization: `Bearer ${accessToken}` },
-          }
-        );
-        if (phoneRes.ok) {
-          const phoneData = await phoneRes.json();
-          if (!verifiedName) verifiedName = phoneData.verified_name || null;
-          if (!displayPhoneNumber) displayPhoneNumber = phoneData.display_phone_number || null;
-        }
-      } catch (e) {
-        console.warn("[whatsapp-connect] Could not fetch phone details:", e);
+    // 5) Strict Meta Authorization: Verify that the access token has legitimate permissions to manage this Phone Number
+    const phoneRes = await fetch(
+      `https://graph.facebook.com/v22.0/${encodeURIComponent(phoneNumberId)}?fields=id,display_phone_number,verified_name,quality_rating`,
+      {
+        headers: { Authorization: `Bearer ${accessToken}` },
       }
+    );
+
+    if (!phoneRes.ok) {
+      const errData = await phoneRes.json().catch(() => ({}));
+      return NextResponse.json(
+        {
+          error:
+            errData?.error?.message ||
+            "Security verification failed: Your Meta account does not have permission to manage this WhatsApp Phone Number.",
+        },
+        { status: 403 }
+      );
     }
+
+    const phoneData = await phoneRes.json();
+    verifiedName = phoneData.verified_name || verifiedName || null;
+    displayPhoneNumber = phoneData.display_phone_number || displayPhoneNumber || null;
 
     // 6) Automatically subscribe our webhook to the business's WABA
     const subscribeRes = await fetch(`https://graph.facebook.com/v22.0/${encodeURIComponent(wabaId)}/subscribed_apps`, {
@@ -168,25 +206,6 @@ export async function POST(req: NextRequest) {
     const subscribeData = await subscribeRes.json();
     if (!subscribeRes.ok || !subscribeData.success) {
       console.warn("[whatsapp-connect] Webhook auto-subscription warning:", subscribeData);
-    }
-
-    let targetRestaurantId =
-      auth.session.restaurantId || new URL(req.url).searchParams.get("restaurant_id");
-
-    if (!targetRestaurantId) {
-      const { data: firstRest } = await supabaseAdmin
-        .from("restaurant_profiles")
-        .select("id")
-        .limit(1)
-        .maybeSingle();
-      targetRestaurantId = firstRest?.id;
-    }
-
-    if (!targetRestaurantId) {
-      return NextResponse.json(
-        { error: "No restaurant context found. Please specify a restaurant." },
-        { status: 400 },
-      );
     }
 
     // 7) Update restaurant profile to enable Meta Cloud API
