@@ -176,49 +176,76 @@ export default function WhatsAppPage() {
       return;
     }
 
-    if (!configId) {
-      toast.error("WHATSAPP_CONFIG_ID is missing. Please configure it in your environment settings.");
-      return;
+    // Ensure FB is initialized before login
+    if (appId) {
+      try {
+        window.FB.init({
+          appId,
+          autoLogAppEvents: true,
+          xfbml: true,
+          version: "v22.0",
+        });
+      } catch (e) {
+        console.warn("[FB.init] Init warning:", e);
+      }
     }
 
     setIsConnecting(true);
 
-    window.FB.login(
-      async (response) => {
-        if (response.authResponse?.code) {
-          const authCode = response.authResponse.code;
-          toast.success("Authorization granted! Connecting to ORDERiQ...");
-          await completeEmbeddedSignup({
-            code: authCode,
-            phoneNumberId: sessionInfoRef.current.phoneNumberId || "",
-            wabaId: sessionInfoRef.current.wabaId || "",
-          });
-        } else {
-          // If popup closed without authResponse code, check if message event already captured IDs
-          if (sessionInfoRef.current.phoneNumberId && sessionInfoRef.current.wabaId && !isCompletingRef.current) {
+    // Timeout guard: reset button state if popup is blocked or closed silently
+    const safetyTimeout = setTimeout(() => {
+      setIsConnecting((prev) => {
+        if (prev) {
+          toast.info("If the Meta popup did not appear, please allow popups in your browser or connect manually below.");
+          return false;
+        }
+        return false;
+      });
+    }, 15000);
+
+    try {
+      window.FB.login(
+        async (response) => {
+          clearTimeout(safetyTimeout);
+          if (response.authResponse?.code) {
+            const authCode = response.authResponse.code;
+            toast.success("Authorization granted! Connecting to ORDERiQ...");
             await completeEmbeddedSignup({
-              phoneNumberId: sessionInfoRef.current.phoneNumberId,
-              wabaId: sessionInfoRef.current.wabaId,
+              code: authCode,
+              phoneNumberId: sessionInfoRef.current.phoneNumberId || "",
+              wabaId: sessionInfoRef.current.wabaId || "",
             });
           } else {
-            setIsConnecting(false);
-            toast.info("Signup popup closed.");
+            // If popup closed without authResponse code, check if message event already captured IDs
+            if (sessionInfoRef.current.phoneNumberId && sessionInfoRef.current.wabaId && !isCompletingRef.current) {
+              await completeEmbeddedSignup({
+                phoneNumberId: sessionInfoRef.current.phoneNumberId,
+                wabaId: sessionInfoRef.current.wabaId,
+              });
+            } else {
+              setIsConnecting(false);
+              toast.info("Signup popup closed.");
+            }
           }
-        }
-      },
-      {
-        config_id: configId,
-        response_type: "code",
-        override_default_response_type: true,
-        extras: {
-          setup: {},
-          version: "v4",
-          featureType: "whatsapp_business_app_onboarding",
-          sessionInfoVersion: "3",
-          coex: true,
         },
-      }
-    );
+        {
+          config_id: configId,
+          response_type: "code",
+          override_default_response_type: true,
+          extras: {
+            setup: {},
+            version: "v4",
+            featureType: "whatsapp_business_app_onboarding",
+            sessionInfoVersion: "3",
+            coex: true,
+          },
+        }
+      );
+    } catch (err) {
+      clearTimeout(safetyTimeout);
+      setIsConnecting(false);
+      toast.error("Could not launch signup: " + (err as Error).message);
+    }
   };
 
   const handleManualConnect = async (e: React.FormEvent) => {
@@ -285,7 +312,7 @@ export default function WhatsAppPage() {
       {/* Facebook JS SDK Loader */}
       <Script
         src="https://connect.facebook.net/en_US/sdk.js"
-        strategy="lazyOnload"
+        strategy="afterInteractive"
         onLoad={() => {
           const appId = data?.metaConfig?.appId || process.env.NEXT_PUBLIC_META_APP_ID;
           if (window.FB && appId) {
