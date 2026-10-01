@@ -208,16 +208,7 @@ export async function POST(req: NextRequest) {
       console.warn("[whatsapp-connect] Webhook auto-subscription warning:", subscribeData);
     }
 
-    // 7) Update restaurant profile to enable Meta Cloud API
-    await supabaseAdmin
-      .from("restaurant_profiles")
-      .update({
-        whatsapp_provider: "meta",
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", targetRestaurantId);
-
-    // 8) Upsert into whatsapp_configs mapping phone_number_id to restaurant
+    // 7) Upsert into whatsapp_configs mapping phone_number_id to restaurant
     await supabaseAdmin
       .from("whatsapp_configs")
       .upsert(
