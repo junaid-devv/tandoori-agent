@@ -25,29 +25,57 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Action is required." }, { status: 400 });
     }
 
+    const targetRestaurantId =
+      auth.session.restaurantId || new URL(req.url).searchParams.get("restaurant_id");
+
     if (action === "test_message") {
       if (!recipientPhone) {
         return NextResponse.json({ error: "recipientPhone is required for test_message." }, { status: 400 });
       }
 
       const digits = recipientPhone.replace(/[^0-9]/g, "");
+
+      let phoneId: string | undefined;
+      let token: string | undefined;
+
+      if (targetRestaurantId) {
+        const { data: config } = await supabaseAdmin
+          .from("whatsapp_configs")
+          .select("phone_number_id, access_token")
+          .eq("restaurant_id", targetRestaurantId)
+          .eq("is_active", true)
+          .order("updated_at", { ascending: false })
+          .maybeSingle();
+
+        if (config?.phone_number_id) {
+          phoneId = config.phone_number_id;
+        }
+        if (config?.access_token) {
+          token = config.access_token;
+        }
+      }
+
       const res = await sendWhatsAppMessage(
         digits,
-        "👋 Hello from ORDERiQ! Your Meta WhatsApp Cloud API connection with Coexistence is working perfectly."
+        "👋 Hello from ORDERiQ! Your Meta WhatsApp Cloud API connection with Coexistence is working perfectly.",
+        phoneId,
+        token
       );
 
       return NextResponse.json({
         success: true,
-        message: `Test message sent to ${digits}! Message ID: ${res.messageId || "sent"}`,
+        message: `Test message sent to +${digits}! Message ID: ${res.messageId || "sent"}`,
         data: res,
       });
     }
 
     if (action === "disconnect") {
-      await supabaseAdmin
-        .from("restaurant_profiles")
-        .update({ whatsapp_provider: "none", updated_at: new Date().toISOString() })
-        .eq("id", auth.session.restaurantId);
+      if (targetRestaurantId) {
+        await supabaseAdmin
+          .from("whatsapp_configs")
+          .update({ is_active: false, updated_at: new Date().toISOString() })
+          .eq("restaurant_id", targetRestaurantId);
+      }
 
       return NextResponse.json({
         success: true,
@@ -56,10 +84,12 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === "reconnect") {
-      await supabaseAdmin
-        .from("restaurant_profiles")
-        .update({ whatsapp_provider: "meta", updated_at: new Date().toISOString() })
-        .eq("id", auth.session.restaurantId);
+      if (targetRestaurantId) {
+        await supabaseAdmin
+          .from("whatsapp_configs")
+          .update({ is_active: true, updated_at: new Date().toISOString() })
+          .eq("restaurant_id", targetRestaurantId);
+      }
 
       return NextResponse.json({
         success: true,

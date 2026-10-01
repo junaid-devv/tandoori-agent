@@ -1,4 +1,5 @@
 import { getRestaurantProfile } from "./restaurant-profile";
+import { supabaseAdmin } from "./supabase-admin";
 
 type WhatsAppSendResult = {
   messageId: string | null;
@@ -85,7 +86,57 @@ export function isBotSentMessageId(messageId: string | null | undefined): boolea
   return true;
 }
 
-export async function sendWhatsAppMessage(to: string, body: string, phoneNumberId?: string): Promise<WhatsAppSendResult> {
+async function resolveCredentials(
+  phoneNumberId?: string,
+  customToken?: string
+): Promise<{ phoneId: string; token: string }> {
+  let phoneId = phoneNumberId;
+  let token = customToken;
+
+  if (!phoneId || !token) {
+    try {
+      let query = supabaseAdmin
+        .from("whatsapp_configs")
+        .select("phone_number_id, access_token")
+        .eq("is_active", true);
+
+      if (phoneId) {
+        query = query.eq("phone_number_id", phoneId);
+      } else {
+        query = query.order("updated_at", { ascending: false });
+      }
+
+      const { data: config } = await query.limit(1).maybeSingle();
+
+      if (!phoneId && config?.phone_number_id) {
+        phoneId = config.phone_number_id;
+      }
+      if (!token && config?.access_token) {
+        token = config.access_token;
+      }
+    } catch (e) {
+      console.warn("[whatsapp] Error resolving dynamic credentials:", e);
+    }
+  }
+
+  phoneId = phoneId || process.env.WHATSAPP_PHONE_NUMBER_ID || "";
+  token = token || process.env.WHATSAPP_ACCESS_TOKEN || "";
+
+  if (!phoneId || !token) {
+    throw new Error(
+      "WhatsApp credentials (phone_number_id or access_token) are missing. Please connect WhatsApp in your dashboard."
+    );
+  }
+
+  return { phoneId, token };
+}
+
+export async function sendWhatsAppMessage(
+  to: string,
+  body: string,
+  phoneNumberId?: string,
+  customAccessToken?: string
+): Promise<WhatsAppSendResult> {
   if (process.env.MOCK_WHATSAPP === "true") {
     console.log(`[MOCK WHATSAPP] Sending text message to ${to}:`, body);
     return {
@@ -94,12 +145,7 @@ export async function sendWhatsAppMessage(to: string, body: string, phoneNumberI
     };
   }
 
-  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-
-  if (!phoneId || !token) {
-    throw new Error("WhatsApp credentials are missing.");
-  }
+  const { phoneId, token } = await resolveCredentials(phoneNumberId, customAccessToken);
 
   let lastError: Error | null = null;
 
@@ -125,6 +171,36 @@ export async function sendWhatsAppMessage(to: string, body: string, phoneNumberI
       };
 
       if (!response.ok) {
+        // Fallback for Meta code 131047 (Customer 24h window closed): send default template
+        if (data.error?.code === 131047) {
+          console.log("[whatsapp] Customer 24h window is closed. Falling back to hello_world template...");
+          const templateRes = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${phoneId}/messages`, {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              messaging_product: "whatsapp",
+              to,
+              type: "template",
+              template: {
+                name: "hello_world",
+                language: { code: "en_US" },
+              },
+            }),
+          });
+          const templateData = (await templateRes.json()) as { messages?: Array<{ id?: string }> };
+          if (templateRes.ok && templateData.messages?.[0]?.id) {
+            const sentId = templateData.messages[0].id;
+            recordSentMessageId(sentId);
+            return {
+              messageId: sentId,
+              raw: templateData,
+            };
+          }
+        }
+
         const errorMessage = data.error?.message || `WhatsApp send failed with status ${response.status}`;
         const error = new Error(errorMessage);
         if (data.error?.code === 131030) {
@@ -164,6 +240,7 @@ export async function sendWhatsAppImage(
   imageUrl: string,
   caption?: string,
   phoneNumberId?: string,
+  customAccessToken?: string,
 ): Promise<WhatsAppSendResult> {
   if (process.env.MOCK_WHATSAPP === "true") {
     console.log(`[MOCK WHATSAPP] Sending image to ${to}: ${imageUrl}${caption ? ` (caption: ${caption})` : ""}`);
@@ -173,12 +250,7 @@ export async function sendWhatsAppImage(
     };
   }
 
-  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-
-  if (!phoneId || !token) {
-    throw new Error("WhatsApp credentials are missing.");
-  }
+  const { phoneId, token } = await resolveCredentials(phoneNumberId, customAccessToken);
 
   let lastError: Error | null = null;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
@@ -233,10 +305,7 @@ export async function sendWhatsAppImage(
 }
 
 export async function getWhatsAppMediaUrl(mediaId: string): Promise<string> {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error("WhatsApp credentials are missing.");
-  }
+  const { token } = await resolveCredentials();
 
   const response = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${encodeURIComponent(mediaId)}`, {
     method: "GET",
@@ -252,10 +321,7 @@ export async function getWhatsAppMediaUrl(mediaId: string): Promise<string> {
 }
 
 export async function downloadWhatsAppMedia(mediaUrl: string): Promise<ArrayBuffer> {
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-  if (!token) {
-    throw new Error("WhatsApp credentials are missing.");
-  }
+  const { token } = await resolveCredentials();
 
   const response = await fetchWithTimeout(mediaUrl, {
     method: "GET",
@@ -273,6 +339,7 @@ export async function sendWhatsAppInteractiveList(
   to: string,
   payload: WhatsAppInteractiveListPayload,
   phoneNumberId?: string,
+  customAccessToken?: string,
 ): Promise<WhatsAppSendResult> {
   if (process.env.MOCK_WHATSAPP === "true") {
     console.log(`[MOCK WHATSAPP] Sending interactive list to ${to}:`, payload);
@@ -282,12 +349,7 @@ export async function sendWhatsAppInteractiveList(
     };
   }
 
-  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-
-  if (!phoneId || !token) {
-    throw new Error("WhatsApp credentials are missing.");
-  }
+  const { phoneId, token } = await resolveCredentials(phoneNumberId, customAccessToken);
 
   if (!payload.rows || payload.rows.length === 0) {
     throw new Error("Interactive list requires at least one row.");
@@ -376,6 +438,7 @@ export async function sendWhatsAppReplyButtons(
   to: string,
   payload: WhatsAppReplyButtonPayload,
   phoneNumberId?: string,
+  customAccessToken?: string,
 ): Promise<WhatsAppSendResult> {
   if (process.env.MOCK_WHATSAPP === "true") {
     console.log(`[MOCK WHATSAPP] Sending reply buttons to ${to}:`, payload);
@@ -385,12 +448,7 @@ export async function sendWhatsAppReplyButtons(
     };
   }
 
-  const phoneId = phoneNumberId || process.env.WHATSAPP_PHONE_NUMBER_ID;
-  const token = process.env.WHATSAPP_ACCESS_TOKEN;
-
-  if (!phoneId || !token) {
-    throw new Error("WhatsApp credentials are missing.");
-  }
+  const { phoneId, token } = await resolveCredentials(phoneNumberId, customAccessToken);
 
   if (!payload.buttons || payload.buttons.length === 0 || payload.buttons.length > 3) {
     throw new Error("Reply buttons require 1-3 buttons.");

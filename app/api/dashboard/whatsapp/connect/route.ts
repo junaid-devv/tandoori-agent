@@ -208,7 +208,29 @@ export async function POST(req: NextRequest) {
       console.warn("[whatsapp-connect] Webhook auto-subscription warning:", subscribeData);
     }
 
-    // 7) Upsert into whatsapp_configs mapping phone_number_id to restaurant
+    // Exchange for long-lived token if possible
+    let finalAccessToken = accessToken;
+    if (appId && appSecret && accessToken && exchangedToken) {
+      try {
+        const exchangeUrl = new URL("https://graph.facebook.com/v22.0/oauth/access_token");
+        exchangeUrl.searchParams.set("grant_type", "fb_exchange_token");
+        exchangeUrl.searchParams.set("client_id", appId);
+        exchangeUrl.searchParams.set("client_secret", appSecret);
+        exchangeUrl.searchParams.set("fb_exchange_token", accessToken);
+
+        const exchangeRes = await fetch(exchangeUrl.toString());
+        if (exchangeRes.ok) {
+          const exchangeData = await exchangeRes.json();
+          if (exchangeData.access_token) {
+            finalAccessToken = exchangeData.access_token;
+          }
+        }
+      } catch (err) {
+        console.warn("[whatsapp-connect] Could not exchange for long-lived token:", err);
+      }
+    }
+
+    // 7) Upsert into whatsapp_configs mapping phone_number_id to restaurant with access_token
     await supabaseAdmin
       .from("whatsapp_configs")
       .upsert(
@@ -218,6 +240,7 @@ export async function POST(req: NextRequest) {
           waba_id: wabaId,
           display_phone_number: displayPhoneNumber,
           verified_name: verifiedName,
+          access_token: finalAccessToken,
           is_active: true,
           updated_at: new Date().toISOString(),
         },
