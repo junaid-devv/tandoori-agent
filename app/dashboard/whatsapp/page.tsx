@@ -64,6 +64,12 @@ export default function WhatsAppPage() {
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
 
+  const [showManualConnect, setShowManualConnect] = useState(false);
+  const [manualWabaId, setManualWabaId] = useState("");
+  const [manualPhoneId, setManualPhoneId] = useState("");
+  const sessionInfoRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
+  const isCompletingRef = useRef(false);
+
   const fetchStatus = useCallback(async (isSilent = false) => {
     if (!isSilent) setIsLoading(true);
     try {
@@ -84,6 +90,39 @@ export default function WhatsAppPage() {
     fetchStatus(false);
   }, [fetchStatus]);
 
+  const completeEmbeddedSignup = async (params: {
+    code?: string;
+    phoneNumberId?: string;
+    wabaId?: string;
+  }) => {
+    if (isCompletingRef.current) return;
+    isCompletingRef.current = true;
+    setIsConnecting(true);
+    try {
+      const res = await fetch("/api/dashboard/whatsapp/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(params),
+      });
+
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result.error || "Failed to complete WhatsApp connection.");
+      }
+
+      toast.success("WhatsApp Connected Successfully! 🎉", {
+        description: "Official Meta Cloud API and Coexistence are now active.",
+      });
+      setShowManualConnect(false);
+      await fetchStatus(false);
+    } catch (err) {
+      toast.error((err as Error).message || "Connection failed.");
+    } finally {
+      setIsConnecting(false);
+      isCompletingRef.current = false;
+    }
+  };
+
   // Handle Embedded Signup session finish events from Facebook popup
   useEffect(() => {
     const handleSessionMessage = async (event: MessageEvent) => {
@@ -99,10 +138,13 @@ export default function WhatsAppPage() {
         if (payload?.type === "WA_EMBEDDED_SIGNUP") {
           if (payload.event === "FINISH") {
             const { phone_number_id, waba_id } = payload.data || {};
+            if (phone_number_id) sessionInfoRef.current.phoneNumberId = phone_number_id;
+            if (waba_id) sessionInfoRef.current.wabaId = waba_id;
+
             toast.success("Embedded Signup completed on Meta! Finalizing connection...");
 
-            // Notify backend to subscribe and persist
-            if (phone_number_id && waba_id) {
+            // If phone_number_id and waba_id are present and not already completing with code:
+            if (phone_number_id && waba_id && !isCompletingRef.current) {
               await completeEmbeddedSignup({
                 phoneNumberId: phone_number_id,
                 wabaId: waba_id,
@@ -120,35 +162,6 @@ export default function WhatsAppPage() {
     window.addEventListener("message", handleSessionMessage);
     return () => window.removeEventListener("message", handleSessionMessage);
   }, []);
-
-  const completeEmbeddedSignup = async (params: {
-    code?: string;
-    phoneNumberId: string;
-    wabaId: string;
-  }) => {
-    setIsConnecting(true);
-    try {
-      const res = await fetch("/api/dashboard/whatsapp/connect", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(params),
-      });
-
-      const result = await res.json();
-      if (!res.ok) {
-        throw new Error(result.error || "Failed to complete WhatsApp connection.");
-      }
-
-      toast.success("WhatsApp Connected Successfully! 🎉", {
-        description: "Official Meta Cloud API and Coexistence are now active.",
-      });
-      await fetchStatus(false);
-    } catch (err) {
-      toast.error((err as Error).message || "Connection failed.");
-    } finally {
-      setIsConnecting(false);
-    }
-  };
 
   const launchEmbeddedSignup = () => {
     const appId =
@@ -171,18 +184,26 @@ export default function WhatsAppPage() {
     setIsConnecting(true);
 
     window.FB.login(
-      (response) => {
+      async (response) => {
         if (response.authResponse?.code) {
           const authCode = response.authResponse.code;
           toast.success("Authorization granted! Connecting to ORDERiQ...");
-          completeEmbeddedSignup({
+          await completeEmbeddedSignup({
             code: authCode,
-            phoneNumberId: data?.metaConfig?.phoneNumberId || "",
-            wabaId: data?.metaConfig?.wabaId || "",
+            phoneNumberId: sessionInfoRef.current.phoneNumberId || "",
+            wabaId: sessionInfoRef.current.wabaId || "",
           });
         } else {
-          setIsConnecting(false);
-          toast.info("Signup popup closed without authorization.");
+          // If popup closed without authResponse code, check if message event already captured IDs
+          if (sessionInfoRef.current.phoneNumberId && sessionInfoRef.current.wabaId && !isCompletingRef.current) {
+            await completeEmbeddedSignup({
+              phoneNumberId: sessionInfoRef.current.phoneNumberId,
+              wabaId: sessionInfoRef.current.wabaId,
+            });
+          } else {
+            setIsConnecting(false);
+            toast.info("Signup popup closed.");
+          }
         }
       },
       {
@@ -198,6 +219,18 @@ export default function WhatsAppPage() {
         },
       }
     );
+  };
+
+  const handleManualConnect = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!manualWabaId.trim() || !manualPhoneId.trim()) {
+      toast.error("Please enter both WABA ID and Phone Number ID.");
+      return;
+    }
+    await completeEmbeddedSignup({
+      wabaId: manualWabaId.trim(),
+      phoneNumberId: manualPhoneId.trim(),
+    });
   };
 
   const handleSendTestMessage = async (e: React.FormEvent) => {
@@ -426,6 +459,59 @@ export default function WhatsAppPage() {
                   {data?.metaConfig?.qualityRating || "GREEN / High"}
                 </p>
               </div>
+            </div>
+
+            {/* Manual Credentials Fallback */}
+            <div className="mt-5 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setShowManualConnect(!showManualConnect)}
+                className="text-xs font-semibold text-slate-500 hover:text-slate-800 flex items-center gap-1.5 transition-colors"
+              >
+                <span>{showManualConnect ? "− Hide Manual Setup" : "+ Already completed signup on Meta? Connect manually"}</span>
+              </button>
+
+              {showManualConnect && (
+                <form onSubmit={handleManualConnect} className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
+                  <p className="text-xs text-slate-600">
+                    If you finished signup in Meta or already have your WhatsApp Business Account (WABA) and Phone Number IDs, enter them below to link immediately:
+                  </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        WABA ID (Business Account ID)
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 523910294819201"
+                        value={manualWabaId}
+                        onChange={(e) => setManualWabaId(e.target.value)}
+                        className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
+                        Phone Number ID
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 102948572910394"
+                        value={manualPhoneId}
+                        onChange={(e) => setManualPhoneId(e.target.value)}
+                        className="w-full px-3 py-2 text-xs font-mono bg-white border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20"
+                      />
+                    </div>
+                  </div>
+                  <button
+                    type="submit"
+                    disabled={isConnecting}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold transition-all shadow-xs disabled:opacity-50"
+                  >
+                    {isConnecting ? <RefreshCw size={12} className="animate-spin" /> : <ShieldCheck size={14} />}
+                    Save &amp; Link WhatsApp Credentials
+                  </button>
+                </form>
+              )}
             </div>
           </div>
 
