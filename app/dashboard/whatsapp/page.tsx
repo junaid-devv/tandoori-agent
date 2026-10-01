@@ -22,6 +22,7 @@ import {
 import { clsx } from "clsx";
 import { toast } from "sonner";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
+import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 
 type MetaConfig = {
   configured: boolean;
@@ -57,6 +58,7 @@ declare global {
 }
 
 export default function WhatsAppPage() {
+  const { profile } = useDashboardContext();
   const [data, setData] = useState<WaStatusResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
@@ -73,7 +75,8 @@ export default function WhatsAppPage() {
   const fetchStatus = useCallback(async (isSilent = false) => {
     if (!isSilent) setIsLoading(true);
     try {
-      const res = await fetch("/api/dashboard/whatsapp/status", { cache: "no-store" });
+      const restParam = profile?.id ? `?restaurant_id=${encodeURIComponent(profile.id)}` : "";
+      const res = await fetch(`/api/dashboard/whatsapp/status${restParam}`, { cache: "no-store" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: WaStatusResponse = await res.json();
       setData(json);
@@ -84,11 +87,42 @@ export default function WhatsAppPage() {
     } finally {
       if (!isSilent) setIsLoading(false);
     }
-  }, []);
+  }, [profile?.id]);
 
   useEffect(() => {
     fetchStatus(false);
   }, [fetchStatus]);
+
+  // Ensure FB SDK is initialized as soon as appId is available
+  useEffect(() => {
+    const appId = data?.metaConfig?.appId || process.env.NEXT_PUBLIC_META_APP_ID;
+    window.fbAsyncInit = function () {
+      if (window.FB && appId) {
+        try {
+          window.FB.init({
+            appId,
+            autoLogAppEvents: true,
+            xfbml: true,
+            version: "v22.0",
+          });
+        } catch (e) {
+          console.warn("[FB.init] Init warning:", e);
+        }
+      }
+    };
+    if (window.FB && appId) {
+      try {
+        window.FB.init({
+          appId,
+          autoLogAppEvents: true,
+          xfbml: true,
+          version: "v22.0",
+        });
+      } catch (e) {
+        console.warn("[FB.init] Init warning:", e);
+      }
+    }
+  }, [data?.metaConfig?.appId]);
 
   const completeEmbeddedSignup = async (params: {
     code?: string;
@@ -99,7 +133,8 @@ export default function WhatsAppPage() {
     isCompletingRef.current = true;
     setIsConnecting(true);
     try {
-      const res = await fetch("/api/dashboard/whatsapp/connect", {
+      const restParam = profile?.id ? `?restaurant_id=${encodeURIComponent(profile.id)}` : "";
+      const res = await fetch(`/api/dashboard/whatsapp/connect${restParam}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(params),
@@ -205,12 +240,12 @@ export default function WhatsAppPage() {
 
     try {
       window.FB.login(
-        async (response) => {
+        function (response) {
           clearTimeout(safetyTimeout);
-          if (response.authResponse?.code) {
+          if (response?.authResponse?.code) {
             const authCode = response.authResponse.code;
             toast.success("Authorization granted! Connecting to ORDERiQ...");
-            await completeEmbeddedSignup({
+            void completeEmbeddedSignup({
               code: authCode,
               phoneNumberId: sessionInfoRef.current.phoneNumberId || "",
               wabaId: sessionInfoRef.current.wabaId || "",
@@ -218,7 +253,7 @@ export default function WhatsAppPage() {
           } else {
             // If popup closed without authResponse code, check if message event already captured IDs
             if (sessionInfoRef.current.phoneNumberId && sessionInfoRef.current.wabaId && !isCompletingRef.current) {
-              await completeEmbeddedSignup({
+              void completeEmbeddedSignup({
                 phoneNumberId: sessionInfoRef.current.phoneNumberId,
                 wabaId: sessionInfoRef.current.wabaId,
               });
@@ -500,9 +535,19 @@ export default function WhatsAppPage() {
 
               {showManualConnect && (
                 <form onSubmit={handleManualConnect} className="mt-3 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-3">
-                  <p className="text-xs text-slate-600">
-                    If you finished signup in Meta or already have your WhatsApp Business Account (WABA) and Phone Number IDs, enter them below to link immediately:
-                  </p>
+                  <div className="text-xs text-slate-600 space-y-1.5">
+                    <p>
+                      If you finished signup in Meta or want to link your WhatsApp Business account directly:
+                    </p>
+                    <div className="text-[11px] text-slate-500 bg-white p-2.5 rounded-xl border border-slate-200">
+                      <strong className="text-slate-700">Where to find these in Meta:</strong>
+                      <ol className="list-decimal list-inside mt-1 space-y-0.5">
+                        <li>Go to <strong>developers.facebook.com/apps/4417882651864292</strong> (or Meta Business Suite &rarr; WhatsApp Accounts).</li>
+                        <li>Click <strong>WhatsApp</strong> &rarr; <strong>API Setup</strong>.</li>
+                        <li>Copy the <strong>Phone number ID</strong> and <strong>WhatsApp Business Account ID (WABA ID)</strong>.</li>
+                      </ol>
+                    </div>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <div>
                       <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">
