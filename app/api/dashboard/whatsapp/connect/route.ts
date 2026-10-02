@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/branch-request";
 import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { invalidateRestaurantCaches } from "@/lib/restaurant-resolver";
 
 export const dynamic = "force-dynamic";
 
@@ -246,6 +247,10 @@ export async function POST(req: NextRequest) {
         },
         { onConflict: "phone_number_id" },
       );
+
+    // Immediately invalidate in-memory resolver cache so the next incoming
+    // webhook from this phone_number_id is recognised without waiting for TTL.
+    invalidateRestaurantCaches();
 
     return NextResponse.json({
       success: true,

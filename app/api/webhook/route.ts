@@ -1,15 +1,12 @@
 /**
- * app/api/webhook/route.ts — rebuilt Phase 8
+ * app/api/webhook/route.ts — Single-Branch Edition
  *
  * Transport only: verify signature → record event → 200 immediately.
  * All heavy work runs inside after() via processWebhookEventInBackground.
  *
- * Key changes from the old god-route:
- *  - decideTurn() → runTurn() from lib/agent/pipeline
- *  - user_sessions table eliminated (merged into conversation_states)
- *  - order_agent_turns → agent_turns (written by pipeline automatically)
- *  - WhatsApp Flow code removed entirely
- *  - state fields: stage/last_shown_options (new schema)
+ * Single-branch model: each restaurant has exactly one active branch.
+ * The webhook auto-assigns it — no city/branch selection prompts.
+ * Full tenant isolation: every message is routed via phone_number_id → restaurant_id.
  */
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { after, NextRequest } from "next/server";
@@ -19,30 +16,17 @@ import { stateRepo, getDefaultState } from "@/lib/data/state.repo";
 import { contactRepo } from "@/lib/data/contact.repo";
 import { conversationRepo } from "@/lib/data/conversation.repo";
 import { messageRepo } from "@/lib/data/message.repo";
-import { getActiveBranches, getBranchById, isBranchChangeRequest, findBranchSelection, getBranchSelectionPrompt, type BranchSummary, type BranchRecord } from "@/lib/branches";
+import { getActiveBranches, type BranchRecord } from "@/lib/branches";
 import { escalateToHuman, resumeBotForConversation } from "@/lib/handoff";
 import { sendAndPersistAssistantMessage } from "@/lib/assistant-dispatcher";
-import { getMenuCatalog } from "@/lib/menu";
-import { getRestaurantSettings } from "@/lib/settings";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { getRestaurantByPhoneNumberId, type RestaurantContext } from "@/lib/restaurant-resolver";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { saveCustomerAddressFromOrder, updateCustomerOrderStats } from "@/lib/customer-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/lib/rate-limit";
-import {
-  buildInteractiveListForBranches,
-  buildInteractiveListForPresentedOptions,
-} from "@/lib/webhook-interactive-builders";
-import {
-  buildCityBranchGroups,
-  buildInteractiveListForCities,
-  buildInteractiveCategoryUI,
-  findCitySelection,
-  getCitySelectionPrompt,
-  normalizeCityValue,
-  type CityBranchGroup,
-} from "@/lib/webhook-city-helpers";
+import { buildInteractiveCategoryUI } from "@/lib/webhook-city-helpers";
+import { buildInteractiveListForPresentedOptions } from "@/lib/webhook-interactive-builders";
 import {
   claimWebhookEvent,
   markWebhookEventFailed,
@@ -231,11 +215,9 @@ async function processWebhook(body: unknown) {
         console.warn("[webhook] Unknown phone_number_id for echo, skipping:", phoneNumberId);
         continue;
       }
-      const [branches, profile] = await Promise.all([
-        getCachedBranches(restaurantCtx.restaurantId),
-        getCachedProfile(restaurantCtx.restaurantId),
-      ]);
-      await processEchoMessage(message, customerPhone, branches, profile, phoneNumberId, restaurantCtx.restaurantId);
+      const branches = await getCachedBranches(restaurantCtx.restaurantId);
+      if (branches.length === 0) continue;
+      await processEchoMessage(message, customerPhone, branches[0], restaurantCtx.restaurantId);
     } catch (error) {
       console.error("[webhook-coexistence] Failed to process echo:", { customerPhone, error });
     }
@@ -269,25 +251,34 @@ async function processWebhook(body: unknown) {
   for (const { message, contactName, phoneNumberId } of events) {
     try {
       if (!phoneNumberId) {
-        console.warn("[webhook] Missing phone_number_id, skipping");
+        console.warn("[webhook] Missing phone_number_id in incoming message — check Meta webhook subscription. Skipping message from:", message.from);
         continue;
       }
       const restaurantCtx = await getRestaurantByPhoneNumberId(phoneNumberId);
       if (!restaurantCtx) {
-        console.warn("[webhook] Unknown phone_number_id, skipping:", phoneNumberId);
+        console.warn(
+          `[webhook] phone_number_id "${phoneNumberId}" is NOT registered in whatsapp_configs. ` +
+          `Please connect WhatsApp in the dashboard (Settings > WhatsApp). Dropping message from: ${message.from}`
+        );
         continue;
       }
       const [branches, profile] = await Promise.all([
         getCachedBranches(restaurantCtx.restaurantId),
         getCachedProfile(restaurantCtx.restaurantId),
       ]);
-      const cityGroups = await buildCityBranchGroups(branches);
-      await processOneMessage(message, contactName, branches, cityGroups, profile, phoneNumberId, restaurantCtx.restaurantId);
+      if (branches.length === 0) {
+        console.warn(`[webhook] Restaurant ${restaurantCtx.restaurantId} has no active branches. Cannot process message from: ${message.from}`);
+        continue;
+      }
+      // Single-branch: always use the first (only) active branch — no selection prompt needed.
+      const branch = branches[0];
+      await processOneMessage(message, contactName, branch, profile, phoneNumberId, restaurantCtx.restaurantId);
     } catch (error) {
-      console.error("[webhook] Failed to process message:", { from: message.from, error });
+      console.error("[webhook] Failed to process message:", { from: message.from, phoneNumberId, error });
     }
   }
 }
+
 
 // ---------------------------------------------------------------------------
 // Coexistence Echo Processing (Restaurant Owner replying from Phone App)
@@ -295,39 +286,21 @@ async function processWebhook(body: unknown) {
 async function processEchoMessage(
   message: IncomingWhatsAppMessage,
   customerPhone: string,
-  branches: BranchRecord[],
-  profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
-  phoneNumberId: string,
+  branch: BranchRecord,
   restaurantId: string,
 ) {
   recordSentMessageId(message.id);
 
   const contact = await upsertContact(customerPhone, "", restaurantId);
-  let activeBranch: BranchRecord | null = contact.active_branch_id
-    ? (branches.find((b) => b.id === contact.active_branch_id) ?? null)
-    : null;
 
-  if (!activeBranch && profile.branch_mode !== "multiple") {
-    const def = pickDefaultBranch(branches, profile.default_branch_id ?? null);
-    if (def) {
-      await contactRepo.setActiveBranch(contact.id, def.id);
-      contact.active_branch_id = def.id;
-      activeBranch = def;
-    }
-  }
-
-  if (!activeBranch && branches.length > 0) {
-    activeBranch = branches[0];
-  }
-
-  if (!activeBranch) {
-    console.warn("[webhook-coexistence] No branch available for customer echo:", customerPhone);
-    return;
+  // Auto-assign to the single branch if not already set
+  if (contact.active_branch_id !== branch.id) {
+    await contactRepo.setActiveBranch(contact.id, branch.id);
   }
 
   const conversation = await conversationRepo.ensure({
     contactId: contact.id,
-    branchId: activeBranch.id,
+    branchId: branch.id,
     phone: customerPhone,
     name: contact.name,
   });
@@ -359,11 +332,7 @@ async function processEchoMessage(
   const now = new Date().toISOString();
   await supabaseAdmin
     .from("conversations")
-    .update({
-      mode: "human",
-      has_unread: false,
-      updated_at: now,
-    })
+    .update({ mode: "human", has_unread: false, updated_at: now })
     .eq("id", conversation.id);
 
   await stateRepo.patch(conversation.id, {
@@ -378,13 +347,12 @@ async function processEchoMessage(
 }
 
 // ---------------------------------------------------------------------------
-// Per-message processing
+// Per-message processing (single-branch model)
 // ---------------------------------------------------------------------------
 async function processOneMessage(
   message: IncomingWhatsAppMessage,
   contactName: string,
-  branches: BranchRecord[],
-  cityGroups: CityBranchGroup[],
+  branch: BranchRecord,
   profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
   phoneNumberId: string,
   restaurantId: string,
@@ -396,33 +364,16 @@ async function processOneMessage(
     incomingContent ?? "",
     (contact.preferred_language as LanguagePreference) || "english",
   );
-  const prefersRomanUrdu = detectedLang === "roman_urdu";
 
-  // ---- Branch resolution ----
-  let activeBranch: BranchRecord | null = contact.active_branch_id
-    ? (branches.find((b) => b.id === contact.active_branch_id) ?? null)
-    : null;
-
-  if (!activeBranch && profile.branch_mode !== "multiple") {
-    const def = pickDefaultBranch(branches, profile.default_branch_id ?? null);
-    if (def) {
-      await contactRepo.setActiveBranch(contact.id, def.id);
-      contact.active_branch_id = def.id;
-      activeBranch = def;
-    }
+  // Auto-assign contact to the single branch on first message (no selection prompt needed)
+  if (contact.active_branch_id !== branch.id) {
+    await contactRepo.setActiveBranch(contact.id, branch.id);
+    contact.active_branch_id = branch.id;
   }
 
-  // ---- No branch yet: city/branch selection flow ----
-  if (!activeBranch) {
-    if (!incomingContent) {
-      if (message.type !== "reaction") await sendCitySelection(phone, cityGroups, detectedLang);
-      return;
-    }
-    await handleBranchSelection(message, contact, incomingContent, branches, cityGroups, detectedLang, profile);
-    return;
-  }
+  const activeBranch = branch;
 
-  // ---- Normal turn processing — ensure conversation first, then state (sequential by necessity) ----
+  // ---- Ensure conversation + state ----
   const conversation = await conversationRepo.ensure({
     contactId: contact.id,
     branchId: activeBranch.id,
@@ -467,13 +418,7 @@ async function processOneMessage(
 
   // Non-text / voice
   if (!incomingContent) {
-    await handleNonText(message, conversation, state, detectedLang, profile, activeBranch, contactName || contact.name || null);
-    return;
-  }
-
-  // Branch change request
-  if (isBranchChangeRequest(incomingContent) && profile.branch_mode === "multiple") {
-    await handleBranchChange(message, contact, conversation, state, incomingContent, cityGroups, branches, detectedLang);
+    await handleNonText(message, conversation, state, detectedLang, profile, activeBranch, contactName || contact.name || null, phoneNumberId);
     return;
   }
 
@@ -553,107 +498,6 @@ async function processOneMessage(
   }
 }
 
-// ---------------------------------------------------------------------------
-// Branch/city selection helpers
-// ---------------------------------------------------------------------------
-async function handleBranchSelection(
-  message: IncomingWhatsAppMessage,
-  contact: Awaited<ReturnType<typeof upsertContact>>,
-  content: string,
-  branches: BranchRecord[],
-  cityGroups: CityBranchGroup[],
-  langOrPrefersRomanUrdu: boolean | LanguagePreference,
-  profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
-) {
-  const phone = message.from;
-  const cities = cityGroups.map((g) => g.city);
-  const selectedCity = findCitySelection(content, cities);
-
-  if (selectedCity) {
-    const cityGroup = cityGroups.find((g) => normalizeCityValue(g.city) === normalizeCityValue(selectedCity)) ?? null;
-    const cityBranches = cityGroup?.branches ?? [];
-    if (cityBranches.length === 0) { await sendCitySelection(phone, cityGroups, langOrPrefersRomanUrdu); return; }
-    if (cityBranches.length === 1) {
-      await assignBranchAndGreet(message, contact, cityBranches[0], content, langOrPrefersRomanUrdu, profile);
-      return;
-    }
-    await sendBranchSelection(phone, cityBranches, langOrPrefersRomanUrdu, selectedCity);
-    return;
-  }
-
-  const selectedBranch = findBranchSelection(content, branches);
-  if (!selectedBranch) { await sendCitySelection(phone, cityGroups, langOrPrefersRomanUrdu); return; }
-  await assignBranchAndGreet(message, contact, selectedBranch, content, langOrPrefersRomanUrdu, profile);
-}
-
-async function assignBranchAndGreet(
-  message: IncomingWhatsAppMessage,
-  contact: Awaited<ReturnType<typeof upsertContact>>,
-  branch: BranchSummary,
-  content: string,
-  langOrPrefersRomanUrdu: boolean | LanguagePreference,
-  profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
-) {
-  await contactRepo.setActiveBranch(contact.id, branch.id);
-  const conversation = await conversationRepo.ensure({ contactId: contact.id, branchId: branch.id, phone: message.from });
-  const state = await stateRepo.ensure(conversation.id);
-  if (state.last_user_whatsapp_msg_id === message.id) return;
-
-  const resolvedLang: LanguagePreference =
-    typeof langOrPrefersRomanUrdu === "string"
-      ? langOrPrefersRomanUrdu
-      : langOrPrefersRomanUrdu
-      ? "roman_urdu"
-      : "english";
-
-  const menuItems = await getMenuCatalog(branch.id);
-  const categoryUI = buildInteractiveCategoryUI(menuItems, resolvedLang, 1);
-  const greetReply =
-    resolvedLang === "pashto"
-      ? `Kha, *${branch.name}* select sho. Address: ${branch.address}\n\nOss category select kra ya da item num rawalega.`
-      : resolvedLang === "roman_urdu"
-      ? `Theek hai, *${branch.name}* select ho gayi. Address: ${branch.address}\n\nAb category select karein ya item name bhej dein.`
-      : `Got it — you've selected *${branch.name}*. Address: ${branch.address}\n\nChoose a category or send any item name.`;
-
-  await messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content, whatsappMsgId: message.id });
-  await sendAndPersistAssistantMessage({
-    conversationId: conversation.id,
-    phone: message.from,
-    content: greetReply,
-    interactiveList: categoryUI.interactiveList,
-    replyButtons: categoryUI.replyButtons,
-  });
-  await stateRepo.patch(conversation.id, {
-    stage: "building_cart",
-    preferred_language: resolvedLang,
-    last_user_whatsapp_msg_id: message.id,
-    last_processed_user_message_at: toIso(message.timestamp),
-  });
-}
-
-async function handleBranchChange(
-  message: IncomingWhatsAppMessage,
-  contact: Awaited<ReturnType<typeof upsertContact>>,
-  conversation: Awaited<ReturnType<typeof conversationRepo.ensure>>,
-  state: Awaited<ReturnType<typeof stateRepo.ensure>>,
-  content: string,
-  cityGroups: CityBranchGroup[],
-  branches: BranchRecord[],
-  langOrPrefersRomanUrdu: boolean | LanguagePreference,
-) {
-  const resolvedLang: LanguagePreference =
-    typeof langOrPrefersRomanUrdu === "string"
-      ? langOrPrefersRomanUrdu
-      : langOrPrefersRomanUrdu
-      ? "roman_urdu"
-      : "english";
-  const cities = cityGroups.map((g) => g.city);
-  const prompt = getCitySelectionPrompt(cities, resolvedLang);
-  const interactiveList = buildInteractiveListForCities(cities, resolvedLang);
-  await contactRepo.setActiveBranch(contact.id, null);
-  await stateRepo.patch(conversation.id, { stage: "greeting", preferred_language: resolvedLang, last_user_whatsapp_msg_id: message.id });
-  await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: prompt, interactiveList });
-}
 
 // ---------------------------------------------------------------------------
 // Human mode / bot resume
@@ -707,6 +551,7 @@ async function handleNonText(
   profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
   activeBranch: { id: string; name?: string },
   customerName?: string | null,
+  phoneNumberId?: string,
 ) {
   if (message.type === "reaction") return;
 
@@ -840,6 +685,7 @@ async function handleNonText(
             content: result.replyText,
             interactiveList: result.interactive?.kind === "list" ? result.interactive.payload : null,
             replyButtons: result.interactive?.kind === "buttons" ? result.interactive.payload : null,
+            phoneNumberId,
           });
           void conversationRepo.touch(conversation.id).catch((e) => console.error("[voice] touch failed:", e));
         } finally {
@@ -867,7 +713,7 @@ async function handleNonText(
             mediaId: audioId,
           },
         });
-        await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: fallbackMsg });
+        await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: fallbackMsg, phoneNumberId });
         return;
       }
     }
@@ -891,7 +737,7 @@ async function handleNonText(
         mediaId: audioId,
       },
     });
-    await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: voiceFallback });
+    await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: voiceFallback, phoneNumberId });
     return;
   }
 
@@ -903,7 +749,7 @@ async function handleNonText(
       : lang === "roman_urdu"
       ? "Please text message bhej dein, main order mein help karta hoon."
       : "Please send a text message and I'll help with your order.";
-  await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: conversation.phone, content: fallback });
+  await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: conversation.phone, content: fallback, phoneNumberId });
 }
 
 // ---------------------------------------------------------------------------
@@ -1024,10 +870,6 @@ function resolveDisplayContent(message: IncomingWhatsAppMessage, content: string
 // ---------------------------------------------------------------------------
 // Small helpers
 // ---------------------------------------------------------------------------
-function pickDefaultBranch(branches: BranchRecord[], defaultId: string | null): BranchRecord | null {
-  if (defaultId) { const f = branches.find((b) => b.id === defaultId); if (f) return f; }
-  return branches[0] ?? null;
-}
 
 function shouldResetForInactivity(state: Awaited<ReturnType<typeof stateRepo.ensure>>, incomingAt: string): boolean {
   if (!state.last_processed_user_message_at) return false;
@@ -1116,22 +958,6 @@ async function acquireLock(conversationId: string): Promise<string | null> {
 
 async function releaseLock(conversationId: string, token: string) {
   await supabaseAdmin.from("conversation_states").update({ processing_token: null, processing_started_at: null }).eq("conversation_id", conversationId).eq("processing_token", token);
-}
-
-// ---------------------------------------------------------------------------
-// Messaging helpers
-// ---------------------------------------------------------------------------
-async function sendCitySelection(phone: string, cityGroups: CityBranchGroup[], langOrPrefersRomanUrdu: boolean | LanguagePreference) {
-  const cities = cityGroups.map((g) => g.city);
-  const list = buildInteractiveListForCities(cities, langOrPrefersRomanUrdu);
-  if (list) { try { await sendWhatsAppInteractiveList(phone, list); return; } catch { /* fall through */ } }
-  await sendWhatsAppMessage(phone, getCitySelectionPrompt(cities, langOrPrefersRomanUrdu));
-}
-
-async function sendBranchSelection(phone: string, branches: BranchSummary[], langOrPrefersRomanUrdu: boolean | LanguagePreference, city?: string) {
-  const list = buildInteractiveListForBranches(branches, langOrPrefersRomanUrdu, city);
-  if (list) { try { await sendWhatsAppInteractiveList(phone, list); return; } catch { /* fall through */ } }
-  await sendWhatsAppMessage(phone, getBranchSelectionPrompt(branches, langOrPrefersRomanUrdu));
 }
 
 // ---------------------------------------------------------------------------

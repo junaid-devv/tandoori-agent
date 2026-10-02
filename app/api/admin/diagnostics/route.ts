@@ -61,10 +61,27 @@ export async function GET(req: NextRequest) {
       .gt("expires_at", new Date().toISOString())
       .limit(20);
 
-    const [turnsRes, webhooksRes, rateLimitsRes] = await Promise.all([
+    // 4. Fetch WhatsApp configs health
+    const whatsappQuery = supabaseAdmin
+      .from("whatsapp_configs")
+      .select("id, phone_number_id, display_phone_number, is_active, updated_at, restaurant_id")
+      .eq("is_active", true)
+      .order("updated_at", { ascending: false })
+      .limit(10);
+
+    // 5. Fetch active branches count
+    const branchesQuery = supabaseAdmin
+      .from("branches")
+      .select("id, name, restaurant_id", { count: "exact" })
+      .eq("is_active", true)
+      .limit(10);
+
+    const [turnsRes, webhooksRes, rateLimitsRes, waConfigRes, branchesRes] = await Promise.all([
       turnsQuery,
       webhooksQuery,
       rateLimitsQuery,
+      whatsappQuery,
+      branchesQuery,
     ]);
 
     if (turnsRes.error) {
@@ -93,6 +110,32 @@ export async function GET(req: NextRequest) {
       return acc;
     }, {});
 
+    const waConfigs = waConfigRes.data ?? [];
+    const waHealth = {
+      mock_mode_active: process.env.MOCK_WHATSAPP === "true",
+      configured_phone_numbers: waConfigs.map((c: any) => ({
+        phone_number_id: c.phone_number_id,
+        display_phone_number: c.display_phone_number,
+        is_active: c.is_active,
+        updated_at: c.updated_at,
+      })),
+      has_access_token_in_env: Boolean(process.env.WHATSAPP_ACCESS_TOKEN),
+      has_verify_token_in_env: Boolean(process.env.WHATSAPP_VERIFY_TOKEN),
+      total_active_configs: waConfigs.length,
+      total_active_branches: branchesRes.count ?? 0,
+      issues: [] as string[],
+    };
+
+    if (waHealth.mock_mode_active) {
+      waHealth.issues.push("MOCK_WHATSAPP=true — bot replies are only logged, NOT sent to customers!");
+    }
+    if (waHealth.total_active_configs === 0) {
+      waHealth.issues.push("No active WhatsApp configs found. Connect WhatsApp in the dashboard.");
+    }
+    if (waHealth.total_active_branches === 0) {
+      waHealth.issues.push("No active branches found. Add at least one branch to process orders.");
+    }
+
     return NextResponse.json({
       metrics: {
         total_recent_turns: totalTurns,
@@ -103,6 +146,7 @@ export async function GET(req: NextRequest) {
         webhook_status_counts: webhookStatusCounts,
         active_rate_limits: rateLimitsRes.count ?? 0,
       },
+      whatsapp_health: waHealth,
       turns,
       webhooks,
     });

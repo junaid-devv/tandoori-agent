@@ -472,6 +472,67 @@ export default function WhatsAppPage() {
             and pauses bot automation so you have full control.
           </div>
         </div>
+
+        {/* ─── Connection Health Checklist ─── */}
+        {isConfigured && (
+          <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 space-y-2">
+            <p className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
+              <CheckCircle2 size={14} className="text-emerald-600" />
+              Connection Health Checklist
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+              {[
+                {
+                  label: "Phone Number Registered",
+                  ok: Boolean(data?.metaConfig?.phoneNumberId),
+                  detail: data?.metaConfig?.phoneNumberId
+                    ? `ID: ${data.metaConfig.phoneNumberId.slice(0, 8)}…`
+                    : "Not found in database",
+                },
+                {
+                  label: "Webhook Subscribed",
+                  ok: Boolean(data?.metaConfig?.phoneNumberId && data?.metaConfig?.configured),
+                  detail: "Meta forwards messages to your webhook",
+                },
+                {
+                  label: "Coexistence Active",
+                  ok: data?.metaConfig?.coexistenceEnabled ?? false,
+                  detail: "Phone app + AI replies work together",
+                },
+                {
+                  label: "Token Verification",
+                  ok: data?.metaConfig?.verifyTokenSet ?? false,
+                  detail: data?.metaConfig?.verifyTokenSet ? "WHATSAPP_VERIFY_TOKEN is set" : "Missing WHATSAPP_VERIFY_TOKEN in env",
+                },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className={clsx(
+                    "flex items-start gap-2 p-2.5 rounded-xl border text-xs",
+                    item.ok
+                      ? "bg-white border-emerald-200 text-slate-700"
+                      : "bg-amber-50 border-amber-200 text-amber-900"
+                  )}
+                >
+                  {item.ok ? (
+                    <CheckCircle2 size={13} className="text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle size={13} className="text-amber-600 shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <p className="font-semibold">{item.label}</p>
+                    <p className={clsx("text-[10px] mt-0.5", item.ok ? "text-slate-500" : "text-amber-700")}>
+                      {item.detail}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <p className="text-[11px] text-emerald-700 pt-1">
+              ✅ All checks green = customer messages will be received and replied automatically within seconds of connection.
+            </p>
+          </div>
+        )}
       </div>
 
       {/* Integration Details & Testing Grid */}

@@ -120,9 +120,6 @@ export default function SettingsPage() {
   const {
     session,
     profile,
-    selectedBranchId,
-    setSelectedBranchId,
-    selectedBranch,
     isSoundEnabled,
     toggleSoundEnabled,
     isAutoPrintEnabled,
@@ -153,12 +150,8 @@ export default function SettingsPage() {
     ai_personality: "Warm & Professional",
   });
 
-  const settingsUrl = useMemo(
-    () => (selectedBranchId === "all" ? null : `/api/settings?branch_id=${encodeURIComponent(selectedBranchId)}`),
-    [selectedBranchId]
-  );
-
-  const { data: cachedSettings, isLoading: loading } = useDataCache<Partial<SettingsState>>(settingsUrl);
+  // Single-branch: always load settings for the auto-resolved branch (no branch_id param needed)
+  const { data: cachedSettings, isLoading: loading } = useDataCache<Partial<SettingsState>>("/api/settings");
 
   // Merge cached data into local editable state
   useEffect(() => {
@@ -166,13 +159,6 @@ export default function SettingsPage() {
       setSettings((current) => ({ ...current, ...cachedSettings }));
     }
   }, [cachedSettings]);
-
-  // Auto-select branch if there is only 1 branch available
-  useEffect(() => {
-    if (selectedBranchId === "all" && session.allowedBranches.length === 1) {
-      setSelectedBranchId(session.allowedBranches[0].id);
-    }
-  }, [selectedBranchId, session.allowedBranches, setSelectedBranchId]);
 
   // Load database telemetry
   const loadDatabaseStats = useCallback(async () => {
@@ -204,11 +190,9 @@ export default function SettingsPage() {
   const selectedCityOption = cityOptions.includes(settings.city) ? settings.city : "__custom__";
 
   async function save() {
-    if (selectedBranchId === "all") return;
-
     setSaving(true);
     try {
-      const response = await fetch(`/api/settings?branch_id=${encodeURIComponent(selectedBranchId)}`, {
+      const response = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings),
@@ -302,66 +286,13 @@ export default function SettingsPage() {
     { key: "notifications", label: "Alerts & Printer", icon: <Bell size={15} /> },
   ];
 
-  if (selectedBranchId === "all") {
-    return (
-      <div className="space-y-6">
-        <PageHeader
-          title="Store Settings"
-          description="Branch-level operations, delivery zones, AI tone, and database insights."
-        />
-        {session.allowedBranches.length > 0 ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-900 shadow-sm">
-            <Building2 size={32} className="mx-auto mb-2 text-amber-600" />
-            <h3 className="font-bold text-base">Select a Branch to Configure</h3>
-            <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto">
-              You are currently viewing &ldquo;All Branches&rdquo;. Store settings (operating hours, delivery radius, menu rules) are configured per branch. Select one below to edit:
-            </p>
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {session.allowedBranches.map((branch) => (
-                <button
-                  key={branch.id}
-                  onClick={() => setSelectedBranchId(branch.id)}
-                  className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700 transition"
-                >
-                  <Store size={14} />
-                  Configure {branch.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        ) : (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center text-amber-900 shadow-sm">
-            <Building2 size={32} className="mx-auto mb-2 text-amber-600" />
-            <h3 className="font-bold text-base">No Branches Found</h3>
-            <p className="text-xs text-amber-700 mt-1 max-w-md mx-auto">
-              This restaurant does not have any active branches yet. Go to the Admin Center to add your first branch or onboard a restaurant client.
-            </p>
-            <div className="mt-4 flex justify-center">
-              <Link
-                href="/dashboard/admin"
-                className="inline-flex items-center gap-2 rounded-xl bg-amber-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-amber-700 transition"
-              >
-                Go to Admin Center
-              </Link>
-            </div>
-          </div>
-        )}
-      </div>
-    );
-  }
-
   return (
     <div className="space-y-6 pb-12">
       {/* Top Header with Save Button */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">Branch Settings</h1>
-            {selectedBranch && (
-              <span className="rounded-full bg-brand/10 text-brand px-2.5 py-0.5 text-xs font-bold">
-                {selectedBranch.name}
-              </span>
-            )}
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">Store Settings</h1>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
             Configure operational hours, delivery rules, AI voice persona, and inspect database metrics.

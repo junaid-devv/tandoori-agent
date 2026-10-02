@@ -323,8 +323,6 @@ function mergeAndSortMessages(items: Message[]) {
 
 export default function ConversationsPage() {
   const {
-    selectedBranchId,
-    selectedBranch,
     isContextPanelOpen,
     toggleContextPanelOpen,
   } = useDashboardContext();
@@ -391,11 +389,8 @@ export default function ConversationsPage() {
     return remaining <= 100;
   }, []);
 
-  // Conversations list query with stale-while-revalidate
-  const conversationsUrl = useMemo(() => {
-    const branchQuery = selectedBranchId === "all" ? "" : `&branch_id=${encodeURIComponent(selectedBranchId)}`;
-    return `/api/conversations?limit=100${branchQuery}`;
-  }, [selectedBranchId]);
+  // Conversations list query with stale-while-revalidate — no branch filter needed (single branch)
+  const conversationsUrl = "/api/conversations?limit=100";
 
   const {
     data: cachedConversations,
@@ -509,7 +504,7 @@ export default function ConversationsPage() {
     void markConversationRead(selectedId);
   }, [loadConversation, loadMessages, markConversationRead, selectedId]);
 
-  // Periodic polling (12s)
+  // Periodic polling (5s) — fast enough to feel near-real-time without hammering the server
   useEffect(() => {
     const interval = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
@@ -517,7 +512,7 @@ export default function ConversationsPage() {
       revalidateList();
       if (selectedIdRef.current) void loadConversation(selectedIdRef.current);
       if (selectedIdRef.current) void loadMessages(selectedIdRef.current);
-    }, 12000);
+    }, 5000);
     return () => {
       window.clearInterval(interval);
     };

@@ -67,23 +67,12 @@ export default function DashboardPage() {
     return <UniversityAdmissionsDashboard />;
   }
 
-  const { selectedBranchId, selectedBranch } = useDashboardContext();
   const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
   const [localAlerts, setLocalAlerts] = useState<StaffAlert[] | null>(null);
 
-  const summaryUrl = useMemo(() =>
-    selectedBranchId === "all"
-      ? "/api/dashboard/summary"
-      : `/api/dashboard/summary?branch_id=${encodeURIComponent(selectedBranchId)}`,
-    [selectedBranchId],
-  );
-
-  const alertsUrl = useMemo(() =>
-    selectedBranchId === "all"
-      ? "/api/staff-alerts?status=open&limit=8"
-      : `/api/staff-alerts?status=open&limit=8&branch_id=${encodeURIComponent(selectedBranchId)}`,
-    [selectedBranchId],
-  );
+  // Single-branch: no branch_id filter — always scoped to the restaurant
+  const summaryUrl = "/api/dashboard/summary";
+  const alertsUrl = "/api/staff-alerts?status=open&limit=8";
 
   const {
     data: summary,
@@ -150,7 +139,7 @@ export default function DashboardPage() {
     <div className="animate-fade-in space-y-4 sm:space-y-6">
       <PageHeader
         title="Dashboard"
-        description={selectedBranch ? `${selectedBranch.name} - ${selectedBranch.address}` : "All active branches"}
+        description="Restaurant overview & live performance"
         actions={
           <>
           <Link href="/dashboard/settings" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900" aria-label="Open settings">
