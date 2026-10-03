@@ -66,69 +66,61 @@ export function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-30 flex h-12 w-full items-center justify-between border-b border-slate-200 bg-white/90 px-3 backdrop-blur-md sm:h-16 sm:px-6 lg:px-8">
-      {/* Left: Breadcrumbs & Page title */}
-      <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
-          <span className="hidden sm:inline">{profile.app_name}</span>
-          <ChevronRight size={12} className="hidden sm:inline text-slate-300" />
-          <span className="font-bold text-slate-900 truncate text-xs sm:text-sm">{pageInfo.title}</span>
-        </div>
+    <header className="sticky top-0 z-30 flex h-11 w-full items-center gap-2 border-b border-slate-200 bg-white/95 px-3 backdrop-blur-sm sm:px-4 lg:px-6">
+      {/* Left: Breadcrumb + Restaurant Switcher */}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
+        <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">{profile.app_name}</span>
+        <ChevronRight size={12} className="hidden shrink-0 text-slate-300 sm:inline" />
+        <span className="truncate text-xs font-semibold text-slate-800">{pageInfo.title}</span>
 
-        {/* Super Admin: Tenant (Restaurant) Switcher */}
+        {/* Super Admin Restaurant Switcher */}
         {session.role === "super_admin" && (
-          <div className="relative ml-2 sm:ml-4" ref={restaurantDropdownRef}>
+          <div className="relative ml-1 shrink-0" ref={restaurantDropdownRef}>
             <button
               onClick={() => setRestaurantDropdownOpen((prev) => !prev)}
-              className="flex items-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-2.5 py-1.5 text-xs font-bold text-purple-900 transition hover:bg-purple-100"
+              className="flex items-center gap-1 rounded-md border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-800 transition hover:bg-purple-100"
               aria-expanded={restaurantDropdownOpen}
-              aria-label="Switch restaurant"
             >
-              <Building2 size={13} className="text-purple-600 shrink-0" />
-              <span className="max-w-[110px] truncate sm:max-w-[170px]">
-                {session.availableRestaurants?.find((r) => r.id === session.restaurantId)?.name || "Select Restaurant"}
+              <Building2 size={11} className="shrink-0 text-purple-500" />
+              <span className="max-w-[90px] truncate sm:max-w-[130px]">
+                {session.availableRestaurants?.find((r) => r.id === session.restaurantId)?.name ?? "Select"}
               </span>
-              <ChevronDown size={13} className={clsx("text-purple-500 transition-transform", restaurantDropdownOpen && "rotate-180")} />
+              <ChevronDown
+                size={11}
+                className={clsx("shrink-0 text-purple-400 transition-transform", restaurantDropdownOpen && "rotate-180")}
+              />
             </button>
 
             {restaurantDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1.5 w-64 rounded-xl border border-slate-200 bg-white p-1.5 shadow-xl ring-1 ring-black/5 animate-in fade-in-0 zoom-in-95 z-50">
-                <div className="px-2.5 py-1.5 border-b border-slate-100 mb-1 flex items-center justify-between">
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-purple-700">Client Restaurant</p>
-                  <span className="text-[9px] font-semibold text-slate-400">{session.availableRestaurants?.length || 0} active</span>
-                </div>
-                <div className="max-h-60 overflow-y-auto space-y-0.5">
-                  {(session.availableRestaurants ?? []).length === 0 ? (
-                    <p className="p-3 text-center text-xs text-slate-400">No restaurants created yet.</p>
-                  ) : (
-                    (session.availableRestaurants ?? []).map((rest) => {
-                      const isSelected = rest.id === session.restaurantId;
-                      return (
-                        <button
-                          key={rest.id}
-                          onClick={() => void handleSwitchRestaurant(rest.id)}
-                          className={clsx(
-                            "flex w-full items-center justify-between rounded-lg px-2.5 py-2 text-xs font-medium transition text-left",
-                            isSelected ? "bg-purple-50 text-purple-900 font-bold" : "text-slate-700 hover:bg-slate-50"
-                          )}
-                        >
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate font-semibold">{rest.name}</p>
-                            <p className="truncate text-[10px] text-slate-400">/{rest.slug}</p>
-                          </div>
-                          {isSelected && <Check size={14} className="text-purple-600 shrink-0 ml-2" />}
-                        </button>
-                      );
-                    })
-                  )}
+              <div className="absolute left-0 top-full mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1 shadow-xl ring-1 ring-black/5 z-50">
+                <p className="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                  Switch Restaurant
+                </p>
+                <div className="max-h-48 overflow-y-auto">
+                  {(session.availableRestaurants ?? []).map((rest) => {
+                    const isSelected = rest.id === session.restaurantId;
+                    return (
+                      <button
+                        key={rest.id}
+                        onClick={() => void handleSwitchRestaurant(rest.id)}
+                        className={clsx(
+                          "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition text-left",
+                          isSelected ? "bg-purple-50 font-semibold text-purple-900" : "text-slate-700 hover:bg-slate-50"
+                        )}
+                      >
+                        <span className="truncate">{rest.name}</span>
+                        {isSelected && <Check size={12} className="shrink-0 text-purple-600" />}
+                      </button>
+                    );
+                  })}
                 </div>
                 <div className="border-t border-slate-100 mt-1 pt-1">
                   <Link
                     href="/dashboard/admin"
                     onClick={() => setRestaurantDropdownOpen(false)}
-                    className="flex w-full items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-purple-700 hover:bg-purple-50 transition"
+                    className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-purple-700 hover:bg-purple-50 transition"
                   >
-                    <span>+ Onboard New Client</span>
+                    + Onboard New Client
                   </Link>
                 </div>
               </div>
@@ -137,8 +129,8 @@ export function Header() {
         )}
       </div>
 
-      {/* Right: Sound toggle & User profile */}
-      <div className="flex items-center gap-2 sm:gap-3">
+      {/* Right: Sound + User pill */}
+      <div className="flex shrink-0 items-center gap-1.5">
         <button
           onClick={() => {
             toggleSoundEnabled();
@@ -146,26 +138,26 @@ export function Header() {
           }}
           title={isSoundEnabled ? "Mute sounds" : "Unmute sounds"}
           className={clsx(
-            "flex h-8 w-8 items-center justify-center rounded-lg border text-xs transition",
+            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition",
             isSoundEnabled
-              ? "border-slate-200 bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 shadow-2xs"
-              : "border-amber-200 bg-amber-50 text-amber-700"
+              ? "border-slate-200 bg-white text-slate-500 hover:text-slate-800"
+              : "border-amber-200 bg-amber-50 text-amber-600"
           )}
           aria-label={isSoundEnabled ? "Mute sounds" : "Unmute sounds"}
         >
-          {isSoundEnabled ? <Volume2 size={15} /> : <VolumeX size={15} />}
+          {isSoundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
         </button>
 
         {/* User Pill */}
-        <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-2.5 py-1">
-          <div className="flex h-5 w-5 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-white">
+        <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-white">
             {(session.fullName || session.email || "U").charAt(0).toUpperCase()}
           </div>
-          <span className="text-xs font-semibold text-slate-800 truncate max-w-[110px]">
+          <span className="hidden max-w-[90px] truncate text-[11px] font-semibold text-slate-700 sm:block">
             {session.fullName || session.email || "Staff"}
           </span>
-          <span className="rounded bg-slate-200/80 px-1 py-0.2 text-[9px] font-bold uppercase text-slate-600">
-            {session.role === "super_admin" ? "Super Admin" : session.role === "admin" ? "Admin" : "Staff"}
+          <span className="rounded bg-slate-200 px-1 py-0.5 text-[9px] font-bold uppercase text-slate-500">
+            {session.role === "super_admin" ? "SA" : session.role === "admin" ? "Admin" : "Staff"}
           </span>
         </div>
       </div>

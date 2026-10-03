@@ -449,65 +449,49 @@ export default function AdminConsole() {
   ];
 
   return (
-    <div className="bg-slate-50/50 pb-10 sm:pb-16">
-      {/* Hero Header */}
-      <div className="relative mb-6 overflow-hidden rounded-2xl bg-zinc-950 sm:rounded-3xl">
-        {/* Subtle grid texture */}
-        <div
-          className="absolute inset-0 opacity-[0.04]"
-          style={{
-            backgroundImage: `linear-gradient(rgba(255,255,255,.5) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.5) 1px, transparent 1px)`,
-            backgroundSize: "32px 32px",
-          }}
-        />
-        {/* Orange glow */}
-        <div className="relative p-3 sm:p-7">
-          <div className="flex flex-col items-start justify-between gap-4 sm:flex-row">
-            <div>
-              <div className="mb-2 flex items-center gap-2 sm:mb-3">
-                <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-400/30 bg-orange-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-widest text-orange-300">
-                  <span className="h-1.5 w-1.5 rounded-full bg-orange-400 animate-pulse" />
-                  Admin Center
-                </span>
-              </div>
-              <h1 className="text-lg font-bold tracking-tight text-white sm:text-2xl">Branch & Staff Management</h1>
-              <p className="mt-1 hidden text-sm text-zinc-400 sm:block">Full access to operational controls and user permissions.</p>
-            </div>
-            <button
-              onClick={() => void logout()}
-              className="hidden w-full shrink-0 items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2.5 text-xs font-semibold text-zinc-300 transition-all hover:bg-white/10 hover:text-white sm:inline-flex sm:w-auto"
-            >
-              <LogOut size={13} />
-              Sign out
-            </button>
-          </div>
-
-          {/* Metrics Row */}
-          <div className="mt-3 grid grid-cols-4 gap-1.5 sm:mt-6 sm:grid-cols-2 sm:gap-3 lg:grid-cols-4">
-            {[
-              { label: "Branches", value: totals.branchCount, sub: `${branches.filter((b) => b.is_active).length} active` },
-              { label: "Staff Members", value: staff.length, sub: `${staff.filter((s) => s.role === "admin").length} admins` },
-              { label: "Unread Messages", value: totals.unread, sub: "across all branches" },
-              { label: "Active Orders", value: totals.activeOrders, sub: "currently open" },
-            ].map((m) => (
-              <div key={m.label} className="rounded-lg border border-white/[0.06] bg-white/[0.04] p-2 sm:rounded-2xl sm:p-4">
-                <p className="truncate text-[8px] font-semibold uppercase tracking-[0.12em] text-zinc-500 sm:text-[10px] sm:tracking-[0.18em]">{m.label}</p>
-                <p className="mt-1 text-xl font-bold text-white sm:mt-1.5 sm:text-3xl">{m.value}</p>
-                <p className="mt-0.5 hidden text-[11px] text-zinc-500 sm:block">{m.sub}</p>
-              </div>
-            ))}
-          </div>
+    <div className="space-y-3 pb-10">
+      {/* Compact header bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h1 className="text-sm font-bold text-slate-900">Admin Console</h1>
+          <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-brand">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand animate-pulse" />
+            {session.role === "super_admin" ? "Super Admin" : "Admin"}
+          </span>
         </div>
+        <button
+          onClick={() => void logout()}
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
+        >
+          <LogOut size={13} />
+          Sign Out
+        </button>
+      </div>
+
+      {/* Metrics */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        {[
+          { label: "Branches", value: totals.branchCount, sub: `${branches.filter((b) => b.is_active).length} active` },
+          { label: "Staff", value: staff.length, sub: `${staff.filter((s) => s.role === "admin").length} admins` },
+          { label: "Unread", value: totals.unread, sub: "across branches" },
+          { label: "Orders", value: totals.activeOrders, sub: "currently active" },
+        ].map((m) => (
+          <div key={m.label} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{m.label}</p>
+            <p className="mt-0.5 text-xl font-bold text-slate-900">{m.value}</p>
+            <p className="text-[10px] text-slate-400">{m.sub}</p>
+          </div>
+        ))}
       </div>
 
       {/* Tab Navigation */}
-      <div className="no-scrollbar mb-6 flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+      <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
         {tabs.map(({ key, label, icon }) => (
           <button
             key={key}
             onClick={() => setTab(key)}
             className={clsx(
-              "flex shrink-0 items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-sm font-semibold transition-all sm:flex-1",
+              "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all sm:flex-1 sm:justify-center whitespace-nowrap",
               tab === key
                 ? key === "safety"
                   ? "bg-red-600 text-white shadow-sm"
@@ -525,7 +509,7 @@ export default function AdminConsole() {
       {tab === "restaurants" && session.role === "super_admin" && (
         <section className="space-y-6">
           {/* Header Card */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div>
                 <div className="flex items-center gap-2">
@@ -697,7 +681,7 @@ export default function AdminConsole() {
       {/* ────────── BRANDING TAB ────────── */}
       {tab === "branding" && (
         <section className="space-y-5">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-bold text-slate-900">Restaurant Profile</h2>
@@ -750,7 +734,7 @@ export default function AdminConsole() {
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white">
                   <GitBranch size={16} />
@@ -799,7 +783,7 @@ export default function AdminConsole() {
               </div>
             </div>
 
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white">
                   <Users size={16} />
@@ -832,7 +816,7 @@ export default function AdminConsole() {
           {/* Menu Display & WhatsApp Engine Configuration */}
           <div className="grid gap-5 lg:grid-cols-2">
             {/* Menu Display Mode */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-600 text-white">
                   <ImageIcon size={16} />
@@ -1056,7 +1040,7 @@ export default function AdminConsole() {
             </div>
 
             {/* WhatsApp Gateway Engine */}
-            <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white">
                   <Smartphone size={16} />
@@ -1137,7 +1121,7 @@ export default function AdminConsole() {
       {tab === "branches" && (
         <section className="space-y-5">
           {/* Create Branch Card */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3 mb-5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-white">
                 <Plus size={15} />
@@ -1202,7 +1186,7 @@ export default function AdminConsole() {
           </div>
 
           {/* Branches List */}
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-6">
               <div>
                 <h2 className="text-base font-bold text-slate-900">Manage Branches</h2>
@@ -1342,7 +1326,7 @@ export default function AdminConsole() {
       {tab === "staff" && (
         <section className="space-y-5">
           {/* Create Staff Card */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex items-center gap-3 mb-5">
               <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-white">
                 <Plus size={15} />
@@ -1418,7 +1402,7 @@ export default function AdminConsole() {
           </div>
 
           {/* Staff List */}
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="flex flex-col gap-3 border-b border-slate-100 px-4 py-4 sm:flex-row sm:items-center sm:justify-between sm:px-6">
               <div>
                 <h2 className="text-base font-bold text-slate-900">Staff Directory</h2>
@@ -1575,7 +1559,7 @@ export default function AdminConsole() {
       {tab === "ai_config" && (
         <section className="space-y-6">
           {/* Header */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-brand">
@@ -1778,7 +1762,7 @@ export default function AdminConsole() {
       {tab === "diagnostics" && (
         <section className="space-y-6">
           {/* Header & Metrics */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-brand">
@@ -1822,7 +1806,7 @@ export default function AdminConsole() {
           </div>
 
           {/* Live Agent Turns Table */}
-          <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
             <div className="border-b border-slate-200 p-4 sm:px-6 flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-900">Recent AI Turn Log</h3>
@@ -1914,7 +1898,7 @@ export default function AdminConsole() {
           </div>
 
           {/* Webhook Events Summary */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
             <h3 className="text-sm font-bold text-slate-900 mb-1">WhatsApp Webhook Events Monitor</h3>
             <p className="text-xs text-slate-400 mb-4">Realtime ingestion logs from Meta Cloud API</p>
 
@@ -1952,7 +1936,7 @@ export default function AdminConsole() {
       {/* ────────── SAFETY TAB ────────── */}
       {tab === "safety" && (
         <section className="space-y-4">
-          <div className="rounded-2xl border border-red-200 bg-white p-4 shadow-sm sm:p-6">
+          <div className="rounded-xl border border-red-200 bg-white p-4 shadow-sm">
             <div className="flex items-start gap-4">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-100 text-red-600">
                 <AlertTriangle size={20} />

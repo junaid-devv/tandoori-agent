@@ -21,7 +21,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { toast } from "sonner";
-import { PageHeader } from "@/app/components/dashboard/PageHeader";
+// PageHeader removed — replaced with inline compact header
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 
 type MetaConfig = {
@@ -343,7 +343,7 @@ export default function WhatsAppPage() {
   const isCoexActive = data?.metaConfig?.coexistenceEnabled ?? true;
 
   return (
-    <div className="space-y-6 max-w-6xl mx-auto pb-12">
+    <div className="space-y-3 max-w-6xl mx-auto pb-10">
       {/* Facebook JS SDK Loader */}
       <Script
         src="https://connect.facebook.net/en_US/sdk.js"
@@ -361,224 +361,203 @@ export default function WhatsAppPage() {
         }}
       />
 
-      <PageHeader
-        title="WhatsApp Channel Integration"
-        description="Official Meta WhatsApp Cloud API with Coexistence — keep your phone app while AI handles customer orders."
-        actions={
-          <button
-            onClick={() => fetchStatus(false)}
-            disabled={isLoading}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-slate-700 bg-white border border-slate-200 rounded-xl hover:bg-slate-50 transition-colors shadow-xs"
+      {/* Compact header bar */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h1 className="text-sm font-bold text-slate-900">WhatsApp Integration</h1>
+          <span
+            className={clsx(
+              "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
+              isConfigured ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
+            )}
           >
-            <RefreshCw size={14} className={clsx(isLoading && "animate-spin text-emerald-600")} />
-            Refresh Status
-          </button>
-        }
-      />
+            <span className={clsx("h-1.5 w-1.5 rounded-full", isConfigured ? "bg-emerald-500" : "bg-amber-500")} />
+            {isConfigured ? "Live" : "Not Connected"}
+          </span>
+        </div>
+        <button
+          onClick={() => fetchStatus(false)}
+          disabled={isLoading}
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+        >
+          <RefreshCw size={13} className={clsx(isLoading && "animate-spin text-emerald-600")} />
+          Refresh
+        </button>
+      </div>
 
-      {/* Primary Status Banner */}
-      <div className="rounded-3xl border border-slate-200/80 bg-white p-6 sm:p-8 shadow-sm">
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6">
-          <div className="flex items-start gap-4">
+      {/* Compact Status Banner */}
+      <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
             <div
               className={clsx(
-                "flex h-14 w-14 items-center justify-center rounded-2xl shadow-sm shrink-0",
+                "flex h-10 w-10 items-center justify-center rounded-xl shadow-sm shrink-0",
                 isConfigured
-                  ? "bg-emerald-600 text-white shadow-emerald-500/20"
-                  : "bg-amber-500 text-white shadow-amber-500/20"
+                  ? "bg-emerald-600 text-white"
+                  : "bg-amber-500 text-white"
               )}
             >
-              <Smartphone size={28} />
+              <Smartphone size={20} />
             </div>
             <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h2 className="text-lg sm:text-xl font-bold text-slate-900">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-sm font-bold text-slate-900">
                   {isConfigured
                     ? data?.metaConfig?.verifiedName || "WhatsApp Business Active"
                     : "Connect Restaurant WhatsApp"}
-                </h2>
-                <span
-                  className={clsx(
-                    "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold",
-                    isConfigured
-                      ? "bg-emerald-100 text-emerald-800"
-                      : "bg-amber-100 text-amber-800"
-                  )}
-                >
-                  <span
-                    className={clsx(
-                      "h-1.5 w-1.5 rounded-full",
-                      isConfigured ? "bg-emerald-600" : "bg-amber-600"
-                    )}
-                  />
-                  {isConfigured ? "Live & Connected" : "Action Required"}
                 </span>
                 {isConfigured && isCoexActive && (
-                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                    <Sparkles size={12} className="text-blue-600" />
-                    Coexistence Active
+                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-medium text-blue-800">
+                    <Sparkles size={10} className="text-blue-600" />
+                    Coexistence
                   </span>
                 )}
               </div>
-              <p className="mt-1.5 text-xs sm:text-sm text-slate-600 max-w-2xl leading-relaxed">
+              <p className="mt-1 text-xs text-slate-500 leading-relaxed">
                 {isConfigured
-                  ? "Connected via official Meta WhatsApp Business Cloud API. Messages sent from your mobile WhatsApp Business app and customer chats automatically sync in real-time."
-                  : "Connect your existing WhatsApp Business number in 60 seconds with Embedded Signup. You do NOT need a new SIM or to delete your phone app."}
+                  ? "Connected via official Meta WhatsApp Business Cloud API with real-time sync."
+                  : "Connect your existing WhatsApp Business number in 60 seconds. No new SIM needed."}
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-3 w-full lg:w-auto">
+          <div className="flex items-center gap-2 shrink-0">
             {isConfigured ? (
               <button
                 type="button"
                 onClick={launchEmbeddedSignup}
                 disabled={isConnecting}
-                className="w-full lg:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold transition-all shadow-xs"
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold transition-all"
               >
-                <RefreshCw size={14} className={clsx(isConnecting && "animate-spin")} />
-                Reconnect / Switch Number
+                <RefreshCw size={13} className={clsx(isConnecting && "animate-spin")} />
+                Reconnect
               </button>
             ) : (
               <button
                 type="button"
                 onClick={launchEmbeddedSignup}
                 disabled={isConnecting}
-                className="w-full lg:w-auto inline-flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-bold transition-all shadow-md shadow-emerald-600/25 active:scale-98"
+                className="inline-flex items-center gap-1.5 h-8 px-4 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition-all"
               >
-                {isConnecting ? (
-                  <RefreshCw size={16} className="animate-spin" />
-                ) : (
-                  <Zap size={16} />
-                )}
-                Connect WhatsApp with Meta
+                {isConnecting ? <RefreshCw size={13} className="animate-spin" /> : <Zap size={13} />}
+                Connect with Meta
               </button>
             )}
           </div>
         </div>
 
-        {/* Coexistence explanation alert */}
-        <div className="mt-6 rounded-2xl bg-slate-50 border border-slate-200/70 p-4 flex items-start gap-3">
-          <Info size={18} className="text-slate-500 shrink-0 mt-0.5" />
-          <div className="text-xs text-slate-600 leading-relaxed">
-            <strong className="text-slate-800">What is Coexistence? </strong>
-            Meta’s Coexistence feature allows your restaurant staff to keep using the official{" "}
-            <strong>WhatsApp Business App on their mobile phone</strong> for manual customer replies,
-            while <strong>ORDERiQ AI</strong> simultaneously answers orders and menus on the Cloud API.
-            When you type a manual reply on your phone, ORDERiQ automatically recognizes it via{" "}
-            <code className="text-slate-800 font-mono bg-white px-1 py-0.5 rounded border border-slate-200">
-              smb_message_echoes
-            </code>{" "}
-            and pauses bot automation so you have full control.
-          </div>
+        {/* Coexistence info — compact */}
+        <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 px-3 py-2 flex items-start gap-2">
+          <Info size={13} className="text-slate-400 shrink-0 mt-0.5" />
+          <p className="text-[11px] text-slate-600 leading-relaxed">
+            <strong className="text-slate-700">Coexistence: </strong>
+            Your staff keep using WhatsApp Business App on mobile, while AI simultaneously handles customer orders on the Cloud API.
+          </p>
         </div>
 
-        {/* ─── Connection Health Checklist ─── */}
+        {/* Connection Health Checklist */}
         {isConfigured && (
-          <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50/60 p-4 space-y-2">
-            <p className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
-              <CheckCircle2 size={14} className="text-emerald-600" />
-              Connection Health Checklist
+          <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 space-y-2">
+            <p className="text-[11px] font-bold text-emerald-800 flex items-center gap-1">
+              <CheckCircle2 size={12} className="text-emerald-600" />
+              Connection Health
             </p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
+            <div className="grid grid-cols-2 gap-1.5">
               {[
                 {
-                  label: "Phone Number Registered",
+                  label: "Phone Registered",
                   ok: Boolean(data?.metaConfig?.phoneNumberId),
                   detail: data?.metaConfig?.phoneNumberId
                     ? `ID: ${data.metaConfig.phoneNumberId.slice(0, 8)}…`
-                    : "Not found in database",
+                    : "Not found",
                 },
                 {
-                  label: "Webhook Subscribed",
+                  label: "Webhook Active",
                   ok: Boolean(data?.metaConfig?.phoneNumberId && data?.metaConfig?.configured),
-                  detail: "Meta forwards messages to your webhook",
+                  detail: "Meta → your webhook",
                 },
                 {
-                  label: "Coexistence Active",
+                  label: "Coexistence",
                   ok: data?.metaConfig?.coexistenceEnabled ?? false,
-                  detail: "Phone app + AI replies work together",
+                  detail: "Phone + AI together",
                 },
                 {
-                  label: "Token Verification",
+                  label: "Verify Token",
                   ok: data?.metaConfig?.verifyTokenSet ?? false,
-                  detail: data?.metaConfig?.verifyTokenSet ? "WHATSAPP_VERIFY_TOKEN is set" : "Missing WHATSAPP_VERIFY_TOKEN in env",
+                  detail: data?.metaConfig?.verifyTokenSet ? "Token set" : "Missing env var",
                 },
               ].map((item) => (
                 <div
                   key={item.label}
                   className={clsx(
-                    "flex items-start gap-2 p-2.5 rounded-xl border text-xs",
+                    "flex items-start gap-1.5 p-2 rounded-lg border text-[11px]",
                     item.ok
                       ? "bg-white border-emerald-200 text-slate-700"
                       : "bg-amber-50 border-amber-200 text-amber-900"
                   )}
                 >
                   {item.ok ? (
-                    <CheckCircle2 size={13} className="text-emerald-600 shrink-0 mt-0.5" />
+                    <CheckCircle2 size={11} className="text-emerald-600 shrink-0 mt-0.5" />
                   ) : (
-                    <AlertCircle size={13} className="text-amber-600 shrink-0 mt-0.5" />
+                    <AlertCircle size={11} className="text-amber-600 shrink-0 mt-0.5" />
                   )}
                   <div>
                     <p className="font-semibold">{item.label}</p>
-                    <p className={clsx("text-[10px] mt-0.5", item.ok ? "text-slate-500" : "text-amber-700")}>
+                    <p className={clsx("text-[10px]", item.ok ? "text-slate-400" : "text-amber-700")}>
                       {item.detail}
                     </p>
                   </div>
                 </div>
               ))}
             </div>
-            <p className="text-[11px] text-emerald-700 pt-1">
-              ✅ All checks green = customer messages will be received and replied automatically within seconds of connection.
-            </p>
           </div>
         )}
       </div>
 
       {/* Integration Details & Testing Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* Left Column: Account Details & Webhooks */}
-        <div className="lg:col-span-2 space-y-6">
+        <div className="lg:col-span-2 space-y-4">
           {/* Account Credentials */}
-          <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <ShieldCheck size={16} className="text-emerald-600" />
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+              <ShieldCheck size={13} className="text-emerald-600" />
               Meta Cloud API Credentials
             </h3>
 
-            <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                  Connected Phone Number
+            <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  Connected Phone
                 </span>
-                <p className="mt-1 text-sm font-bold text-slate-800">
+                <p className="mt-0.5 text-sm font-bold text-slate-800">
                   {data?.metaConfig?.displayPhoneNumber || "Not Connected"}
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                   Phone Number ID
                 </span>
-                <p className="mt-1 text-xs font-mono text-slate-700 truncate">
-                  {data?.metaConfig?.phoneNumberId || "Pending Signup"}
+                <p className="mt-0.5 text-xs font-mono text-slate-700 truncate">
+                  {data?.metaConfig?.phoneNumberId || "Pending"}
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
-                  WABA ID (Business Account)
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+                  WABA ID
                 </span>
-                <p className="mt-1 text-xs font-mono text-slate-700 truncate">
-                  {data?.metaConfig?.wabaId || "Managed via Tech Provider"}
+                <p className="mt-0.5 text-xs font-mono text-slate-700 truncate">
+                  {data?.metaConfig?.wabaId || "Via Tech Provider"}
                 </p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-100">
-                <span className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">
+              <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100">
+                <span className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
                   Quality Rating
                 </span>
-                <p className="mt-1 text-xs font-semibold text-emerald-700">
+                <p className="mt-0.5 text-xs font-semibold text-emerald-700">
                   {data?.metaConfig?.qualityRating || "GREEN / High"}
                 </p>
               </div>
@@ -699,69 +678,56 @@ export default function WhatsAppPage() {
         </div>
 
         {/* Right Column: Live Test Message */}
-        <div className="space-y-6">
-          <div className="rounded-3xl border border-slate-200/80 bg-white p-6 shadow-sm">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <MessageSquare size={16} className="text-indigo-600" />
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <h3 className="text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+              <MessageSquare size={13} className="text-indigo-600" />
               Test Live Messaging
             </h3>
-            <p className="mt-1 text-xs text-slate-500 leading-relaxed">
-              Verify your outbound Meta Cloud API connection by sending a real WhatsApp greeting.
-            </p>
 
-            <form onSubmit={handleSendTestMessage} className="mt-4 space-y-4">
+            <form onSubmit={handleSendTestMessage} className="mt-3 space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1">
-                  Recipient WhatsApp Number
+                <label className="block text-[10px] font-medium uppercase tracking-wide text-slate-400 mb-1">
+                  Recipient Number
                 </label>
                 <input
                   type="text"
                   placeholder="+923001234567"
                   value={testPhone}
                   onChange={(e) => setTestPhone(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  className="w-full h-8 px-3 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-emerald-400"
                 />
-                <span className="text-[10px] text-slate-400 mt-1 block">
-                  Include country code (e.g. +92 or 92)
-                </span>
+                <span className="text-[10px] text-slate-400 mt-0.5 block">Include country code (e.g. +92)</span>
               </div>
 
               <button
                 type="submit"
                 disabled={isSendingTest || !isConfigured}
                 className={clsx(
-                  "w-full flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl text-xs font-bold text-white transition-all shadow-xs",
+                  "w-full flex items-center justify-center gap-1.5 h-8 px-4 rounded-lg text-xs font-bold text-white transition-all",
                   isConfigured
                     ? "bg-slate-900 hover:bg-slate-800"
                     : "bg-slate-300 cursor-not-allowed"
                 )}
               >
-                {isSendingTest ? (
-                  <RefreshCw size={14} className="animate-spin" />
-                ) : (
-                  <Send size={14} />
-                )}
-                Send Test WhatsApp
+                {isSendingTest ? <RefreshCw size={13} className="animate-spin" /> : <Send size={13} />}
+                Send Test
               </button>
 
               {!isConfigured && (
-                <p className="text-[11px] text-amber-700 text-center">
-                  Connect your WhatsApp account above before sending tests.
-                </p>
+                <p className="text-[11px] text-amber-700 text-center">Connect WhatsApp above first.</p>
               )}
             </form>
           </div>
 
-          {/* Quick Help Card */}
-          <div className="rounded-3xl border border-slate-200/80 bg-linear-to-br from-slate-900 to-slate-950 p-6 text-white shadow-sm">
-            <h4 className="text-xs font-bold text-emerald-400 uppercase tracking-wider">
-              Tech Provider Mode
-            </h4>
-            <h3 className="mt-1 text-sm font-bold text-white">Zero Maintenance Onboarding</h3>
-            <p className="mt-2 text-xs text-slate-300 leading-relaxed">
-              When restaurants click &quot;Connect WhatsApp with Meta&quot;, Meta links their account to ORDERiQ seamlessly. No API keys or tokens need to be copied manually.
+          {/* Tech Provider card */}
+          <div className="rounded-xl bg-zinc-950 p-4 text-white shadow-sm">
+            <p className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider">Tech Provider</p>
+            <p className="mt-1 text-xs font-bold text-white">Zero Maintenance Onboarding</p>
+            <p className="mt-1 text-[11px] text-slate-400 leading-relaxed">
+              Restaurants click "Connect" and Meta links their account automatically. No manual API keys.
             </p>
-            <div className="mt-4 pt-4 border-t border-slate-800/80 flex items-center justify-between text-xs text-slate-400">
+            <div className="mt-3 pt-3 border-t border-zinc-800 flex items-center justify-between text-[11px] text-slate-500">
               <span>Graph API: v22.0</span>
               <span className="text-emerald-400 font-semibold">Ready</span>
             </div>

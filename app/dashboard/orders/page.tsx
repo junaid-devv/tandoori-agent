@@ -302,89 +302,85 @@ export default function OrdersPage() {
   }, [orders, activeTab, searchTerm]);
 
   return (
-    <div className="space-y-4 pb-12 sm:space-y-5">
-      {/* ── Page Header ─────────────────────────────────────────── */}
-      <PageHeader
-        title="Kitchen & Order Queue"
-        description="Live order queue — incoming, preparing & fulfilled"
-        meta={
-          <div className="flex items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200/80 bg-orange-50 px-2.5 py-0.5 text-xs font-semibold text-brand">
-              <span className="h-1.5 w-1.5 rounded-full bg-brand animate-pulse" />
-              {counts.active} Active
+    <div className="space-y-3 pb-10">
+      {/* ── Compact Header Bar ─────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h1 className="text-sm font-bold text-slate-900">Orders Queue</h1>
+          <span className="inline-flex items-center gap-1 rounded-full border border-orange-200/80 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-brand">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand animate-pulse" />
+            {counts.active} Active
+          </span>
+          {counts.cancelled > 0 && (
+            <span className="inline-flex items-center rounded-full border border-rose-200/80 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+              {counts.cancelled} Cancelled
             </span>
-            {counts.cancelled > 0 && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-rose-200/80 bg-rose-50 px-2 py-0.5 text-xs font-semibold text-rose-700">
-                {counts.cancelled} Cancelled
-              </span>
-            )}
-          </div>
-        }
-        actions={
-          <div className="flex items-center gap-2">
-            {/* View Mode Toggle: Cards vs KDS */}
-            <div className="flex items-center rounded-xl border border-slate-200 bg-slate-100/80 p-1 text-slate-600">
-              <button
-                onClick={() => setViewMode("cards")}
-                className={clsx(
-                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                  viewMode === "cards"
-                    ? "bg-white text-slate-900 shadow-xs font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-                title="Detailed Cards View"
-              >
-                <LayoutGrid size={14} />
-                <span>Cards</span>
-              </button>
-              <button
-                onClick={() => setViewMode("kds")}
-                className={clsx(
-                  "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all",
-                  viewMode === "kds"
-                    ? "bg-white text-slate-900 shadow-xs font-bold"
-                    : "text-slate-600 hover:text-slate-900"
-                )}
-                title="Kitchen Display Board View"
-              >
-                <Kanban size={14} />
-                <span>Kitchen Board</span>
-              </button>
-            </div>
+          )}
+        </div>
 
-            {/* Refresh Action */}
+        <div className="flex items-center gap-2">
+          {/* View Mode Toggle: Cards vs KDS */}
+          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-slate-600">
             <button
-              onClick={() => revalidate()}
-              disabled={loading}
-              className="flex h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-xs transition hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50"
-              title="Refresh order queue"
+              onClick={() => setViewMode("cards")}
+              className={clsx(
+                "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-all",
+                viewMode === "cards"
+                  ? "bg-white text-slate-900 shadow-xs font-bold"
+                  : "text-slate-500 hover:text-slate-900"
+              )}
+              title="Detailed Cards View"
             >
-              <RefreshCw size={13} className={clsx(loading && "animate-spin text-brand")} />
-              <span className="hidden sm:inline">Refresh</span>
+              <LayoutGrid size={13} />
+              <span>Cards</span>
+            </button>
+            <button
+              onClick={() => setViewMode("kds")}
+              className={clsx(
+                "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-all",
+                viewMode === "kds"
+                  ? "bg-white text-slate-900 shadow-xs font-bold"
+                  : "text-slate-500 hover:text-slate-900"
+              )}
+              title="Kitchen Display Board View"
+            >
+              <Kanban size={13} />
+              <span>KDS</span>
             </button>
           </div>
-        }
-      />
+
+          {/* Refresh Action */}
+          <button
+            onClick={() => revalidate()}
+            disabled={loading}
+            className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+            title="Refresh order queue"
+          >
+            <RefreshCw size={12} className={clsx(loading && "animate-spin text-brand")} />
+            <span className="hidden sm:inline">Refresh</span>
+          </button>
+        </div>
+      </div>
 
       {/* ── Cancellation Request Urgent Alert ────────────────────────── */}
       {counts.cancellationRequests > 0 && (
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50/80 p-3.5 shadow-xs">
-          <div className="flex items-center gap-3">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
-              <AlertOctagon size={18} />
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5 rounded-xl border border-rose-200 bg-rose-50/80 p-3 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-rose-100 text-rose-600">
+              <AlertOctagon size={15} />
             </div>
             <div>
               <p className="text-xs font-bold text-rose-950">
                 {counts.cancellationRequests} Order Cancellation Request(s) Pending Review
               </p>
-              <p className="text-[11px] text-rose-700 mt-0.5">
+              <p className="text-[11px] text-rose-700">
                 Customer requested cancellation via WhatsApp. Stop kitchen preparation and resolve below.
               </p>
             </div>
           </div>
           <button
             onClick={() => setActiveTab("active")}
-            className="shrink-0 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-rose-700 transition"
+            className="shrink-0 rounded-lg bg-rose-600 px-3 py-1 text-xs font-semibold text-white hover:bg-rose-700 transition"
           >
             Review Orders
           </button>
@@ -403,19 +399,19 @@ export default function OrdersPage() {
         ].map((item) => (
           <div
             key={item.label}
-            className="flex items-center justify-between rounded-xl border border-slate-200/80 bg-white px-3.5 py-2.5 shadow-xs"
+            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-xs"
           >
             <div>
-              <p className="text-[11px] font-medium text-slate-500">{item.label}</p>
-              <p className={clsx("text-lg font-bold tracking-tight mt-0.5", item.color)}>{item.count}</p>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.label}</p>
+              <p className={clsx("text-base font-bold tracking-tight mt-0.5", item.color)}>{item.count}</p>
             </div>
-            <div className={clsx("h-2 w-2 rounded-full", item.bg)} />
+            <div className={clsx("h-1.5 w-1.5 rounded-full", item.bg)} />
           </div>
         ))}
       </div>
 
       {/* ── Filter Bar & Search Controls ─────────────────────────────── */}
-      <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between rounded-2xl border border-slate-200/80 bg-white p-2 shadow-xs">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200 bg-white p-1.5 shadow-xs">
         {/* Navigation Tabs */}
         <div className="no-scrollbar flex items-center gap-1 overflow-x-auto p-0.5">
           {[
@@ -433,7 +429,7 @@ export default function OrdersPage() {
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key as FilterTab)}
                 className={clsx(
-                  "flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-semibold transition-all",
+                  "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all whitespace-nowrap",
                   isCurrent
                     ? "bg-slate-900 text-white shadow-xs"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -442,7 +438,7 @@ export default function OrdersPage() {
                 <span>{tab.label}</span>
                 <span
                   className={clsx(
-                    "rounded-md px-1.5 py-0.5 text-[10px] font-bold",
+                    "rounded px-1.5 py-0.2 text-[9px] font-bold",
                     isCurrent
                       ? "bg-slate-800 text-slate-200"
                       : "bg-slate-100 text-slate-600"
@@ -456,21 +452,21 @@ export default function OrdersPage() {
         </div>
 
         {/* Search Input */}
-        <div className="relative w-full sm:w-72 lg:w-80">
-          <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <div className="relative w-full sm:w-64 lg:w-72">
+          <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search #, customer, phone, item..."
-            className="w-full rounded-xl border border-slate-200 bg-slate-50/80 py-1.5 pl-8.5 pr-8 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-slate-300 focus:bg-white focus:ring-2 focus:ring-slate-900/5"
+            placeholder="Search #, customer, phone..."
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1 pl-8 pr-7 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand/40 focus:bg-white"
           />
           {searchTerm && (
             <button
               onClick={() => setSearchTerm("")}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
               title="Clear search"
             >
-              <X size={13} />
+              <X size={12} />
             </button>
           )}
         </div>

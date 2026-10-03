@@ -278,68 +278,50 @@ export default function SettingsPage() {
   };
 
   const tabs: { key: SettingsTab; label: string; icon: React.ReactNode; badge?: string }[] = [
-    { key: "operations", label: "Store & Hours", icon: <Store size={15} /> },
-    { key: "delivery", label: "Delivery & Zones", icon: <Truck size={15} />, badge: settings.delivery_enabled ? "ON" : "OFF" },
-    { key: "ai_brand", label: "AI Tone & Voice", icon: <Bot size={15} /> },
-    { key: "contacts", label: "Contact & Location", icon: <Phone size={15} /> },
-    { key: "database", label: "Database & Stats", icon: <Database size={15} /> },
-    { key: "notifications", label: "Alerts & Printer", icon: <Bell size={15} /> },
+    { key: "operations", label: "Store", icon: <Store size={14} /> },
+    { key: "delivery", label: "Delivery", icon: <Truck size={14} />, badge: settings.delivery_enabled ? "ON" : "OFF" },
+    { key: "ai_brand", label: "AI Voice", icon: <Bot size={14} /> },
+    { key: "contacts", label: "Contact", icon: <Phone size={14} /> },
+    { key: "database", label: "Database", icon: <Database size={14} /> },
+    { key: "notifications", label: "Alerts", icon: <Bell size={14} /> },
   ];
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Top Header with Save Button */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">Store Settings</h1>
-          </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Configure operational hours, delivery rules, AI voice persona, and inspect database metrics.
-          </p>
-        </div>
-
-        <div className="flex w-full sm:w-auto items-center gap-2">
-          {activeTab !== "database" && (
-            <button
-              onClick={() => void save()}
-              disabled={saving}
-              className="inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-brand-hover disabled:opacity-50"
-            >
-              {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
-              <span>Save Changes</span>
-            </button>
-          )}
-        </div>
+    <div className="space-y-3 pb-10">
+      {/* ── Single-row header bar ── */}
+      <div className="flex items-center justify-between">
+        <h1 className="text-sm font-bold text-slate-900">Settings</h1>
+        {activeTab !== "database" && (
+          <button
+            onClick={() => void save()}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-bold rounded-lg bg-brand text-white shadow-sm transition hover:bg-brand-hover disabled:opacity-50"
+          >
+            {saving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
+            Save
+          </button>
+        )}
       </div>
 
-      {/* WhatsApp Integration Shortcut Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-xs">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-600 text-white font-bold shrink-0">
-            <Phone size={18} />
-          </div>
-          <div>
-            <h4 className="text-xs sm:text-sm font-bold text-emerald-950">Meta WhatsApp Cloud API & Coexistence Hub</h4>
-            <p className="text-[11px] text-emerald-700">Manage your official Meta WhatsApp Business connection, Embedded Signup, and phone app coexistence.</p>
-          </div>
-        </div>
+      {/* ── WhatsApp compact pill banner ── */}
+      <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
+        <span className="text-[11px] text-emerald-800 font-medium">Meta WhatsApp Cloud API &amp; Coexistence</span>
         <Link
           href="/dashboard/whatsapp"
-          className="inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-4 py-2 text-xs font-bold text-white shadow-xs hover:bg-emerald-700 transition-colors shrink-0"
+          className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition shrink-0"
         >
-          Manage WhatsApp
+          <Phone size={13} /> Manage WhatsApp
         </Link>
       </div>
 
-      {/* Categorized Tab Navigation Bar */}
-      <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm">
+      {/* ── Horizontal scrollable pill tabs ── */}
+      <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
         {tabs.map(({ key, label, icon, badge }) => (
           <button
             key={key}
             onClick={() => setActiveTab(key)}
             className={clsx(
-              "flex shrink-0 items-center justify-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all sm:flex-1 sm:px-4 sm:py-2.5",
+              "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all sm:flex-1 whitespace-nowrap",
               activeTab === key
                 ? "bg-slate-900 text-white shadow-sm"
                 : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
@@ -350,10 +332,10 @@ export default function SettingsPage() {
             {badge && (
               <span
                 className={clsx(
-                  "rounded px-1.5 py-0.2 text-[9px] font-bold",
+                  "rounded px-1 py-0.5 text-[9px] font-bold leading-none",
                   badge === "ON"
                     ? activeTab === key ? "bg-emerald-500 text-white" : "bg-emerald-100 text-emerald-800"
-                    : activeTab === key ? "bg-slate-800 text-slate-400" : "bg-slate-100 text-slate-500"
+                    : activeTab === key ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-500"
                 )}
               >
                 {badge}
@@ -364,131 +346,118 @@ export default function SettingsPage() {
       </div>
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 1: STORE & HOURS OPERATIONS
+          TAB 1: STORE
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "operations" && (
-        <div className="space-y-4">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-6 shadow-sm space-y-6">
-            {/* Accepting orders banner switch */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-900 text-sm">Store Order Taking Status</span>
-                  <span
-                    className={clsx(
-                      "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                      settings.is_accepting_orders
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-amber-100 text-amber-800"
-                    )}
-                  >
-                    {settings.is_accepting_orders ? "Live & Accepting" : "Paused"}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  When paused, the AI informs customers that the kitchen is temporarily not taking new orders.
-                </p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSettings((curr) => ({ ...curr, is_accepting_orders: !curr.is_accepting_orders }))}
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+          {/* Order Taking Status */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-slate-700">Order Taking</span>
+              <span
                 className={clsx(
-                  "inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition",
+                  "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
                   settings.is_accepting_orders
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                    : "bg-slate-800 text-white hover:bg-slate-900"
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-amber-100 text-amber-800"
                 )}
               >
-                {settings.is_accepting_orders ? "Accepting Orders (ON)" : "Orders Paused (OFF)"}
-              </button>
+                {settings.is_accepting_orders ? "Live & Accepting" : "Paused"}
+              </span>
+              <span className="text-[11px] text-slate-400">AI informs customers when paused</span>
             </div>
+            <button
+              type="button"
+              onClick={() => setSettings((curr) => ({ ...curr, is_accepting_orders: !curr.is_accepting_orders }))}
+              className={clsx(
+                "inline-flex items-center justify-center gap-1.5 rounded-lg h-8 px-3 text-xs font-bold transition shrink-0",
+                settings.is_accepting_orders
+                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  : "bg-slate-800 text-white hover:bg-slate-900"
+              )}
+            >
+              {settings.is_accepting_orders ? "Accepting (ON)" : "Paused (OFF)"}
+            </button>
+          </div>
 
-            {/* Operating Hours */}
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Business Operating Hours</h3>
-              <p className="text-xs text-slate-400 mb-4">
-                The bot enforces these hours when telling customers whether the restaurant is currently open.
-              </p>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700">Opening Time</label>
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} className="text-slate-400" />
-                    <input
-                      type="time"
-                      value={toTimeInputValue(settings.opening_time)}
-                      onChange={(e) =>
-                        setSettings((curr) => ({
-                          ...curr,
-                          opening_time: e.target.value ? toMeridiemLabel(e.target.value) : curr.opening_time,
-                        }))
-                      }
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-brand"
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-500">Current: <span className="font-bold">{settings.opening_time}</span></p>
+          {/* Business Hours */}
+          <div className="space-y-2">
+            <p className="text-xs font-semibold text-slate-700">Business Hours</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
+                <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Opening Time</label>
+                <div className="flex items-center gap-2">
+                  <Clock size={13} className="text-slate-400 shrink-0" />
+                  <input
+                    type="time"
+                    value={toTimeInputValue(settings.opening_time)}
+                    onChange={(e) =>
+                      setSettings((curr) => ({
+                        ...curr,
+                        opening_time: e.target.value ? toMeridiemLabel(e.target.value) : curr.opening_time,
+                      }))
+                    }
+                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+                  />
                 </div>
+                <p className="text-[11px] text-slate-400">Current: <span className="font-bold text-slate-600">{settings.opening_time}</span></p>
+              </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
-                  <label className="text-xs font-bold text-slate-700">Closing Time</label>
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} className="text-slate-400" />
-                    <input
-                      type="time"
-                      value={toTimeInputValue(settings.closing_time)}
-                      onChange={(e) =>
-                        setSettings((curr) => ({
-                          ...curr,
-                          closing_time: e.target.value ? toMeridiemLabel(e.target.value) : curr.closing_time,
-                        }))
-                      }
-                      className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 outline-none focus:border-brand"
-                    />
-                  </div>
-                  <p className="text-[11px] text-slate-500">Current: <span className="font-bold">{settings.closing_time}</span> (Overnight supported)</p>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
+                <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Closing Time</label>
+                <div className="flex items-center gap-2">
+                  <Clock size={13} className="text-slate-400 shrink-0" />
+                  <input
+                    type="time"
+                    value={toTimeInputValue(settings.closing_time)}
+                    onChange={(e) =>
+                      setSettings((curr) => ({
+                        ...curr,
+                        closing_time: e.target.value ? toMeridiemLabel(e.target.value) : curr.closing_time,
+                      }))
+                    }
+                    className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+                  />
                 </div>
+                <p className="text-[11px] text-slate-400">Current: <span className="font-bold text-slate-600">{settings.closing_time}</span> · Overnight OK</p>
               </div>
             </div>
+          </div>
 
-            {/* Preparation Estimates */}
-            <div className="border-t border-slate-100 pt-5">
-              <h3 className="text-sm font-bold text-slate-900 mb-1">Fulfillment Time Estimates</h3>
-              <p className="text-xs text-slate-400 mb-4">Estimated duration communicated to customers for preparation and delivery.</p>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-slate-700">Kitchen Prep Time</span>
-                    <span className="font-bold text-slate-900">{settings.estimated_prep_minutes} minutes</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={10}
-                    max={120}
-                    step={5}
-                    value={settings.estimated_prep_minutes}
-                    onChange={(e) => setSettings((curr) => ({ ...curr, estimated_prep_minutes: Number(e.target.value) }))}
-                    className="w-full accent-brand cursor-pointer"
-                  />
+          {/* Fulfillment Estimates */}
+          <div className="border-t border-slate-100 pt-3 space-y-2">
+            <p className="text-xs font-semibold text-slate-700">Fulfillment Estimates</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-700">Kitchen Prep</span>
+                  <span className="font-bold text-slate-900">{settings.estimated_prep_minutes} min</span>
                 </div>
+                <input
+                  type="range"
+                  min={10}
+                  max={120}
+                  step={5}
+                  value={settings.estimated_prep_minutes}
+                  onChange={(e) => setSettings((curr) => ({ ...curr, estimated_prep_minutes: Number(e.target.value) }))}
+                  className="w-full accent-brand cursor-pointer"
+                />
+              </div>
 
-                <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-2">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-slate-700">Rider Delivery Time</span>
-                    <span className="font-bold text-slate-900">{settings.estimated_delivery_minutes} minutes</span>
-                  </div>
-                  <input
-                    type="range"
-                    min={15}
-                    max={120}
-                    step={5}
-                    value={settings.estimated_delivery_minutes}
-                    onChange={(e) => setSettings((curr) => ({ ...curr, estimated_delivery_minutes: Number(e.target.value) }))}
-                    className="w-full accent-brand cursor-pointer"
-                  />
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-semibold text-slate-700">Rider Delivery</span>
+                  <span className="font-bold text-slate-900">{settings.estimated_delivery_minutes} min</span>
                 </div>
+                <input
+                  type="range"
+                  min={15}
+                  max={120}
+                  step={5}
+                  value={settings.estimated_delivery_minutes}
+                  onChange={(e) => setSettings((curr) => ({ ...curr, estimated_delivery_minutes: Number(e.target.value) }))}
+                  className="w-full accent-brand cursor-pointer"
+                />
               </div>
             </div>
           </div>
@@ -496,112 +465,106 @@ export default function SettingsPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 2: DELIVERY & ZONES
+          TAB 2: DELIVERY
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "delivery" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
           {/* Master Delivery Toggle */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-slate-900 text-sm">Delivery Service</span>
-                <span
-                  className={clsx(
-                    "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                    settings.delivery_enabled
-                      ? "bg-emerald-100 text-emerald-800"
-                      : "bg-slate-200 text-slate-700"
-                  )}
-                >
-                  {settings.delivery_enabled ? "Enabled" : "Disabled (Pickup Only)"}
-                </span>
-              </div>
-              <p className="text-xs text-slate-500 mt-0.5">
-                {settings.delivery_enabled
-                  ? "Customers can place delivery orders. Delivery fee and minimum order rules apply."
-                  : "Delivery is disabled. The bot will only accept Pickup and Dine-in orders."}
-              </p>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-slate-700">Delivery Service</span>
+              <span
+                className={clsx(
+                  "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                  settings.delivery_enabled
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {settings.delivery_enabled ? "Enabled" : "Pickup Only"}
+              </span>
+              <span className="text-[11px] text-slate-400">
+                {settings.delivery_enabled ? "Fee & min order rules apply" : "Bot accepts Pickup & Dine-in only"}
+              </span>
             </div>
-
             <button
               type="button"
               onClick={() => setSettings((curr) => ({ ...curr, delivery_enabled: !curr.delivery_enabled }))}
               className={clsx(
-                "inline-flex w-full sm:w-auto items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-bold transition",
+                "inline-flex items-center justify-center gap-1.5 rounded-lg h-8 px-3 text-xs font-bold transition shrink-0",
                 settings.delivery_enabled
                   ? "bg-emerald-600 text-white hover:bg-emerald-700"
                   : "bg-slate-800 text-white hover:bg-slate-900"
               )}
             >
-              {settings.delivery_enabled ? "Delivery is Active (ON)" : "Enable Delivery"}
+              {settings.delivery_enabled ? "Delivery ON" : "Enable Delivery"}
             </button>
           </div>
 
           {/* Pricing & Minimums */}
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">Delivery Fee (Rs.)</label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Delivery Fee (Rs.)</label>
               <input
                 type="number"
                 min={0}
                 step={50}
                 value={settings.delivery_fee}
                 onChange={(e) => setSettings((curr) => ({ ...curr, delivery_fee: Math.max(0, Number(e.target.value) || 0) }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-brand"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-brand"
                 placeholder="0 for Free Delivery"
               />
-              <p className="text-[11px] text-slate-500">Set 0 for Free Delivery</p>
+              <p className="text-[11px] text-slate-400">Set 0 for free delivery</p>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">Minimum Order Amount (Rs.)</label>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Min Order (Rs.)</label>
               <input
                 type="number"
                 min={0}
                 step={100}
                 value={settings.min_delivery_amount}
                 onChange={(e) => setSettings((curr) => ({ ...curr, min_delivery_amount: Math.max(0, Number(e.target.value) || 0) }))}
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-bold text-slate-900 outline-none focus:border-brand"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-brand"
                 placeholder="e.g. 500"
               />
-              <p className="text-[11px] text-slate-500">Orders below this amount will prompt the user to add more items</p>
+              <p className="text-[11px] text-slate-400">Bot prompts to add more if below</p>
             </div>
           </div>
 
           {/* Delivery Area Restrictions */}
-          <div className="border-t border-slate-100 pt-5 space-y-3">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900">Delivery Areas & Restrictions</h3>
-                <p className="text-xs text-slate-400 mt-0.5">
+          <div className="border-t border-slate-100 pt-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <p className="text-xs font-semibold text-slate-700">Delivery Areas</p>
+                <span className="text-[11px] text-slate-400">
                   {settings.delivery_areas.length === 0
-                    ? "Deliver Anywhere — No location restrictions active."
-                    : `Restricted to ${settings.delivery_areas.length} area${settings.delivery_areas.length > 1 ? "s" : ""}.`}
-                </p>
+                    ? "Anywhere — no restrictions"
+                    : `${settings.delivery_areas.length} area${settings.delivery_areas.length > 1 ? "s" : ""} restricted`}
+                </span>
               </div>
-
               {settings.delivery_areas.length > 0 ? (
                 <button
                   type="button"
                   onClick={() => setSettings((curr) => ({ ...curr, delivery_areas: [] }))}
-                  className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1 text-xs font-semibold text-red-700 hover:bg-red-100"
+                  className="h-8 rounded-lg border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700 hover:bg-red-100"
                 >
-                  Remove Restrictions (Deliver Anywhere)
+                  Clear All
                 </button>
               ) : (
-                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-semibold text-emerald-700 border border-emerald-200">
-                  <CheckCircle2 size={12} /> Deliver Anywhere
+                <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
+                  <CheckCircle2 size={11} /> Anywhere
                 </span>
               )}
             </div>
 
             {/* Area Chips */}
             {settings.delivery_areas.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 p-3 rounded-xl border border-slate-200 bg-slate-50/50">
+              <div className="flex flex-wrap gap-1.5 p-2.5 rounded-lg border border-slate-200 bg-slate-50/50">
                 {settings.delivery_areas.map((area, idx) => (
                   <span
                     key={idx}
-                    className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-800 shadow-sm"
+                    className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-xs font-semibold text-slate-800"
                   >
                     <span>{area}</span>
                     <button
@@ -625,8 +588,8 @@ export default function SettingsPage() {
             <div className="space-y-2">
               <input
                 type="text"
-                placeholder="Type an area name (e.g. DHA Phase 5, Gulberg III) and press Enter..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-brand focus:bg-white"
+                placeholder="Type area name and press Enter…"
+                className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-brand focus:bg-white"
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
                     e.preventDefault();
@@ -639,7 +602,7 @@ export default function SettingsPage() {
                 }}
               />
 
-              <div className="flex flex-wrap items-center gap-1.5 pt-1">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[10px] font-bold uppercase text-slate-400">Quick add:</span>
                 {["Gulberg", "DHA Phase 1-6", "Bahria Town", "Johar Town", "Model Town", "F-6 / F-7", "Saddar", "Clifton"].map((preset) => {
                   const alreadyAdded = settings.delivery_areas.includes(preset);
@@ -672,22 +635,18 @@ export default function SettingsPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 3: AI BRAND VOICE & PERSONALITY
+          TAB 3: AI VOICE
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "ai_brand" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
-          <div>
-            <div className="flex items-center gap-2">
-              <Bot size={18} className="text-brand" />
-              <h3 className="text-base font-bold text-slate-900">AI Personality & Conversation Voice</h3>
-            </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Select how your AI assistant speaks to customers on WhatsApp. The tone dynamically injects into all customer interactions.
-            </p>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+          <div className="flex items-center gap-2">
+            <Bot size={14} className="text-brand" />
+            <p className="text-xs font-semibold text-slate-700">AI Personality &amp; Conversation Voice</p>
+            <span className="text-[11px] text-slate-400">Tone injects into all customer interactions</span>
           </div>
 
           {/* Preset Cards */}
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-2 sm:grid-cols-2">
             {AI_PERSONALITY_PRESETS.map((preset) => {
               const isSelected = settings.ai_personality === preset.title;
               return (
@@ -695,57 +654,55 @@ export default function SettingsPage() {
                   key={preset.title}
                   onClick={() => setSettings((curr) => ({ ...curr, ai_personality: preset.title }))}
                   className={clsx(
-                    "cursor-pointer rounded-xl border p-4 transition-all",
+                    "cursor-pointer rounded-lg border p-3 transition-all",
                     isSelected
                       ? "border-brand bg-brand/5 ring-1 ring-brand/30"
                       : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
                   )}
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-sm">{preset.title}</span>
-                    {isSelected && <Check size={16} className="text-brand" />}
+                    <span className="text-xs font-semibold text-slate-900">{preset.title}</span>
+                    {isSelected && <Check size={13} className="text-brand" />}
                   </div>
-                  <p className="text-xs text-slate-500 mt-1">{preset.desc}</p>
-                  <div className="mt-3 rounded-lg bg-white p-2 border border-slate-100 text-[11px] text-slate-600 italic">
-                    &ldquo;{preset.sample}&rdquo;
-                  </div>
+                  <p className="text-[11px] text-slate-400 mt-0.5 truncate">{preset.desc}</p>
+                  {isSelected && (
+                    <div className="mt-2 rounded-md bg-white p-2 border border-slate-100 text-[10px] text-slate-500 italic">
+                      &ldquo;{preset.sample}&rdquo;
+                    </div>
+                  )}
                 </div>
               );
             })}
           </div>
 
           {/* Custom Personality Input */}
-          <div className="border-t border-slate-100 pt-5 space-y-2">
-            <label className="text-xs font-bold text-slate-700">Custom Brand Voice Guidelines</label>
+          <div className="border-t border-slate-100 pt-3 space-y-1.5">
+            <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Custom Brand Voice</label>
             <input
               type="text"
               value={settings.ai_personality}
               onChange={(e) => setSettings((curr) => ({ ...curr, ai_personality: e.target.value }))}
               placeholder="e.g. Energetic & Hospitable Karachi Street Food style"
-              className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2.5 text-xs text-slate-800 outline-none focus:border-brand focus:bg-white"
+              className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-800 outline-none focus:border-brand focus:bg-white"
             />
-            <p className="text-[11px] text-slate-400">
-              Type custom phrasing or instructions to uniquely customize your AI assistant tone.
-            </p>
+            <p className="text-[11px] text-slate-400">Type custom instructions to uniquely define your AI tone.</p>
           </div>
         </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 4: CONTACT & LOCATION
+          TAB 4: CONTACT
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "contacts" && (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-5">
-          <div>
-            <h3 className="text-base font-bold text-slate-900">Contact Numbers & City</h3>
-            <p className="text-xs text-slate-400 mt-0.5">
-              These details are provided to customers when they ask for direct helpline or dine-in reservations.
-            </p>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+          <div className="flex items-center gap-2">
+            <p className="text-xs font-semibold text-slate-700">Contact Numbers &amp; City</p>
+            <span className="text-[11px] text-slate-400">Shared with customers on request</span>
           </div>
 
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">City</label>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">City</label>
               <select
                 value={selectedCityOption}
                 onChange={(e) =>
@@ -754,7 +711,7 @@ export default function SettingsPage() {
                     city: e.target.value === "__custom__" ? curr.city : e.target.value,
                   }))
                 }
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
               >
                 {cityOptions.map((c) => (
                   <option key={c} value={c}>
@@ -766,37 +723,37 @@ export default function SettingsPage() {
             </div>
 
             {selectedCityOption === "__custom__" && (
-              <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
-                <label className="text-xs font-bold text-slate-700">Custom City Name</label>
+              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
+                <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Custom City Name</label>
                 <input
                   type="text"
                   value={settings.city}
                   onChange={(e) => setSettings((curr) => ({ ...curr, city: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
                   placeholder="e.g. Faisalabad"
                 />
               </div>
             )}
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">Delivery Support Hotline</label>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Delivery Hotline</label>
               <input
                 type="text"
                 value={settings.phone_delivery}
                 onChange={(e) => setSettings((curr) => ({ ...curr, phone_delivery: e.target.value }))}
                 placeholder="e.g. +92 300 1234567"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
               />
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5 space-y-1.5">
-              <label className="text-xs font-bold text-slate-700">Dine-in / Reservation Phone</label>
+            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
+              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Dine-in / Reservation</label>
               <input
                 type="text"
                 value={settings.phone_dine_in}
                 onChange={(e) => setSettings((curr) => ({ ...curr, phone_dine_in: e.target.value }))}
                 placeholder="e.g. 042-111-222-333"
-                className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
+                className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-semibold text-slate-800 outline-none focus:border-brand"
               />
             </div>
           </div>
@@ -804,249 +761,213 @@ export default function SettingsPage() {
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 5: DATABASE & SYSTEM INSIGHTS (NEW!)
+          TAB 5: DATABASE
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "database" && (
-        <div className="space-y-6">
-          {/* Connection Health Banner */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700">
-                  <Database size={20} />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-slate-900">Supabase PostgreSQL Engine</h3>
-                    <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      {dbStats?.database.status?.toUpperCase() || "CONNECTED"}
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Cloud Database Connection &bull; Latency: <span className="font-mono font-bold text-slate-800">{dbStats?.database.ping_latency_ms ?? 120}ms</span>
-                  </p>
-                </div>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+          {/* Connection Health Header */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                <Database size={14} />
               </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => void loadDatabaseStats()}
-                  disabled={loadingDbStats}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-                >
-                  <RefreshCw size={13} className={clsx(loadingDbStats && "animate-spin text-brand")} />
-                  <span>Refresh Telemetry</span>
-                </button>
-                <button
-                  onClick={() => void handlePurgeCache()}
-                  disabled={purgingCache}
-                  className="inline-flex items-center gap-1.5 rounded-xl bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
-                >
-                  {purgingCache ? <RefreshCw size={13} className="animate-spin" /> : <Trash2 size={13} />}
-                  <span>Flush Cache</span>
-                </button>
+              <div>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-xs font-semibold text-slate-700">Supabase PostgreSQL</p>
+                  <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700 border border-emerald-200">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                    {dbStats?.database.status?.toUpperCase() || "CONNECTED"}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400">
+                  Latency: <span className="font-mono font-bold text-slate-700">{dbStats?.database.ping_latency_ms ?? 120}ms</span>
+                </p>
               </div>
             </div>
 
-            {/* Live Database Table Record Counts */}
-            <div className="mt-6">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Database Table Record Counts</h4>
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-                {[
-                  { table: "orders", label: "Orders (Total)", count: dbStats?.table_counts.orders ?? 0, sub: `${dbStats?.table_counts.active_orders ?? 0} active` },
-                  { table: "conversations", label: "Conversations", count: dbStats?.table_counts.conversations ?? 0, sub: "WhatsApp threads" },
-                  { table: "messages", label: "Messages", count: dbStats?.table_counts.messages ?? 0, sub: "inbound & outbound" },
-                  { table: "contacts", label: "Customer CRM", count: dbStats?.table_counts.contacts ?? 0, sub: "saved profiles" },
-                  { table: "menu_items", label: "Menu Catalog", count: dbStats?.table_counts.menu_items ?? 0, sub: "dishes & variants" },
-                  { table: "agent_turns", label: "AI Agent Turns", count: dbStats?.table_counts.agent_turns ?? 0, sub: "NLU logs" },
-                  { table: "webhook_events", label: "Webhook Events", count: dbStats?.table_counts.webhook_events ?? 0, sub: "Meta WhatsApp API" },
-                  { table: "staff_alerts", label: "Staff Alerts", count: dbStats?.table_counts.staff_alerts ?? 0, sub: `${dbStats?.table_counts.unread_alerts ?? 0} unread` },
-                  { table: "rate_limits", label: "Security Throttles", count: dbStats?.table_counts.rate_limits ?? 0, sub: "active IP blocks" },
-                  { table: "cache", label: "Cache Size", count: dbStats?.cache.active_entries ?? 0, sub: "in-memory records" },
-                ].map((item) => (
-                  <div key={item.table} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
-                    <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{item.label}</p>
-                    <p className="mt-1 text-xl font-bold text-slate-900">{item.count}</p>
-                    <p className="text-[10px] text-slate-500">{item.sub}</p>
-                  </div>
-                ))}
-              </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => void loadDatabaseStats()}
+                disabled={loadingDbStats}
+                className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                <RefreshCw size={12} className={clsx(loadingDbStats && "animate-spin text-brand")} />
+                Refresh
+              </button>
+              <button
+                onClick={() => void handlePurgeCache()}
+                disabled={purgingCache}
+                className="inline-flex items-center gap-1.5 h-8 rounded-lg bg-slate-900 px-3 text-xs font-semibold text-white transition hover:bg-slate-800 disabled:opacity-50"
+              >
+                {purgingCache ? <RefreshCw size={12} className="animate-spin" /> : <Trash2 size={12} />}
+                Flush Cache
+              </button>
+            </div>
+          </div>
+
+          {/* Table Record Counts — 3-col consistent grid */}
+          <div className="space-y-2">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Table Record Counts</p>
+            <div className="grid grid-cols-3 gap-2 lg:grid-cols-5">
+              {[
+                { table: "orders", label: "Orders", count: dbStats?.table_counts.orders ?? 0, sub: `${dbStats?.table_counts.active_orders ?? 0} active` },
+                { table: "conversations", label: "Conversations", count: dbStats?.table_counts.conversations ?? 0, sub: "WA threads" },
+                { table: "messages", label: "Messages", count: dbStats?.table_counts.messages ?? 0, sub: "in + out" },
+                { table: "contacts", label: "CRM", count: dbStats?.table_counts.contacts ?? 0, sub: "profiles" },
+                { table: "menu_items", label: "Menu", count: dbStats?.table_counts.menu_items ?? 0, sub: "items" },
+                { table: "agent_turns", label: "AI Turns", count: dbStats?.table_counts.agent_turns ?? 0, sub: "NLU logs" },
+                { table: "webhook_events", label: "Webhooks", count: dbStats?.table_counts.webhook_events ?? 0, sub: "Meta API" },
+                { table: "staff_alerts", label: "Alerts", count: dbStats?.table_counts.staff_alerts ?? 0, sub: `${dbStats?.table_counts.unread_alerts ?? 0} unread` },
+                { table: "rate_limits", label: "Throttles", count: dbStats?.table_counts.rate_limits ?? 0, sub: "IP blocks" },
+                { table: "cache", label: "Cache", count: dbStats?.cache.active_entries ?? 0, sub: "in-memory" },
+              ].map((item) => (
+                <div key={item.table} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                  <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{item.label}</p>
+                  <p className="mt-0.5 text-lg font-bold text-slate-900">{item.count}</p>
+                  <p className="text-[10px] text-slate-400">{item.sub}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       )}
 
       {/* ─────────────────────────────────────────────────────────────
-          TAB 6: NOTIFICATIONS & PRINTER
+          TAB 6: ALERTS
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "notifications" && (
-        <div className="space-y-6">
-          {/* Audio Alerts Card */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
-            <div>
-              <h3 className="text-base font-bold text-slate-900">Audio Alerts & Notification Preferences</h3>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Control browser sounds when new customer WhatsApp messages or orders arrive.
-              </p>
+        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm divide-y divide-slate-100 space-y-0">
+          {/* Audio Alerts Row */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-semibold text-slate-700">Chime Sound</span>
+              <span
+                className={clsx(
+                  "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                  isSoundEnabled
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {isSoundEnabled ? "Enabled" : "Muted"}
+              </span>
+              <span className="text-[11px] text-slate-400">Plays on new customer message</span>
             </div>
-
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-900 text-sm">Dashboard Chime Sound</span>
-                  <span
-                    className={clsx(
-                      "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                      isSoundEnabled
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-slate-200 text-slate-700"
-                    )}
-                  >
-                    {isSoundEnabled ? "Enabled" : "Muted"}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Plays a pleasant sound chime when a new message arrives from a customer.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={playTestSound}
-                  className="rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                >
-                  Play Test Chime
-                </button>
-                <button
-                  type="button"
-                  onClick={toggleSoundEnabled}
-                  className={clsx(
-                    "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition",
-                    isSoundEnabled
-                      ? "bg-emerald-600 text-white hover:bg-emerald-700"
-                      : "bg-slate-800 text-white hover:bg-slate-900"
-                  )}
-                >
-                  {isSoundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
-                  <span>{isSoundEnabled ? "Sound ON" : "Sound Muted"}</span>
-                </button>
-              </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={playTestSound}
+                className="h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Test Chime
+              </button>
+              <button
+                type="button"
+                onClick={toggleSoundEnabled}
+                className={clsx(
+                  "inline-flex items-center gap-1.5 h-8 rounded-lg px-3 text-xs font-bold transition",
+                  isSoundEnabled
+                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    : "bg-slate-800 text-white hover:bg-slate-900"
+                )}
+              >
+                {isSoundEnabled ? <Volume2 size={13} /> : <VolumeX size={13} />}
+                {isSoundEnabled ? "Sound ON" : "Muted"}
+              </button>
             </div>
           </div>
 
-          {/* Thermal Receipt Printing Card */}
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 sm:p-6 shadow-sm space-y-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <Printer size={18} className="text-brand" />
-                  <h3 className="text-base font-bold text-slate-900">Thermal Receipt Printer & Hardware</h3>
-                </div>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Automatically print order receipts to your attached default POS printer when orders are confirmed.
-                </p>
-              </div>
+          {/* Auto-Print Toggle Row */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Printer size={13} className="text-slate-500 shrink-0" />
+              <span className="text-xs font-semibold text-slate-700">Auto-Print Orders</span>
+              <span
+                className={clsx(
+                  "rounded-full px-2 py-0.5 text-[10px] font-bold uppercase",
+                  isAutoPrintEnabled
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-slate-200 text-slate-700"
+                )}
+              >
+                {isAutoPrintEnabled ? "Active" : "Disabled"}
+              </span>
+              <span className="text-[11px] text-slate-400">Sends to Windows default printer on confirm</span>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
                 onClick={handleTestPrint}
                 disabled={testingPrint}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 shadow-2xs transition disabled:opacity-50"
+                className="inline-flex items-center gap-1.5 h-8 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition disabled:opacity-50"
               >
-                <Printer size={14} className={testingPrint ? "animate-pulse text-brand" : "text-slate-500"} />
-                <span>{testingPrint ? "Sending..." : "Print Test Receipt"}</span>
+                <Printer size={12} className={testingPrint ? "animate-pulse text-brand" : "text-slate-500"} />
+                {testingPrint ? "Sending…" : "Test Print"}
               </button>
-            </div>
-
-            {/* Row 1: Auto-Print Toggle */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="font-bold text-slate-900 text-sm">Auto-Print Incoming Orders</span>
-                  <span
-                    className={clsx(
-                      "rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase",
-                      isAutoPrintEnabled
-                        ? "bg-emerald-100 text-emerald-800"
-                        : "bg-slate-200 text-slate-700"
-                    )}
-                  >
-                    {isAutoPrintEnabled ? "Active" : "Disabled"}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Automatically sends kitchen receipts to your attached printer the moment an order is confirmed via WhatsApp or the dashboard.
-                </p>
-              </div>
-
               <button
                 type="button"
                 onClick={toggleAutoPrintEnabled}
                 className={clsx(
-                  "inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-bold transition",
+                  "inline-flex items-center gap-1.5 h-8 rounded-lg px-3 text-xs font-bold transition",
                   isAutoPrintEnabled
                     ? "bg-emerald-600 text-white hover:bg-emerald-700"
                     : "bg-slate-800 text-white hover:bg-slate-900"
                 )}
               >
-                <Printer size={14} />
-                <span>{isAutoPrintEnabled ? "Auto-Print ON" : "Auto-Print OFF"}</span>
+                <Printer size={13} />
+                {isAutoPrintEnabled ? "Auto-Print ON" : "Auto-Print OFF"}
               </button>
             </div>
+          </div>
 
-            {/* Row 2: Paper Width Selector */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-4">
-              <div>
-                <span className="font-bold text-slate-900 text-sm">Receipt Paper Roll Width</span>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Choose the roll width matching your thermal receipt printer.
-                </p>
-              </div>
-
-              <div className="inline-flex rounded-xl bg-white p-1 border border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setReceiptPaperWidth("80mm")}
-                  className={clsx(
-                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-                    receiptPaperWidth === "80mm"
-                      ? "bg-slate-900 text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  80mm (Standard POS)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setReceiptPaperWidth("58mm")}
-                  className={clsx(
-                    "rounded-lg px-3 py-1.5 text-xs font-semibold transition",
-                    receiptPaperWidth === "58mm"
-                      ? "bg-slate-900 text-white shadow-xs"
-                      : "text-slate-600 hover:text-slate-900"
-                  )}
-                >
-                  58mm (Compact Roll)
-                </button>
-              </div>
+          {/* Paper Width Selector Row */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 py-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold text-slate-700">Paper Roll Width</span>
+              <span className="text-[11px] text-slate-400">Match your thermal printer roll</span>
             </div>
-
-            {/* Row 3: Windows Default Printer & Silent Kiosk Mode Explanation */}
-            <div className="rounded-xl border border-sky-100 bg-sky-50/70 p-4 text-xs text-sky-900 space-y-1.5">
-              <div className="font-bold text-sky-950 flex items-center gap-1.5">
-                <span>💡 Automatic Hardware Detection & Zero-Click Silent Printing</span>
-              </div>
-              <p className="text-sky-800 leading-relaxed">
-                • <strong>Attached Printer:</strong> The system automatically prints to your <strong>Windows Default Printer</strong>. You do not need to configure drivers or enter model numbers.
-              </p>
-              <p className="text-sky-800 leading-relaxed">
-                • <strong>Silent Printing:</strong> To skip the browser print preview popup entirely so orders print instantly without clicking &quot;Print&quot;, launch Chrome or Edge with the flag:
-                <code className="ml-1.5 rounded bg-sky-100 px-1.5 py-0.5 font-mono text-[11px] text-sky-900 border border-sky-200">
-                  chrome.exe --kiosk-printing
-                </code>
-              </p>
+            <div className="inline-flex rounded-lg bg-slate-100 p-0.5">
+              <button
+                type="button"
+                onClick={() => setReceiptPaperWidth("80mm")}
+                className={clsx(
+                  "rounded-md px-3 py-1.5 text-xs font-semibold transition",
+                  receiptPaperWidth === "80mm"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                80mm (Standard)
+              </button>
+              <button
+                type="button"
+                onClick={() => setReceiptPaperWidth("58mm")}
+                className={clsx(
+                  "rounded-md px-3 py-1.5 text-xs font-semibold transition",
+                  receiptPaperWidth === "58mm"
+                    ? "bg-white text-slate-900 shadow-sm"
+                    : "text-slate-500 hover:text-slate-700"
+                )}
+              >
+                58mm (Compact)
+              </button>
             </div>
+          </div>
+
+          {/* Silent Printing Info */}
+          <div className="rounded-lg border border-sky-100 bg-sky-50/70 p-3 mt-1 space-y-1">
+            <div className="text-[11px] font-semibold text-sky-950 flex items-center gap-1">
+              <span>💡 Zero-Click Silent Printing</span>
+            </div>
+            <p className="text-[11px] text-sky-800">
+              • Prints to your <strong>Windows Default Printer</strong> — no driver config needed.
+            </p>
+            <p className="text-[11px] text-sky-800">
+              • Skip print dialog: launch Chrome/Edge with{" "}
+              <code className="rounded bg-sky-100 px-1 py-0.5 font-mono text-[10px] text-sky-900 border border-sky-200">
+                chrome.exe --kiosk-printing
+              </code>
+            </p>
           </div>
         </div>
       )}

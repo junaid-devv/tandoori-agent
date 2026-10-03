@@ -136,41 +136,56 @@ export default function DashboardPage() {
   }, [revalidate]);
 
   return (
-    <div className="animate-fade-in space-y-4 sm:space-y-6">
-      <PageHeader
-        title="Dashboard"
-        description="Restaurant overview & live performance"
-        actions={
-          <>
-          <Link href="/dashboard/settings" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900" aria-label="Open settings">
-            <Settings size={18} />
+    <div className="space-y-3 pb-10">
+      {/* Compact header bar */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <h1 className="text-sm font-bold text-slate-900">Dashboard Overview</h1>
+          <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Live
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/dashboard/settings"
+            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
+            aria-label="Open settings"
+          >
+            <Settings size={14} />
           </Link>
-          <Link href="/dashboard/orders" className="flex h-9 items-center justify-center gap-2 rounded-lg bg-brand px-3 text-sm font-semibold text-white shadow-sm shadow-orange-200 transition-all hover:bg-brand-hover">
-            <span className="hidden sm:inline">Manage Orders</span>
-            <ArrowUpRight size={16} />
+          <Link
+            href="/dashboard/orders"
+            className="flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-semibold text-white transition hover:bg-brand-hover shadow-sm"
+          >
+            <span>Orders Queue</span>
+            <ArrowUpRight size={13} />
           </Link>
-          </>
-        }
-      />
+        </div>
+      </div>
 
       {/* KPI Section */}
-      <div className="grid grid-cols-2 gap-2 sm:gap-4 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
         {[
-          { label: "Active Orders", val: stats.active, icon: Activity, color: "text-blue-600", bg: "bg-blue-50", surface: "bg-blue-50/50 border-blue-100" },
-          { label: "Orders Today", val: stats.today, icon: ShoppingBag, color: "text-emerald-600", bg: "bg-emerald-50", surface: "bg-emerald-50/50 border-emerald-100" },
-          { label: "Gross Revenue", val: `Rs. ${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: "text-indigo-600", bg: "bg-indigo-50", surface: "bg-indigo-50/50 border-indigo-100" },
-          { label: "AI Interactions", val: stats.chats, icon: MessageSquare, color: "text-brand", bg: "bg-orange-50", surface: "bg-orange-50/55 border-orange-100" },
+          { label: "Active Orders", val: stats.active, icon: Activity, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Orders Today", val: stats.today, icon: ShoppingBag, color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Gross Revenue", val: `Rs. ${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: "text-indigo-600", bg: "bg-indigo-50" },
+          { label: "AI Interactions", val: stats.chats, icon: MessageSquare, color: "text-brand", bg: "bg-orange-50" },
         ].map((item, i) => (
-          <div key={i} data-testid={`kpi-${item.label.toLowerCase().replace(/\s+/g, "-")}`} className={clsx("flex min-h-[88px] flex-col justify-between rounded-xl border p-3 shadow-sm sm:min-h-[124px] sm:p-5", item.surface)}>
-            <div className="mb-3 flex items-start justify-between gap-2 sm:mb-4">
-              <span className="text-xs font-semibold leading-tight text-slate-500 sm:text-sm">{item.label}</span>
-              <div className={clsx("rounded-lg p-1.5 sm:p-2", item.bg)}>
-                <item.icon size={16} className={item.color} />
+          <div
+            key={i}
+            data-testid={`kpi-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
+            className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-slate-300"
+          >
+            <div className="flex items-center justify-between gap-1 mb-1.5">
+              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.label}</span>
+              <div className={clsx("rounded-md p-1", item.bg)}>
+                <item.icon size={13} className={item.color} />
               </div>
             </div>
-            <div className="break-words text-xl font-semibold tracking-tight text-slate-900 sm:text-3xl">
+            <div className="text-xl font-bold tracking-tight text-slate-900">
               {loading ? (
-                <div className="h-9 w-24 bg-slate-100 animate-pulse rounded-md mt-1" />
+                <div className="h-7 w-20 bg-slate-100 animate-pulse rounded-md" />
               ) : (
                 item.val
               )}
@@ -179,29 +194,29 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3 lg:gap-8">
+      <div className="grid gap-3 lg:grid-cols-3">
         {/* Activity Feed */}
-        <div className="ui-card flex flex-col overflow-hidden lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-slate-100 bg-white/50 px-4 py-3 sm:px-6 sm:py-5">
-            <h3 className="font-semibold text-slate-900">Recent Transactions</h3>
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
+        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col lg:col-span-2">
+          <div className="flex items-center justify-between border-b border-slate-100 px-3.5 py-2.5 bg-slate-50/50">
+            <h3 className="text-xs font-bold text-slate-800">Recent Transactions</h3>
+            <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-500">
+              <span className="relative flex h-1.5 w-1.5">
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
               </span>
-              <span className="text-xs font-medium text-slate-500 uppercase tracking-wider">Live</span>
+              <span>Real-time</span>
             </div>
           </div>
 
-          <div className="divide-y divide-slate-50">
+          <div className="divide-y divide-slate-100">
             {loading ? (
               Array(4).fill(0).map((_, i) => (
-                <div key={i} className="p-6 flex items-center justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 bg-slate-100 rounded-full animate-pulse" />
-                    <div className="space-y-2">
-                      <div className="h-4 w-32 bg-slate-100 rounded animate-pulse" />
-                      <div className="h-3 w-20 bg-slate-50 rounded animate-pulse" />
+                <div key={i} className="p-3.5 flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-slate-100 rounded-full animate-pulse" />
+                    <div className="space-y-1.5">
+                      <div className="h-3 w-28 bg-slate-100 rounded animate-pulse" />
+                      <div className="h-2.5 w-16 bg-slate-50 rounded animate-pulse" />
                     </div>
                   </div>
                 </div>
@@ -213,37 +228,37 @@ export default function DashboardPage() {
                 const initials = customerName.substring(0, 2).toUpperCase();
 
                 return (
-                  <div key={o.id} className="flex flex-col gap-2 px-4 py-3 sm:flex-row sm:items-center sm:justify-between sm:px-6 sm:py-4">
-                    <div className="flex min-w-0 items-center gap-3 sm:gap-4">
-                      <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">
+                  <div key={o.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between hover:bg-slate-50/60 transition">
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 shrink-0">
                         {initials}
                       </div>
 
                       <div className="min-w-0">
-                        <p className="text-sm font-medium text-slate-900">
+                        <p className="text-xs font-semibold text-slate-900 truncate">
                           {customerName}
                         </p>
-                        <div className="mt-0.5 flex min-w-0 flex-wrap items-center gap-2">
-                          <span className="text-xs text-slate-500">Order #{o.order_number}</span>
-                          <span className="w-1 h-1 rounded-full bg-slate-300" />
-                          <span className="text-xs text-slate-500 capitalize">{o.type}</span>
+                        <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+                          <span>#{o.order_number}</span>
+                          <span>•</span>
+                          <span className="capitalize">{o.type}</span>
                           {o.branches?.name ? (
                             <>
-                              <span className="w-1 h-1 rounded-full bg-slate-300" />
-                              <span className="truncate text-xs text-slate-500">{o.branches.name}</span>
+                              <span>•</span>
+                              <span className="truncate">{o.branches.name}</span>
                             </>
                           ) : null}
                         </div>
                       </div>
                     </div>
 
-                    <div className="flex items-center justify-between gap-3 pl-12 sm:gap-6 sm:pl-0">
+                    <div className="flex items-center justify-between gap-3 pl-10 sm:pl-0 sm:gap-4">
                       <div className="text-left sm:text-right">
-                        <p className="text-sm font-medium text-slate-900">Rs. {Number(o.subtotal).toLocaleString()}</p>
-                        <p className="mt-0.5 text-xs text-slate-400">{formatDistanceToNow(new Date(o.created_at), { addSuffix: true })}</p>
+                        <p className="text-xs font-bold text-slate-900">Rs. {Number(o.subtotal).toLocaleString()}</p>
+                        <p className="text-[10px] text-slate-400">{formatDistanceToNow(new Date(o.created_at), { addSuffix: true })}</p>
                       </div>
 
-                      <div className={clsx("flex w-28 items-center gap-2 rounded-full px-2.5 py-1.5 text-xs font-medium", s.bg, s.text)}>
+                      <div className={clsx("flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0", s.bg, s.text)}>
                         <div className={clsx("w-1.5 h-1.5 rounded-full", s.dot)} />
                         {s.label}
                       </div>
@@ -254,7 +269,7 @@ export default function DashboardPage() {
             )}
 
             {!loading && recentOrders.length === 0 && (
-              <div className="p-8 text-center text-slate-500 text-sm">
+              <div className="p-8 text-center text-slate-400 text-xs">
                 No recent orders found.
               </div>
             )}
@@ -262,26 +277,29 @@ export default function DashboardPage() {
         </div>
 
         {/* Right Sidebar Area */}
-        <div className="space-y-6">
-          <div className="ui-card overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-5">
-              <div>
-                <h3 className="font-semibold text-slate-900">Staff Alerts</h3>
-                <p className="mt-0.5 text-xs text-slate-500">{alerts.length} open item{alerts.length === 1 ? "" : "s"}</p>
+        <div className="space-y-3">
+          {/* Staff Alerts Card */}
+          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-slate-100 px-3.5 py-2.5 bg-slate-50/50">
+              <div className="flex items-center gap-1.5">
+                <h3 className="text-xs font-bold text-slate-800">Staff Alerts</h3>
+                <span className="rounded-full bg-slate-100 px-1.5 py-0.2 text-[10px] font-bold text-slate-600">
+                  {alerts.length}
+                </span>
               </div>
-              <AlertTriangle size={18} className={alerts.length > 0 ? "text-amber-500" : "text-slate-300"} />
+              <AlertTriangle size={14} className={alerts.length > 0 ? "text-amber-500" : "text-slate-300"} />
             </div>
 
             <div className="divide-y divide-slate-100">
               {loading ? (
-                Array(3).fill(0).map((_, index) => (
-                  <div key={index} className="space-y-2 px-6 py-4">
-                    <div className="h-3 w-24 animate-pulse rounded bg-slate-100" />
-                    <div className="h-4 w-full animate-pulse rounded bg-slate-100" />
+                Array(2).fill(0).map((_, index) => (
+                  <div key={index} className="space-y-1.5 p-3">
+                    <div className="h-2.5 w-20 animate-pulse rounded bg-slate-100" />
+                    <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
                   </div>
                 ))
               ) : alerts.length === 0 ? (
-                <div className="px-6 py-8 text-center text-sm text-slate-500">
+                <div className="p-6 text-center text-xs text-slate-400">
                   No open staff alerts.
                 </div>
               ) : (
@@ -290,31 +308,31 @@ export default function DashboardPage() {
                   const customer = alert.conversations?.name || alert.conversations?.phone || "Customer";
 
                   return (
-                    <div key={alert.id} className="px-4 py-3 sm:px-6 sm:py-4">
-                      <div className="mb-2 flex items-center justify-between gap-3">
+                    <div key={alert.id} className="p-3">
+                      <div className="mb-1 flex items-center justify-between gap-2">
                         <span className={clsx(
-                          "rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider",
+                          "rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase",
                           alert.severity === "high" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700",
                         )}>
                           {label}
                         </span>
-                        <span className="text-[11px] text-slate-400">
+                        <span className="text-[10px] text-slate-400">
                           {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
                         </span>
                       </div>
-                      <p className="text-sm font-medium leading-snug text-slate-900">{alert.message}</p>
-                      <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <p className="text-xs font-medium text-slate-800 leading-snug">{alert.message}</p>
+                      <div className="mt-2 flex items-center justify-between gap-2">
                         <Link
                           href={`/dashboard/conversations?conversation_id=${encodeURIComponent(alert.conversation_id)}`}
-                          className="truncate text-xs font-semibold text-brand hover:text-orange-600"
+                          className="truncate text-[11px] font-semibold text-brand hover:underline"
                         >
-                          Open chat: {customer}
+                          {customer}
                         </Link>
                         <button
                           onClick={() => void resolveAlert(alert.id)}
-                          className="inline-flex shrink-0 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50"
+                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 transition"
                         >
-                          <CheckCircle2 size={12} />
+                          <CheckCircle2 size={11} />
                           Resolve
                         </button>
                       </div>
@@ -326,23 +344,23 @@ export default function DashboardPage() {
           </div>
 
           {/* Fulfillment Pipeline */}
-          <div className="ui-card p-4 sm:p-6">
-            <h3 className="mb-4 font-semibold text-slate-900 sm:mb-6">Fulfillment Pipeline</h3>
-            <div className="space-y-4 sm:space-y-5">
+          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm space-y-3">
+            <h3 className="text-xs font-bold text-slate-800">Fulfillment Pipeline</h3>
+            <div className="space-y-2.5">
               {['received', 'preparing', 'out_for_delivery'].map((key) => {
                 const s = STATUS_CONFIG[key];
                 const count = stats.breakdown[key] || 0;
                 const progress = stats.today > 0 ? (count / stats.today) * 100 : 0;
 
                 return (
-                  <div key={key} className="space-y-2">
-                    <div className="flex justify-between items-center text-sm">
+                  <div key={key} className="space-y-1">
+                    <div className="flex justify-between items-center text-xs">
                       <span className="text-slate-600 font-medium">{s.label}</span>
-                      <span className="text-slate-900 font-semibold">{count}</span>
+                      <span className="text-slate-900 font-bold">{count}</span>
                     </div>
                     <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
                       <div
-                        className={clsx("h-full rounded-full transition-all duration-1000", s.dot)}
+                        className={clsx("h-full rounded-full transition-all duration-700", s.dot)}
                         style={{ width: `${Math.max(progress, 2)}%` }}
                       />
                     </div>
@@ -352,32 +370,25 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* AI Status Card matched to Sidebar theme */}
-          <div className="relative overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 p-4 text-white shadow-xl sm:p-6">
-            <div
-              className="absolute inset-0 opacity-[0.04]"
-              style={{ backgroundImage: "linear-gradient(rgba(255,255,255,.6) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.6) 1px, transparent 1px)", backgroundSize: "28px 28px" }}
-            />
-
-            <div className="relative z-10">
-              <div className="flex items-center gap-2 mb-4">
-                <div className="p-1.5 bg-orange-500/20 rounded-md">
-                  <Zap size={14} className="text-brand fill-orange-500/20" />
-                </div>
-                <p className="text-xs font-medium text-zinc-400 uppercase tracking-widest">Realtime Status</p>
+          {/* Realtime Status Widget */}
+          <div className="rounded-xl border border-zinc-900 bg-zinc-950 p-3.5 text-white shadow-sm space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-1.5">
+                <Zap size={12} className="text-brand fill-brand" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Live Agent Sync</span>
               </div>
-
-              <h4 className="text-xl font-semibold mb-2 text-white">Live Updates Active</h4>
-              <p className="text-sm text-zinc-400 leading-relaxed mb-6">
-                The dashboard is subscribed to live order and message updates. It currently shows <strong className="text-white font-medium">{stats.active} active orders</strong>{lastUpdatedAt ? ` and was refreshed ${formatDistanceToNow(new Date(lastUpdatedAt), { addSuffix: true })}.` : "."}
-              </p>
-
-              <Link href="/dashboard/conversations" className="flex items-center justify-center gap-2 w-full py-2.5 bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-xl text-sm font-medium text-zinc-200 transition-colors">
-                View Live Interactions
-              </Link>
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             </div>
+            <p className="text-xs text-zinc-300">
+              <strong className="text-white font-bold">{stats.active} orders</strong> active in kitchen &amp; delivery queue.
+            </p>
+            <Link
+              href="/dashboard/conversations"
+              className="flex items-center justify-center gap-1.5 w-full py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-semibold text-zinc-200 transition"
+            >
+              Open Live Chats
+            </Link>
           </div>
-
         </div>
       </div>
     </div>
