@@ -387,29 +387,6 @@ export default function OrdersPage() {
         </div>
       )}
 
-      {/* ── Operational KPI Summary Strip ─────────────────────────────── */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-6">
-        {[
-          { label: "Active Queue", count: counts.active, color: "text-brand", bg: "bg-orange-500" },
-          { label: "New Orders", count: counts.received, color: "text-sky-700", bg: "bg-sky-500" },
-          { label: "In Kitchen", count: counts.preparing, color: "text-amber-700", bg: "bg-amber-500" },
-          { label: "On Delivery", count: counts.out_for_delivery, color: "text-indigo-700", bg: "bg-indigo-500" },
-          { label: "Delivered", count: counts.delivered, color: "text-emerald-700", bg: "bg-emerald-500" },
-          { label: "Total Orders", count: counts.all, color: "text-slate-800", bg: "bg-slate-500" },
-        ].map((item) => (
-          <div
-            key={item.label}
-            className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 shadow-xs"
-          >
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.label}</p>
-              <p className={clsx("text-base font-bold tracking-tight mt-0.5", item.color)}>{item.count}</p>
-            </div>
-            <div className={clsx("h-1.5 w-1.5 rounded-full", item.bg)} />
-          </div>
-        ))}
-      </div>
-
       {/* ── Filter Bar & Search Controls ─────────────────────────────── */}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200 bg-white p-1.5 shadow-xs">
         {/* Navigation Tabs */}
@@ -513,22 +490,22 @@ export default function OrdersPage() {
                   key={order.id}
                   data-testid={`order-card-${order.order_number}`}
                   className={clsx(
-                    "group relative overflow-hidden rounded-2xl border bg-white transition-all shadow-xs",
+                    "group relative overflow-hidden rounded-xl border bg-white transition-all shadow-xs",
                     isCancelled
                       ? "border-slate-200 bg-slate-50/50 opacity-80"
                       : isCancellationRequested
-                      ? "border-rose-300 ring-2 ring-rose-100"
+                      ? "border-rose-300 ring-1 ring-rose-200"
                       : expanded
                       ? "border-slate-300 ring-1 ring-slate-200/80"
-                      : "border-slate-200/90 hover:border-slate-300 hover:shadow-sm"
+                      : "border-slate-200 hover:border-slate-300 hover:shadow-xs"
                   )}
                 >
-                  {/* Cancellation banner if customer asked to cancel */}
+                  {/* Cancellation alert strip */}
                   {isCancellationRequested && (
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-rose-200 bg-rose-50 px-4 py-2 text-xs text-rose-950">
-                      <div className="flex items-center gap-2">
-                        <AlertTriangle size={15} className="text-rose-600 shrink-0" />
-                        <span className="font-bold">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1.5 border-b border-rose-200 bg-rose-50 px-3 py-1.5 text-xs text-rose-950">
+                      <div className="flex items-center gap-1.5">
+                        <AlertTriangle size={13} className="text-rose-600 shrink-0" />
+                        <span className="font-semibold text-[11px]">
                           Customer requested cancellation ({formatDistanceToNow(new Date(order.cancellation_requested_at!), { addSuffix: true })})
                         </span>
                       </div>
@@ -538,7 +515,7 @@ export default function OrdersPage() {
                           void handleStatusChange(order, "cancelled");
                         }}
                         disabled={savingId === order.id}
-                        className="rounded-lg bg-rose-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-rose-700 transition"
+                        className="rounded-md bg-rose-600 px-2 py-0.5 text-[11px] font-semibold text-white hover:bg-rose-700 transition"
                       >
                         Confirm Cancellation
                       </button>
@@ -547,50 +524,50 @@ export default function OrdersPage() {
 
                   {/* Main Card Body */}
                   <div
-                    className="p-4 sm:p-4.5 cursor-pointer"
+                    className="p-3 cursor-pointer"
                     onClick={() => setExpandedId(expanded ? null : order.id)}
                   >
-                    {/* Row 1: Order Identification, Customer Info, Total & Primary Actions */}
-                    <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                      {/* Left: Identity & Customer */}
-                      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                    {/* Row 1: Order Identity, Customer, Status, Amount & Actions */}
+                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                      {/* Left: Info */}
+                      <div className="flex flex-wrap items-center gap-2">
                         {/* Order Number */}
-                        <div className="flex items-baseline gap-1.5">
-                          <span className={clsx("text-lg font-extrabold tracking-tight font-mono", isCancelled ? "text-slate-400 line-through" : "text-slate-900")}>
-                            #{order.order_number}
-                          </span>
-                        </div>
+                        <span className={clsx("text-sm font-bold font-mono tracking-tight", isCancelled ? "text-slate-400 line-through" : "text-slate-900")}>
+                          #{order.order_number}
+                        </span>
 
                         {/* Status Badge */}
-                        <span className={clsx("inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1 text-xs font-semibold", statusMeta.badge)}>
+                        <span className={clsx("inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px] font-semibold", statusMeta.badge)}>
                           <span className={clsx("h-1.5 w-1.5 rounded-full", statusMeta.dot)} />
                           <span>{statusMeta.label}</span>
                         </span>
 
                         {/* Fulfillment Type */}
-                        <span className="inline-flex items-center gap-1 text-xs font-medium text-slate-600 capitalize">
+                        <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-500 capitalize">
                           {order.type === "delivery" ? (
-                            <Truck size={13} className="text-slate-500" />
+                            <Truck size={12} className="text-slate-400" />
                           ) : (
-                            <Package size={13} className="text-slate-500" />
+                            <Package size={12} className="text-slate-400" />
                           )}
                           <span>{order.type.replace("-", " ")}</span>
                         </span>
 
                         {/* Placed Timestamp */}
-                        <span className="text-xs text-slate-400">
+                        <span className="text-[11px] text-slate-400">
                           {timeDisplay}
                         </span>
 
-                        {/* Delay indicator (Clean SLA badge without loud pulsing alarms) */}
+                        {/* Delay indicator */}
                         {isDelayed && (
-                          <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800">
+                          <span className="rounded border border-amber-200 bg-amber-50 px-1.5 py-0.2 text-[10px] font-semibold text-amber-800">
                             Delayed
                           </span>
                         )}
 
+                        <span className="text-slate-300">•</span>
+
                         {/* Customer Name & Quick Contacts */}
-                        <div className="flex items-center gap-2 border-l border-slate-200 pl-3">
+                        <div className="flex items-center gap-1.5">
                           <span className="text-xs font-bold text-slate-800">
                             {order.conversations?.name ?? "Guest Customer"}
                           </span>
@@ -600,10 +577,10 @@ export default function OrdersPage() {
                               <a
                                 href={`tel:${order.conversations.phone}`}
                                 onClick={(e) => e.stopPropagation()}
-                                className="flex h-6 w-6 items-center justify-center rounded-md border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
+                                className="flex h-5.5 w-5.5 items-center justify-center rounded border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100 hover:text-slate-900"
                                 title={`Call ${order.conversations.phone}`}
                               >
-                                <Phone size={11} />
+                                <Phone size={10} />
                               </a>
                               {cleanPhone && (
                                 <a
@@ -611,53 +588,40 @@ export default function OrdersPage() {
                                   target="_blank"
                                   rel="noopener noreferrer"
                                   onClick={(e) => e.stopPropagation()}
-                                  className="flex h-6 w-6 items-center justify-center rounded-md border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
+                                  className="flex h-5.5 w-5.5 items-center justify-center rounded border border-emerald-200 bg-emerald-50 text-emerald-700 transition hover:bg-emerald-100"
                                   title="Chat on WhatsApp"
                                 >
-                                  <MessageCircle size={11} />
+                                  <MessageCircle size={10} />
                                 </a>
                               )}
                             </div>
                           )}
                         </div>
 
-                        {/* Delivery Address (if provided) */}
+                        {/* Delivery Address */}
                         {order.address && (
-                          <div className="hidden xl:flex items-center gap-1 text-xs text-slate-500 max-w-xs truncate" title={order.address}>
-                            <MapPin size={12} className="shrink-0 text-slate-400" />
+                          <div className="hidden 2xl:flex items-center gap-1 text-[11px] text-slate-400 max-w-xs truncate" title={order.address}>
+                            <MapPin size={11} className="shrink-0 text-slate-400" />
                             <span className="truncate">{order.address}</span>
                           </div>
                         )}
-
-
-
-                        {/* Assignee (only if assigned) */}
-                        {order.assigned_to && (
-                          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-slate-600">
-                            <UserCheck size={11} className="text-slate-400" />
-                            <span>{order.assigned_to}</span>
-                          </span>
-                        )}
                       </div>
 
-                      {/* Right: Price & Quick Action Cluster */}
-                      <div className="flex items-center justify-between lg:justify-end gap-3 border-t border-slate-100 pt-2 lg:border-0 lg:pt-0">
+                      {/* Right: Amount & Compact Actions */}
+                      <div className="flex items-center justify-between lg:justify-end gap-3 pt-1 border-t border-slate-100 lg:border-0 lg:pt-0">
                         {/* Price & Items count */}
-                        <div className="text-left lg:text-right">
-                          <p className="text-sm font-bold text-slate-900">
+                        <div className="text-left lg:text-right shrink-0">
+                          <p className="text-xs font-bold text-slate-900">
                             Rs. {total.toLocaleString()}
                           </p>
-                          <p className="text-[11px] text-slate-500">
+                          <p className="text-[10px] text-slate-400">
                             {totalItems} items · COD
-                            {cancelWindowRemaining > 0 && ACTIVE_STATUSES.includes(order.status) && (
-                              <span className="ml-1.5 font-medium text-amber-600">({cancelWindowRemaining}m cancel)</span>
-                            )}
                           </p>
                         </div>
 
-                        {/* Actions */}
-                        <div className="flex items-center gap-1.5">
-                          {/* Workflow Primary Progression Button */}
+                        {/* Compact Action Controls */}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {/* Primary Step Progression Button */}
                           {order.status === "received" && (
                             <button
                               onClick={(e) => {
@@ -665,10 +629,10 @@ export default function OrdersPage() {
                                 void handleStatusChange(order, "preparing");
                               }}
                               disabled={savingId === order.id}
-                              className="inline-flex items-center gap-1 rounded-xl bg-brand px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-brand-hover transition active:scale-95 disabled:opacity-50"
+                              className="inline-flex items-center gap-1 rounded-lg bg-brand h-7 px-2.5 text-[11px] font-bold text-white hover:bg-brand-hover transition disabled:opacity-50"
                             >
-                              <ChefHat size={13} />
-                              <span>Start Cooking</span>
+                              <ChefHat size={12} />
+                              <span>Cooking</span>
                             </button>
                           )}
 
@@ -679,10 +643,10 @@ export default function OrdersPage() {
                                 void handleStatusChange(order, "out_for_delivery");
                               }}
                               disabled={savingId === order.id}
-                              className="inline-flex items-center gap-1 rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-indigo-700 transition active:scale-95 disabled:opacity-50"
+                              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 h-7 px-2.5 text-[11px] font-bold text-white hover:bg-indigo-700 transition disabled:opacity-50"
                             >
-                              <Truck size={13} />
-                              <span>Ready / Dispatch</span>
+                              <Truck size={12} />
+                              <span>Dispatch</span>
                             </button>
                           )}
 
@@ -693,14 +657,14 @@ export default function OrdersPage() {
                                 void handleStatusChange(order, "delivered");
                               }}
                               disabled={savingId === order.id}
-                              className="inline-flex items-center gap-1 rounded-xl bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-xs hover:bg-emerald-700 transition active:scale-95 disabled:opacity-50"
+                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 h-7 px-2.5 text-[11px] font-bold text-white hover:bg-emerald-700 transition disabled:opacity-50"
                             >
-                              <Check size={13} />
+                              <Check size={12} />
                               <span>Delivered</span>
                             </button>
                           )}
 
-                          {/* Quick Cancel Button for new/preparing orders */}
+                          {/* Quick Cancel Button */}
                           {(order.status === "received" || order.status === "preparing") && (
                             <button
                               onClick={(e) => {
@@ -708,15 +672,15 @@ export default function OrdersPage() {
                                 void handleStatusChange(order, "cancelled");
                               }}
                               disabled={savingId === order.id}
-                              className="flex h-8 items-center justify-center rounded-xl border border-slate-200 px-2.5 text-xs font-medium text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 transition disabled:opacity-50"
+                              className="flex h-7 items-center justify-center rounded-lg border border-slate-200 px-2 text-[11px] font-medium text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 transition disabled:opacity-50"
                               title="Cancel order"
                             >
-                              <Ban size={12} className="mr-1" />
+                              <Ban size={11} className="mr-1" />
                               <span>Cancel</span>
                             </button>
                           )}
 
-                          {/* Secondary Status Dropdown (Preserves testid contract & manual status overrides) */}
+                          {/* Secondary Status Dropdown */}
                           <div className="relative">
                             <select
                               data-testid={`order-status-select-${order.order_number}`}
@@ -724,7 +688,7 @@ export default function OrdersPage() {
                               disabled={savingId === order.id}
                               onClick={(e) => e.stopPropagation()}
                               onChange={(e) => void handleStatusChange(order, e.target.value as OrderStatus)}
-                              className="appearance-none rounded-xl border border-slate-200 bg-white py-1.5 pl-2.5 pr-6 text-[11px] font-semibold text-slate-700 outline-none hover:bg-slate-50 focus:border-slate-300 focus:ring-1 focus:ring-slate-200"
+                              className="h-7 appearance-none rounded-lg border border-slate-200 bg-slate-50 py-0 pl-2 pr-5 text-[11px] font-semibold text-slate-700 outline-none hover:bg-white focus:border-slate-300"
                               aria-label={`Change status for order #${order.order_number}`}
                             >
                               {getStatusOptions(order.status).map((status) => (
@@ -734,8 +698,8 @@ export default function OrdersPage() {
                               ))}
                             </select>
                             <ChevronDown
-                              size={11}
-                              className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 text-slate-400"
+                              size={10}
+                              className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400"
                             />
                           </div>
 
@@ -743,10 +707,10 @@ export default function OrdersPage() {
                           <button
                             data-testid={`order-print-${order.order_number}`}
                             onClick={(e) => void handlePrintOrder(order, e)}
-                            className="flex h-8 items-center justify-center rounded-xl border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition active:scale-95 shadow-2xs"
+                            className="flex h-7 items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs"
                             title="Print thermal receipt"
                           >
-                            <Printer size={13} className="mr-1 text-slate-500" />
+                            <Printer size={12} className="mr-1 text-slate-500" />
                             <span>Print</span>
                           </button>
 
@@ -758,13 +722,13 @@ export default function OrdersPage() {
                               setExpandedId(expanded ? null : order.id);
                             }}
                             className={clsx(
-                              "flex h-8 w-8 items-center justify-center rounded-xl border border-slate-200 bg-slate-50 text-slate-600 transition hover:bg-slate-100",
-                              expanded && "bg-slate-200/70"
+                              "flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100",
+                              expanded && "bg-slate-200/80"
                             )}
                             title={expanded ? "Collapse details" : "Expand details"}
                           >
                             <ChevronDown
-                              size={14}
+                              size={13}
                               className={clsx("transition-transform duration-200", expanded && "rotate-180")}
                             />
                           </button>
@@ -773,26 +737,26 @@ export default function OrdersPage() {
                     </div>
 
                     {/* Row 2: Clean Items Summary & Special Instruction Callout */}
-                    <div className="mt-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-slate-100 pt-2.5">
-                      <div className="flex flex-wrap items-center gap-1.5">
+                    <div className="mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-t border-slate-100 pt-2">
+                      <div className="flex flex-wrap items-center gap-1">
                         <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1">
                           <UtensilsCrossed size={11} /> Items:
                         </span>
                         {order.order_items.map((item) => (
                           <span
                             key={item.id}
-                            className="inline-flex items-center gap-1 rounded-md border border-slate-200/80 bg-slate-50/80 px-2 py-0.5 text-xs text-slate-700"
+                            className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700 font-medium"
                           >
-                            <span className="font-semibold text-slate-900">{item.qty}×</span>
+                            <span className="font-bold text-slate-900">{item.qty}×</span>
                             <span>{item.name}</span>
-                            {item.size && <span className="text-[11px] text-slate-400">({item.size})</span>}
+                            {item.size && <span className="text-[10px] text-slate-400">({item.size})</span>}
                           </span>
                         ))}
                       </div>
 
                       {order.customer_instructions && (
-                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-amber-200/80 bg-amber-50/70 px-2.5 py-1 text-xs text-amber-900">
-                          <MessageSquareText size={12} className="text-amber-600 shrink-0" />
+                        <div className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-900">
+                          <MessageSquareText size={11} className="text-amber-600 shrink-0" />
                           <span className="font-semibold">Note:</span>
                           <span className="truncate max-w-sm">{order.customer_instructions}</span>
                         </div>
