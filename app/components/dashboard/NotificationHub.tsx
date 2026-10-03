@@ -37,7 +37,6 @@ export function useNotifications() {
 export function NotificationProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const {
-    selectedBranchId,
     isSoundEnabled,
     isAutoPrintEnabled,
     receiptPaperWidth,
@@ -246,8 +245,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     const fetchStatus = async () => {
       try {
-        const branchQuery = selectedBranchId === "all" ? "" : `?branch_id=${encodeURIComponent(selectedBranchId)}`;
-        const res = await fetch(`/api/dashboard/notifications${branchQuery}`, {
+        const res = await fetch("/api/dashboard/notifications", {
           cache: "no-store",
           headers: { "ngrok-skip-browser-warning": "true" },
         });
@@ -335,7 +333,7 @@ export function NotificationProvider({ children }: { children: React.ReactNode }
     void fetchStatus();
     const interval = setInterval(fetchStatus, 5000);
     return () => clearInterval(interval);
-  }, [selectedBranchId, playOrderSound, playMessageSound, triggerDeviceNotification]);
+  }, [playOrderSound, playMessageSound, triggerDeviceNotification]);
 
   // Real-time Supabase WebSockets listener
   useEffect(() => {

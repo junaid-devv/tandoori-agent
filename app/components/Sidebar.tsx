@@ -39,7 +39,6 @@ export function Sidebar() {
   const {
     session,
     profile,
-    selectedBranchId,
     logout,
     isSidebarCollapsed,
     toggleSidebarCollapsed,

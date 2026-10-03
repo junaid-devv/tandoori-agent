@@ -169,8 +169,6 @@ function formatElapsedTime(createdAt: string) {
 
 export default function OrdersPage() {
   const {
-    selectedBranchId,
-    selectedBranch,
     profile,
     receiptPaperWidth,
   } = useDashboardContext();
@@ -187,7 +185,7 @@ export default function OrdersPage() {
       await printOrderReceipt(order as any, {
         paperWidth: receiptPaperWidth,
         restaurantName: profile.app_name,
-        branchName: order.branches?.name || selectedBranch?.name,
+        branchName: order.branches?.name,
       });
       toast.success(`🖨️ Printing receipt for Order #${order.order_number}`);
     } catch (err) {
@@ -196,10 +194,8 @@ export default function OrdersPage() {
     }
   };
 
-  const ordersUrl = useMemo(() => {
-    const branchQuery = selectedBranchId === "all" ? "" : `&branch_id=${encodeURIComponent(selectedBranchId)}`;
-    return `/api/orders?limit=100${branchQuery}`;
-  }, [selectedBranchId]);
+  // Single-branch: always load all orders for this restaurant
+  const ordersUrl = "/api/orders?limit=100";
 
   const {
     data: orders,
@@ -310,9 +306,7 @@ export default function OrdersPage() {
       {/* ── Page Header ─────────────────────────────────────────── */}
       <PageHeader
         title="Kitchen & Order Queue"
-        description={
-          selectedBranch ? `Live orders for ${selectedBranch.name}` : "Live order queue across all restaurant branches"
-        }
+        description="Live order queue — incoming, preparing & fulfilled"
         meta={
           <div className="flex items-center gap-2">
             <span className="inline-flex items-center gap-1.5 rounded-full border border-orange-200/80 bg-orange-50 px-2.5 py-0.5 text-xs font-semibold text-brand">
@@ -639,12 +633,7 @@ export default function OrdersPage() {
                           </div>
                         )}
 
-                        {/* Branch tag only if viewing all branches */}
-                        {selectedBranchId === "all" && order.branches?.name && (
-                          <span className="hidden lg:inline text-[11px] text-slate-400">
-                            ({order.branches.name})
-                          </span>
-                        )}
+
 
                         {/* Assignee (only if assigned) */}
                         {order.assigned_to && (

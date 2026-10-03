@@ -36,15 +36,10 @@ function label(value: string) {
 }
 
 export default function AnalyticsPage() {
-  const { selectedBranchId, selectedBranch } = useDashboardContext();
   const [refreshing, setRefreshing] = useState(false);
 
-  const analyticsUrl = useMemo(() =>
-    selectedBranchId === "all"
-      ? "/api/dashboard/analytics"
-      : `/api/dashboard/analytics?branch_id=${encodeURIComponent(selectedBranchId)}`,
-    [selectedBranchId],
-  );
+  // Single-branch: always load analytics for this restaurant
+  const analyticsUrl = "/api/dashboard/analytics";
 
   const {
     data,
@@ -78,7 +73,7 @@ export default function AnalyticsPage() {
     <div className="space-y-4 pb-4 sm:space-y-6 sm:pb-10">
       <PageHeader
         title="Analytics"
-        description={`Last ${data?.rangeDays ?? 30} days${selectedBranch ? ` for ${selectedBranch.name}` : " across accessible branches"}.`}
+        description={`Last ${data?.rangeDays ?? 30} days — orders, revenue & customer trends.`}
         actions={
           <button
             onClick={() => void loadAnalytics(true)}

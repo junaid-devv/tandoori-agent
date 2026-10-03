@@ -119,9 +119,6 @@ async function deleteItem(id: string) {
 }
 
 export default function MenuPage() {
-  const { selectedBranchId, selectedBranch } = useDashboardContext();
-  const canEditSingleBranch = selectedBranchId !== "all";
-
   const [items, setItems] = useState<MenuItem[]>([]);
   const [importPreview, setImportPreview] = useState<MenuItem[]>([]);
   const [importWarnings, setImportWarnings] = useState<ImportWarning[]>([]);
@@ -143,24 +140,15 @@ export default function MenuPage() {
     toastTimer.current = setTimeout(() => setToast({ text: "", type: null }), 3500);
   }, []);
 
-  const menuUrl = useMemo(
-    () =>
-      selectedBranchId === "all"
-        ? null
-        : `/api/menu?branch_id=${encodeURIComponent(selectedBranchId)}`,
-    [selectedBranchId],
-  );
-
-  const { data: cachedMenu, isLoading: loading, revalidate: revalidateMenu } = useDataCache<MenuItem[]>(menuUrl);
+  // Single-branch: always load menu for the auto-resolved branch (no branch_id param needed)
+  const { data: cachedMenu, isLoading: loading, revalidate: revalidateMenu } = useDataCache<MenuItem[]>("/api/menu");
 
   // Sync cached menu into local editable state
   useEffect(() => {
     if (cachedMenu) {
       setItems(cachedMenu);
-    } else if (selectedBranchId === "all") {
-      setItems([]);
     }
-  }, [cachedMenu, selectedBranchId]);
+  }, [cachedMenu]);
 
   // Refresh helper used after mutations
   const loadMenu = useCallback(() => {
@@ -263,10 +251,9 @@ export default function MenuPage() {
   };
 
   const handleClearAll = async () => {
-    if (selectedBranchId === "all") return;
     setClearingAll(true);
     try {
-      const response = await fetch(`/api/menu?branch_id=${encodeURIComponent(selectedBranchId)}`, {
+      const response = await fetch("/api/menu", {
         method: "DELETE",
       });
       if (!response.ok) throw new Error(await response.text());
@@ -283,11 +270,9 @@ export default function MenuPage() {
   };
 
   const handleSaveAll = async () => {
-    if (selectedBranchId === "all") return;
-
     setBulkSaving(true);
     try {
-      const response = await fetch(`/api/menu?branch_id=${encodeURIComponent(selectedBranchId)}`, {
+      const response = await fetch("/api/menu", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -313,11 +298,11 @@ export default function MenuPage() {
 
   // Direct Apply from Import Preview with chosen mode
   const handleApplyImportDirectly = async () => {
-    if (selectedBranchId === "all" || importPreview.length === 0) return;
+    if (importPreview.length === 0) return;
 
     setSavingImport(true);
     try {
-      const response = await fetch(`/api/menu?branch_id=${encodeURIComponent(selectedBranchId)}`, {
+      const response = await fetch("/api/menu", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -366,11 +351,7 @@ export default function MenuPage() {
       const reader = new FileReader();
       reader.onloadend = async () => {
         try {
-          if (selectedBranchId === "all") {
-            throw new Error("Please choose a single branch before uploading a menu.");
-          }
-
-          const response = await fetch(`/api/menu/process?branch_id=${encodeURIComponent(selectedBranchId)}`, {
+          const response = await fetch("/api/menu/process", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ imageUrl: reader.result as string }),
@@ -419,10 +400,6 @@ export default function MenuPage() {
 
     setJsonUploading(true);
     try {
-      if (selectedBranchId === "all") {
-        throw new Error("Please choose a single branch before uploading a menu.");
-      }
-
       const rawText = await file.text();
       let parsed: unknown;
       try {
@@ -472,23 +449,12 @@ export default function MenuPage() {
 
   return (
     <div className="space-y-5 pb-10">
-      {!canEditSingleBranch ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-          Please select a single branch from the sidebar to edit or upload its menu catalog.
-        </div>
-      ) : null}
-
-      {canEditSingleBranch ? (
-        <>
-          {/* Header */}
-          <PageHeader
-            title="Menu Catalog & AI Digitizer"
-            description={
-              selectedBranch
-                ? `Managing menu for ${selectedBranch.name}. Changes automatically sync to the WhatsApp AI Agent.`
-                : "Manage menu items, upload photos for instant AI digitization, and configure schedules."
-            }
-            meta={
+      <>
+        {/* Header */}
+        <PageHeader
+          title="Menu Catalog & AI Digitizer"
+          description="Manage menu items, upload photos for instant AI digitization, and configure schedules. Changes automatically sync to the WhatsApp AI Agent."
+          meta={
               <div className="flex items-center gap-2">
                 <span className="rounded-full bg-orange-50 px-2.5 py-1 text-xs font-bold text-brand ring-1 ring-inset ring-orange-200">
                   {items.length} Live Items
@@ -1075,8 +1041,6 @@ export default function MenuPage() {
               </div>
             </div>
           </div>
-        </>
-      ) : null}
 
       {/* Clear All Confirmation Modal */}
       {showClearModal && (
@@ -1087,7 +1051,7 @@ export default function MenuPage() {
             </div>
             <h3 className="text-lg font-bold text-slate-900">Delete Entire Menu?</h3>
             <p className="mt-2 text-sm text-slate-600">
-              Are you sure you want to permanently delete all <strong className="text-slate-900">{items.length} menu items</strong>, categories, and AI search embeddings for <strong className="text-slate-900">{selectedBranch?.name}</strong>?
+              Are you sure you want to permanently delete all <strong className="text-slate-900">{items.length} menu items</strong>, categories, and AI search embeddings? This will clear the entire menu catalog.
             </p>
             <p className="mt-1 text-xs text-red-600 font-semibold">This action cannot be undone.</p>
 
@@ -1123,6 +1087,7 @@ export default function MenuPage() {
           <p className="text-sm font-semibold text-slate-800">{toast.text}</p>
         </div>
       )}
+      </>
     </div>
   );
 }
