@@ -3,7 +3,6 @@
 import { useCallback, useMemo, useState } from "react";
 import { BarChart3, Loader2, RefreshCw, ShoppingBag, Users, Utensils } from "lucide-react";
 import { clsx } from "clsx";
-import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 

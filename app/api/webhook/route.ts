@@ -25,7 +25,7 @@ import { createStaffAlert } from "@/lib/staff-alerts";
 import { saveCustomerAddressFromOrder, updateCustomerOrderStats } from "@/lib/customer-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { buildRateLimitHeaders, checkRateLimit, getClientIp } from "@/lib/rate-limit";
-import { buildInteractiveCategoryUI } from "@/lib/webhook-city-helpers";
+
 import { buildInteractiveListForPresentedOptions } from "@/lib/webhook-interactive-builders";
 import {
   claimWebhookEvent,
