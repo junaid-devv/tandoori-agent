@@ -23,16 +23,19 @@ export async function GET(req: NextRequest) {
           .from("whatsapp_configs")
           .select("*")
           .eq("restaurant_id", targetRestaurantId)
+          .eq("is_active", true)
           .maybeSingle()
       : { data: null };
 
-    const phoneId = config?.phone_number_id || process.env.WHATSAPP_PHONE_NUMBER_ID || null;
-    const token = config?.access_token || process.env.WHATSAPP_ACCESS_TOKEN || "";
-    const wabaId = config?.waba_id || process.env.WHATSAPP_WABA_ID || null;
+    // In a multi-tenant setup, only consider configured if there is an active DB record
+    const phoneId = config?.phone_number_id || null;
+    const token = config?.access_token || "";
+    const wabaId = config?.waba_id || null;
     const appId = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID || null;
     const configId = process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID || process.env.WHATSAPP_CONFIG_ID || null;
 
     const isMetaConfigured = Boolean(
+      profile.whatsapp_provider !== "none" &&
       phoneId &&
       token &&
       token.length > 20
