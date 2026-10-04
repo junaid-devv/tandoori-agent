@@ -3,6 +3,7 @@ import { requireApiSession } from "@/lib/branch-request";
 import { apiErrorResponse } from "@/lib/api-utils";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getWaAkgFullStatus } from "@/lib/wa-akg-client";
 
 export const dynamic = "force-dynamic";
 
@@ -70,8 +71,10 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    const waAkgStatus = await getWaAkgFullStatus();
+
     return NextResponse.json({
-      activeProvider: "meta",
+      activeProvider: profile.whatsapp_provider || "none",
       whatsappEnabled: profile.whatsapp_provider !== "none",
       metaConfig: {
         configured: isMetaConfigured,
@@ -86,6 +89,7 @@ export async function GET(req: NextRequest) {
         verifyTokenSet: Boolean(process.env.WHATSAPP_VERIFY_TOKEN),
         coexistenceEnabled: true,
       },
+      waAkg: waAkgStatus,
     });
   } catch (error) {
     return apiErrorResponse(error, {

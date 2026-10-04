@@ -20,5 +20,5 @@ export interface RestaurantProfile {
   ai_personality_default: string;
   menu_display_mode: MenuDisplayMode;
   menu_card_images: string[];
-  whatsapp_provider: "meta" | "none";
+  whatsapp_provider: "meta" | "wa_akg" | "none";
 }
