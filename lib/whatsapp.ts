@@ -255,7 +255,7 @@ export async function sendWhatsAppMessage(
     };
   }
 
-  if (await resolveShouldUseWaAkg()) {
+  if (!phoneNumberId && (await resolveShouldUseWaAkg())) {
     return sendWaAkgMessage(to, body);
   }
 
@@ -372,7 +372,7 @@ export async function sendWhatsAppImage(
     };
   }
 
-  if (await resolveShouldUseWaAkg()) {
+  if (!phoneNumberId && (await resolveShouldUseWaAkg())) {
     return sendWaAkgImage(to, imageUrl, caption);
   }
 
@@ -475,7 +475,7 @@ export async function sendWhatsAppInteractiveList(
     };
   }
 
-  if (await resolveShouldUseWaAkg()) {
+  if (!phoneNumberId && (await resolveShouldUseWaAkg())) {
     const listBody = payload.body.trim();
     const rows = payload.rows.slice(0, 8);
 
@@ -595,7 +595,7 @@ export async function sendWhatsAppReplyButtons(
     };
   }
 
-  if (await resolveShouldUseWaAkg()) {
+  if (!phoneNumberId && (await resolveShouldUseWaAkg())) {
     const body = payload.body.trim();
     const count = payload.buttons.length;
 

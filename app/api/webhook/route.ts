@@ -217,7 +217,9 @@ async function processWebhook(body: unknown) {
       }
       const branches = await getCachedBranches(restaurantCtx.restaurantId);
       if (branches.length === 0) continue;
-      await processEchoMessage(message, customerPhone, branches[0], restaurantCtx.restaurantId);
+      const businessPhone = restaurantCtx.whatsappConfig?.display_phone_number?.replace(/[^0-9]/g, "") ||
+        restaurantCtx.profile?.support_phone?.replace(/[^0-9]/g, "") || undefined;
+      await processEchoMessage(message, customerPhone, branches[0], restaurantCtx.restaurantId, businessPhone);
     } catch (error) {
       console.error("[webhook-coexistence] Failed to process echo:", { customerPhone, error });
     }
@@ -272,7 +274,9 @@ async function processWebhook(body: unknown) {
       }
       // Single-branch: always use the first (only) active branch — no selection prompt needed.
       const branch = branches[0];
-      await processOneMessage(message, contactName, branch, profile, phoneNumberId, restaurantCtx.restaurantId);
+      const businessPhone = restaurantCtx.whatsappConfig?.display_phone_number?.replace(/[^0-9]/g, "") ||
+        profile.support_phone?.replace(/[^0-9]/g, "") || undefined;
+      await processOneMessage(message, contactName, branch, profile, phoneNumberId, restaurantCtx.restaurantId, businessPhone);
     } catch (error) {
       console.error("[webhook] Failed to process message:", { from: message.from, phoneNumberId, error });
     }
@@ -288,6 +292,7 @@ async function processEchoMessage(
   customerPhone: string,
   branch: BranchRecord,
   restaurantId: string,
+  businessPhone?: string,
 ) {
   recordSentMessageId(message.id);
 
@@ -303,6 +308,7 @@ async function processEchoMessage(
     branchId: branch.id,
     phone: customerPhone,
     name: contact.name,
+    whatsappPhone: businessPhone || undefined,
   });
 
   const content =
@@ -356,6 +362,7 @@ async function processOneMessage(
   profile: Awaited<ReturnType<typeof getRestaurantProfile>>,
   phoneNumberId: string,
   restaurantId: string,
+  businessPhone?: string,
 ) {
   const phone = message.from;
   const contact = await upsertContact(phone, contactName, restaurantId);
@@ -379,6 +386,7 @@ async function processOneMessage(
     branchId: activeBranch.id,
     phone,
     name: contactName,
+    whatsappPhone: businessPhone || undefined,
   });
   // State ensure is now a single-trip upsert, so this is fast
   let state = await stateRepo.ensure(conversation.id);
@@ -904,7 +912,11 @@ function isValidWhatsAppSignature(rawBody: string, sig: string | null): boolean 
   }
 
   // Support multiple comma-separated secrets (e.g. during app transition or multi-app setups)
-  const secrets = secretEnv.split(",").map((s) => s.trim()).filter(Boolean);
+  // Clean surrounding quotes and whitespace
+  const secrets = secretEnv
+    .split(",")
+    .map((s) => s.trim().replace(/^["']|["']$/g, "").trim())
+    .filter(Boolean);
   const rb = Buffer.from(sig.trim());
 
   for (const secret of secrets) {

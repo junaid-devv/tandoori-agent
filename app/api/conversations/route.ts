@@ -23,14 +23,20 @@ export async function GET(req: NextRequest) {
   if (activeProvider === "wa_akg") {
     activeBusinessPhone = (profile?.support_phone || "923155160301").replace(/[^0-9]/g, "");
   } else if (activeProvider === "meta") {
-    activeBusinessPhone = "923355488186";
+    const { data: metaConfig } = await supabaseAdmin
+      .from("whatsapp_configs")
+      .select("display_phone_number")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle();
+    activeBusinessPhone = (metaConfig?.display_phone_number || profile?.support_phone || "923355488186").replace(/[^0-9]/g, "");
   }
 
   const requestedPhone = searchParams.get("whatsapp_phone");
   const filterPhone = requestedPhone === "all" ? null : (requestedPhone || activeBusinessPhone);
 
-  if (lite) {
-    let query = supabaseAdmin.from("conversations").select(`
+  const buildLiteQuery = (targetPhone: string | null) => {
+    let q = supabaseAdmin.from("conversations").select(`
       id,
       branch_id,
       phone,
@@ -54,25 +60,33 @@ export async function GET(req: NextRequest) {
       )
     `);
 
-    query = query.order("updated_at", { ascending: false });
+    q = q.order("updated_at", { ascending: false });
     if (auth.branchId) {
-      query = query.eq("branch_id", auth.branchId);
+      q = q.eq("branch_id", auth.branchId);
     }
     if (unreadOnly) {
-      query = query.eq("has_unread", true);
+      q = q.eq("has_unread", true);
     }
-    if (filterPhone) {
-      query = query.eq("whatsapp_phone", filterPhone);
+    if (targetPhone) {
+      q = q.eq("whatsapp_phone", targetPhone);
     }
-    if (activeBusinessPhone) {
-      // Never show the business's own phone as a customer conversation
-      query = query.neq("phone", activeBusinessPhone);
-    }
-
-    const { data, error } = await query
+    return q
       .order("created_at", { ascending: false, foreignTable: "messages" })
       .limit(1, { foreignTable: "messages" })
       .range(offset, offset + limit - 1);
+  };
+
+  if (lite) {
+    let { data, error } = await buildLiteQuery(filterPhone);
+
+    // If default auto-filter produced no results and no explicit filter was requested,
+    // fallback to showing all conversations so the user never sees a broken empty inbox.
+    if (!error && (!data || data.length === 0) && !requestedPhone && filterPhone) {
+      const fallback = await buildLiteQuery(null);
+      if (!fallback.error && fallback.data && fallback.data.length > 0) {
+        data = fallback.data;
+      }
+    }
 
     if (error) {
       return apiErrorResponse(error, { fallback: "Failed to load conversations.", context: "conversations GET lite" });
@@ -80,16 +94,19 @@ export async function GET(req: NextRequest) {
 
     const normalized = (data ?? []).map((conv: any) => {
       const lastMsgAt = conv.messages?.[0]?.created_at || conv.created_at;
+      const isSelfTest = Boolean(activeBusinessPhone && conv.phone === activeBusinessPhone);
       return {
         ...conv,
         last_message_at: lastMsgAt,
+        is_self_test: isSelfTest,
       };
     }).sort((a: any, b: any) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
 
     return NextResponse.json(normalized);
   }
 
-  let query = supabaseAdmin.from("conversations").select(`
+  const buildFullQuery = (targetPhone: string | null) => {
+    let q = supabaseAdmin.from("conversations").select(`
       id,
       branch_id,
       phone,
@@ -130,25 +147,32 @@ export async function GET(req: NextRequest) {
         created_at
       )
     `);
-  query = query.order("updated_at", { ascending: false });
+    q = q.order("updated_at", { ascending: false });
 
-  if (auth.branchId) {
-    query = query.eq("branch_id", auth.branchId);
-  }
-  if (unreadOnly) {
-    query = query.eq("has_unread", true);
-  }
-  if (filterPhone) {
-    query = query.eq("whatsapp_phone", filterPhone);
-  }
-  if (activeBusinessPhone) {
-    query = query.neq("phone", activeBusinessPhone);
-  }
+    if (auth.branchId) {
+      q = q.eq("branch_id", auth.branchId);
+    }
+    if (unreadOnly) {
+      q = q.eq("has_unread", true);
+    }
+    if (targetPhone) {
+      q = q.eq("whatsapp_phone", targetPhone);
+    }
 
-  const { data, error } = await query
-    .order("created_at", { ascending: false, foreignTable: "messages" })
-    .limit(1, { foreignTable: "messages" })
-    .range(offset, offset + limit - 1);
+    return q
+      .order("created_at", { ascending: false, foreignTable: "messages" })
+      .limit(1, { foreignTable: "messages" })
+      .range(offset, offset + limit - 1);
+  };
+
+  let { data, error } = await buildFullQuery(filterPhone);
+
+  if (!error && (!data || data.length === 0) && !requestedPhone && filterPhone) {
+    const fallback = await buildFullQuery(null);
+    if (!fallback.error && fallback.data && fallback.data.length > 0) {
+      data = fallback.data;
+    }
+  }
 
   if (error) {
     return apiErrorResponse(error, { fallback: "Failed to load conversations.", context: "conversations GET" });
@@ -156,9 +180,11 @@ export async function GET(req: NextRequest) {
 
   const normalized = (data ?? []).map((conv: any) => {
     const lastMsgAt = conv.messages?.[0]?.created_at || conv.created_at;
+    const isSelfTest = Boolean(activeBusinessPhone && conv.phone === activeBusinessPhone);
     return {
       ...conv,
       last_message_at: lastMsgAt,
+      is_self_test: isSelfTest,
     };
   }).sort((a: any, b: any) => new Date(b.last_message_at).getTime() - new Date(a.last_message_at).getTime());
 

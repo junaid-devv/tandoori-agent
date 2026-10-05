@@ -96,6 +96,8 @@ interface ConversationPreview {
   name: string | null;
   mode: ConversationMode;
   has_unread: boolean;
+  whatsapp_phone?: string | null;
+  is_self_test?: boolean;
   last_message_at?: string;
   updated_at: string;
   created_at: string;
@@ -389,14 +391,29 @@ export default function ConversationsPage() {
     return remaining <= 100;
   }, []);
 
-  // Conversations list query with stale-while-revalidate — no branch filter needed (single branch)
-  const conversationsUrl = "/api/conversations?limit=100";
+  const [selectedChannelPhone, setSelectedChannelPhone] = useState<string>("all");
+
+  // Conversations list query with stale-while-revalidate — auto-scoped or channel-selected
+  const conversationsUrl =
+    selectedChannelPhone === "all"
+      ? "/api/conversations?limit=100&whatsapp_phone=all"
+      : `/api/conversations?limit=100&whatsapp_phone=${encodeURIComponent(selectedChannelPhone)}`;
 
   const {
     data: cachedConversations,
     isLoading: loadingList,
     revalidate: revalidateList,
   } = useDataCache<ConversationPreview[]>(conversationsUrl);
+
+  const uniqueChannels = useMemo(() => {
+    const map = new Map<string, number>();
+    (cachedConversations || conversations).forEach((c) => {
+      if (c.whatsapp_phone) {
+        map.set(c.whatsapp_phone, (map.get(c.whatsapp_phone) || 0) + 1);
+      }
+    });
+    return Array.from(map.entries()).map(([phone, count]) => ({ phone, count }));
+  }, [cachedConversations, conversations]);
 
   // Sync cached data into local state
   useEffect(() => {
@@ -761,6 +778,39 @@ export default function ConversationsPage() {
             </button>
           </div>
 
+          {/* WhatsApp Channel Switcher */}
+          {uniqueChannels.length > 1 && (
+            <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar text-[10.5px]">
+              <button
+                onClick={() => setSelectedChannelPhone("all")}
+                className={clsx(
+                  "rounded-md px-2 py-0.5 whitespace-nowrap transition font-medium text-[10px]",
+                  selectedChannelPhone === "all"
+                    ? "bg-slate-900 text-white font-semibold"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                )}
+              >
+                All Numbers
+              </button>
+              {uniqueChannels.map((c) => (
+                <button
+                  key={c.phone}
+                  onClick={() => setSelectedChannelPhone(c.phone)}
+                  className={clsx(
+                    "rounded-md px-2 py-0.5 whitespace-nowrap transition font-medium text-[10px] flex items-center gap-1",
+                    selectedChannelPhone === c.phone
+                      ? "bg-brand text-white font-semibold"
+                      : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                  )}
+                  title={`Filter to +${c.phone}`}
+                >
+                  <span>+{c.phone}</span>
+                  <span className="opacity-75 text-[9px]">({c.count})</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           {/* Search Box */}
           <div className="relative">
             <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
@@ -878,9 +928,21 @@ export default function ConversationsPage() {
                     {/* Content */}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-1">
-                        <p className="truncate text-xs font-bold text-slate-900">
-                          {getConversationLabel(item)}
-                        </p>
+                        <div className="flex items-center gap-1 min-w-0">
+                          <p className="truncate text-xs font-bold text-slate-900">
+                            {getConversationLabel(item)}
+                          </p>
+                          {item.is_self_test && (
+                            <span className="shrink-0 rounded bg-blue-100 px-1 py-0.2 text-[8px] font-bold text-blue-700">
+                              Self Test
+                            </span>
+                          )}
+                          {selectedChannelPhone === "all" && item.whatsapp_phone && (
+                            <span className="shrink-0 rounded bg-slate-200/60 px-1 py-0.2 text-[8px] font-medium text-slate-600">
+                              +{item.whatsapp_phone.slice(-4)}
+                            </span>
+                          )}
+                        </div>
                         <span className="shrink-0 text-[10px] text-slate-400 font-medium">
                           {formatDistanceToNow(new Date(displayTimestamp), { addSuffix: false })}
                         </span>
