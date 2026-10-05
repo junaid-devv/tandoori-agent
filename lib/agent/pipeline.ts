@@ -77,6 +77,7 @@ export function understandingFromInteractiveId(
   id: string,
   language: TurnUnderstanding["language"],
   lastShownOptions: Array<{ id: string; name: string; price: number }>,
+  pendingOptions?: Array<{ id: string; label: string }>,
 ): TurnUnderstanding | null {
   const base = makeBase(language);
   const [ns, ...rest] = id.split(":");
@@ -90,7 +91,7 @@ export function understandingFromInteractiveId(
       return null;
 
     case "confirm":
-      if (val === "yes") {
+      if (val === "yes" || val === "confirm") {
         return { ...base, intents: ["confirm_order"], primary_intent: "confirm_order", notes: "fast_path_confirm" };
       }
       // "Go Back" / "Wapas Jao" — show cart, don't cancel
@@ -98,7 +99,8 @@ export function understandingFromInteractiveId(
 
     case "item": {
       const chosen = lastShownOptions.find((o) => o.id === val);
-      const name = chosen?.name ?? val;
+      const pendingMatch = pendingOptions?.find((o) => o.id === `item:${val}` || o.id === val);
+      const name = chosen?.name ?? pendingMatch?.label ?? val;
       return {
         ...base,
         intents: ["add_items"],
@@ -176,7 +178,86 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       input.messageText.trim(),
       ctx.state.preferred_language,
       ctx.state.last_shown_options,
+      ctx.state.pending_clarification?.options,
     );
+  }
+
+  // ── 1a.2) Selection from pending clarification / interactive buttons (WA-AKG & text replies) ──
+  if (!understanding && ctx.state.pending_clarification?.options?.length) {
+    const rawTrimmed = input.messageText.trim();
+    const cleanLower = rawTrimmed.toLowerCase();
+    const numMatch = rawTrimmed.match(/^[\s#*]*(?:reply\s*|type\s*)?(\d{1,2})[\s*.]*$/i);
+    const opts = ctx.state.pending_clarification.options;
+
+    let selectedId: string | null = null;
+
+    if (numMatch) {
+      const idx = Number(numMatch[1]) - 1;
+      if (idx >= 0 && idx < opts.length) {
+        selectedId = opts[idx].id;
+      }
+    } else {
+      // Check for textual button title matches
+      // e.g. "checkout", "add more", "view menu", "menu", "confirm", "delivery", "pickup", "dine in"
+      const cleanMsg = cleanLower.replace(/[^a-z0-9]/g, "");
+      for (const opt of opts) {
+        const cleanOpt = opt.label.toLowerCase().replace(/[^a-z0-9]/g, "");
+        if (cleanMsg && cleanOpt && (cleanMsg === cleanOpt || cleanMsg.includes(cleanOpt) || cleanOpt.includes(cleanMsg))) {
+          selectedId = opt.id;
+          break;
+        }
+      }
+    }
+
+    if (selectedId) {
+      understanding = understandingFromInteractiveId(
+        selectedId,
+        ctx.state.preferred_language,
+        ctx.state.last_shown_options,
+        opts,
+      );
+    }
+  }
+
+  // ── 1a.3) Contextual shortcuts for WA-AKG numbers & common replies ────────
+  if (!understanding) {
+    const rawTrimmed = input.messageText.trim();
+    const cleanLower = rawTrimmed.toLowerCase();
+    const cleanAlpha = cleanLower.replace(/[^a-z0-9]/g, "");
+
+    // A) When cart has items:
+    if (ctx.state.cart.length > 0) {
+      // "2" or "checkout" or "bill" or "check out" -> checkout / confirm order
+      if (rawTrimmed === "2" || /^(checkout|check\s*out|bill|order\s*confirm|confirm\s*order|place\s*order)$/i.test(cleanLower) || cleanAlpha === "checkout") {
+        understanding = understandingFromInteractiveId("action:checkout", ctx.state.preferred_language, ctx.state.last_shown_options);
+      }
+      // "1" when cartActionButtons was likely shown (building_cart) -> add more
+      else if (rawTrimmed === "1" && ctx.view.stage === "building_cart") {
+        understanding = understandingFromInteractiveId("action:add_more", ctx.state.preferred_language, ctx.state.last_shown_options);
+      }
+      // "confirm" / "yes" / "theek hai" when in confirming stage or summary was sent -> confirm order
+      else if ((ctx.view.stage === "confirming" || ctx.state.summary_sent_at !== null) && /^(1|confirm|yes|haan|theek\s*hai|done|ok)$/i.test(cleanLower)) {
+        understanding = understandingFromInteractiveId("confirm:yes", ctx.state.preferred_language, ctx.state.last_shown_options);
+      }
+    }
+    // B) When cart is empty on greeting or browsing:
+    else if (ctx.state.cart.length === 0) {
+      // "1" or "menu" or "view menu" -> show menu
+      if (rawTrimmed === "1" || /^(1|menu|view\s*menu|dekhna\s*hai|kya\s*hai)$/i.test(cleanLower) || cleanAlpha === "viewmenu" || cleanAlpha === "menu") {
+        understanding = understandingFromInteractiveId("action:view_menu", ctx.state.preferred_language, ctx.state.last_shown_options);
+      }
+    }
+
+    // C) Order type shortcuts:
+    if (!understanding && (ctx.view.stage === "choosing_order_type" || ctx.view.stage === "collecting_delivery")) {
+      if (/^(1|delivery|deliver)$/i.test(cleanLower)) {
+        understanding = understandingFromInteractiveId("ordertype:delivery", ctx.state.preferred_language, ctx.state.last_shown_options);
+      } else if (/^(2|pickup|takeaway|take\s*away)$/i.test(cleanLower)) {
+        understanding = understandingFromInteractiveId("ordertype:pickup", ctx.state.preferred_language, ctx.state.last_shown_options);
+      } else if (/^(3|dine\s*in|dinein)$/i.test(cleanLower)) {
+        understanding = understandingFromInteractiveId("ordertype:dine-in", ctx.state.preferred_language, ctx.state.last_shown_options);
+      }
+    }
   }
 
   // ── 1b) Pure greeting with empty cart ──────────────────────────────────────

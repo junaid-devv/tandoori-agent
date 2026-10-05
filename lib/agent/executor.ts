@@ -88,9 +88,31 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   let mediaUrls: string[] | undefined = undefined;
 
 
-  // ── Helpers ──────────────────────────────────────────────────────────────
-
-  const setInteractive = (p: InteractivePayload | null) => { if (!interactive && p) interactive = p; };
+  const setInteractive = (p: InteractivePayload | null) => {
+    if (!interactive && p) {
+      interactive = p;
+      if (p.kind === "buttons") {
+        const isOrderType = p.payload.buttons.some((b) => b.id.startsWith("ordertype:"));
+        patch.pending_clarification = {
+          kind: isOrderType ? "order_type" : "item_disambiguation",
+          options: p.payload.buttons.map((b) => ({ id: b.id, label: b.title })),
+        };
+        const isActionOrConfirm = p.payload.buttons.some((b) =>
+          /^(action|confirm|ordertype|addr):/.test(b.id)
+        );
+        if (isActionOrConfirm) {
+          patch.last_shown_options = [];
+          patch.last_shown_options_at = null;
+          patch.last_shown_category = null;
+        }
+      } else if (p.kind === "list") {
+        patch.pending_clarification = {
+          kind: "item_disambiguation",
+          options: p.payload.rows.map((r) => ({ id: r.id, label: r.title })),
+        };
+      }
+    }
+  };
 
   /** Deterministic hours/location answer — never calls LLM. */
   const hoursAnswer = (): string => {
@@ -374,6 +396,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         }
 
         if (added.length) {
+          patch.last_shown_options = [];
+          patch.last_shown_options_at = null;
+          patch.last_shown_category = null;
+
           const willShowSummary = transition.actions.some((a) => a.kind === "show_summary");
           if (!willShowSummary) {
             replies.push(reply.itemsAdded(lang, added, cart, cur));
