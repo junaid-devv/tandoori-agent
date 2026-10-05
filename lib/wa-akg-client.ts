@@ -210,13 +210,29 @@ export async function performWaAkgAction(
   }
 
   // Generic session action (/api/sessions/[sessionId]/[action])
-  const res = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/${action}`, {
+  let res = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/${action}`, {
     method: "POST",
     headers: getHeaders(),
     body: JSON.stringify(payload || {}),
   });
 
-  const data = await res.json().catch(() => ({}));
+  let data = await res.json().catch(() => ({}));
+
+  // If session not found, auto-create it and retry the action once
+  if (!res.ok && (res.status === 404 || data.message?.includes("not found"))) {
+    try {
+      await performWaAkgAction("create_session", undefined, sessionId);
+      res = await fetch(`${baseUrl}/api/sessions/${encodeURIComponent(sessionId)}/${action}`, {
+        method: "POST",
+        headers: getHeaders(),
+        body: JSON.stringify(payload || {}),
+      });
+      data = await res.json().catch(() => ({}));
+    } catch {
+      // Proceed to original error if creation retry fails
+    }
+  }
+
   if (!res.ok) {
     throw new Error(data.message || data.error || `Action '${action}' failed (${res.status})`);
   }
