@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { getRestaurantProfile } from "@/lib/restaurant-profile";
 
 export async function GET(req: NextRequest) {
   const auth = await resolveRequestBranch(req, { allowAllForAdmin: true });
@@ -15,6 +16,19 @@ export async function GET(req: NextRequest) {
   const unreadOnly = searchParams.get("unread_only") === "1";
   const lite = searchParams.get("lite") === "1";
 
+  // Resolve active connected WhatsApp number to auto-switch inbox
+  const profile = await getRestaurantProfile().catch(() => null);
+  const activeProvider = profile?.whatsapp_provider || (process.env.WA_AKG_BASE_URL ? "wa_akg" : "meta");
+  let activeBusinessPhone: string | null = null;
+  if (activeProvider === "wa_akg") {
+    activeBusinessPhone = (profile?.support_phone || "923155160301").replace(/[^0-9]/g, "");
+  } else if (activeProvider === "meta") {
+    activeBusinessPhone = "923355488186";
+  }
+
+  const requestedPhone = searchParams.get("whatsapp_phone");
+  const filterPhone = requestedPhone === "all" ? null : (requestedPhone || activeBusinessPhone);
+
   if (lite) {
     let query = supabaseAdmin.from("conversations").select(`
       id,
@@ -23,6 +37,7 @@ export async function GET(req: NextRequest) {
       name,
       mode,
       has_unread,
+      whatsapp_phone,
       updated_at,
       created_at,
       contacts (
@@ -45,6 +60,13 @@ export async function GET(req: NextRequest) {
     }
     if (unreadOnly) {
       query = query.eq("has_unread", true);
+    }
+    if (filterPhone) {
+      query = query.eq("whatsapp_phone", filterPhone);
+    }
+    if (activeBusinessPhone) {
+      // Never show the business's own phone as a customer conversation
+      query = query.neq("phone", activeBusinessPhone);
     }
 
     const { data, error } = await query
@@ -74,6 +96,7 @@ export async function GET(req: NextRequest) {
       name,
       mode,
       has_unread,
+      whatsapp_phone,
       updated_at,
       created_at,
       branches (id, name, slug, address),
@@ -114,6 +137,12 @@ export async function GET(req: NextRequest) {
   }
   if (unreadOnly) {
     query = query.eq("has_unread", true);
+  }
+  if (filterPhone) {
+    query = query.eq("whatsapp_phone", filterPhone);
+  }
+  if (activeBusinessPhone) {
+    query = query.neq("phone", activeBusinessPhone);
   }
 
   const { data, error } = await query

@@ -194,7 +194,7 @@ export async function performWaAkgAction(
       body: JSON.stringify({
         name: `${process.env.NEXT_PUBLIC_APP_NAME || "WhatsApp Agent"} Webhook Auto-Registered`,
         url: targetUrl,
-        events: ["messages.upsert"],
+        events: ["message.received", "message.sent", "*"],
       }),
     });
 

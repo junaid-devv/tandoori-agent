@@ -16,6 +16,7 @@ export interface ConversationRow {
   mode: "agent" | "human";
   has_unread: boolean;
   staff_notes: string | null;
+  whatsapp_phone?: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -44,6 +45,7 @@ export const conversationRepo = {
     branchId: string;
     phone: string;
     name?: string | null;
+    whatsappPhone?: string | null;
   }): Promise<ConversationRow> {
     const { data, error } = await supabaseAdmin
       .from("conversations")
@@ -53,6 +55,7 @@ export const conversationRepo = {
           branch_id: input.branchId,
           phone: input.phone,
           ...(input.name !== undefined ? { name: input.name } : {}),
+          ...(input.whatsappPhone ? { whatsapp_phone: input.whatsappPhone } : {}),
         },
         { onConflict: "contact_id,branch_id" },
       )

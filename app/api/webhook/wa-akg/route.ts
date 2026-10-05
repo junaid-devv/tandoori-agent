@@ -137,12 +137,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "ignored_non_personal" });
   }
 
-  // Self-chat detection ("Message yourself" on WhatsApp for testing)
-  const isSelfChat = Boolean(
-    receiverJid &&
-    rawJid &&
-    (rawJid === receiverJid || rawJid.split("@")[0] === receiverJid.split("@")[0])
-  );
+  // Target restaurant resolution: support ?restaurant_id query param or fallback to active restaurant
+  const targetRestaurantId = new URL(req.url).searchParams.get("restaurant_id") || undefined;
+  const profile = await getCachedProfile(targetRestaurantId);
+  const restaurantId = profile.id;
+  const businessPhone = (receiverJid || profile.support_phone || "923155160301").replace(/[^0-9]/g, "");
 
   // Extract clean customer phone number
   let phone = rawJid.replace(/@s\.whatsapp\.net$/, "").replace(/@lid$/, "").replace(/[^0-9]/g, "");
@@ -153,6 +152,12 @@ export async function POST(req: NextRequest) {
   if (!phone) {
     return NextResponse.json({ status: "ignored_missing_phone" });
   }
+
+  // Self-chat detection ("Message yourself" on WhatsApp for testing)
+  const isSelfChat = Boolean(
+    (receiverJid && rawJid && (rawJid === receiverJid || rawJid.split("@")[0] === receiverJid.split("@")[0])) ||
+    (businessPhone && phone === businessPhone)
+  );
 
   // Extract incoming text
   const incomingContent =
@@ -171,15 +176,10 @@ export async function POST(req: NextRequest) {
     message?.imageMessage?.caption ||
     null;
 
-  // Target restaurant resolution: support ?restaurant_id query param or fallback to active restaurant
-  const targetRestaurantId = new URL(req.url).searchParams.get("restaurant_id") || undefined;
-  const profile = await getCachedProfile(targetRestaurantId);
-  const restaurantId = profile.id;
-
-  // Guard 3: Messages sent by owner from phone app (Coexistence / Manual Reply)
+  // Guard 3: Messages sent by owner from phone app to a customer (Coexistence / Manual Reply)
   if (key.fromMe === true && !isSelfChat) {
     if (incomingContent) {
-      await handleOwnerManualReply(phone, incomingContent, messageId, restaurantId);
+      await handleOwnerManualReply(phone, incomingContent, messageId, restaurantId, businessPhone);
     }
     return NextResponse.json({ status: "owner_reply_recorded" });
   }
@@ -200,6 +200,7 @@ export async function POST(req: NextRequest) {
       contactName,
       text: cleanText,
       restaurantId,
+      businessPhone,
     });
   } catch (error) {
     console.error("[wa-akg-webhook] Processing error:", error);
@@ -211,7 +212,7 @@ export async function POST(req: NextRequest) {
 // ---------------------------------------------------------------------------
 // Coexistence: Record owner manual reply from WhatsApp app & pause bot
 // ---------------------------------------------------------------------------
-async function handleOwnerManualReply(customerPhone: string, content: string, messageId: string, restaurantId: string) {
+async function handleOwnerManualReply(customerPhone: string, content: string, messageId: string, restaurantId: string, businessPhone?: string) {
   recordSentMessageId(messageId);
 
   const branches = await getCachedBranches(restaurantId);
@@ -224,6 +225,7 @@ async function handleOwnerManualReply(customerPhone: string, content: string, me
     branchId: branch.id,
     phone: customerPhone,
     name: contact.name,
+    whatsappPhone: businessPhone || null,
   });
 
   const existing = await messageRepo.getByWhatsappId(messageId);
@@ -269,12 +271,14 @@ async function processWaAkgMessage({
   contactName,
   text,
   restaurantId,
+  businessPhone,
 }: {
   phone: string;
   messageId: string;
   contactName: string;
   text: string;
   restaurantId: string;
+  businessPhone?: string;
 }) {
   const [branches, profile] = await Promise.all([
     getCachedBranches(restaurantId),
@@ -303,6 +307,7 @@ async function processWaAkgMessage({
     branchId: activeBranch.id,
     phone,
     name: contactName || null,
+    whatsappPhone: businessPhone || null,
   });
 
   let state = await stateRepo.ensure(conversation.id);

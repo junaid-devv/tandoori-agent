@@ -92,7 +92,29 @@ export function isWaAkgProvider(provider?: string): boolean {
     return p === "wa_akg" || p === "wa-akg";
   }
   const envProv = (process.env.WHATSAPP_PROVIDER || "").trim().toLowerCase();
-  return envProv === "wa_akg" || envProv === "wa-akg";
+  if (envProv === "wa_akg" || envProv === "wa-akg") return true;
+  if (envProv === "meta") return false;
+  if (process.env.WA_AKG_BASE_URL && !process.env.WHATSAPP_PHONE_NUMBER_ID) return true;
+  return false;
+}
+
+export async function resolveShouldUseWaAkg(provider?: string): Promise<boolean> {
+  if (isWaAkgProvider(provider)) return true;
+  if (provider === "meta" || process.env.WHATSAPP_PROVIDER === "meta") return false;
+
+  try {
+    const profile = await getRestaurantProfile();
+    if (profile.whatsapp_provider === "wa_akg") return true;
+    if (profile.whatsapp_provider === "meta") return false;
+  } catch {
+    // ignore
+  }
+
+  if (process.env.WA_AKG_BASE_URL && !process.env.WHATSAPP_PHONE_NUMBER_ID) {
+    return true;
+  }
+
+  return false;
 }
 
 function normalizeWaJid(to: string): string {
@@ -233,7 +255,7 @@ export async function sendWhatsAppMessage(
     };
   }
 
-  if (isWaAkgProvider()) {
+  if (await resolveShouldUseWaAkg()) {
     return sendWaAkgMessage(to, body);
   }
 
@@ -350,7 +372,7 @@ export async function sendWhatsAppImage(
     };
   }
 
-  if (isWaAkgProvider()) {
+  if (await resolveShouldUseWaAkg()) {
     return sendWaAkgImage(to, imageUrl, caption);
   }
 
@@ -453,7 +475,7 @@ export async function sendWhatsAppInteractiveList(
     };
   }
 
-  if (isWaAkgProvider()) {
+  if (await resolveShouldUseWaAkg()) {
     const listBody = payload.body.trim();
     const rows = payload.rows.slice(0, 8);
 
@@ -573,7 +595,7 @@ export async function sendWhatsAppReplyButtons(
     };
   }
 
-  if (isWaAkgProvider()) {
+  if (await resolveShouldUseWaAkg()) {
     const body = payload.body.trim();
     const count = payload.buttons.length;
 
