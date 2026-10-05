@@ -145,10 +145,48 @@ export async function POST(req: NextRequest) {
 
   // Extract clean customer phone number
   let phone = rawJid.replace(/@s\.whatsapp\.net$/, "").replace(/@lid$/, "").replace(/[^0-9]/g, "");
-  if ((!phone || rawJid.includes("@lid")) && typeof data.from === "string") {
-    const fromPhone = data.from.replace(/@s\.whatsapp\.net$/, "").replace(/[^0-9]/g, "");
-    if (fromPhone) phone = fromPhone;
+
+  // Check remoteJidAlt for direct phone JID
+  const altJid = String(key.remoteJidAlt || data.remoteJidAlt || body.remoteJidAlt || "").trim();
+  if (altJid && altJid.includes("@s.whatsapp.net")) {
+    const cleanAlt = altJid.replace(/@s\.whatsapp\.net$/, "").replace(/[^0-9]/g, "");
+    if (cleanAlt) phone = cleanAlt;
   }
+
+  // Check candidate JIDs (from, sender) for phone numbers
+  if (phone.length > 13 || rawJid.includes("@lid")) {
+    const candidateJids = [data.from, data.sender, key.remoteJidAlt, body.from, body.sender];
+    for (const c of candidateJids) {
+      if (typeof c === "string" && c.includes("@s.whatsapp.net")) {
+        const p = c.replace(/@s\.whatsapp\.net$/, "").replace(/[^0-9]/g, "");
+        if (p && p.length <= 13) {
+          phone = p;
+          break;
+        }
+      }
+    }
+  }
+
+  // If still an LID (14+ digits or @lid in rawJid), resolve from WA-AKG Contact table
+  if (phone.length > 13 || rawJid.includes("@lid")) {
+    try {
+      const lidTarget = rawJid.includes("@lid") ? rawJid : `${phone}@lid`;
+      const { data: matchedContact } = await supabaseAdmin
+        .schema("tandoori_wa_akg" as any)
+        .from("Contact")
+        .select("jid")
+        .eq("lid", lidTarget)
+        .like("jid", "%@s.whatsapp.net")
+        .maybeSingle();
+
+      if (matchedContact?.jid) {
+        phone = matchedContact.jid.replace(/@s\.whatsapp\.net$/, "").replace(/[^0-9]/g, "");
+      }
+    } catch (err) {
+      console.warn("[wa-akg-webhook] Could not resolve LID from Contact table:", err);
+    }
+  }
+
   if (!phone) {
     return NextResponse.json({ status: "ignored_missing_phone" });
   }
