@@ -260,11 +260,10 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     }
   }
 
-  // ── 1b) Pure greeting with empty cart ──────────────────────────────────────
+  // ── 1b) Pure greeting ──────────────────────────────────────────────────────
   const GREETING_RE = /^(?:g|ji|jee|haan|hanji|ass?al[a-z\s'-]*|aoa|a\.?o\.?a|salam|slam|hi|hello|hey|hola|good\s*(?:morning|afternoon|evening)|kese\s*ho|kia\s*hal\s*hai|kaise\s*hain|stare?\s*mashay|pa\s*khe[ri]r?|tsanga\s*ye)(?:\s+(?:bhai|janab|sir|dear|team|all|ap|aap|ji|jee|rasha|wrora|saib))?[!.]*$/i;
   if (
     !understanding &&
-    ctx.state.cart.length === 0 &&
     GREETING_RE.test(input.messageText.trim())
   ) {
     const isPashtoGreeting = /^(?:stare?\s*mashay|pa\s*khe[ri]r?|tsanga\s*ye)/i.test(input.messageText.trim());
@@ -288,7 +287,6 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   if (
     !understanding &&
     ctx.state.cart.length === 0 &&
-    ctx.state.stage === "browsing" &&
     ACK_RE.test(input.messageText.trim())
   ) {
     understanding = {

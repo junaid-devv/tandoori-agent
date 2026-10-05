@@ -160,20 +160,20 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
     return { nextStage: "browsing", actions: [{ kind: "restart_order" }], escalate: false };
   }
   if (u.intents.includes("cancel_order")) {
-    return { nextStage: "post_order", actions: [{ kind: "cancel_order" }], escalate: false };
+    return { nextStage: "browsing", actions: [{ kind: "cancel_order" }], escalate: false };
   }
   if (u.intents.includes("reorder_previous")) {
     return { nextStage: "confirming", actions: [{ kind: "reorder_previous" }], escalate: false };
   }
 
-  // 3) Greeting — only at the start / empty cart
-  if (
-    u.intents.includes("greeting") &&
-    view.cart.length === 0 &&
-    (view.stage === "greeting" || view.stage === "browsing")
-  ) {
-    actions.push({ kind: "greet" });
-    nextStage = "browsing";
+  // 3) Greeting
+  if (u.intents.includes("greeting")) {
+    if (view.cart.length === 0) {
+      actions.push({ kind: "greet" });
+      nextStage = "browsing";
+    } else {
+      actions.push({ kind: "smalltalk" });
+    }
   }
 
   // 4) Cart mutations (non-linear — can happen from any stage)

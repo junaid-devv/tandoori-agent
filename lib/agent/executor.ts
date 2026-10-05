@@ -238,20 +238,23 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "greet": {
         const wasSalam = /^(aoa|a\.?o\.?a|assalam|salam|سلام|ستړې|ستړی)\b/i.test(input.messageTextForFallback?.trim() ?? "");
         replies.push(reply.greeting(lang, input.appName, input.customerName ?? null, wasSalam));
-        if (input.menuDisplayMode === "menu_pictures") {
-          setInteractive({
-            kind: "buttons",
-            payload: {
-              body: lang === "pashto" ? "Menu katlo lapara button khekhey krai:" : lang === "roman_urdu" ? "Menu dekhne ke liye button dabayein:" : "Tap below to view our menu:",
-              buttons: [
-                { id: "action:view_menu", title: "📜 View Menu" },
-              ],
-            },
-          });
-        } else {
-          const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
-          if (cats.length > 0) {
-            setInteractive(categoryList(lang, cats, lang === "pashto" ? "Taso sa ghwaray?" : lang === "roman_urdu" ? "Kya mangwana hai?" : "What would you like?"));
+        const willAddItems = transition.actions.some((a) => a.kind === "add_items");
+        if (!willAddItems) {
+          if (input.menuDisplayMode === "menu_pictures") {
+            setInteractive({
+              kind: "buttons",
+              payload: {
+                body: lang === "pashto" ? "Menu katlo lapara button khekhey krai:" : lang === "roman_urdu" ? "Menu dekhne ke liye button dabayein:" : "Tap below to view our menu:",
+                buttons: [
+                  { id: "action:view_menu", title: "📜 View Menu" },
+                ],
+              },
+            });
+          } else {
+            const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
+            if (cats.length > 0) {
+              setInteractive(categoryList(lang, cats, lang === "pashto" ? "Taso sa ghwaray?" : lang === "roman_urdu" ? "Kya mangwana hai?" : "What would you like?"));
+            }
           }
         }
         break;
@@ -1219,6 +1222,22 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           replies.push(reply.orderCancelled(lang));
         }
         cart = [];
+        patch.stage = "browsing";
+        patch.order_type = null;
+        patch.address = null;
+        patch.guests = null;
+        patch.reservation_time = null;
+        patch.pickup_time = null;
+        patch.customer_instructions = null;
+        patch.pending_clarification = null;
+        patch.last_shown_options = [];
+        patch.last_shown_options_at = null;
+        patch.last_shown_category = null;
+        patch.upsell_item_name = null;
+        patch.upsell_item_price = null;
+        patch.upsell_offered = false;
+        patch.declined_upsells = [];
+        patch.summary_sent_at = null;
         break;
       }
 
