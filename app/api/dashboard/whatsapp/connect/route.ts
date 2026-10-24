@@ -3,6 +3,8 @@ import { requireApiSession } from "@/lib/branch-request";
 import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { invalidateRestaurantCaches } from "@/lib/restaurant-resolver";
+import { whatsappRestaurantId } from "@/lib/whatsapp-request";
+import { invalidateCache } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
@@ -31,7 +33,7 @@ export async function POST(req: NextRequest) {
     let { code, wabaId, phoneNumberId } = body;
 
     // Tenant Isolation: regular admins are strictly restricted to their own restaurantId
-    let targetRestaurantId = auth.session.restaurantId;
+    let targetRestaurantId = whatsappRestaurantId(req, auth.session, true);
     if (auth.session.role === "super_admin") {
       const queryRestaurantId = new URL(req.url).searchParams.get("restaurant_id");
       if (queryRestaurantId) {
@@ -231,8 +233,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Never reassign another tenant's registered phone during an embedded-signup retry.
+    const { data: existingConfig, error: existingError } = await supabaseAdmin.from("whatsapp_configs")
+      .select("restaurant_id").eq("phone_number_id", phoneNumberId).maybeSingle();
+    if (existingError) throw existingError;
+    if (existingConfig && existingConfig.restaurant_id !== targetRestaurantId) {
+      return NextResponse.json({ error: "This WhatsApp phone is already assigned to another restaurant" }, { status: 409 });
+    }
     // 7) Upsert into whatsapp_configs mapping phone_number_id to restaurant with access_token
-    await supabaseAdmin
+    const { error: saveError } = await supabaseAdmin
       .from("whatsapp_configs")
       .upsert(
         {
@@ -247,6 +256,11 @@ export async function POST(req: NextRequest) {
         },
         { onConflict: "phone_number_id" },
       );
+    if (saveError) throw saveError;
+    const { error: providerError } = await supabaseAdmin.from("restaurant_profiles")
+      .update({ whatsapp_provider: "meta", updated_at: new Date().toISOString() }).eq("id", targetRestaurantId);
+    if (providerError) throw providerError;
+    invalidateCache(`restaurant_profile:${targetRestaurantId}`);
 
     // Immediately invalidate in-memory resolver cache so the next incoming
     // webhook from this phone_number_id is recognised without waiting for TTL.

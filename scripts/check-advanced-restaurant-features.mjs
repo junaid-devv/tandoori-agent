@@ -2,7 +2,7 @@ import fs from "node:fs";
 
 const sources = {
   schema: fs.readFileSync("db/schema.sql", "utf8"),
-  webhook: fs.readFileSync("app/api/webhook/route.ts", "utf8"),
+  webhook: fs.readFileSync("app/api/webhook/route.ts", "utf8") + fs.readFileSync("lib/whatsapp-inbound.ts", "utf8"),
   whatsapp: fs.readFileSync("lib/whatsapp.ts", "utf8"),
   crm: fs.readFileSync("lib/customer-crm.ts", "utf8"),
   menu: fs.readFileSync("lib/menu.ts", "utf8"),
@@ -26,9 +26,8 @@ mustInclude(sources.webhook, "saveCustomerAddressFromOrder", "Missing saved-addr
 if (sources.webhook.includes("promptSavedBranchChoice") || sources.webhook.includes("Continue Same Branch")) {
   throw new Error("Automatic saved-branch choice prompt must not be reintroduced.");
 }
-// NOTE: WhatsApp voice-note transcription (Groq/whisper) was intentionally removed in the
-// rebuild; voice notes now escalate to a human with a fallback message. Assert that path instead.
-mustInclude(sources.webhook, "voice_note", "Missing voice-note human-escalation path.");
+// Voice handling is shared by Meta and Evolution and transcribes into the order pipeline.
+mustInclude(sources.webhook, "audio.transcriptions.create", "Missing shared voice-note transcription path.");
 mustInclude(sources.whatsapp, "getWhatsAppMediaUrl", "Missing WhatsApp media lookup helper.");
 mustInclude(sources.whatsapp, "downloadWhatsAppMedia", "Missing WhatsApp media download helper.");
 mustInclude(sources.conversationsPage, "Customer Profile", "Missing staff inbox customer profile save action.");

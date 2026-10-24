@@ -55,14 +55,16 @@ export async function recordWebhookEvent(input: {
   rawBody: string;
   payload: unknown;
   signature: string | null;
+  provider?: string;
+  deliveryKey?: string;
 }): Promise<WebhookEventRecord> {
-  const deliveryKey = getWebhookDeliveryKey(input.rawBody);
+  const deliveryKey = input.deliveryKey || getWebhookDeliveryKey(input.provider ? `${input.provider}:${input.rawBody}` : input.rawBody);
   const now = new Date().toISOString();
 
-  // Single-trip upsert: insert on first delivery, increment received_count on retries.
-  // Supabase upsert with ignoreDuplicates:false returns the existing row on conflict.
+  // Redeliveries must preserve claim state and processed payload redaction.
+  // ON CONFLICT DO NOTHING, then load the original event when already recorded.
   const payload = {
-    provider: "meta_whatsapp",
+    provider: input.provider || "meta_whatsapp",
     delivery_key: deliveryKey,
     raw_body: shouldStoreRawWebhookBody() ? input.rawBody : "[redacted]",
     payload: input.payload,
@@ -76,24 +78,27 @@ export async function recordWebhookEvent(input: {
 
   let { data, error } = await supabaseAdmin
     .from("webhook_events")
-    .upsert(payload, { onConflict: "delivery_key", ignoreDuplicates: false })
+    .upsert(payload, { onConflict: "delivery_key", ignoreDuplicates: true })
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (error && (error.message?.includes("Timeout") || error.message?.includes("fetch failed"))) {
     console.warn("[webhook] Transient gateway timeout on recordWebhookEvent, retrying in 500ms...");
     await new Promise((resolve) => setTimeout(resolve, 500));
     const retry = await supabaseAdmin
       .from("webhook_events")
-      .upsert(payload, { onConflict: "delivery_key", ignoreDuplicates: false })
+      .upsert(payload, { onConflict: "delivery_key", ignoreDuplicates: true })
       .select("*")
-      .single();
+      .maybeSingle();
     data = retry.data;
     error = retry.error;
   }
 
-  if (error || !data) {
-    throw error ?? new Error("Failed to persist webhook event.");
+  if (error) throw error;
+  if (!data) {
+    const existing = await supabaseAdmin.from("webhook_events").select("*").eq("delivery_key", deliveryKey).single();
+    if (existing.error || !existing.data) throw existing.error || new Error("Failed to load webhook event");
+    data = existing.data;
   }
 
   return parseWebhookEventRecord(data as Record<string, unknown>);

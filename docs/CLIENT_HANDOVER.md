@@ -1,3 +1,5 @@
+> WhatsApp integration setup: use [EVOLUTION_API_SETUP.md](EVOLUTION_API_SETUP.md) as the current source of truth for multi-tenant Evolution and Meta configuration.
+
 # 📋 ORDERiQ - White-Label Client Handover Guide
 
 This comprehensive guide outlines the end-to-end process for provisioning, configuring, testing, and handing over an **ORDERiQ** restaurant deployment to a new client.
@@ -11,14 +13,14 @@ ORDERiQ is an enterprise-grade AI conversational ordering platform designed for 
 1. **Frontend & AI Brain (Vercel)**: Next.js 14 application providing the WhatsApp AI ordering engine, customer web interface, and administrative management dashboard.
 2. **Database & Storage (Supabase)**: Dedicated or schema-isolated PostgreSQL database with `pgvector` for semantic menu search, row-level security (RLS), real-time order channels, and auth.
 3. **WhatsApp Channel**:
-   - **WA-AKG Gateway (Railway)**: Self-hosted multi-device WhatsApp Web gateway (Baileys) linked via QR code scan.
+   - **Evolution API Gateway (Railway)**: Self-hosted multi-device WhatsApp Web gateway (Baileys) linked via QR code scan.
    - **OR Meta Cloud API**: Official WhatsApp Business Platform webhook integration.
 
 ```
 +-----------------------------------------------------------------------------------+
 |                                 CLIENT ECOSYSTEM                                  |
 |                                                                                   |
-|  [ Customer WhatsApp ] <=======> [ WA-AKG (Railway) OR Meta API ]                 |
+|  [ Customer WhatsApp ] <=======> [ Evolution API (Railway) OR Meta API ]                 |
 |                                                  |                                |
 |                                           Webhooks & API                          |
 |                                                  v                                |
@@ -50,7 +52,7 @@ Before running the onboarding script, assemble the following client details:
 | **Delivery Phone** | Customer care / order dispatch phone | `+923001234567` |
 | **Supabase URL** | Client Supabase project endpoint | `https://xyzcompany.supabase.co` |
 | **Supabase Service Key** | Service role key for provisioning | `ey...` |
-| **WhatsApp Choice** | `wa_akg` (QR code) or `meta` (Official Cloud API) | `wa_akg` |
+| **WhatsApp Choice** | `evolution` (QR code) or `meta` (Official Cloud API) | `evolution` |
 | **Menu Display Mode** | `interactive_list`, `menu_pictures`, or `text_only` | `interactive_list` |
 
 ---
@@ -77,7 +79,7 @@ npx tsx scripts/create-project.ts \
   --brand-color "#E53E3E" \
   --admin-email "admin@burgerhub.pk" \
   --admin-password "BurgerHub2026!" \
-  --whatsapp-provider "wa_akg" \
+  --whatsapp-provider "evolution" \
   --menu-display-mode "interactive_list" \
   --supabase-url "https://xyz.supabase.co" \
   --supabase-anon-key "ey..." \
@@ -119,40 +121,14 @@ npx tsx scripts/generate-embeddings.ts --env .env.[slug].production
 
 ## 5. WhatsApp Gateway Setup
 
-### Path A: WA-AKG Gateway (Recommended for WhatsApp Web / QR Scan)
+### Path A: Evolution API (WhatsApp linked devices)
 
-WA-AKG runs as an independent microservice powered by Baileys, isolated in the `wa_akg` database schema.
-
-1. **Deploy to Railway**:
-   - Go to [Railway.app](https://railway.app) and create a new project.
-   - Connect the `wa-akg` repository or deploy from the local directory containing `railway.toml`.
-   - In Railway **Variables**, paste the values generated in `.env.[slug].railway`:
-     ```env
-     PORT=3001
-     NODE_ENV=production
-     DATABASE_URL=postgresql://postgres:[PASSWORD]@[HOST]:5432/postgres?schema=wa_akg
-     WEBHOOK_URL=https://[slug].vercel.app/api/webhook/wa-akg
-     WA_AKG_API_KEY=wag_your_secure_generated_key
-     DEFAULT_SESSION_ID=default
-     ```
-2. **Link the Phone Number**:
-   - Open the Railway public domain (e.g. `https://wa-akg-[slug].up.railway.app`).
-   - Navigate to **Sessions** -> **Create Session** (ID: `default`).
-   - Open WhatsApp on the restaurant's phone:
-     - **Settings** -> **Linked Devices** -> **Link a Device**.
-     - Scan the QR code displayed on the screen.
-   - Verify connection state switches to `connected`.
-3. **Configure ORDERiQ Vercel Connection**:
-   - In the client's Vercel Project Settings -> **Environment Variables**, ensure:
-     ```env
-     WHATSAPP_PROVIDER="wa_akg"
-     WA_AKG_BASE_URL="https://wa-akg-[slug].up.railway.app"
-     WA_AKG_API_KEY="wag_your_secure_generated_key"
-     WA_AKG_SESSION_ID="default"
-     ```
-   - Trigger a redeployment in Vercel.
-
----
+Follow [EVOLUTION_API_SETUP.md](EVOLUTION_API_SETUP.md) for the complete Railway/VPS setup.
+Use one shared Evolution v2 server and one deterministic instance per restaurant.
+Create instances, scan QR codes, pair phones, switch providers, and send tests from
+ORDERiQ's existing WhatsApp Integration dashboard. No Evolution Manager dashboard
+is required. The provider is selected per restaurant in Supabase; do not configure a
+global default session or route webhooks with a caller-supplied tenant ID.
 
 ### Path B: Official Meta Cloud API (For Enterprise Registered WABA)
 
@@ -284,12 +260,10 @@ Thank you for choosing ORDERiQ to power your digital orders!
 
 ## 9. Maintenance & Troubleshooting
 
-### Re-linking WhatsApp Device (WA-AKG)
-If the phone battery dies or WhatsApp unlinks the device:
-1. Open the WA-AKG Railway dashboard.
-2. Navigate to **Sessions** -> Select session -> Click **Reconnect**.
-3. Scan the new QR code with the restaurant's phone.
-4. No changes needed on Vercel or Supabase.
+### Re-linking WhatsApp Device (Evolution API)
+
+Open ORDERiQ → WhatsApp Integration → Evolution API → Start Session and scan the
+new QR code. Each restaurant must link its own device. See [the setup guide](EVOLUTION_API_SETUP.md).
 
 ### Resetting Administrator Password
 If the manager forgets their password:

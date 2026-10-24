@@ -182,7 +182,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     );
   }
 
-  // ── 1a.2) Selection from pending clarification / interactive buttons (WA-AKG & text replies) ──
+  // ── 1a.2) Selection from pending clarification / interactive buttons (Evolution API & text replies) ──
   if (!understanding && ctx.state.pending_clarification?.options?.length) {
     const rawTrimmed = input.messageText.trim();
     const cleanLower = rawTrimmed.toLowerCase();
@@ -219,7 +219,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     }
   }
 
-  // ── 1a.3) Contextual shortcuts for WA-AKG numbers & common replies ────────
+  // ── 1a.3) Contextual shortcuts for Evolution API numbers & common replies ────────
   if (!understanding) {
     const rawTrimmed = input.messageText.trim();
     const cleanLower = rawTrimmed.toLowerCase();

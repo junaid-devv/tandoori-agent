@@ -51,6 +51,12 @@ export const messageRepo = {
       })
       .select("*")
       .single();
+    if (error?.code === "23505" && input.whatsappMsgId) {
+      const { data: existing, error: lookupError } = await supabaseAdmin.from("messages").select("*")
+        .eq("conversation_id", input.conversationId).eq("whatsapp_msg_id", input.whatsappMsgId).single();
+      if (lookupError || !existing) throw lookupError || error;
+      return existing as MessageRow;
+    }
     if (error) throw error;
     return data as MessageRow;
   },

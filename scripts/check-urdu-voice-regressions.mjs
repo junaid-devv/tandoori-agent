@@ -54,7 +54,7 @@ for (const target of [langDetectTarget, nluTarget, aiTarget, webhookTarget]) {
 const langDetectSource = fs.readFileSync(langDetectTarget, "utf8").replace(/\r\n/g, "\n");
 const nluSource = fs.readFileSync(nluTarget, "utf8").replace(/\r\n/g, "\n");
 const aiSource = fs.readFileSync(aiTarget, "utf8").replace(/\r\n/g, "\n");
-const webhookSource = fs.readFileSync(webhookTarget, "utf8").replace(/\r\n/g, "\n");
+const webhookSource = (fs.readFileSync(webhookTarget, "utf8") + fs.readFileSync(path.join(root, "lib", "whatsapp-inbound.ts"), "utf8")).replace(/\r\n/g, "\n");
 
 testNormalization();
 

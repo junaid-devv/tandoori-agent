@@ -3,6 +3,7 @@ import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
+import { whatsappRestaurantId } from "@/lib/whatsapp-request";
 
 export async function GET(req: NextRequest) {
   const auth = await resolveRequestBranch(req, { allowAllForAdmin: true });
@@ -16,20 +17,28 @@ export async function GET(req: NextRequest) {
   const unreadOnly = searchParams.get("unread_only") === "1";
   const lite = searchParams.get("lite") === "1";
 
-  // Resolve active connected WhatsApp number to auto-switch inbox
-  const profile = await getRestaurantProfile().catch(() => null);
-  const activeProvider = profile?.whatsapp_provider || (process.env.WA_AKG_BASE_URL ? "wa_akg" : "meta");
+  let restaurantId: string;
+  try { restaurantId = whatsappRestaurantId(req, auth.session); }
+  catch (error) { return apiErrorResponse(error, { fallback: "Select a restaurant" }); }
+  const { data: tenantBranches, error: branchError } = await supabaseAdmin.from("branches").select("id").eq("restaurant_id", restaurantId);
+  if (branchError) return apiErrorResponse(branchError, { fallback: "Failed to load restaurant branches" });
+  const tenantBranchIds = (tenantBranches || []).map(branch => branch.id);
+  if (!tenantBranchIds.length) return NextResponse.json([]);
+  const profile = await getRestaurantProfile(restaurantId);
+  const activeProvider = profile.whatsapp_provider;
   let activeBusinessPhone: string | null = null;
-  if (activeProvider === "wa_akg") {
-    activeBusinessPhone = (profile?.support_phone || "923155160301").replace(/[^0-9]/g, "");
+  if (activeProvider === "evolution") {
+    const { data: config } = await supabaseAdmin.from("evolution_configs").select("display_phone_number").eq("restaurant_id", restaurantId).maybeSingle();
+    activeBusinessPhone = config?.display_phone_number || null;
   } else if (activeProvider === "meta") {
     const { data: metaConfig } = await supabaseAdmin
       .from("whatsapp_configs")
       .select("display_phone_number")
       .eq("is_active", true)
+      .eq("restaurant_id", restaurantId)
       .limit(1)
       .maybeSingle();
-    activeBusinessPhone = (metaConfig?.display_phone_number || profile?.support_phone || "923355488186").replace(/[^0-9]/g, "");
+    activeBusinessPhone = metaConfig?.display_phone_number?.replace(/[^0-9]/g, "") || null;
   }
 
   const requestedPhone = searchParams.get("whatsapp_phone");
@@ -60,7 +69,7 @@ export async function GET(req: NextRequest) {
       )
     `);
 
-    q = q.order("updated_at", { ascending: false });
+    q = q.in("branch_id", tenantBranchIds).order("updated_at", { ascending: false });
     if (auth.branchId) {
       q = q.eq("branch_id", auth.branchId);
     }
@@ -147,7 +156,7 @@ export async function GET(req: NextRequest) {
         created_at
       )
     `);
-    q = q.order("updated_at", { ascending: false });
+    q = q.in("branch_id", tenantBranchIds).order("updated_at", { ascending: false });
 
     if (auth.branchId) {
       q = q.eq("branch_id", auth.branchId);

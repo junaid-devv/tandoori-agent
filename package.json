@@ -28,15 +28,14 @@
     "check:e2e-scenarios": "node --no-warnings --import ./scripts/alias-register.mjs --experimental-strip-types scripts/check-e2e-scenarios.mjs",
     "check:latency-budget": "node scripts/check-latency-budget.mjs",
     "check:picture-mode-add-more": "node --no-warnings --import ./scripts/alias-register.mjs --experimental-strip-types scripts/check-picture-mode-add-more.mjs",
-    "check:all-guards": "npm run check:category-routing && npm run check:interactive-guards && npm run check:parser-regressions && npm run check:intent-phrase-table && npm run check:flow-handlers && npm run check:upsell-qty-regression && npm run check:webhook-helpers && npm run check:urdu-voice-regressions && npm run check:direct-order-regressions && npm run check:operational-regressions && npm run check:whatsapp-status-regressions && npm run check:advanced-restaurant-features && npm run check:security-regressions && npm run check:nlu && npm run check:state-machine && npm run check:menu-search && npm run check:cart && npm run check:e2e-scenarios && npm run check:latency-budget && npm run check:picture-mode-add-more && npm run test:personas",
+    "check:all-guards": "npm run check:category-routing && npm run check:interactive-guards && npm run check:parser-regressions && npm run check:intent-phrase-table && npm run check:flow-handlers && npm run check:upsell-qty-regression && npm run check:webhook-helpers && npm run check:urdu-voice-regressions && npm run check:direct-order-regressions && npm run check:operational-regressions && npm run check:whatsapp-status-regressions && npm run check:advanced-restaurant-features && npm run check:security-regressions && npm run check:nlu && npm run check:state-machine && npm run check:menu-search && npm run check:cart && npm run check:e2e-scenarios && npm run check:latency-budget && npm run check:picture-mode-add-more && npm run test:personas && npm run check:evolution",
     "test:personas": "node --no-warnings --import ./scripts/alias-register.mjs --experimental-strip-types scripts/run-pakistani-persona-scenarios.mjs",
     "demo:seed": "node --no-warnings --experimental-strip-types demo/seed/seed-demo-data.ts",
     "demo:record": "node --no-warnings --experimental-strip-types demo/playwright/record-product-demo.ts",
     "demo:record:headed": "node --no-warnings --experimental-strip-types demo/playwright/record-product-demo-headed.ts",
     "demo:debug": "npx playwright test --config=demo/playwright/playwright.demo.config.ts --debug",
     "db:clear-chat": "node --no-warnings --experimental-strip-types scripts/clear_chat.ts",
-    "test:wa-akg": "node scripts/test-wa-akg-webhook.mjs",
-    "verify:wa-akg": "node --no-warnings --import ./scripts/alias-register.mjs --experimental-strip-types scripts/verify-wa-akg-pipeline.mjs"
+    "check:evolution": "node --no-warnings --import ./scripts/alias-register.mjs --experimental-strip-types scripts/check-evolution.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.82.0",

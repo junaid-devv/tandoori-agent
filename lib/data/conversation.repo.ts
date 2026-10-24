@@ -1,3 +1,4 @@
+import type { WhatsAppTransport } from "../whatsapp-context";
 /**
  * lib/data/conversation.repo.ts
  * Repository for `conversations`.
@@ -46,11 +47,13 @@ export const conversationRepo = {
     phone: string;
     name?: string | null;
     whatsappPhone?: string | null;
+    transport?: WhatsAppTransport;
   }): Promise<ConversationRow> {
     const { data, error } = await supabaseAdmin
       .from("conversations")
       .upsert(
         {
+          ...(input.transport ? { whatsapp_provider: input.transport.provider, whatsapp_phone_number_id: input.transport.provider === "meta" ? input.transport.phoneNumberId : null, evolution_instance_name: input.transport.provider === "evolution" ? input.transport.instanceName : null } : {}),
           contact_id: input.contactId,
           branch_id: input.branchId,
           phone: input.phone,

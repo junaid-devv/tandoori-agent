@@ -58,6 +58,8 @@ async function checkDatabaseShape(): Promise<HealthCheck> {
     checkTableColumns("rate_limits", "scope, identifier_hash, window_start, request_count, blocked_until"),
     checkTableColumns("orders", "id, source_user_message_id, type, pickup_time, status_notification_status"),
     checkTableColumns("contacts", "id, preferred_language, tags, total_orders, last_order_at"),
+    checkTableColumns("evolution_configs", "restaurant_id, instance_name, is_active, connection_status"),
+    checkTableColumns("conversations", "id, whatsapp_provider, whatsapp_phone_number_id, evolution_instance_name"),
     checkTableColumns("customer_addresses", "id, contact_id, branch_id, address_key, last_used_at"),
     checkTableColumns("menu_items", "id, available_days, available_start_time, available_end_time"),
   ]);

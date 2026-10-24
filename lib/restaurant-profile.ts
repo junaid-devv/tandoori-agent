@@ -5,7 +5,6 @@ import { getCached, invalidateCache, setCached } from "./cache";
 import type { BranchMode, MenuDisplayMode, RestaurantProfile } from "./restaurant-profile-types";
 import { supabaseAdmin } from "./supabase-admin";
 
-const PROFILE_CACHE_KEY = "restaurant_profile:default";
 const PROFILE_CACHE_TTL_MS = 10 * 1000; // 10 seconds (absorbs bursts without holding stale settings)
 const DEFAULT_PROFILE_ID = "default";
 
@@ -38,11 +37,11 @@ export function getFallbackRestaurantProfile(): RestaurantProfile {
     ai_personality_default: "Warm & Professional",
     menu_display_mode: (process.env.MENU_DISPLAY_MODE as MenuDisplayMode) || "interactive_list",
     menu_card_images: process.env.MENU_CARD_IMAGES ? JSON.parse(process.env.MENU_CARD_IMAGES) : [],
-    whatsapp_provider: (process.env.WHATSAPP_PROVIDER as "meta" | "wa_akg" | "none") || "meta",
+    whatsapp_provider: (process.env.WHATSAPP_PROVIDER as "meta" | "evolution" | "none") || "meta",
   };
 }
 
-function normalizeProfileRow(row: Partial<RestaurantProfile> | null | undefined): RestaurantProfile {
+function normalizeProfileRow(row: (Partial<RestaurantProfile> & { name?: string; ai_personality?: string }) | null | undefined): RestaurantProfile {
   const fallback = getFallbackRestaurantProfile();
   if (!row) return fallback;
 
@@ -52,7 +51,7 @@ function normalizeProfileRow(row: Partial<RestaurantProfile> | null | undefined)
 
   return {
     id: row.id || DEFAULT_PROFILE_ID,
-    app_name: row.app_name?.trim() || fallback.app_name,
+    app_name: row.name?.trim() || row.app_name?.trim() || fallback.app_name,
     dashboard_title: row.dashboard_title?.trim() || fallback.dashboard_title,
     logo_url: row.logo_url?.trim() || null,
     brand_color: HEX_COLOR_PATTERN.test(row.brand_color ?? "") ? row.brand_color! : fallback.brand_color,
@@ -67,10 +66,10 @@ function normalizeProfileRow(row: Partial<RestaurantProfile> | null | undefined)
     support_phone: row.support_phone?.trim() || fallback.support_phone,
     delivery_phone: row.delivery_phone?.trim() || fallback.delivery_phone,
     dine_in_phone: row.dine_in_phone?.trim() || fallback.dine_in_phone,
-    ai_personality_default: row.ai_personality_default?.trim() || fallback.ai_personality_default,
+    ai_personality_default: row.ai_personality?.trim() || row.ai_personality_default?.trim() || fallback.ai_personality_default,
     menu_display_mode: (["interactive_list", "menu_pictures", "text_only"].includes(row.menu_display_mode as string) ? row.menu_display_mode : fallback.menu_display_mode) as MenuDisplayMode,
     menu_card_images: Array.isArray(row.menu_card_images) ? row.menu_card_images : fallback.menu_card_images,
-    whatsapp_provider: (["meta", "wa_akg", "none"].includes(row.whatsapp_provider as string) ? row.whatsapp_provider : "meta") as "meta" | "wa_akg" | "none",
+    whatsapp_provider: (String(row.whatsapp_provider) === "wa_akg" ? "evolution" : ["meta", "evolution", "none"].includes(row.whatsapp_provider as string) ? row.whatsapp_provider : "none") as "meta" | "evolution" | "none",
   };
 }
 
@@ -109,7 +108,7 @@ function validateBranchMode(value: unknown): BranchMode {
 
 export function validateRestaurantProfileInput(input: Partial<RestaurantProfile>) {
   const VALID_DISPLAY_MODES = new Set(["interactive_list", "menu_pictures", "text_only"]);
-  const VALID_WA_PROVIDERS = new Set(["meta", "wa_akg", "none"]);
+  const VALID_WA_PROVIDERS = new Set(["meta", "evolution", "none"]);
 
   const base: Record<string, unknown> = {
     app_name: validateRequiredText(input.app_name, "Restaurant name", 80),
@@ -145,7 +144,7 @@ export function validateRestaurantProfileInput(input: Partial<RestaurantProfile>
   if (input.whatsapp_provider !== undefined) {
     const provider = String(input.whatsapp_provider).trim();
     if (!VALID_WA_PROVIDERS.has(provider)) {
-      throw new ApiRequestError("WhatsApp provider must be meta, wa_akg, or none.", 400);
+      throw new ApiRequestError("WhatsApp provider must be meta, evolution, or none.", 400);
     }
     base.whatsapp_provider = provider;
   }
@@ -171,9 +170,8 @@ export async function getRestaurantProfile(restaurantId?: string): Promise<Resta
     
     const { data, error } = await query.maybeSingle();
 
-    if (error && restaurantId) {
-      console.warn(`[restaurant-profile] Failed to load profile ${restaurantId}:`, error.message);
-      throw error;
+    if (restaurantId && (error || !data)) {
+      throw error || new Error("Restaurant profile not found");
     } else if (error || !data) {
       console.warn("[restaurant-profile] Falling back to env defaults:", error?.message || "No profile found");
       const fallback = getFallbackRestaurantProfile();
@@ -185,6 +183,7 @@ export async function getRestaurantProfile(restaurantId?: string): Promise<Resta
     setCached(cacheKey, profile, PROFILE_CACHE_TTL_MS);
     return profile;
   } catch (error) {
+    if (restaurantId) throw error;
     console.warn("[restaurant-profile] Falling back to env defaults:", error);
     const fallback = getFallbackRestaurantProfile();
     setCached(cacheKey, fallback, PROFILE_CACHE_TTL_MS);
@@ -195,17 +194,24 @@ export async function getRestaurantProfile(restaurantId?: string): Promise<Resta
 export async function updateRestaurantProfile(restaurantId: string, input: Partial<RestaurantProfile>) {
   const validated = validateRestaurantProfileInput(input);
   const cacheKey = `restaurant_profile:${restaurantId}`;
+  const existing = await supabaseAdmin.from("restaurant_profiles").select("*").eq("id", restaurantId).single();
+  if (existing.error || !existing.data) throw existing.error || new Error("Restaurant profile not found");
+  // The shared tenant schema stores name/ai_personality; the UI uses older aliases.
+  // Retain compatibility with older databases without sending nonexistent columns.
+  const update = { ...validated };
+  if ("name" in existing.data) { update.name = update.app_name; delete update.app_name; }
+  if ("ai_personality" in existing.data) { update.ai_personality = update.ai_personality_default; delete update.ai_personality_default; }
+  if (!("default_branch_id" in existing.data)) delete update.default_branch_id;
 
   const { data, error } = await supabaseAdmin
     .from("restaurant_profiles")
-    .upsert(
+    .update(
       {
-        id: restaurantId,
-        ...validated,
+        ...update,
         updated_at: new Date().toISOString(),
       },
-      { onConflict: "id" },
     )
+    .eq("id", restaurantId)
     .select("*")
     .single();
 

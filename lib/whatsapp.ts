@@ -1,3 +1,5 @@
+import { evolutionRequest } from "./evolution-client";
+import { getWhatsAppTransport, withConversationWhatsApp } from "./whatsapp-context";
 import { getRestaurantProfile } from "./restaurant-profile";
 import { supabaseAdmin } from "./supabase-admin";
 
@@ -86,158 +88,32 @@ export function isBotSentMessageId(messageId: string | null | undefined): boolea
   return true;
 }
 
-export function isWaAkgProvider(provider?: string): boolean {
-  if (provider) {
-    const p = provider.trim().toLowerCase();
-    return p === "wa_akg" || p === "wa-akg";
-  }
-  const envProv = (process.env.WHATSAPP_PROVIDER || "").trim().toLowerCase();
-  if (envProv === "wa_akg" || envProv === "wa-akg") return true;
-  if (envProv === "meta") return false;
-  if (process.env.WA_AKG_BASE_URL && !process.env.WHATSAPP_PHONE_NUMBER_ID) return true;
-  return false;
-}
-
-export async function resolveShouldUseWaAkg(provider?: string): Promise<boolean> {
-  if (isWaAkgProvider(provider)) return true;
-  if (provider === "meta" || process.env.WHATSAPP_PROVIDER === "meta") return false;
-
-  try {
-    const profile = await getRestaurantProfile();
-    if (profile.whatsapp_provider === "wa_akg") return true;
-    if (profile.whatsapp_provider === "meta") return false;
-  } catch {
-    // ignore
-  }
-
-  if (process.env.WA_AKG_BASE_URL && !process.env.WHATSAPP_PHONE_NUMBER_ID) {
-    return true;
-  }
-
-  return false;
-}
-
-function normalizeWaJid(to: string): string {
-  if (to.includes("@")) return to;
-  const digits = to.replace(/[^0-9]/g, "");
-  return `${digits}@s.whatsapp.net`;
-}
-
-export async function sendWaAkgMessage(to: string, body: string, customSessionId?: string): Promise<WhatsAppSendResult> {
-  const baseUrl = (process.env.WA_AKG_BASE_URL || "http://localhost:3001").replace(/\/+$/, "");
-  const apiKey = (process.env.WA_AKG_API_KEY || "").trim();
-  const sessionId = (customSessionId || process.env.WA_AKG_SESSION_ID || "default").trim();
-  const jid = normalizeWaJid(to);
-
-  const response = await fetchWithTimeout(
-    `${baseUrl}/api/messages/${encodeURIComponent(sessionId)}/${encodeURIComponent(jid)}/send`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { "X-API-Key": apiKey } : {}),
-      },
-      body: JSON.stringify({
-        message: {
-          text: body,
-        },
-      }),
-    },
-  );
-
-  const data = (await response.json().catch(() => ({}))) as Record<string, any>;
-  if (!response.ok) {
-    throw new Error(data?.error || data?.message || `WA-AKG send failed with status ${response.status}`);
-  }
-
-  const messageId = data?.data?.key?.id || data?.id || `wa-akg-${Date.now()}`;
+async function sendEvolution(to: string, endpoint: string, payload: Record<string, unknown>): Promise<WhatsAppSendResult> {
+  const transport = getWhatsAppTransport();
+  if (transport?.provider !== "evolution") throw new Error("A tenant Evolution instance is required");
+  const number = to.includes("@") ? to : to.replace(/[^0-9]/g, "");
+  if (!number) throw new Error("WhatsApp recipient is missing");
+  const data = await evolutionRequest('/message/' + endpoint + '/' + encodeURIComponent(transport.instanceName), "POST", { number, ...payload });
+  const rawId = data.key?.id;
+  if (typeof rawId !== "string" || !rawId) throw new Error("Evolution returned no message ID");
+  const messageId = `evolution:${transport.instanceName}:${rawId}`;
   recordSentMessageId(messageId);
-
-  return {
-    messageId,
-    raw: data,
-  };
-}
-
-export async function sendWaAkgImage(to: string, imageUrl: string, caption?: string, customSessionId?: string): Promise<WhatsAppSendResult> {
-  const baseUrl = (process.env.WA_AKG_BASE_URL || "http://localhost:3001").replace(/\/+$/, "");
-  const apiKey = (process.env.WA_AKG_API_KEY || "").trim();
-  const sessionId = (customSessionId || process.env.WA_AKG_SESSION_ID || "default").trim();
-  const jid = normalizeWaJid(to);
-
-  const response = await fetchWithTimeout(
-    `${baseUrl}/api/messages/${encodeURIComponent(sessionId)}/${encodeURIComponent(jid)}/send`,
-    {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(apiKey ? { "X-API-Key": apiKey } : {}),
-      },
-      body: JSON.stringify({
-        message: {
-          image: { url: imageUrl },
-          ...(caption ? { caption } : {}),
-        },
-      }),
-    },
-  );
-
-  const data = (await response.json().catch(() => ({}))) as Record<string, any>;
-  if (!response.ok) {
-    throw new Error(data?.error || data?.message || `WA-AKG image send failed with status ${response.status}`);
-  }
-
-  const messageId = data?.data?.key?.id || data?.id || `wa-akg-${Date.now()}`;
-  recordSentMessageId(messageId);
-
-  return {
-    messageId,
-    raw: data,
-  };
+  return { messageId, raw: data };
 }
 
 async function resolveCredentials(
   phoneNumberId?: string,
   customToken?: string
 ): Promise<{ phoneId: string; token: string }> {
-  let phoneId = phoneNumberId;
-  let token = customToken;
-
-  if (!phoneId || !token) {
-    try {
-      let query = supabaseAdmin
-        .from("whatsapp_configs")
-        .select("phone_number_id, access_token")
-        .eq("is_active", true);
-
-      if (phoneId) {
-        query = query.eq("phone_number_id", phoneId);
-      } else {
-        query = query.order("updated_at", { ascending: false });
-      }
-
-      const { data: config } = await query.limit(1).maybeSingle();
-
-      if (!phoneId && config?.phone_number_id) {
-        phoneId = config.phone_number_id;
-      }
-      if (!token && config?.access_token) {
-        token = config.access_token;
-      }
-    } catch (e) {
-      console.warn("[whatsapp] Error resolving dynamic credentials:", e);
-    }
-  }
-
-  phoneId = phoneId || process.env.WHATSAPP_PHONE_NUMBER_ID || "";
-  token = token || process.env.WHATSAPP_ACCESS_TOKEN || "";
-
-  if (!phoneId || !token) {
-    throw new Error(
-      "WhatsApp credentials (phone_number_id or access_token) are missing. Please connect WhatsApp in your dashboard."
-    );
-  }
-
+  const context = getWhatsAppTransport();
+  const phoneId = phoneNumberId || (context?.provider === "meta" ? context.phoneNumberId : undefined);
+  if (!phoneId) throw new Error("A tenant-scoped WhatsApp connection is required");
+  let query = supabaseAdmin.from("whatsapp_configs").select("phone_number_id, access_token")
+    .eq("phone_number_id", phoneId).eq("is_active", true);
+  if (context) query = query.eq("restaurant_id", context.restaurantId);
+  const { data: config, error } = await query.maybeSingle();
+  if (error || !config?.access_token) throw error || new Error("Meta connection is missing or inactive for this restaurant");
+  const token = customToken || config.access_token;
   return { phoneId, token };
 }
 
@@ -255,9 +131,7 @@ export async function sendWhatsAppMessage(
     };
   }
 
-  if (!phoneNumberId && (await resolveShouldUseWaAkg())) {
-    return sendWaAkgMessage(to, body);
-  }
+  if (getWhatsAppTransport()?.provider === "evolution") return sendEvolution(to, "sendText", { text: body });
 
   const { phoneId, token } = await resolveCredentials(phoneNumberId, customAccessToken);
 
@@ -372,9 +246,7 @@ export async function sendWhatsAppImage(
     };
   }
 
-  if (!phoneNumberId && (await resolveShouldUseWaAkg())) {
-    return sendWaAkgImage(to, imageUrl, caption);
-  }
+  if (getWhatsAppTransport()?.provider === "evolution") return sendEvolution(to, "sendMedia", { mediatype: "image", media: imageUrl, ...(caption ? { caption } : {}) });
 
   const { phoneId, token } = await resolveCredentials(phoneNumberId, customAccessToken);
 
@@ -475,25 +347,15 @@ export async function sendWhatsAppInteractiveList(
     };
   }
 
-  if (!phoneNumberId && (await resolveShouldUseWaAkg())) {
-    const listBody = payload.body.trim();
-    const rows = payload.rows.slice(0, 8);
-
-    const alreadyListsItems = rows.length > 0 && rows.some((r) => listBody.includes(r.title));
-    if (alreadyListsItems) {
-      return sendWaAkgMessage(to, `${listBody}\n\n_Reply with number or name_`);
-    }
-
-    const section = payload.sectionTitle ? `*${payload.sectionTitle.trim()}*:\n` : "";
-    const formattedRows = rows
-      .map((r, i) => `${i + 1}. *${r.title}*${r.description ? ` (${r.description.replace(/\s+/g, " ").trim()})` : ""}`)
-      .join("\n");
-
-    const fullText = listBody
-      ? `${listBody}\n\n${section}${formattedRows}\n\n_Reply with number or name_`
-      : `${section}${formattedRows}\n\n_Reply with number or name_`;
-
-    return sendWaAkgMessage(to, fullText);
+  if (getWhatsAppTransport()?.provider === "evolution") {
+    if (!payload.rows?.length) throw new Error("Interactive list requires at least one row.");
+    return sendEvolution(to, "sendList", {
+      title: (payload.sectionTitle || "Options").slice(0, 60), description: payload.body.slice(0, 1024),
+      buttonText: payload.buttonText.slice(0, 20),
+      sections: [{ title: (payload.sectionTitle || "Options").slice(0, 24), rows: payload.rows.slice(0, 10).map(row => ({
+        rowId: String(row.id).slice(0, 200), title: row.title.slice(0, 24), description: (row.description || "").slice(0, 72),
+      })) }],
+    });
   }
 
   const { phoneId, token } = await resolveCredentials(phoneNumberId, customAccessToken);
@@ -595,26 +457,13 @@ export async function sendWhatsAppReplyButtons(
     };
   }
 
-  if (!phoneNumberId && (await resolveShouldUseWaAkg())) {
-    const body = payload.body.trim();
-    const count = payload.buttons.length;
-
-    if (count === 1) {
-      const btn = payload.buttons[0];
-      const fullText = `${body}\n\n_Type *1* for ${btn.title}, ya direct apna order batayein._`;
-      return sendWaAkgMessage(to, fullText);
-    }
-
-    if (count === 2) {
-      const b1 = payload.buttons[0];
-      const b2 = payload.buttons[1];
-      const fullText = `${body}\n\n👉 *1* - ${b1.title}  |  *2* - ${b2.title}\n_(Reply *1* ya *2*)_`;
-      return sendWaAkgMessage(to, fullText);
-    }
-
-    const btnLines = payload.buttons.map((b, i) => `*${i + 1}* - ${b.title}`).join("\n");
-    const fullText = `${body}\n\n${btnLines}\n\n_Reply with number (1-${count})_`;
-    return sendWaAkgMessage(to, fullText);
+  if (getWhatsAppTransport()?.provider === "evolution") {
+    if (!payload.buttons?.length || payload.buttons.length > 3) throw new Error("Reply buttons require 1-3 buttons.");
+    return sendEvolution(to, "sendButtons", {
+      title: (payload.headerText || "Choose an option").slice(0, 60), description: payload.body.slice(0, 1024),
+      footer: (payload.footerText || "").slice(0, 60),
+      buttons: payload.buttons.map(button => ({ type: "reply", id: String(button.id).slice(0, 256), displayText: button.title.slice(0, 20) })),
+    });
   }
 
   const { phoneId, token } = await resolveCredentials(phoneNumberId, customAccessToken);
@@ -697,7 +546,9 @@ export async function notifyCustomer(phone: string, status: string, conversation
   const template = STATUS_MESSAGES[status];
   if (!template) return;
 
-  const profile = await getRestaurantProfile();
+  if (!conversationId) throw new Error("Conversation is required for a tenant notification");
+  return withConversationWhatsApp(conversationId, async () => {
+  const profile = await getRestaurantProfile(getWhatsAppTransport()!.restaurantId);
   const message = template
     .replace("{restaurant}", profile.app_name || "us")
     .replace("{support_phone}", profile.support_phone || profile.delivery_phone || "our support line");
@@ -716,4 +567,5 @@ export async function notifyCustomer(phone: string, status: string, conversation
       console.error("[notifyCustomer] Failed to persist status message:", error);
     }
   }
+  });
 }

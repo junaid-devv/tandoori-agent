@@ -191,7 +191,7 @@ async function setupBranchAndProfile(userId) {
       ai_personality_default: AI_PERSONALITY,
       menu_display_mode: "menu_pictures",
       menu_card_images: [],
-      whatsapp_provider: "wa_akg",
+      whatsapp_provider: "evolution",
     },
     { onConflict: "id" }
   );

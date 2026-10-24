@@ -61,6 +61,7 @@ export interface Database {
           ai_personality: string;
           menu_display_mode: "interactive_list" | "menu_pictures" | "text_only";
           menu_card_images: Json;
+          whatsapp_provider: "meta" | "evolution" | "none";
           is_active: boolean;
           created_at: string;
           updated_at: string;
@@ -83,11 +84,17 @@ export interface Database {
           ai_personality?: string;
           menu_display_mode?: "interactive_list" | "menu_pictures" | "text_only";
           menu_card_images?: Json;
+          whatsapp_provider?: "meta" | "evolution" | "none";
           is_active?: boolean;
           created_at?: string;
           updated_at?: string;
         };
         Update: Partial<Database["public"]["Tables"]["restaurant_profiles"]["Insert"]>;
+      };
+      evolution_configs: {
+        Row: { restaurant_id: string; instance_name: string; is_active: boolean; connection_status: string; display_phone_number: string | null; verified_name: string | null; created_at: string; updated_at: string };
+        Insert: { restaurant_id: string; instance_name: string; is_active?: boolean; connection_status?: string; display_phone_number?: string | null; verified_name?: string | null; created_at?: string; updated_at?: string };
+        Update: Partial<Database["public"]["Tables"]["evolution_configs"]["Insert"]>;
       };
       whatsapp_configs: {
         Row: {
@@ -209,6 +216,9 @@ export interface Database {
           mode: "agent" | "human";
           has_unread: boolean;
           staff_notes: string | null;
+          whatsapp_provider: "meta" | "evolution" | null;
+          whatsapp_phone_number_id: string | null;
+          evolution_instance_name: string | null;
           updated_at: string;
           created_at: string;
         };
@@ -221,6 +231,9 @@ export interface Database {
           mode?: "agent" | "human";
           has_unread?: boolean;
           staff_notes?: string | null;
+          whatsapp_provider?: "meta" | "evolution" | null;
+          whatsapp_phone_number_id?: string | null;
+          evolution_instance_name?: string | null;
           updated_at?: string;
           created_at?: string;
         };

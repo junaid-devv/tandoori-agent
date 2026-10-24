@@ -1,3 +1,5 @@
+-- Legacy single-tenant schema snapshot. For current multi-tenant installations,
+-- use db/schema.sql and supabase/migrations instead. Do not apply this to production.
 create extension if not exists pgcrypto;
 
 create table if not exists branches (
@@ -29,7 +31,7 @@ create table if not exists restaurant_profiles (
   ai_personality_default text not null default 'Warm & Professional',
   menu_display_mode text not null default 'interactive_list' check (menu_display_mode in ('interactive_list', 'menu_pictures', 'text_only')),
   menu_card_images jsonb not null default '[]'::jsonb,
-  whatsapp_provider text not null default 'none' check (whatsapp_provider in ('meta', 'wa_akg', 'none')),
+  whatsapp_provider text not null default 'none' check (whatsapp_provider in ('meta', 'evolution', 'none')),
   updated_at timestamptz not null default now()
 );
 

@@ -48,6 +48,7 @@ create table restaurant_profiles (
   ai_personality text not null default 'Warm & Professional',
   menu_display_mode text not null default 'interactive_list' check (menu_display_mode in ('interactive_list', 'menu_pictures', 'text_only')),
   menu_card_images jsonb not null default '[]'::jsonb check (jsonb_typeof(menu_card_images) = 'array'),
+  whatsapp_provider text not null default 'none' check (whatsapp_provider in ('meta', 'evolution', 'none')),
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
@@ -851,3 +852,22 @@ begin
     end if;
   end if;
 end $$;
+
+-- Evolution API transport (no credentials are stored in browser-accessible tables).
+create table if not exists public.evolution_configs (
+  restaurant_id uuid primary key references public.restaurant_profiles(id) on delete cascade,
+  instance_name text not null unique check (instance_name = 'orderiq-' || restaurant_id::text),
+  is_active boolean not null default false,
+  connection_status text not null default 'close',
+  display_phone_number text,
+  verified_name text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+alter table public.evolution_configs enable row level security;
+revoke all on table public.evolution_configs from public, anon, authenticated;
+grant select, insert, update, delete on table public.evolution_configs to service_role;
+alter table public.conversations
+  add column if not exists whatsapp_provider text check (whatsapp_provider in ('meta', 'evolution')),
+  add column if not exists whatsapp_phone_number_id text,
+  add column if not exists evolution_instance_name text;

@@ -1062,6 +1062,12 @@ export default function AdminConsole() {
                     body: "Official Meta WhatsApp Business Cloud API with Embedded Signup, Coexistence, and Webhooks.",
                   },
                   {
+                    value: "evolution",
+                    title: "Evolution API",
+                    badge: "QR or pairing code",
+                    body: "Connect a dedicated WhatsApp instance for this restaurant from your existing dashboard.",
+                  },
+                  {
                     value: "none",
                     title: "Disabled",
                     badge: "Off",

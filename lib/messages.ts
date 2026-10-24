@@ -1,3 +1,4 @@
+import { withConversationWhatsApp } from "./whatsapp-context";
 import { supabaseAdmin } from "./supabase-admin";
 import {
   sendWhatsAppImage,
@@ -142,7 +143,7 @@ async function sendAndPersistSingleOutboundMessage({
   }
 
   try {
-    const result = await sendWhatsAppMessage(phone, content, phoneNumberId);
+    const result = await withConversationWhatsApp(conversationId, () => sendWhatsAppMessage(phone, content, phoneNumberId));
     const { error: updateError } = await supabaseAdmin
       .from("messages")
       .update({
@@ -247,7 +248,7 @@ export async function sendAndPersistOutboundInteractiveMessage({
   }
 
   try {
-    const result = await sendWhatsAppInteractiveList(phone, interactive, phoneNumberId);
+    const result = await withConversationWhatsApp(conversationId, () => sendWhatsAppInteractiveList(phone, interactive, phoneNumberId));
     const { error: updateError } = await supabaseAdmin
       .from("messages")
       .update({
@@ -315,7 +316,7 @@ export async function sendAndPersistOutboundReplyButtonMessage({
   }
 
   try {
-    const result = await sendWhatsAppReplyButtons(phone, replyButtons, phoneNumberId);
+    const result = await withConversationWhatsApp(conversationId, () => sendWhatsAppReplyButtons(phone, replyButtons, phoneNumberId));
     const { error: updateError } = await supabaseAdmin
       .from("messages")
       .update({
@@ -388,7 +389,7 @@ export async function sendAndPersistOutboundImageMessage({
   }
 
   try {
-    const result = await sendWhatsAppImage(phone, imageUrl, caption, phoneNumberId);
+    const result = await withConversationWhatsApp(conversationId, () => sendWhatsAppImage(phone, imageUrl, caption, phoneNumberId));
     await supabaseAdmin
       .from("messages")
       .update({

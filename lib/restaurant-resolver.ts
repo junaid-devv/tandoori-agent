@@ -47,53 +47,15 @@ export async function getRestaurantByPhoneNumberId(
   const cached = phoneToRestaurantCache.get(phoneNumberId);
   if (isFresh(cached)) return cached.data;
 
-  let { data: config } = await supabaseAdmin
+  const { data: config, error } = await supabaseAdmin
     .from("whatsapp_configs")
     .select("*")
     .eq("phone_number_id", phoneNumberId)
     .eq("is_active", true)
     .maybeSingle();
 
-  // If no DB config found, fallback to single-restaurant architecture:
-  // Auto-heal by linking phone_number_id to default restaurant profile and environment access token.
-  if (!config) {
-    const { data: defaultProfileRow } = await supabaseAdmin
-      .from("restaurant_profiles")
-      .select("*")
-      .order("created_at", { ascending: true })
-      .limit(1)
-      .maybeSingle();
+  if (error) throw error;
 
-    if (defaultProfileRow) {
-      const token = process.env.WHATSAPP_ACCESS_TOKEN || "";
-      const { data: upserted } = await supabaseAdmin
-        .from("whatsapp_configs")
-        .upsert(
-          {
-            phone_number_id: phoneNumberId,
-            restaurant_id: defaultProfileRow.id,
-            access_token: token,
-            display_phone_number: (defaultProfileRow.support_phone as string) || null,
-            verified_name: (defaultProfileRow.name as string) || null,
-            is_active: true,
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "phone_number_id" }
-        )
-        .select("*")
-        .maybeSingle();
-
-      config = upserted || {
-        id: "auto-fallback",
-        restaurant_id: defaultProfileRow.id,
-        phone_number_id: phoneNumberId,
-        waba_id: "",
-        display_phone_number: defaultProfileRow.support_phone as string,
-        verified_name: defaultProfileRow.name as string,
-        is_active: true,
-      };
-    }
-  }
 
   if (!config) {
     phoneToRestaurantCache.set(phoneNumberId, { data: null, at: Date.now() });
@@ -182,8 +144,8 @@ function normalizeProfileRow(row: Record<string, unknown>): RestaurantProfile {
     ai_personality_default: (row.ai_personality as string) || "Warm & Professional",
     menu_display_mode: (row.menu_display_mode as "interactive_list" | "menu_pictures" | "text_only") || "interactive_list",
     menu_card_images: Array.isArray(row.menu_card_images) ? row.menu_card_images as string[] : [],
-    whatsapp_provider: (["meta", "wa_akg", "none"].includes(row.whatsapp_provider as string)
-      ? (row.whatsapp_provider as "meta" | "wa_akg" | "none")
-      : "meta"),
+    whatsapp_provider: (String(row.whatsapp_provider) === "wa_akg" ? "evolution" : ["meta", "evolution", "none"].includes(row.whatsapp_provider as string)
+      ? (row.whatsapp_provider as "meta" | "evolution" | "none")
+      : "none"),
   };
 }

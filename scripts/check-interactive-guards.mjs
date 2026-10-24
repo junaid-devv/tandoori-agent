@@ -42,7 +42,7 @@ for (const filePath of [branchesPath, webhookPath, pipelinePath]) {
 }
 
 const branches = fs.readFileSync(branchesPath, "utf8");
-const webhook = fs.readFileSync(webhookPath, "utf8");
+const webhook = fs.readFileSync(webhookPath, "utf8") + fs.readFileSync(path.join(root, "lib", "whatsapp-inbound.ts"), "utf8");
 const pipeline = fs.readFileSync(pipelinePath, "utf8");
 
 // branches.ts: UUID guard prevents menu-item UUIDs from matching branch selections
@@ -54,7 +54,7 @@ const strictBranchNumberMatch = "const numberMatch = normalized.match(/^(?:branc
 mustInclude(branches, strictBranchNumberMatch, "Missing strict branch number parser regex.");
 
 // webhook: city selection and order-type interactive routing
-mustInclude(webhook, "handleBranchSelection", "Missing branch selection handler in webhook.");
+mustInclude(webhook, "contactRepo.setActiveBranch", "Missing automatic restaurant branch assignment in webhook.");
 mustInclude(webhook, "city", "Missing city-level routing in webhook.");
 
 // pipeline: numeric fast-path guards presented-options selections

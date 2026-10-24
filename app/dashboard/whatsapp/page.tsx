@@ -5,23 +5,16 @@ import Script from "next/script";
 import {
   Smartphone,
   RefreshCw,
-  Power,
   LogOut,
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
-  Zap,
   Info,
-  ExternalLink,
   Copy,
   Check,
   Send,
-  MessageSquare,
-  Sparkles,
   Link2,
   QrCode,
-  Server,
-  Radio,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { toast } from "sonner";
@@ -41,7 +34,7 @@ type MetaConfig = {
   coexistenceEnabled: boolean;
 };
 
-type WaAkgSession = {
+type EvolutionSession = {
   id?: string;
   sessionId: string;
   status: string;
@@ -62,15 +55,15 @@ type WaAkgSession = {
 };
 
 type WaStatusResponse = {
-  activeProvider: "meta" | "wa_akg" | "none";
+  activeProvider: "meta" | "evolution" | "none";
   whatsappEnabled: boolean;
   metaConfig: MetaConfig;
-  waAkg?: {
+  evolution?: {
     online: boolean;
-    provider: "wa_akg" | "meta";
-    baseUrl: string;
+    provider: "evolution" | "meta";
+    instanceName: string | null;
     sessionId: string;
-    session?: WaAkgSession | null;
+    session?: EvolutionSession | null;
     qrBase64?: string | null;
     error?: string | null;
   };
@@ -91,32 +84,36 @@ declare global {
 
 export default function WhatsAppPage() {
   const { profile } = useDashboardContext();
+  // Discard pending QR codes and status state when the selected tenant changes.
+  return <WhatsAppIntegration key={profile?.id || "loading"} />;
+}
+
+function WhatsAppIntegration() {
+  const { profile } = useDashboardContext();
   const [data, setData] = useState<WaStatusResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
 
-  // Active view tab in dashboard: "meta" vs "wa_akg"
-  const [providerTab, setProviderTab] = useState<"meta" | "wa_akg">("meta");
+  // Active view tab in dashboard: "meta" vs "evolution"
+  const [providerTab, setProviderTab] = useState<"meta" | "evolution">("meta");
 
   // Meta state
   const [testPhone, setTestPhone] = useState("");
   const [isSendingTest, setIsSendingTest] = useState(false);
   const [copiedWebhook, setCopiedWebhook] = useState(false);
-  const [showManualConnect, setShowManualConnect] = useState(false);
-  const [manualWabaId, setManualWabaId] = useState("");
-  const [manualPhoneId, setManualPhoneId] = useState("");
   const sessionInfoRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
   const isCompletingRef = useRef(false);
 
-  // WA-AKG state
-  const [waAkgTab, setWaAkgTab] = useState<"qr" | "pair">("qr");
+  // Evolution API state
+  const [evolutionTab, setEvolutionTab] = useState<"qr" | "pair">("qr");
   const [pairPhone, setPairPhone] = useState("");
   const [generatedPairCode, setGeneratedPairCode] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState(false);
   const [autoWebhookSuccess, setAutoWebhookSuccess] = useState(false);
+  const [evolutionQr, setEvolutionQr] = useState<string | null>(null);
 
-  const prevAkgStatusRef = useRef<string | null>(null);
+  const prevEvolutionStatusRef = useRef<string | null>(null);
 
   const fetchStatus = useCallback(async (isSilent = false) => {
     if (!isSilent) setIsLoading(true);
@@ -128,18 +125,19 @@ export default function WhatsAppPage() {
       setData(json);
 
       // Auto-set initial active tab based on active provider
-      if (!isSilent && json.activeProvider === "wa_akg") {
-        setProviderTab("wa_akg");
+      if (!isSilent && json.activeProvider === "evolution") {
+        setProviderTab("evolution");
       }
 
-      // Check WA-AKG connection changes
-      const currentAkgStatus = json.waAkg?.session?.status;
-      if (prevAkgStatusRef.current && prevAkgStatusRef.current !== "CONNECTED" && currentAkgStatus === "CONNECTED") {
-        toast.success("WA-AKG Connected Successfully! 🎉", {
-          description: `Linked to ${json.waAkg?.session?.me?.name || "your phone number"}.`,
+      // Check Evolution API connection changes
+      const currentEvolutionStatus = json.evolution?.session?.status;
+      if (prevEvolutionStatusRef.current && prevEvolutionStatusRef.current !== "CONNECTED" && currentEvolutionStatus === "CONNECTED") {
+        toast.success("Evolution API Connected Successfully! 🎉", {
+          description: `Linked to ${json.evolution?.session?.me?.name || "your phone number"}.`,
         });
       }
-      prevAkgStatusRef.current = currentAkgStatus || null;
+      prevEvolutionStatusRef.current = currentEvolutionStatus || null;
+      if (currentEvolutionStatus === "CONNECTED") setEvolutionQr(null);
     } catch {
       if (!isSilent) {
         toast.error("Failed to connect to WhatsApp status API");
@@ -153,9 +151,9 @@ export default function WhatsAppPage() {
     fetchStatus(false);
   }, [fetchStatus]);
 
-  // Poll status every 4 seconds when looking at WA-AKG and scanning QR
+  // Poll status every 4 seconds when looking at Evolution API and scanning QR
   useEffect(() => {
-    if (providerTab !== "wa_akg") return;
+    if (providerTab !== "evolution") return;
 
     const interval = setInterval(() => {
       fetchStatus(true);
@@ -225,10 +223,10 @@ export default function WhatsAppPage() {
   // Action Handlers
   // ---------------------------------------------------------------------------
 
-  const handleSwitchProvider = async (targetProvider: "meta" | "wa_akg") => {
+  const handleSwitchProvider = async (targetProvider: "meta" | "evolution") => {
     setIsActionLoading(true);
     try {
-      const res = await fetch("/api/dashboard/whatsapp/action", {
+      const res = await fetch(`/api/dashboard/whatsapp/action${profile?.id ? `?restaurant_id=${encodeURIComponent(profile.id)}` : ""}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "switch_provider", provider: targetProvider }),
@@ -244,13 +242,13 @@ export default function WhatsAppPage() {
     }
   };
 
-  const handleWaAkgAction = async (
+  const handleEvolutionAction = async (
     action: "start" | "stop" | "restart" | "logout" | "pair" | "create_session" | "auto_webhook",
     extra?: { phoneNumber?: string }
   ) => {
     setIsActionLoading(true);
     try {
-      const res = await fetch("/api/dashboard/whatsapp/action", {
+      const res = await fetch(`/api/dashboard/whatsapp/action${profile?.id ? `?restaurant_id=${encodeURIComponent(profile.id)}` : ""}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, ...extra }),
@@ -258,6 +256,10 @@ export default function WhatsAppPage() {
 
       const result = await res.json();
       if (!res.ok) throw new Error(result.error || "Action failed");
+      if (typeof result.data?.qrBase64 === "string") {
+        setEvolutionQr(result.data.qrBase64.startsWith("data:") ? result.data.qrBase64 : `data:image/png;base64,${result.data.qrBase64}`);
+      }
+      if (action === "logout" || action === "stop") setEvolutionQr(null);
 
       if (action === "auto_webhook") {
         setAutoWebhookSuccess(true);
@@ -284,7 +286,7 @@ export default function WhatsAppPage() {
     }
     setIsSendingTest(true);
     try {
-      const res = await fetch("/api/dashboard/whatsapp/action", {
+      const res = await fetch(`/api/dashboard/whatsapp/action${profile?.id ? `?restaurant_id=${encodeURIComponent(profile.id)}` : ""}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -337,7 +339,7 @@ export default function WhatsAppPage() {
           payload.waba_id = sessionInfoRef.current.wabaId;
         }
 
-        fetch("/api/dashboard/whatsapp/connect", {
+        fetch(`/api/dashboard/whatsapp/connect${profile?.id ? `?restaurant_id=${encodeURIComponent(profile.id)}` : ""}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
@@ -388,19 +390,11 @@ export default function WhatsAppPage() {
   };
 
   const isMetaConnected = data?.metaConfig?.configured && data?.metaConfig?.status === "CONNECTED";
-  const isAkgConnected = data?.waAkg?.session?.status === "CONNECTED";
-  const isAkgStarting = data?.waAkg?.session?.status === "STARTING" || data?.waAkg?.session?.status === "CONNECTING";
-  const isAkgOnline = data?.waAkg?.online ?? false;
-  const qrBase64 = data?.waAkg?.qrBase64;
-  const akgSession = data?.waAkg?.session;
+  const isEvolutionConnected = data?.evolution?.session?.status === "CONNECTED";
+  const isEvolutionOnline = data?.evolution?.online ?? false;
+  const qrBase64 = evolutionQr || data?.evolution?.qrBase64;
+  const evolutionSession = data?.evolution?.session;
 
-  const formatUptime = (seconds?: number) => {
-    if (!seconds) return "Just started";
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    if (hrs > 0) return `${hrs}h ${mins}m`;
-    return `${mins}m`;
-  };
 
   return (
     <>
@@ -431,12 +425,12 @@ export default function WhatsAppPage() {
                   )}
                 />
                 {data?.whatsappEnabled
-                  ? `Live (${data.activeProvider === "wa_akg" ? "WA-AKG" : "Meta"})`
+                  ? `Live (${data.activeProvider === "evolution" ? "Evolution API" : "Meta"})`
                   : "Not Connected"}
               </span>
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Choose your WhatsApp provider: official Meta Cloud API or direct WhatsApp Web (WA-AKG).
+              Choose your WhatsApp provider: official Meta Cloud API or direct WhatsApp Web (Evolution API).
             </p>
           </div>
 
@@ -501,12 +495,12 @@ export default function WhatsAppPage() {
             )}
           </div>
 
-          {/* Tab 2: WA-AKG Baileys Direct */}
+          {/* Tab 2: Evolution API Baileys Direct */}
           <div
-            onClick={() => setProviderTab("wa_akg")}
+            onClick={() => setProviderTab("evolution")}
             className={clsx(
               "relative cursor-pointer rounded-2xl border-2 p-5 transition-all shadow-xs",
-              providerTab === "wa_akg"
+              providerTab === "evolution"
                 ? "border-emerald-600 bg-white ring-2 ring-emerald-600/10 shadow-sm"
                 : "border-slate-200 bg-slate-50/60 hover:bg-white"
             )}
@@ -517,12 +511,12 @@ export default function WhatsAppPage() {
                   WA
                 </div>
                 <div>
-                  <h3 className="font-bold text-slate-900 text-sm sm:text-base">Direct WhatsApp Web (WA-AKG)</h3>
+                  <h3 className="font-bold text-slate-900 text-sm sm:text-base">Direct WhatsApp Web (Evolution API)</h3>
                   <p className="text-xs text-slate-500">QR Code Scan • Zero Meta API Approval • Multi-Device</p>
                 </div>
               </div>
 
-              {data?.activeProvider === "wa_akg" && (
+              {data?.activeProvider === "evolution" && (
                 <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
                   Active
                 </span>
@@ -533,13 +527,13 @@ export default function WhatsAppPage() {
               Link any WhatsApp number instantly via QR code scan or 8-digit pairing code. No Meta verification needed.
             </p>
 
-            {data?.activeProvider !== "wa_akg" && (
+            {data?.activeProvider !== "evolution" && (
               <div className="mt-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    handleSwitchProvider("wa_akg");
+                    handleSwitchProvider("evolution");
                   }}
                   disabled={isActionLoading}
                   className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
@@ -731,29 +725,26 @@ export default function WhatsAppPage() {
         )}
 
         {/* ========================================================================= */}
-        {/* VIEW 2: WA-AKG (BAILEYS) SECTION */}
+        {/* VIEW 2: Evolution API (BAILEYS) SECTION */}
         {/* ========================================================================= */}
-        {providerTab === "wa_akg" && (
+        {providerTab === "evolution" && (
           <div className="space-y-6">
             {/* Gateway Offline Warning */}
-            {!isAkgOnline && !isLoading && (
+            {!isEvolutionOnline && !isLoading && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 sm:p-5">
                 <div className="flex items-start gap-3.5">
                   <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <h3 className="text-sm font-bold text-amber-900">WA-AKG Gateway Background Process Offline</h3>
+                    <h3 className="text-sm font-bold text-amber-900">Evolution connection needs setup</h3>
                     <p className="mt-1 text-xs text-amber-700 leading-relaxed">
-                      The local WhatsApp background engine is not currently running on port 3001. Start it via terminal in{" "}
-                      <code className="bg-amber-100/80 px-1 py-0.5 rounded text-amber-900 font-mono">wa-akg</code> using{" "}
-                      <code className="bg-amber-100/80 px-1 py-0.5 rounded text-amber-900 font-mono">npm run dev</code> or by running{" "}
-                      <code className="bg-amber-100/80 px-1 py-0.5 rounded text-amber-900 font-mono">start-gateway.bat</code>.
+                      {data?.evolution?.error || "The Evolution server is unavailable. Ask your administrator to check the connection settings."}
                     </p>
                   </div>
                 </div>
               </div>
             )}
 
-            {isAkgConnected ? (
+            {isEvolutionConnected ? (
               /* CONNECTED STATE */
               <div className="rounded-2xl border border-emerald-200 bg-gradient-to-b from-emerald-50/50 to-white p-6 sm:p-8 shadow-sm space-y-6">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-emerald-100">
@@ -763,7 +754,7 @@ export default function WhatsAppPage() {
                     </div>
                     <div>
                       <h2 className="text-lg sm:text-xl font-bold text-slate-950">
-                        WA-AKG is Connected & Live!
+                        Evolution API is Connected & Live!
                       </h2>
                       <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
                         Your AI restaurant agent is actively receiving and responding to customer orders via WhatsApp Web.
@@ -773,7 +764,7 @@ export default function WhatsAppPage() {
 
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={() => handleWaAkgAction("restart")}
+                      onClick={() => handleEvolutionAction("restart")}
                       disabled={isActionLoading}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition-colors disabled:opacity-50"
                     >
@@ -782,7 +773,7 @@ export default function WhatsAppPage() {
                     </button>
 
                     <button
-                      onClick={() => handleWaAkgAction("logout")}
+                      onClick={() => handleEvolutionAction("logout")}
                       disabled={isActionLoading}
                       className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-xs font-semibold text-rose-700 shadow-xs hover:bg-rose-100 transition-colors disabled:opacity-50"
                     >
@@ -797,7 +788,7 @@ export default function WhatsAppPage() {
                   <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Connected Phone</span>
                     <p className="mt-1 text-base font-bold text-slate-900">
-                      {akgSession?.me?.id ? `+${akgSession.me.id.split("@")[0].split(":")[0]}` : "Active Device"}
+                      {evolutionSession?.me?.id ? `+${evolutionSession.me.id.split("@")[0].split(":")[0]}` : "Active Device"}
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">WhatsApp Web Multi-Device</p>
                   </div>
@@ -805,15 +796,15 @@ export default function WhatsAppPage() {
                   <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs">
                     <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Profile Name</span>
                     <p className="mt-1 text-base font-bold text-slate-900 truncate">
-                      {akgSession?.me?.name || "Restaurant Agent"}
+                      {evolutionSession?.me?.name || "Restaurant Agent"}
                     </p>
-                    <p className="text-xs text-slate-500 mt-0.5">Session: {akgSession?.sessionId || "default"}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">Session: {evolutionSession?.sessionId || "default"}</p>
                   </div>
 
                   <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Gateway Uptime</span>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">Connection</span>
                     <p className="mt-1 text-base font-bold text-slate-900">
-                      {formatUptime(akgSession?.uptime)}
+                      Connected
                     </p>
                     <p className="text-xs text-emerald-600 font-medium mt-0.5">🟢 Online & Healthy</p>
                   </div>
@@ -828,13 +819,13 @@ export default function WhatsAppPage() {
                     <div>
                       <p className="text-xs font-bold text-slate-900">Inbound Webhook Routing</p>
                       <p className="text-[11px] text-slate-500">
-                        Target: <code className="font-mono text-slate-700">/api/webhook/wa-akg</code>
+                        Target: <code className="font-mono text-slate-700">/api/webhook/evolution</code>
                       </p>
                     </div>
                   </div>
 
                   <button
-                    onClick={() => handleWaAkgAction("auto_webhook")}
+                    onClick={() => handleEvolutionAction("auto_webhook")}
                     disabled={isActionLoading}
                     className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-slate-50 hover:bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-700 transition-colors"
                   >
@@ -859,20 +850,20 @@ export default function WhatsAppPage() {
                   {/* Tab switchers: QR vs Pairing Code */}
                   <div className="flex items-center bg-slate-100 p-1 rounded-xl shrink-0">
                     <button
-                      onClick={() => setWaAkgTab("qr")}
+                      onClick={() => setEvolutionTab("qr")}
                       className={clsx(
                         "flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors",
-                        waAkgTab === "qr" ? "bg-white text-slate-950 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                        evolutionTab === "qr" ? "bg-white text-slate-950 shadow-xs" : "text-slate-600 hover:text-slate-900"
                       )}
                     >
                       <QrCode className="h-3.5 w-3.5" />
                       Scan QR Code
                     </button>
                     <button
-                      onClick={() => setWaAkgTab("pair")}
+                      onClick={() => setEvolutionTab("pair")}
                       className={clsx(
                         "flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-colors",
-                        waAkgTab === "pair" ? "bg-white text-slate-950 shadow-xs" : "text-slate-600 hover:text-slate-900"
+                        evolutionTab === "pair" ? "bg-white text-slate-950 shadow-xs" : "text-slate-600 hover:text-slate-900"
                       )}
                     >
                       <Smartphone className="h-3.5 w-3.5" />
@@ -881,7 +872,7 @@ export default function WhatsAppPage() {
                   </div>
                 </div>
 
-                {waAkgTab === "qr" ? (
+                {evolutionTab === "qr" ? (
                   /* TAB 1: QR CODE */
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
                     <div className="lg:col-span-5 flex flex-col items-center justify-center p-6 bg-slate-50/80 rounded-2xl border border-slate-200/80">
@@ -895,7 +886,7 @@ export default function WhatsAppPage() {
                           />
                           <div className="mt-2 text-center">
                             <p className="text-[11px] font-semibold text-slate-500 animate-pulse">
-                              Scanning active... code auto-refreshes
+                              Scan this code. Click Start Session for a fresh code if it expires.
                             </p>
                           </div>
                         </div>
@@ -904,25 +895,25 @@ export default function WhatsAppPage() {
                           <QrCode className="h-12 w-12 text-slate-300 mb-2" />
                           <p className="text-xs font-semibold text-slate-700">QR Code Not Ready</p>
                           <p className="text-[11px] text-slate-400 mt-1">
-                            {isAkgOnline
+                            {isEvolutionOnline
                               ? "Click 'Start Session' below to generate your QR code."
-                              : "Start the gateway server on port 3001."}
+                              : "Configure your Evolution server, then click Start Session."}
                           </p>
                         </div>
                       )}
 
                       <div className="flex items-center gap-2 mt-4 w-full">
                         <button
-                          onClick={() => handleWaAkgAction("start")}
-                          disabled={isActionLoading || !isAkgOnline}
+                          onClick={() => handleEvolutionAction("start")}
+                          disabled={isActionLoading}
                           className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 text-xs font-semibold shadow-xs transition-colors disabled:opacity-50"
                         >
                           <RefreshCw className={clsx("h-3.5 w-3.5", isActionLoading && "animate-spin")} />
                           Start Session
                         </button>
                         <button
-                          onClick={() => handleWaAkgAction("restart")}
-                          disabled={isActionLoading || !isAkgOnline}
+                          onClick={() => handleEvolutionAction("restart")}
+                          disabled={isActionLoading || !isEvolutionOnline}
                           className="inline-flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 px-3 py-2 text-xs font-semibold text-slate-700 shadow-xs transition-colors disabled:opacity-50"
                         >
                           Reset
@@ -978,7 +969,7 @@ export default function WhatsAppPage() {
                     </div>
 
                     <button
-                      onClick={() => handleWaAkgAction("pair", { phoneNumber: pairPhone.replace(/[^0-9]/g, "") })}
+                      onClick={() => handleEvolutionAction("pair", { phoneNumber: pairPhone.replace(/[^0-9]/g, "") })}
                       disabled={isActionLoading || !pairPhone.trim()}
                       className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white px-4 py-2.5 text-xs font-bold shadow-xs transition-colors disabled:opacity-50"
                     >

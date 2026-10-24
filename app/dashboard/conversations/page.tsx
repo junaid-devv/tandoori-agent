@@ -325,6 +325,7 @@ function mergeAndSortMessages(items: Message[]) {
 
 export default function ConversationsPage() {
   const {
+    profile,
     isContextPanelOpen,
     toggleContextPanelOpen,
   } = useDashboardContext();
@@ -394,10 +395,11 @@ export default function ConversationsPage() {
   const [selectedChannelPhone, setSelectedChannelPhone] = useState<string>("all");
 
   // Conversations list query with stale-while-revalidate — auto-scoped or channel-selected
-  const conversationsUrl =
+  const conversationsUrl = (
     selectedChannelPhone === "all"
       ? "/api/conversations?limit=100&whatsapp_phone=all"
-      : `/api/conversations?limit=100&whatsapp_phone=${encodeURIComponent(selectedChannelPhone)}`;
+      : `/api/conversations?limit=100&whatsapp_phone=${encodeURIComponent(selectedChannelPhone)}`
+  ) + `&restaurant_id=${encodeURIComponent(profile.id)}`;
 
   const {
     data: cachedConversations,

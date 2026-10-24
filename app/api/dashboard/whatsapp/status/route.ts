@@ -3,7 +3,8 @@ import { requireApiSession } from "@/lib/branch-request";
 import { apiErrorResponse } from "@/lib/api-utils";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { supabaseAdmin } from "@/lib/supabase-admin";
-import { getWaAkgFullStatus } from "@/lib/wa-akg-client";
+import { getEvolutionFullStatus } from "@/lib/evolution-client";
+import { whatsappRestaurantId } from "@/lib/whatsapp-request";
 
 export const dynamic = "force-dynamic";
 
@@ -14,19 +15,19 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const profile = await getRestaurantProfile(auth.session.restaurantId ?? undefined);
-    
-    const targetRestaurantId =
-      auth.session.restaurantId || new URL(req.url).searchParams.get("restaurant_id");
+    const targetRestaurantId = whatsappRestaurantId(req, auth.session);
+    const profile = await getRestaurantProfile(targetRestaurantId);
 
-    const { data: config } = targetRestaurantId
+    const { data: config, error: configError } = targetRestaurantId
       ? await supabaseAdmin
           .from("whatsapp_configs")
           .select("*")
           .eq("restaurant_id", targetRestaurantId)
           .eq("is_active", true)
+          .order("updated_at", { ascending: false }).limit(1)
           .maybeSingle()
-      : { data: null };
+      : { data: null, error: null };
+    if (configError) throw configError;
 
     // In a multi-tenant setup, only consider configured if there is an active DB record
     const phoneId = config?.phone_number_id || null;
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
           {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
+            signal: AbortSignal.timeout(8_000),
           }
         );
         if (metaRes.ok) {
@@ -71,7 +73,7 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const waAkgStatus = await getWaAkgFullStatus();
+    const evolutionStatus = await getEvolutionFullStatus(targetRestaurantId);
 
     return NextResponse.json({
       activeProvider: profile.whatsapp_provider || "none",
@@ -89,7 +91,7 @@ export async function GET(req: NextRequest) {
         verifyTokenSet: Boolean(process.env.WHATSAPP_VERIFY_TOKEN),
         coexistenceEnabled: true,
       },
-      waAkg: waAkgStatus,
+      evolution: evolutionStatus,
     });
   } catch (error) {
     return apiErrorResponse(error, {

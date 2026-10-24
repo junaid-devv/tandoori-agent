@@ -14,7 +14,7 @@
  *     --brand-color "#E53E3E" \
  *     --admin-email "admin@burgerhub.pk" \
  *     --admin-password "BurgerHub2026!" \
- *     --whatsapp-provider "wa_akg" \
+ *     --whatsapp-provider "evolution" \
  *     --supabase-url "https://xyz.supabase.co" \
  *     --supabase-anon-key "ey..." \
  *     --supabase-service-key "ey..."
@@ -68,7 +68,7 @@ interface ProjectConfig {
   brandHoverColor: string;
   adminEmail: string;
   adminPassword: string;
-  whatsappProvider: "wa_akg" | "meta" | "none";
+  whatsappProvider: "evolution" | "meta" | "none";
   menuDisplayMode: "interactive_list" | "menu_pictures" | "text_only";
   supabaseUrl: string;
   supabaseAnonKey: string;
@@ -135,7 +135,7 @@ async function gatherConfig(): Promise<ProjectConfig> {
       brandHoverColor: "#C2410C",
       adminEmail: cli.adminEmail || `admin@${slug}.local`,
       adminPassword: cli.adminPassword || crypto.randomBytes(6).toString("hex") + "A1!",
-      whatsappProvider: cli.whatsappProvider || "wa_akg",
+      whatsappProvider: cli.whatsappProvider || "evolution",
       menuDisplayMode: cli.menuDisplayMode || "interactive_list",
       supabaseUrl: cli.supabaseUrl,
       supabaseAnonKey: cli.supabaseAnonKey,
@@ -162,7 +162,7 @@ async function gatherConfig(): Promise<ProjectConfig> {
     const adminPassword =
       cli.adminPassword || (await prompt(rl, "6. Admin Password", crypto.randomBytes(6).toString("hex") + "A1!"));
     const whatsappProvider = (cli.whatsappProvider ||
-      (await prompt(rl, "7. WhatsApp Provider (wa_akg | meta | none)", "wa_akg"))) as ProjectConfig["whatsappProvider"];
+      (await prompt(rl, "7. WhatsApp Provider (evolution | meta | none)", "evolution"))) as ProjectConfig["whatsappProvider"];
     const menuDisplayMode = (cli.menuDisplayMode ||
       (await prompt(
         rl,
@@ -428,24 +428,33 @@ async function setupVercel(config: ProjectConfig): Promise<string> {
 }
 
 function generateRailwayConfig(config: ProjectConfig, deploymentUrl: string) {
-  console.log("\n[3/3] Generating Railway WA-AKG configuration...");
+  console.log("\n[3/3] Generating Railway Evolution API configuration...");
 
-  const railwayEnv = `# WA-AKG Railway Configuration for ${config.name}
-PORT=3001
-NODE_ENV=production
-SESSION_DATA_PATH=/app/sessions
-DATABASE_URL=${config.supabaseUrl.replace("https://", "postgresql://postgres:")}@msjgqesrnnxrjbhijmlq.supabase.co:5432/postgres?schema=wa_akg_${config.slug.replace(/-/g, "_")}&connection_limit=10&pool_timeout=30
-
-# Webhook dispatch to restaurant instance
-WEBHOOK_URL=${deploymentUrl}/api/webhook/wa-akg
-WEBHOOK_EVENTS=message.received,message.sent,message.status,connection.update
-WA_AKG_API_KEY=wag_${crypto.randomBytes(24).toString("base64url")}
-DEFAULT_SESSION_ID=default
+  const railwayEnv = `# Evolution API v2 server for ${config.name}
+# Use the shared Evolution server for all tenants; do not create a global default session.
+SERVER_TYPE=http
+SERVER_PORT=8080
+SERVER_URL=https://YOUR-EVOLUTION-SERVER
+AUTHENTICATION_API_KEY=${crypto.randomBytes(32).toString("hex")}
+AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES=false
+DATABASE_ENABLED=true
+DATABASE_PROVIDER=postgresql
+DATABASE_CONNECTION_URI=postgresql://USER:PASSWORD@HOST:5432/evolution?schema=evolution_api
+DATABASE_CONNECTION_CLIENT_NAME=orderiq_evolution
+CACHE_REDIS_ENABLED=true
+CACHE_REDIS_URI=redis://REDIS_HOST:6379/0
+CACHE_REDIS_PREFIX_KEY=orderiq_evolution
+CACHE_REDIS_SAVE_INSTANCES=false
+CACHE_LOCAL_ENABLED=false
+WEBHOOK_GLOBAL_ENABLED=false
+# In your dashboard app: APP_URL=${deploymentUrl}
+# Set EVOLUTION_API_BASE_URL, EVOLUTION_API_KEY, and EVOLUTION_WEBHOOK_SECRET there.
+# Tenant-specific instance webhooks are configured automatically by the dashboard.
 `;
 
   const railwayPath = path.join(process.cwd(), `.env.${config.slug}.railway`);
   fs.writeFileSync(railwayPath, railwayEnv, "utf8");
-  console.log(`  Generated Railway WA-AKG config: .env.${config.slug}.railway`);
+  console.log(`  Generated Railway Evolution API config: .env.${config.slug}.railway`);
 }
 
 async function main() {
@@ -457,8 +466,8 @@ async function main() {
   // 2. Vercel deployment
   const deploymentUrl = await setupVercel(config);
 
-  // 3. Railway WA-AKG config (if needed)
-  if (config.whatsappProvider === "wa_akg") {
+  // 3. Railway Evolution API config (if needed)
+  if (config.whatsappProvider === "evolution") {
     generateRailwayConfig(config, deploymentUrl);
   }
 
@@ -474,8 +483,8 @@ async function main() {
   console.log(`  WhatsApp Provider: ${config.whatsappProvider.toUpperCase()}`);
   console.log(`  Menu Mode:         ${config.menuDisplayMode}`);
   console.log("\n--- WhatsApp Webhook Configuration ---");
-  if (config.whatsappProvider === "wa_akg") {
-    console.log(`  WA-AKG Webhook URL:  ${deploymentUrl}/api/webhook/wa-akg`);
+  if (config.whatsappProvider === "evolution") {
+    console.log(`  Evolution API Webhook URL:  ${deploymentUrl}/api/webhook/evolution`);
     console.log(`  Railway Config:      .env.${config.slug}.railway`);
   } else if (config.whatsappProvider === "meta") {
     console.log(`  Meta Callback URL:   ${deploymentUrl}/api/webhook`);
