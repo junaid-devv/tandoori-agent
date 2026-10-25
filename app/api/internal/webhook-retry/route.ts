@@ -11,6 +11,9 @@ export async function POST(req: NextRequest) {
   try {
     const cutoff = new Date(Date.now() - 120_000).toISOString();
     const { data, error } = await supabaseAdmin.from("webhook_events").select("id, provider, attempt_count, updated_at")
+      // Do not revive historical orders/conversations from an old installation.
+      .gte("created_at", new Date(Date.now() - 60 * 60_000).toISOString())
+      .in("provider", ["evolution", "meta_whatsapp"])
       .or(`status.in.(received,failed),and(status.eq.processing,processing_started_at.lt.${cutoff})`)
       .lt("updated_at", cutoff).lt("attempt_count", 5).order("created_at", { ascending: true }).limit(20);
     if (error) throw error;

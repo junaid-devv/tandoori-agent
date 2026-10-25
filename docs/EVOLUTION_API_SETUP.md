@@ -262,7 +262,9 @@ every minute with a private 0600 webhook-worker.json containing {"url":
 "https://YOUR_DASHBOARD/api/internal/webhook-retry","key":"SERVER_WORKER_KEY"}.
 Install the supplied service/timer in /etc/systemd/system only after deploying
 the application endpoint, then daemon-reload and enable --now the timer.
-Retries are bounded and replay stored events; uncertain outbound deliveries need
+Retries are limited to five attempts for events created within the last hour, so
+historical orders are not revived. Older failed events require manual diagnostics
+review. Retries replay stored events; uncertain outbound deliveries need
 inbox review. Backup archives include this credential file and must stay private.
 
 Run scripts/check-tenant-isolation.sql against the target database to test two
