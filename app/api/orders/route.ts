@@ -1,3 +1,4 @@
+import { scopeBranchQuery } from "@/lib/tenant-scope";
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
@@ -42,9 +43,7 @@ export async function GET(req: NextRequest) {
     `)
     .order("created_at", { ascending: false });
 
-  if (auth.branchId) {
-    query = query.eq("branch_id", auth.branchId);
-  }
+  query = scopeBranchQuery(query, auth);
 
   const { data, error } = await query.range(offset, offset + limit - 1);
 

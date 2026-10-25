@@ -1,0 +1,15 @@
+[Unit]
+Description=Recover interrupted ORDERiQ webhook processing
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=azureuser
+WorkingDirectory=/home/azureuser/evolution-api
+ExecStart=/usr/bin/python3 /home/azureuser/evolution-api/retry-webhooks.py
+TimeoutStartSec=60
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only

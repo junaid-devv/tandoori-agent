@@ -1,8 +1,11 @@
+import { requireUniversityAdmin } from "@/lib/legacy-api-access";
 import { NextRequest, NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { sendWhatsAppMessage } from "@/lib/whatsapp";
 
 export async function GET(request: NextRequest) {
+  const denied = await requireUniversityAdmin();
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
     const phone = searchParams.get("phone");
@@ -48,6 +51,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireUniversityAdmin();
+  if (denied) return denied;
   try {
     const body = await request.json();
     const { phone, content, toggleMode } = body;

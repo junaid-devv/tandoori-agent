@@ -163,8 +163,10 @@ async function loadAllowedBranches(userId: string, role: StaffRole, restaurantId
 
   const { data, error } = await supabaseAdmin
     .from("staff_branch_access")
-    .select("branch_id, branches!inner(id, slug, name, city, address)")
+    .select("branch_id, branches!inner(id, slug, name, city, address, restaurant_id, is_active)")
     .eq("user_id", userId)
+    .eq("branches.restaurant_id", restaurantId || "00000000-0000-0000-0000-000000000000")
+    .eq("branches.is_active", true)
     .order("branch_id", { ascending: true });
 
   if (error) {
@@ -195,7 +197,13 @@ export const getDashboardSession = cache(async (): Promise<DashboardSession | nu
   if (!user) return null;
 
   const profile = await loadStaffProfile(user.id);
-  const role: StaffRole = profile?.role ?? "admin";
+  if (!profile || !["super_admin", "admin", "branch_staff"].includes(profile.role)) return null;
+  if (profile.role !== "super_admin" && !profile.restaurant_id) return null;
+  if (profile.role !== "super_admin") {
+    const { data: tenant, error } = await supabaseAdmin.from("restaurant_profiles").select("id").eq("id", profile.restaurant_id).eq("is_active", true).maybeSingle();
+    if (error || !tenant) return null;
+  }
+  const role: StaffRole = profile.role;
   const fullName = profile?.full_name ?? (user.user_metadata?.full_name as string | undefined) ?? user.email?.split("@")[0] ?? "Administrator";
 
   let activeRestaurantId: string | null = profile?.restaurant_id ?? null;
@@ -258,7 +266,7 @@ export async function requireDashboardSession(): Promise<DashboardSession> {
 }
 
 export function isBranchAllowed(session: DashboardSession, branchId: string | null) {
-  if (branchId == null) return session.role === "admin" || session.role === "super_admin";
+  if (branchId == null) return false;
   return session.allowedBranches.some((branch) => branch.id === branchId);
 }
 

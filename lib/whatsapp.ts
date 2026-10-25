@@ -1,11 +1,18 @@
-import { evolutionRequest } from "./evolution-client";
+import { EvolutionApiError, evolutionRequest, getEvolutionConfig } from "./evolution-client";
 import { getWhatsAppTransport, withConversationWhatsApp } from "./whatsapp-context";
 import { getRestaurantProfile } from "./restaurant-profile";
 import { supabaseAdmin } from "./supabase-admin";
 
-type WhatsAppSendResult = {
+export class WhatsAppSendUncertainError extends Error {
+  constructor() { super("Delivery is unconfirmed after a network interruption. Check WhatsApp before sending again."); this.name = "WhatsAppSendUncertainError"; }
+}
+class WhatsAppRejectedError extends Error {}
+
+export type WhatsAppSendResult = {
   messageId: string | null;
   raw: unknown;
+  deliveryFormat?: "text_options" | "native";
+  renderedText?: string;
 };
 
 export type WhatsAppInteractiveListRow = {
@@ -54,6 +61,9 @@ async function fetchWithTimeout(input: string, init: RequestInit, timeoutMs = WH
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(input, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (init.method === "POST") throw new WhatsAppSendUncertainError();
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -91,29 +101,47 @@ export function isBotSentMessageId(messageId: string | null | undefined): boolea
 async function sendEvolution(to: string, endpoint: string, payload: Record<string, unknown>): Promise<WhatsAppSendResult> {
   const transport = getWhatsAppTransport();
   if (transport?.provider !== "evolution") throw new Error("A tenant Evolution instance is required");
+  if (transport.readOnly) throw new Error("Media access cannot send messages");
   const number = to.includes("@") ? to : to.replace(/[^0-9]/g, "");
-  if (!number) throw new Error("WhatsApp recipient is missing");
-  const data = await evolutionRequest('/message/' + endpoint + '/' + encodeURIComponent(transport.instanceName), "POST", { number, ...payload });
+  if (!/^(?:\d{7,15}|\d{7,20}@(s\.whatsapp\.net|lid))$/.test(number)) throw new Error("Invalid WhatsApp recipient");
+  const config = await getEvolutionConfig(transport.restaurantId);
+  if (!config?.is_active || config.connection_status !== "open" || config.instance_name !== transport.instanceName) throw new Error("Evolution connection is disconnected or belongs to another restaurant");
+  const data = await evolutionRequest('/message/' + endpoint + '/' + encodeURIComponent(transport.instanceName), "POST", { number, ...payload }).catch(error => {
+    if (!(error instanceof EvolutionApiError) || error.status >= 500) throw new WhatsAppSendUncertainError();
+    throw error;
+  });
   const rawId = data.key?.id;
   if (typeof rawId !== "string" || !rawId) throw new Error("Evolution returned no message ID");
   const messageId = `evolution:${transport.instanceName}:${rawId}`;
   recordSentMessageId(messageId);
-  return { messageId, raw: data };
+  return { messageId, raw: data, ...(["sendButtons", "sendList"].includes(endpoint) ? { deliveryFormat: "native" as const } : {}) };
+}
+
+async function evolutionNativeInteractiveEnabled(): Promise<boolean> {
+  const transport = getWhatsAppTransport();
+  if (transport?.provider !== "evolution") return false;
+  const config = await getEvolutionConfig(transport.restaurantId);
+  if (!config?.is_active || config.instance_name !== transport.instanceName) throw new Error("Evolution connection is inactive for this restaurant");
+  return config.interactive_mode === "native";
 }
 
 async function resolveCredentials(
   phoneNumberId?: string,
-  customToken?: string
+  customToken?: string,
+  mediaRead = false,
 ): Promise<{ phoneId: string; token: string }> {
   const context = getWhatsAppTransport();
-  const phoneId = phoneNumberId || (context?.provider === "meta" ? context.phoneNumberId : undefined);
-  if (!phoneId) throw new Error("A tenant-scoped WhatsApp connection is required");
+  if (context?.provider !== "meta") throw new Error("A tenant-scoped WhatsApp connection is required");
+  if (context.readOnly && !mediaRead) throw new Error("Media access cannot send messages");
+  const phoneId = context.phoneNumberId;
+  if (phoneNumberId && phoneNumberId !== phoneId) throw new Error("Meta phone does not match the active tenant connection");
   let query = supabaseAdmin.from("whatsapp_configs").select("phone_number_id, access_token")
-    .eq("phone_number_id", phoneId).eq("is_active", true);
-  if (context) query = query.eq("restaurant_id", context.restaurantId);
+    .eq("phone_number_id", phoneId).eq("restaurant_id", context.restaurantId);
+  if (!mediaRead || !context.readOnly) query = query.eq("is_active", true);
   const { data: config, error } = await query.maybeSingle();
   if (error || !config?.access_token) throw error || new Error("Meta connection is missing or inactive for this restaurant");
-  const token = customToken || config.access_token;
+  if (customToken && customToken !== config.access_token) throw new Error("Meta token override does not match tenant credentials");
+  const token = config.access_token;
   return { phoneId, token };
 }
 
@@ -123,7 +151,7 @@ export async function sendWhatsAppMessage(
   phoneNumberId?: string,
   customAccessToken?: string
 ): Promise<WhatsAppSendResult> {
-  if (process.env.MOCK_WHATSAPP === "true") {
+  if (process.env.MOCK_WHATSAPP === "true" && process.env.NODE_ENV !== "production") {
     console.log(`[MOCK WHATSAPP] Sending text message to ${to}:`, body);
     return {
       messageId: `wamid.mockText${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
@@ -159,46 +187,10 @@ export async function sendWhatsAppMessage(
       };
 
       if (!response.ok) {
-        // Fallback for Meta code 131047 (Customer 24h window closed): send approved template
-        if (data.error?.code === 131047) {
-          console.log("[whatsapp] Customer 24h window is closed. Falling back to approved greeting template...");
-          const templateNames = ["restaurant_greeting", "hello_world"];
-          for (const templateName of templateNames) {
-            try {
-              const templateRes = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${phoneId}/messages`, {
-                method: "POST",
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                  "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                  messaging_product: "whatsapp",
-                  to,
-                  type: "template",
-                  template: {
-                    name: templateName,
-                    language: { code: "en_US" },
-                  },
-                }),
-              });
-              const templateData = (await templateRes.json()) as { messages?: Array<{ id?: string }>; error?: { message?: string } };
-              if (templateRes.ok && templateData.messages?.[0]?.id) {
-                const sentId = templateData.messages[0].id;
-                recordSentMessageId(sentId);
-                return {
-                  messageId: sentId,
-                  raw: templateData,
-                };
-              }
-              console.warn(`[whatsapp] Template ${templateName} failed:`, templateData.error?.message);
-            } catch (err) {
-              console.warn(`[whatsapp] Template ${templateName} error:`, err);
-            }
-          }
-        }
-
+        // A closed 24-hour window requires a client-approved template. Never
+        // substitute hello_world while recording an order confirmation as sent.
         const errorMessage = data.error?.message || `WhatsApp send failed with status ${response.status}`;
-        const error = new Error(errorMessage);
+        const error = new WhatsAppRejectedError(errorMessage);
         if (data.error?.code === 131030) {
           console.warn("WhatsApp recipient is not in the allowed list.");
         }
@@ -220,6 +212,7 @@ export async function sendWhatsAppMessage(
         raw: data,
       };
     } catch (error) {
+      if (error instanceof WhatsAppRejectedError || error instanceof WhatsAppSendUncertainError) throw error;
       lastError = error instanceof Error ? error : new Error("Unknown WhatsApp send failure");
       if (attempt < 3) {
         await sleep(attempt * 400);
@@ -238,7 +231,7 @@ export async function sendWhatsAppImage(
   phoneNumberId?: string,
   customAccessToken?: string,
 ): Promise<WhatsAppSendResult> {
-  if (process.env.MOCK_WHATSAPP === "true") {
+  if (process.env.MOCK_WHATSAPP === "true" && process.env.NODE_ENV !== "production") {
     console.log(`[MOCK WHATSAPP] Sending image to ${to}: ${imageUrl}${caption ? ` (caption: ${caption})` : ""}`);
     return {
       messageId: `wamid.mockImg${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
@@ -277,7 +270,7 @@ export async function sendWhatsAppImage(
 
       if (!response.ok) {
         const errorMessage = data.error?.message || `WhatsApp image send failed with status ${response.status}`;
-        const error = new Error(errorMessage);
+        const error = new WhatsAppRejectedError(errorMessage);
         if (attempt < 3 && isRetriableStatus(response.status)) {
           lastError = error;
           await sleep(attempt * 400);
@@ -291,6 +284,7 @@ export async function sendWhatsAppImage(
         raw: data,
       };
     } catch (error) {
+      if (error instanceof WhatsAppRejectedError || error instanceof WhatsAppSendUncertainError) throw error;
       lastError = error instanceof Error ? error : new Error("Unknown WhatsApp image send failure");
       if (attempt < 3) {
         await sleep(attempt * 400);
@@ -303,7 +297,7 @@ export async function sendWhatsAppImage(
 }
 
 export async function getWhatsAppMediaUrl(mediaId: string): Promise<string> {
-  const { token } = await resolveCredentials();
+  const { token } = await resolveCredentials(undefined, undefined, true);
 
   const response = await fetchWithTimeout(`https://graph.facebook.com/v22.0/${encodeURIComponent(mediaId)}`, {
     method: "GET",
@@ -319,7 +313,7 @@ export async function getWhatsAppMediaUrl(mediaId: string): Promise<string> {
 }
 
 export async function downloadWhatsAppMedia(mediaUrl: string): Promise<ArrayBuffer> {
-  const { token } = await resolveCredentials();
+  const { token } = await resolveCredentials(undefined, undefined, true);
 
   const response = await fetchWithTimeout(mediaUrl, {
     method: "GET",
@@ -339,7 +333,7 @@ export async function sendWhatsAppInteractiveList(
   phoneNumberId?: string,
   customAccessToken?: string,
 ): Promise<WhatsAppSendResult> {
-  if (process.env.MOCK_WHATSAPP === "true") {
+  if (process.env.MOCK_WHATSAPP === "true" && process.env.NODE_ENV !== "production") {
     console.log(`[MOCK WHATSAPP] Sending interactive list to ${to}:`, payload);
     return {
       messageId: `wamid.mockList${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
@@ -349,9 +343,14 @@ export async function sendWhatsAppInteractiveList(
 
   if (getWhatsAppTransport()?.provider === "evolution") {
     if (!payload.rows?.length) throw new Error("Interactive list requires at least one row.");
+    if (!(await evolutionNativeInteractiveEnabled())) {
+      const text = [payload.body, payload.rows.slice(0, 10).map((row, i) => `${i + 1}. ${row.title}${row.description ? ` — ${row.description}` : ""}`).join("\n"), "Reply with an option number or name."].join("\n\n");
+      return { ...await sendEvolution(to, "sendText", { text }), deliveryFormat: "text_options", renderedText: text };
+    }
     return sendEvolution(to, "sendList", {
       title: (payload.sectionTitle || "Options").slice(0, 60), description: payload.body.slice(0, 1024),
       buttonText: payload.buttonText.slice(0, 20),
+      footerText: "Select an option",
       sections: [{ title: (payload.sectionTitle || "Options").slice(0, 24), rows: payload.rows.slice(0, 10).map(row => ({
         rowId: String(row.id).slice(0, 200), title: row.title.slice(0, 24), description: (row.description || "").slice(0, 72),
       })) }],
@@ -415,7 +414,7 @@ export async function sendWhatsAppInteractiveList(
 
       if (!response.ok) {
         const errorMessage = data.error?.message || `WhatsApp interactive send failed with status ${response.status}`;
-        const error = new Error(errorMessage);
+        const error = new WhatsAppRejectedError(errorMessage);
         if (attempt < 3 && isRetriableStatus(response.status)) {
           lastError = error;
           await sleep(attempt * 400);
@@ -432,6 +431,7 @@ export async function sendWhatsAppInteractiveList(
         raw: data,
       };
     } catch (error) {
+      if (error instanceof WhatsAppRejectedError || error instanceof WhatsAppSendUncertainError) throw error;
       lastError = error instanceof Error ? error : new Error("Unknown WhatsApp interactive send failure");
       if (attempt < 3) {
         await sleep(attempt * 400);
@@ -449,7 +449,7 @@ export async function sendWhatsAppReplyButtons(
   phoneNumberId?: string,
   customAccessToken?: string,
 ): Promise<WhatsAppSendResult> {
-  if (process.env.MOCK_WHATSAPP === "true") {
+  if (process.env.MOCK_WHATSAPP === "true" && process.env.NODE_ENV !== "production") {
     console.log(`[MOCK WHATSAPP] Sending reply buttons to ${to}:`, payload);
     return {
       messageId: `wamid.mockBtn${Date.now()}${Math.random().toString(36).slice(2, 7)}`,
@@ -459,6 +459,10 @@ export async function sendWhatsAppReplyButtons(
 
   if (getWhatsAppTransport()?.provider === "evolution") {
     if (!payload.buttons?.length || payload.buttons.length > 3) throw new Error("Reply buttons require 1-3 buttons.");
+    if (!(await evolutionNativeInteractiveEnabled())) {
+      const text = [payload.body, payload.buttons.map((button, i) => `${i + 1}. ${button.title}`).join("\n"), "Reply with an option number or name."].join("\n\n");
+      return { ...await sendEvolution(to, "sendText", { text }), deliveryFormat: "text_options", renderedText: text };
+    }
     return sendEvolution(to, "sendButtons", {
       title: (payload.headerText || "Choose an option").slice(0, 60), description: payload.body.slice(0, 1024),
       footer: (payload.footerText || "").slice(0, 60),
@@ -517,7 +521,7 @@ export async function sendWhatsAppReplyButtons(
 
       if (!response.ok) {
         const errorMessage = data.error?.message || `WhatsApp button send failed with status ${response.status}`;
-        const error = new Error(errorMessage);
+        const error = new WhatsAppRejectedError(errorMessage);
         if (attempt < 3 && isRetriableStatus(response.status)) {
           lastError = error;
           await sleep(attempt * 400);
@@ -531,6 +535,7 @@ export async function sendWhatsAppReplyButtons(
         raw: data,
       };
     } catch (error) {
+      if (error instanceof WhatsAppRejectedError || error instanceof WhatsAppSendUncertainError) throw error;
       lastError = error instanceof Error ? error : new Error("Unknown WhatsApp button send failure");
       if (attempt < 3) {
         await sleep(attempt * 400);

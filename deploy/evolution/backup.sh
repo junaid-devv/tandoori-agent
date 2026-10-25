@@ -15,7 +15,9 @@ compose=(sudo -n docker compose -f docker-compose.yml -f docker-compose.https.ym
 "${compose[@]}" exec -T redis redis-cli --rdb /tmp/evolution-backup.rdb >/dev/null
 "${compose[@]}" cp redis:/tmp/evolution-backup.rdb "$prefix-redis.rdb" >/dev/null
 "${compose[@]}" exec -T evolution tar -C /evolution/instances -czf - . > "$prefix-instances.tar.gz"
-tar -czf "$prefix-config.tar.gz" .env docker-compose.yml docker-compose.https.yml Caddyfile
+config_files=(.env docker-compose.yml docker-compose.https.yml Caddyfile redact-logs.cjs Dockerfile patch-interactive.cjs check-interactive.cjs .dockerignore)
+if [[ -f webhook-worker.json ]]; then config_files+=(webhook-worker.json retry-webhooks.py); fi
+tar -czf "$prefix-config.tar.gz" "${config_files[@]}"
 
 # Restrict retention cleanup to this script's files in its fixed backup directory.
 find "$backup_dir" -maxdepth 1 -type f -name 'evolution-*' -mtime +7 -delete

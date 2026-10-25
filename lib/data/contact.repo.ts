@@ -21,11 +21,10 @@ export interface ContactRow {
 }
 
 export const contactRepo = {
-  async getByPhone(phone: string, restaurantId?: string): Promise<ContactRow | null> {
+  async getByPhone(phone: string, restaurantId: string): Promise<ContactRow | null> {
     let query = supabaseAdmin.from("contacts").select("*").eq("phone", phone);
-    if (restaurantId) {
-      query = query.eq("restaurant_id", restaurantId);
-    }
+    if (!restaurantId) throw new Error("Contact lookup requires a tenant");
+    query = query.eq("restaurant_id", restaurantId);
     const { data, error } = await query.order("created_at", { ascending: false }).limit(1).maybeSingle();
     if (error) throw error;
     return (data as ContactRow) ?? null;

@@ -6,7 +6,8 @@ x-logging: &logging
 
 services:
   evolution:
-    image: evoapicloud/evolution-api:v2.3.7
+    image: orderiq/evolution-api:2.3.7-interactive.1
+    build: .
     restart: unless-stopped
     logging: *logging
     env_file: .env
@@ -20,6 +21,7 @@ services:
       DATABASE_SAVE_DATA_INSTANCE: "true"
       TELEMETRY_ENABLED: "false"
       LOG_LEVEL: ERROR,WARN,LOG
+      NODE_OPTIONS: --require /evolution/redact-logs.cjs
       CACHE_REDIS_ENABLED: "true"
       CACHE_REDIS_URI: redis://redis:6379/0
       CACHE_REDIS_PREFIX_KEY: orderiq_evolution
@@ -31,6 +33,7 @@ services:
       - "127.0.0.1:8080:8080"
     volumes:
       - instances:/evolution/instances
+      - ./redact-logs.cjs:/evolution/redact-logs.cjs:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -1,0 +1,4 @@
+*
+!Dockerfile
+!patch-interactive.cjs
+!check-interactive.cjs

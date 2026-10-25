@@ -20,13 +20,6 @@ export interface MessageRow {
   created_at: string;
 }
 
-const DELIVERY_RANK: Record<MessageDeliveryStatus, number> = {
-  pending: 0,
-  sent: 1,
-  delivered: 2,
-  read: 3,
-  failed: 4,
-};
 
 export const messageRepo = {
   async insert(input: {
@@ -95,21 +88,12 @@ export const messageRepo = {
   async applyDeliveryStatus(
     whatsappMsgId: string,
     nextStatus: MessageDeliveryStatus,
-    opts: { error?: string | null; atIso?: string | null } = {},
+    opts: { restaurantId: string; error?: string | null; atIso?: string | null },
   ): Promise<boolean> {
-    const existing = await this.getByWhatsappId(whatsappMsgId);
-    if (!existing) return false;
-    const current = existing.delivery_status;
-    if (current && DELIVERY_RANK[nextStatus] < DELIVERY_RANK[current]) return true;
-
-    const { error } = await supabaseAdmin
-      .from("messages")
-      .update({
-        delivery_status: nextStatus,
-        delivery_error: nextStatus === "failed" ? opts.error ?? null : null,
-        delivery_status_updated_at: opts.atIso ?? new Date().toISOString(),
-      })
-      .eq("id", existing.id);
+    const { error } = await supabaseAdmin.rpc("record_whatsapp_delivery_status", {
+      p_restaurant_id: opts.restaurantId, p_whatsapp_id: whatsappMsgId,
+      p_status: nextStatus, p_error: opts.error ?? null, p_at: opts.atIso ?? new Date().toISOString(),
+    });
     if (error) throw error;
     return true;
   },

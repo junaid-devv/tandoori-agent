@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/branch-request";
-import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
+import { ApiRequestError, apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { invalidateRestaurantCaches } from "@/lib/restaurant-resolver";
 import { whatsappRestaurantId } from "@/lib/whatsapp-request";
@@ -8,280 +8,70 @@ import { invalidateCache } from "@/lib/cache";
 
 export const dynamic = "force-dynamic";
 
-interface ConnectWhatsAppBody {
-  code?: string;
-  wabaId?: string;
-  phoneNumberId?: string;
-}
+type ConnectBody = { code?: string; pin?: string; wabaId?: string; phoneNumberId?: string; waba_id?: string; phone_number_id?: string };
+type Phone = { id: string; display_phone_number?: string; verified_name?: string };
 
 export async function POST(req: NextRequest) {
   const auth = await requireApiSession();
-  if (auth.response || !auth.session) {
-    return auth.response;
-  }
-
-  // 1) Role-Based Access Control: Only admins and super admins can configure WhatsApp
-  if (auth.session.role === "branch_staff") {
-    return NextResponse.json(
-      { error: "Forbidden: Only restaurant administrators or platform owners can configure WhatsApp integrations." },
-      { status: 403 }
-    );
-  }
-
+  if (auth.response) return auth.response;
   try {
-    const body = await readLimitedJsonBody<ConnectWhatsAppBody>(req, 32 * 1024);
-    let { code, wabaId, phoneNumberId } = body;
-
-    // Tenant Isolation: regular admins are strictly restricted to their own restaurantId
-    let targetRestaurantId = whatsappRestaurantId(req, auth.session, true);
-    if (auth.session.role === "super_admin") {
-      const queryRestaurantId = new URL(req.url).searchParams.get("restaurant_id");
-      if (queryRestaurantId) {
-        targetRestaurantId = queryRestaurantId;
-      }
+    const restaurantId = whatsappRestaurantId(req, auth.session, true);
+    const body = await readLimitedJsonBody<ConnectBody>(req, 32 * 1024);
+    const wabaId = body.wabaId || body.waba_id;
+    const phoneNumberId = body.phoneNumberId || body.phone_number_id;
+    if (typeof body.code !== "string" || !body.code.trim() || !/^\d+$/.test(wabaId || "") || !/^\d+$/.test(phoneNumberId || "")) {
+      throw new ApiRequestError("Complete Facebook signup and select your WhatsApp business account and phone number", 400);
     }
-
-    if (!targetRestaurantId) {
-      const { data: firstRest } = await supabaseAdmin
-        .from("restaurant_profiles")
-        .select("id")
-        .limit(1)
-        .maybeSingle();
-      targetRestaurantId = firstRest?.id;
-    }
-
-    if (!targetRestaurantId) {
-      return NextResponse.json(
-        { error: "No restaurant context found. Please specify a restaurant." },
-        { status: 400 },
-      );
-    }
-
     const appId = process.env.NEXT_PUBLIC_META_APP_ID || process.env.META_APP_ID;
     const appSecret = process.env.META_APP_SECRET || process.env.WHATSAPP_APP_SECRET;
-
-    let accessToken = process.env.WHATSAPP_ACCESS_TOKEN || "";
-    let exchangedToken: string | null = null;
-
-    // 1) If an OAuth authorization code was provided by Embedded Signup, exchange it for an Access Token
-    if (code) {
-      if (!appId || !appSecret) {
-        console.warn("[whatsapp-connect] Missing META_APP_ID or META_APP_SECRET for code exchange. Falling back to configured access token.");
-      } else {
-        const tokenUrl = new URL("https://graph.facebook.com/v22.0/oauth/access_token");
-        tokenUrl.searchParams.set("client_id", appId);
-        tokenUrl.searchParams.set("client_secret", appSecret);
-        tokenUrl.searchParams.set("code", code);
-
-        const tokenRes = await fetch(tokenUrl.toString(), { method: "GET" });
-        const tokenData = await tokenRes.json();
-
-        if (tokenRes.ok && tokenData.access_token) {
-          exchangedToken = tokenData.access_token;
-          accessToken = tokenData.access_token;
-        } else {
-          console.error("[whatsapp-connect] Token exchange failed:", tokenData);
-          // If code exchange failed but we have a system token, continue with system token
-          if (!accessToken) {
-            throw new Error(tokenData.error?.message || "Failed to exchange authorization code for access token.");
-          }
-        }
-      }
+    if (!appId || !appSecret || appSecret.includes(",")) throw new ApiRequestError("The platform administrator must configure Meta Embedded Signup", 503);
+    const tokenUrl = new URL("https://graph.facebook.com/v22.0/oauth/access_token");
+    tokenUrl.searchParams.set("client_id", appId);
+    tokenUrl.searchParams.set("client_secret", appSecret);
+    tokenUrl.searchParams.set("code", body.code);
+    const tokenRes = await fetch(tokenUrl, { cache: "no-store", signal: AbortSignal.timeout(12_000) });
+    const tokenData = await tokenRes.json();
+    // An invalid code must never fall back to a shared platform token.
+    if (!tokenRes.ok || typeof tokenData.access_token !== "string") throw new ApiRequestError("Facebook authorization failed. Start Connect with Facebook again", 403);
+    const token: string = tokenData.access_token;
+    const graph = async (path: string, method = "GET", payload?: unknown) => {
+      const response = await fetch("https://graph.facebook.com/v22.0/" + path, {
+        method, headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        ...(payload ? { body: JSON.stringify(payload) } : {}), cache: "no-store", signal: AbortSignal.timeout(12_000),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new ApiRequestError("Meta could not verify or subscribe this account. Check your account permissions and complete signup again", 403);
+      return data;
+    };
+    // Validate membership, not just independent access to any two Meta assets.
+    const phones = await graph(encodeURIComponent(wabaId!) + "/phone_numbers?fields=id,display_phone_number,verified_name&limit=100");
+    const phone = (phones.data as Phone[] | undefined)?.find(item => item.id === phoneNumberId);
+    if (!phone) throw new ApiRequestError("The selected phone does not belong to this WhatsApp Business Account", 403);
+    const { data: existing, error } = await supabaseAdmin.from("whatsapp_configs").select("restaurant_id").eq("phone_number_id", phoneNumberId!).maybeSingle();
+    if (error) throw error;
+    if (existing && existing.restaurant_id !== restaurantId) throw new ApiRequestError("This phone is already assigned to another restaurant", 409);
+    const subscription = await graph(encodeURIComponent(wabaId!) + "/subscribed_apps", "POST");
+    if (subscription.success !== true) throw new ApiRequestError("Meta webhook subscription was not confirmed. Please reconnect", 409);
+    const registration = await graph(encodeURIComponent(phoneNumberId!) + "?fields=platform_type,is_on_biz_app");
+    if (registration.platform_type !== "CLOUD_API") {
+      if (registration.is_on_biz_app === true) throw new ApiRequestError("Complete WhatsApp Business App coexistence onboarding in Facebook before connecting", 409);
+      if (typeof body.pin !== "string" || !/^\d{6}$/.test(body.pin)) throw new ApiRequestError("This new number needs a 6-digit two-step verification PIN. Enter it below and repeat Facebook signup", 400);
+      const registered = await graph(encodeURIComponent(phoneNumberId!) + "/register", "POST", { messaging_product: "whatsapp", pin: body.pin });
+      if (registered.success !== true && registered.success !== "true") throw new ApiRequestError("Meta did not confirm phone registration. Please reconnect", 409);
     }
-
-    if (!accessToken) {
-      throw new Error("No access token available. Please provide an authorization code or configure WHATSAPP_ACCESS_TOKEN.");
-    }
-
-    // 2) If wabaId is missing, auto-discover it via debug_token inspect using granular_scopes
-    if (!wabaId && appId && appSecret) {
-      try {
-        const tokenToInspect = exchangedToken || accessToken;
-        const debugUrl = new URL("https://graph.facebook.com/v22.0/debug_token");
-        debugUrl.searchParams.set("input_token", tokenToInspect);
-        debugUrl.searchParams.set("access_token", `${appId}|${appSecret}`);
-
-        const debugRes = await fetch(debugUrl.toString());
-        if (debugRes.ok) {
-          const debugData = await debugRes.json();
-          const granularScopes = (debugData?.data?.granular_scopes as Array<{ scope: string; target_ids?: string[] }>) || [];
-          const wabaScope = granularScopes.find(
-            (s) => s.scope === "whatsapp_business_management" || s.scope === "whatsapp_business_messaging"
-          );
-          if (wabaScope?.target_ids?.length) {
-            wabaId = wabaScope.target_ids[0];
-            console.log("[whatsapp-connect] Auto-discovered wabaId from debug_token:", wabaId);
-          }
-        }
-      } catch (debugErr) {
-        console.warn("[whatsapp-connect] Could not inspect debug_token:", debugErr);
-      }
-    }
-
-    // 3) Fallback discovery for wabaId via /me/whatsapp_business_accounts
-    if (!wabaId) {
-      try {
-        const meRes = await fetch(
-          `https://graph.facebook.com/v22.0/me?fields=whatsapp_business_accounts&access_token=${encodeURIComponent(accessToken)}`
-        );
-        if (meRes.ok) {
-          const meData = await meRes.json();
-          const accounts = meData?.whatsapp_business_accounts?.data;
-          if (Array.isArray(accounts) && accounts.length > 0) {
-            wabaId = accounts[0].id;
-            console.log("[whatsapp-connect] Auto-discovered wabaId from /me:", wabaId);
-          }
-        }
-      } catch (meErr) {
-        console.warn("[whatsapp-connect] Could not inspect /me/whatsapp_business_accounts:", meErr);
-      }
-    }
-
-    let verifiedName: string | null = null;
-    let displayPhoneNumber: string | null = null;
-
-    // 4) If phoneNumberId is missing and we have wabaId, auto-discover phone number via /wabaId/phone_numbers
-    if (wabaId && !phoneNumberId) {
-      try {
-        const phoneListRes = await fetch(
-          `https://graph.facebook.com/v22.0/${encodeURIComponent(wabaId)}/phone_numbers?fields=id,display_phone_number,verified_name,quality_rating`,
-          { headers: { Authorization: `Bearer ${accessToken}` } }
-        );
-        if (phoneListRes.ok) {
-          const phoneListData = await phoneListRes.json();
-          const phoneItem = phoneListData?.data?.[0];
-          if (phoneItem?.id) {
-            phoneNumberId = phoneItem.id;
-            displayPhoneNumber = phoneItem.display_phone_number || null;
-            verifiedName = phoneItem.verified_name || null;
-            console.log("[whatsapp-connect] Auto-discovered phoneNumberId:", phoneNumberId, "displayPhone:", displayPhoneNumber);
-          }
-        }
-      } catch (phoneListErr) {
-        console.warn("[whatsapp-connect] Could not fetch phone numbers for WABA:", phoneListErr);
-      }
-    }
-
-    // Validate that we resolved both wabaId and phoneNumberId
-    if (!wabaId || !phoneNumberId) {
-      return NextResponse.json(
-        {
-          error:
-            "Could not automatically detect your WhatsApp Business Account or Phone Number. Please ensure you selected a phone number during signup, or enter the credentials manually below.",
-        },
-        { status: 400 }
-      );
-    }
-
-    // 5) Strict Meta Authorization: Verify that the access token has legitimate permissions to manage this Phone Number
-    const phoneRes = await fetch(
-      `https://graph.facebook.com/v22.0/${encodeURIComponent(phoneNumberId)}?fields=id,display_phone_number,verified_name,quality_rating`,
-      {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      }
-    );
-
-    if (!phoneRes.ok) {
-      const errData = await phoneRes.json().catch(() => ({}));
-      return NextResponse.json(
-        {
-          error:
-            errData?.error?.message ||
-            "Security verification failed: Your Meta account does not have permission to manage this WhatsApp Phone Number.",
-        },
-        { status: 403 }
-      );
-    }
-
-    const phoneData = await phoneRes.json();
-    verifiedName = phoneData.verified_name || verifiedName || null;
-    displayPhoneNumber = phoneData.display_phone_number || displayPhoneNumber || null;
-
-    // 6) Automatically subscribe our webhook to the business's WABA
-    const subscribeRes = await fetch(`https://graph.facebook.com/v22.0/${encodeURIComponent(wabaId)}/subscribed_apps`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
+    const saved = await supabaseAdmin.rpc("connect_meta_whatsapp", {
+      p_restaurant_id: restaurantId, p_phone_id: phoneNumberId, p_waba_id: wabaId,
+      p_token: token, p_phone: phone.display_phone_number || null, p_name: phone.verified_name || null,
     });
-
-    const subscribeData = await subscribeRes.json();
-    if (!subscribeRes.ok || !subscribeData.success) {
-      console.warn("[whatsapp-connect] Webhook auto-subscription warning:", subscribeData);
-    }
-
-    // Exchange for long-lived token if possible
-    let finalAccessToken = accessToken;
-    if (appId && appSecret && accessToken && exchangedToken) {
-      try {
-        const exchangeUrl = new URL("https://graph.facebook.com/v22.0/oauth/access_token");
-        exchangeUrl.searchParams.set("grant_type", "fb_exchange_token");
-        exchangeUrl.searchParams.set("client_id", appId);
-        exchangeUrl.searchParams.set("client_secret", appSecret);
-        exchangeUrl.searchParams.set("fb_exchange_token", accessToken);
-
-        const exchangeRes = await fetch(exchangeUrl.toString());
-        if (exchangeRes.ok) {
-          const exchangeData = await exchangeRes.json();
-          if (exchangeData.access_token) {
-            finalAccessToken = exchangeData.access_token;
-          }
-        }
-      } catch (err) {
-        console.warn("[whatsapp-connect] Could not exchange for long-lived token:", err);
-      }
-    }
-
-    // Never reassign another tenant's registered phone during an embedded-signup retry.
-    const { data: existingConfig, error: existingError } = await supabaseAdmin.from("whatsapp_configs")
-      .select("restaurant_id").eq("phone_number_id", phoneNumberId).maybeSingle();
-    if (existingError) throw existingError;
-    if (existingConfig && existingConfig.restaurant_id !== targetRestaurantId) {
-      return NextResponse.json({ error: "This WhatsApp phone is already assigned to another restaurant" }, { status: 409 });
-    }
-    // 7) Upsert into whatsapp_configs mapping phone_number_id to restaurant with access_token
-    const { error: saveError } = await supabaseAdmin
-      .from("whatsapp_configs")
-      .upsert(
-        {
-          phone_number_id: phoneNumberId,
-          restaurant_id: targetRestaurantId,
-          waba_id: wabaId,
-          display_phone_number: displayPhoneNumber,
-          verified_name: verifiedName,
-          access_token: finalAccessToken,
-          is_active: true,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "phone_number_id" },
-      );
-    if (saveError) throw saveError;
-    const { error: providerError } = await supabaseAdmin.from("restaurant_profiles")
-      .update({ whatsapp_provider: "meta", updated_at: new Date().toISOString() }).eq("id", targetRestaurantId);
-    if (providerError) throw providerError;
-    invalidateCache(`restaurant_profile:${targetRestaurantId}`);
-
-    // Immediately invalidate in-memory resolver cache so the next incoming
-    // webhook from this phone_number_id is recognised without waiting for TTL.
+    if (saved.error?.code === "23505") throw new ApiRequestError("This phone is already assigned to another restaurant", 409);
+    if (saved.error) throw saved.error;
+    invalidateCache("restaurant_profile:" + restaurantId);
     invalidateRestaurantCaches();
-
-    return NextResponse.json({
-      success: true,
-      message: "WhatsApp Business Account connected and subscribed successfully! 🎉",
-      data: {
-        wabaId,
-        phoneNumberId,
-        displayPhoneNumber,
-        verifiedName,
-        webhookSubscribed: Boolean(subscribeData?.success),
-        coexistenceEnabled: true,
-      },
-    });
+    return NextResponse.json({ success: true, message: "WhatsApp Business Account connected and webhook subscribed", data: {
+      wabaId, phoneNumberId, displayPhoneNumber: phone.display_phone_number || null,
+      verifiedName: phone.verified_name || null, webhookSubscribed: true, coexistenceEnabled: registration.is_on_biz_app === true,
+    } });
   } catch (error) {
-    return apiErrorResponse(error, {
-      fallback: "Failed to connect WhatsApp account.",
-      context: "POST /api/dashboard/whatsapp/connect",
-    });
+    return apiErrorResponse(error, { fallback: "Failed to connect WhatsApp account", context: "POST /api/dashboard/whatsapp/connect" });
   }
 }

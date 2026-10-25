@@ -1,3 +1,4 @@
+import { requireOwnedAdminRecord } from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { deleteBranch, updateBranch } from "@/lib/admin";
@@ -23,6 +24,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
+    await requireOwnedAdminRecord(auth.session, "branches", id);
     const body = await readLimitedJsonBody<BranchBody>(req, BRANCH_BODY_LIMIT_BYTES);
     const branch = await updateBranch(id, {
       name: body.name ?? "",
@@ -50,6 +52,7 @@ export async function DELETE(_: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
+    await requireOwnedAdminRecord(auth.session, "branches", id);
     await deleteBranch(id);
     return NextResponse.json({ success: true });
   } catch (error) {

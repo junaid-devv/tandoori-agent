@@ -1,3 +1,4 @@
+import { scopeBranchQuery, scopeRestaurantQuery } from "@/lib/tenant-scope";
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
@@ -43,9 +44,7 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(1000);
 
-    if (auth.branchId) {
-      ordersQuery = ordersQuery.eq("branch_id", auth.branchId);
-    }
+    ordersQuery = scopeBranchQuery(ordersQuery, auth);
 
     const { data: orders, error: ordersError } = await ordersQuery;
     if (ordersError) throw ordersError;
@@ -55,17 +54,17 @@ export async function GET(req: NextRequest) {
       .select("id, mode, has_unread, created_at")
       .gte("created_at", since)
       .limit(1000);
-    if (auth.branchId) {
-      conversationsQuery = conversationsQuery.eq("branch_id", auth.branchId);
-    }
+    conversationsQuery = scopeBranchQuery(conversationsQuery, auth);
     const { data: conversations, error: conversationsError } = await conversationsQuery;
     if (conversationsError) throw conversationsError;
 
-    const contactsQuery = supabaseAdmin
+    let contactsQuery = supabaseAdmin
       .from("contacts")
       .select("id, total_orders, last_order_at")
       .gte("last_order_at", since)
       .limit(1000);
+    contactsQuery = scopeRestaurantQuery(contactsQuery, auth.session);
+    contactsQuery = scopeBranchQuery(contactsQuery, auth, "active_branch_id");
     const { data: contacts, error: contactsError } = await contactsQuery;
     if (contactsError) throw contactsError;
 

@@ -127,6 +127,7 @@ interface Message {
   created_at: string;
   delivery_status?: string | null;
   delivery_error?: string | null;
+  delivery_warning?: string | null;
   delivery_status_updated_at?: string | null;
   replyButtons?: Array<{ id: string; title: string }>;
   listSelector?: {
@@ -354,6 +355,7 @@ export default function ConversationsPage() {
   const [demoState, setDemoState] = useState<DemoControllerState | null>(null);
 
   useEffect(() => {
+    if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_ENABLE_DEMO_MODE !== "true") return;
     if (typeof window !== "undefined") {
       if (!window.__DEMO_CONTROLLER__) {
         window.__DEMO_CONTROLLER__ = new DemoController();
@@ -1414,6 +1416,9 @@ export default function ConversationsPage() {
                                )}
 
                               {/* Delivery Status Indicator */}
+                              {!isIncoming && (message.delivery_error || message.delivery_warning) && (
+                                <p className="mt-2 text-xs text-amber-300">{message.delivery_error || message.delivery_warning}</p>
+                              )}
                               {!isIncoming && message.delivery_status && (
                                 <div className="mt-1.5 flex items-center justify-end gap-1 text-[10px] opacity-75">
                                   {message.delivery_status === "read" ? (
@@ -1434,7 +1439,7 @@ export default function ConversationsPage() {
                   })}
 
                   {/* Typing Indicator */}
-                  {demoState?.isTyping && (
+                  {isDemoContact && demoState?.isTyping && (
                     <div data-testid="typing-indicator" className="flex justify-start my-2">
                       <div className="flex items-center gap-2 rounded-2xl rounded-tl-xs border border-slate-200 bg-white px-4 py-3 text-slate-500 shadow-sm">
                         <Bot size={14} className="text-emerald-500 animate-pulse" />

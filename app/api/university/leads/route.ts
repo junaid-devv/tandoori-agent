@@ -1,3 +1,4 @@
+import { requireUniversityAdmin } from "@/lib/legacy-api-access";
 import { NextRequest, NextResponse } from "next/server";
 import {
   listStudentLeads,
@@ -7,6 +8,8 @@ import {
 } from "@/lib/university/lead-manager";
 
 export async function GET(request: NextRequest) {
+  const denied = await requireUniversityAdmin();
+  if (denied) return denied;
   try {
     const { searchParams } = new URL(request.url);
     const program = searchParams.get("program") || undefined;
@@ -36,6 +39,8 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
+  const denied = await requireUniversityAdmin();
+  if (denied) return denied;
   try {
     const body = await request.json();
 

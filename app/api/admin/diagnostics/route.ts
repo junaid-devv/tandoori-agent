@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-utils";
-import { requireApiSession } from "@/lib/branch-request";
+import { requireSuperAdminSession } from "@/lib/admin-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(req: NextRequest) {
-  const auth = await requireApiSession();
+  const auth = await requireSuperAdminSession();
   if (auth.response || !auth.session) {
     return auth.response ?? NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -19,19 +19,14 @@ export async function GET(req: NextRequest) {
       .select(`
         id,
         conversation_id,
-        turn_seq,
-        channel,
-        user_message,
-        system_response,
+        system_response:assistant_reply,
         stage_before,
         stage_after,
-        detected_intent,
-        confidence_score,
-        model_name,
-        provider,
+        detected_intent:nlu_intent,
+        confidence_score:nlu_confidence,
         latency_ms,
         used_semantic_search,
-        result_status,
+        result_status:processing_result,
         error_message,
         created_at
       `)
@@ -44,10 +39,9 @@ export async function GET(req: NextRequest) {
       .select(`
         id,
         provider,
-        event_type,
         status,
-        retry_count,
-        error_message,
+        retry_count:attempt_count,
+        error_message:last_error,
         created_at,
         processed_at
       `)
@@ -57,8 +51,8 @@ export async function GET(req: NextRequest) {
     // 3. Fetch active rate limit count
     const rateLimitsQuery = supabaseAdmin
       .from("rate_limits")
-      .select("key, count, expires_at", { count: "exact" })
-      .gt("expires_at", new Date().toISOString())
+      .select("scope, request_count, blocked_until", { count: "exact" })
+      .gt("blocked_until", new Date().toISOString())
       .limit(20);
 
     // 4. Fetch WhatsApp configs health

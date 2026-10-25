@@ -1,3 +1,5 @@
+import { scopeBranchQuery } from "@/lib/tenant-scope";
+import type { DashboardSession } from "@/lib/auth";
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
@@ -17,14 +19,13 @@ function getUtcRangeStart(daysAgo = 0): string {
 
 async function countRows(table: "orders" | "conversations", options: {
   branchId: string | null;
+  session: DashboardSession | null;
   statuses?: readonly string[];
   status?: string;
   gteCreatedAt?: string;
 }) {
   let query = supabaseAdmin.from(table).select("id", { count: "exact", head: true });
-  if (options.branchId) {
-    query = query.eq("branch_id", options.branchId);
-  }
+  query = scopeBranchQuery(query, options);
   if (options.statuses && options.statuses.length > 0) {
     query = query.in("status", [...options.statuses]);
   }
@@ -62,14 +63,14 @@ export async function GET(req: NextRequest) {
       deliveredRows,
       recentOrdersRes,
     ] = await Promise.all([
-      countRows("orders", { branchId: auth.branchId, statuses: ACTIVE_STATUSES }),
-      countRows("orders", { branchId: auth.branchId, gteCreatedAt: todayStartIso }),
-      countRows("conversations", { branchId: auth.branchId }),
-      countRows("orders", { branchId: auth.branchId, status: "received" }),
-      countRows("orders", { branchId: auth.branchId, status: "preparing" }),
-      countRows("orders", { branchId: auth.branchId, status: "out_for_delivery" }),
-      countRows("orders", { branchId: auth.branchId, status: "delivered" }),
-      countRows("orders", { branchId: auth.branchId, status: "cancelled" }),
+      countRows("orders", { session: auth.session, branchId: auth.branchId, statuses: ACTIVE_STATUSES }),
+      countRows("orders", { session: auth.session, branchId: auth.branchId, gteCreatedAt: todayStartIso }),
+      countRows("conversations", { session: auth.session, branchId: auth.branchId }),
+      countRows("orders", { session: auth.session, branchId: auth.branchId, status: "received" }),
+      countRows("orders", { session: auth.session, branchId: auth.branchId, status: "preparing" }),
+      countRows("orders", { session: auth.session, branchId: auth.branchId, status: "out_for_delivery" }),
+      countRows("orders", { session: auth.session, branchId: auth.branchId, status: "delivered" }),
+      countRows("orders", { session: auth.session, branchId: auth.branchId, status: "cancelled" }),
       (() => {
         let query = supabaseAdmin
           .from("orders")
@@ -78,9 +79,7 @@ export async function GET(req: NextRequest) {
           .gte("created_at", thirtyDaysStartIso)
           .order("created_at", { ascending: false })
           .limit(500);
-        if (auth.branchId) {
-          query = query.eq("branch_id", auth.branchId);
-        }
+        query = scopeBranchQuery(query, auth);
         return query;
       })(),
       (() => {
@@ -98,9 +97,7 @@ export async function GET(req: NextRequest) {
           `)
           .order("created_at", { ascending: false })
           .limit(8);
-        if (auth.branchId) {
-          query = query.eq("branch_id", auth.branchId);
-        }
+        query = scopeBranchQuery(query, auth);
         return query;
       })(),
     ]);

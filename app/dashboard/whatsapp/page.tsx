@@ -59,6 +59,7 @@ type WaStatusResponse = {
   whatsappEnabled: boolean;
   metaConfig: MetaConfig;
   evolution?: {
+    interactiveMode?: "compatible" | "native";
     online: boolean;
     provider: "evolution" | "meta";
     instanceName: string | null;
@@ -83,7 +84,8 @@ declare global {
 }
 
 export default function WhatsAppPage() {
-  const { profile } = useDashboardContext();
+  const { profile, session } = useDashboardContext();
+  if (session.role === "branch_staff") return <p className="p-6 text-sm text-slate-600">Your restaurant administrator manages WhatsApp connections.</p>;
   // Discard pending QR codes and status state when the selected tenant changes.
   return <WhatsAppIntegration key={profile?.id || "loading"} />;
 }
@@ -101,6 +103,7 @@ function WhatsAppIntegration() {
   // Meta state
   const [testPhone, setTestPhone] = useState("");
   const [isSendingTest, setIsSendingTest] = useState(false);
+  const [metaPin, setMetaPin] = useState("");
   const [copiedWebhook, setCopiedWebhook] = useState(false);
   const sessionInfoRef = useRef<{ phoneNumberId?: string; wabaId?: string }>({});
   const isCompletingRef = useRef(false);
@@ -196,7 +199,7 @@ function WhatsAppIntegration() {
   // Listen for Meta Embedded Signup message events
   useEffect(() => {
     function handleMessage(event: MessageEvent) {
-      if (!event.origin.includes("facebook.com")) return;
+      if (!["https://www.facebook.com", "https://web.facebook.com", "https://business.facebook.com"].includes(event.origin)) return;
       try {
         const raw = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
         if (raw.type === "WA_EMBEDDED_SIGNUP") {
@@ -243,8 +246,8 @@ function WhatsAppIntegration() {
   };
 
   const handleEvolutionAction = async (
-    action: "start" | "stop" | "restart" | "logout" | "pair" | "create_session" | "auto_webhook",
-    extra?: { phoneNumber?: string }
+    action: "start" | "stop" | "restart" | "logout" | "pair" | "create_session" | "auto_webhook" | "interactive_mode",
+    extra?: { phoneNumber?: string; interactiveMode?: "compatible" | "native" }
   ) => {
     setIsActionLoading(true);
     try {
@@ -318,9 +321,10 @@ function WhatsAppIntegration() {
 
     setIsConnecting(true);
     isCompletingRef.current = false;
+    sessionInfoRef.current = {};
 
     window.FB.login(
-      (response) => {
+      async (response) => {
         const code = response.authResponse?.code;
         if (!code) {
           setIsConnecting(false);
@@ -328,8 +332,22 @@ function WhatsAppIntegration() {
           return;
         }
 
+        if (isCompletingRef.current) return;
+        isCompletingRef.current = true;
+        // Meta's login callback and session-info message can arrive in either order.
+        const deadline = Date.now() + 8_000;
+        while ((!sessionInfoRef.current.phoneNumberId || !sessionInfoRef.current.wabaId) && Date.now() < deadline) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (!sessionInfoRef.current.phoneNumberId || !sessionInfoRef.current.wabaId) {
+          setIsConnecting(false);
+          toast.error("Facebook did not return your selected account and phone. Please complete signup again.");
+          return;
+        }
+
         const payload: Record<string, string> = {
           code,
+          ...(metaPin ? { pin: metaPin } : {}),
           restaurant_id: profile?.id || "",
         };
         if (sessionInfoRef.current.phoneNumberId) {
@@ -585,10 +603,17 @@ function WhatsAppIntegration() {
               </div>
 
               {/* Notice */}
+              <div className="mt-4 space-y-1">
+                <label htmlFor="meta-pin" className="text-xs font-semibold text-slate-700">Two-step verification PIN for a new Cloud API number</label>
+                <input id="meta-pin" type="password" inputMode="numeric" maxLength={6} autoComplete="off" value={metaPin}
+                  onChange={event => setMetaPin(event.target.value.replace(/\D/g, ""))}
+                  className="block rounded-lg border border-slate-200 px-3 py-2 text-sm" placeholder="6 digits (new numbers only)" />
+                <p className="text-xs text-slate-500">Choose and save your PIN before connecting a new number. Existing Cloud API and coexistence connections do not need it here.</p>
+              </div>
               <div className="mt-4 flex items-start gap-2.5 rounded-xl bg-blue-50/80 p-3.5 text-xs text-blue-800">
                 <Info className="h-4 w-4 shrink-0 text-blue-600 mt-0.5" />
                 <p>
-                  <strong>Coexistence:</strong> Your staff keep using WhatsApp Business App on mobile, while AI simultaneously handles customer orders on the Cloud API.
+                  <strong>Coexistence:</strong> When enabled through Meta signup, staff can keep using the WhatsApp Business App alongside the Cloud API. Availability depends on your Meta account and signup configuration.
                 </p>
               </div>
 
@@ -754,10 +779,10 @@ function WhatsAppIntegration() {
                     </div>
                     <div>
                       <h2 className="text-lg sm:text-xl font-bold text-slate-950">
-                        Evolution API is Connected & Live!
+                        {data?.activeProvider === "evolution" ? "Evolution is connected and active" : "Evolution is connected"}
                       </h2>
                       <p className="text-xs sm:text-sm text-slate-600 mt-0.5">
-                        Your AI restaurant agent is actively receiving and responding to customer orders via WhatsApp Web.
+                        {data?.activeProvider === "evolution" ? "Your agent can receive and answer customer messages through this connection." : "Activate Evolution above to use this connection for customer messages."}
                       </p>
                     </div>
                   </div>
@@ -783,6 +808,16 @@ function WhatsAppIntegration() {
                   </div>
                 </div>
 
+                <div className="rounded-xl border border-slate-200 bg-white p-4 space-y-2">
+                  <label htmlFor="interactive-mode" className="text-sm font-semibold text-slate-900">Menu and reply format</label>
+                  <select id="interactive-mode" value={data?.evolution?.interactiveMode || "compatible"} disabled={isActionLoading}
+                    onChange={event => handleEvolutionAction("interactive_mode", { interactiveMode: event.target.value as "compatible" | "native" })}
+                    className="block w-full rounded-lg border border-slate-200 p-2 text-sm">
+                    <option value="compatible">Compatible text options (recommended)</option>
+                    <option value="native">Native lists and buttons (experimental)</option>
+                  </select>
+                  <p className="text-xs text-slate-600">Compatible mode sends numbered choices customers can answer by number or name. Native Evolution buttons may be invisible on some WhatsApp versions; test them before using with customers.</p>
+                </div>
                 {/* Account Details */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs">

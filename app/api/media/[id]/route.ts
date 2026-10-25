@@ -3,7 +3,7 @@ import { requireApiSession } from "@/lib/branch-request";
 import { getWhatsAppMediaUrl, downloadWhatsAppMedia } from "@/lib/whatsapp";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { canAccessConversation } from "@/lib/record-access";
-import { withConversationWhatsApp, getWhatsAppTransport } from "@/lib/whatsapp-context";
+import { withConversationWhatsApp, getWhatsAppTransport, type WhatsAppTransport } from "@/lib/whatsapp-context";
 import { evolutionRequest } from "@/lib/evolution-client";
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         return Buffer.from(media.base64.replace(/^data:[^,]+,/, ""), "base64");
       }
       return downloadWhatsAppMedia(await getWhatsAppMediaUrl(id));
-    });
+    }, { origin: message.metadata.whatsappTransport as WhatsAppTransport | undefined });
     await supabaseAdmin.storage.from("voice-notes").upload(storagePath, audio, { contentType: "audio/ogg", upsert: true });
     return new Response(audio, { headers });
   } catch (error) {

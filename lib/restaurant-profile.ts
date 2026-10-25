@@ -1,3 +1,4 @@
+import { verifyProviderReady } from "./whatsapp-connections";
 import "server-only";
 
 import { ApiRequestError } from "./api-utils";
@@ -196,6 +197,12 @@ export async function updateRestaurantProfile(restaurantId: string, input: Parti
   const cacheKey = `restaurant_profile:${restaurantId}`;
   const existing = await supabaseAdmin.from("restaurant_profiles").select("*").eq("id", restaurantId).single();
   if (existing.error || !existing.data) throw existing.error || new Error("Restaurant profile not found");
+  if (validated.whatsapp_provider !== undefined && validated.whatsapp_provider !== existing.data.whatsapp_provider) {
+    await verifyProviderReady(restaurantId, String(validated.whatsapp_provider));
+    const { error } = await supabaseAdmin.rpc("switch_whatsapp_provider", { p_restaurant_id: restaurantId, p_provider: validated.whatsapp_provider });
+    if (error) throw error;
+  }
+  delete validated.whatsapp_provider;
   // The shared tenant schema stores name/ai_personality; the UI uses older aliases.
   // Retain compatibility with older databases without sending nonexistent columns.
   const update = { ...validated };

@@ -1,12 +1,14 @@
 import { withConversationWhatsApp } from "./whatsapp-context";
 import { supabaseAdmin } from "./supabase-admin";
 import {
+  WhatsAppSendUncertainError,
   sendWhatsAppImage,
   sendWhatsAppInteractiveList,
   sendWhatsAppMessage,
   sendWhatsAppReplyButtons,
   type WhatsAppInteractiveListPayload,
   type WhatsAppReplyButtonPayload,
+  type WhatsAppSendResult,
 } from "./whatsapp";
 
 export type MessageSenderKind = "user" | "ai" | "human" | "system";
@@ -46,6 +48,16 @@ type OutboundReplyButtonMessageParams = OutboundMessageParams & {
 
 function toErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown outbound message error";
+}
+
+async function persistAcceptedOutbound(messageId: string, result: WhatsAppSendResult) {
+  const { error } = await supabaseAdmin.rpc("accept_outbound_message", {
+    p_message_id: messageId,
+    p_whatsapp_id: result.messageId,
+    p_metadata: result.deliveryFormat ? { deliveryFormat: result.deliveryFormat } : null,
+    p_content: result.renderedText || null,
+  });
+  if (error) throw new OutboundMessageError("Message accepted but delivery record could not be saved", true, messageId);
 }
 
 export async function persistSystemMessage(conversationId: string, content: string) {
@@ -105,7 +117,7 @@ export async function sendAndPersistOutboundMessage({
     } catch (error) {
       if (sentAtLeastOneChunk && firstResult) {
         console.error("[messages] Failed to send later WhatsApp text chunk:", error);
-        return firstResult;
+        throw new OutboundMessageError("Only part of this reply was sent: " + toErrorMessage(error), true, firstResult.id);
       }
       throw error;
     }
@@ -144,19 +156,7 @@ async function sendAndPersistSingleOutboundMessage({
 
   try {
     const result = await withConversationWhatsApp(conversationId, () => sendWhatsAppMessage(phone, content, phoneNumberId));
-    const { error: updateError } = await supabaseAdmin
-      .from("messages")
-      .update({
-        whatsapp_msg_id: result.messageId,
-        delivery_status: "sent",
-        delivery_error: null,
-        delivery_status_updated_at: new Date().toISOString(),
-      })
-      .eq("id", inserted.id);
-
-    if (updateError) {
-      throw new OutboundMessageError(updateError.message, true, inserted.id);
-    }
+    await persistAcceptedOutbound(inserted.id, result);
 
     return {
       id: inserted.id,
@@ -165,11 +165,11 @@ async function sendAndPersistSingleOutboundMessage({
   } catch (error) {
     const message = toErrorMessage(error);
 
-    await supabaseAdmin
+    if (!(error instanceof OutboundMessageError && error.messageSent)) await supabaseAdmin
       .from("messages")
       .update({
-        delivery_status: error instanceof OutboundMessageError && error.messageSent ? "sent" : "failed",
-        delivery_error: error instanceof OutboundMessageError && error.messageSent ? message : message,
+        delivery_status: error instanceof WhatsAppSendUncertainError ? "pending" : "failed",
+        delivery_error: message,
         delivery_status_updated_at: new Date().toISOString(),
       })
       .eq("id", inserted.id);
@@ -178,7 +178,7 @@ async function sendAndPersistSingleOutboundMessage({
       throw error;
     }
 
-    throw new OutboundMessageError(message, false, inserted.id);
+    throw new OutboundMessageError(message, error instanceof WhatsAppSendUncertainError, inserted.id);
   }
 }
 
@@ -249,19 +249,7 @@ export async function sendAndPersistOutboundInteractiveMessage({
 
   try {
     const result = await withConversationWhatsApp(conversationId, () => sendWhatsAppInteractiveList(phone, interactive, phoneNumberId));
-    const { error: updateError } = await supabaseAdmin
-      .from("messages")
-      .update({
-        whatsapp_msg_id: result.messageId,
-        delivery_status: "sent",
-        delivery_error: null,
-        delivery_status_updated_at: new Date().toISOString(),
-      })
-      .eq("id", inserted.id);
-
-    if (updateError) {
-      throw new OutboundMessageError(updateError.message, true, inserted.id);
-    }
+    await persistAcceptedOutbound(inserted.id, result);
 
     return {
       id: inserted.id,
@@ -270,10 +258,10 @@ export async function sendAndPersistOutboundInteractiveMessage({
   } catch (error) {
     const message = toErrorMessage(error);
 
-    await supabaseAdmin
+    if (!(error instanceof OutboundMessageError && error.messageSent)) await supabaseAdmin
       .from("messages")
       .update({
-        delivery_status: error instanceof OutboundMessageError && error.messageSent ? "sent" : "failed",
+        delivery_status: error instanceof WhatsAppSendUncertainError ? "pending" : "failed",
         delivery_error: message,
         delivery_status_updated_at: new Date().toISOString(),
       })
@@ -283,7 +271,7 @@ export async function sendAndPersistOutboundInteractiveMessage({
       throw error;
     }
 
-    throw new OutboundMessageError(message, false, inserted.id);
+    throw new OutboundMessageError(message, error instanceof WhatsAppSendUncertainError, inserted.id);
   }
 }
 
@@ -317,19 +305,7 @@ export async function sendAndPersistOutboundReplyButtonMessage({
 
   try {
     const result = await withConversationWhatsApp(conversationId, () => sendWhatsAppReplyButtons(phone, replyButtons, phoneNumberId));
-    const { error: updateError } = await supabaseAdmin
-      .from("messages")
-      .update({
-        whatsapp_msg_id: result.messageId,
-        delivery_status: "sent",
-        delivery_error: null,
-        delivery_status_updated_at: new Date().toISOString(),
-      })
-      .eq("id", inserted.id);
-
-    if (updateError) {
-      throw new OutboundMessageError(updateError.message, true, inserted.id);
-    }
+    await persistAcceptedOutbound(inserted.id, result);
 
     return {
       id: inserted.id,
@@ -338,10 +314,10 @@ export async function sendAndPersistOutboundReplyButtonMessage({
   } catch (error) {
     const message = toErrorMessage(error);
 
-    await supabaseAdmin
+    if (!(error instanceof OutboundMessageError && error.messageSent)) await supabaseAdmin
       .from("messages")
       .update({
-        delivery_status: error instanceof OutboundMessageError && error.messageSent ? "sent" : "failed",
+        delivery_status: error instanceof WhatsAppSendUncertainError ? "pending" : "failed",
         delivery_error: message,
         delivery_status_updated_at: new Date().toISOString(),
       })
@@ -351,7 +327,7 @@ export async function sendAndPersistOutboundReplyButtonMessage({
       throw error;
     }
 
-    throw new OutboundMessageError(message, false, inserted.id);
+    throw new OutboundMessageError(message, error instanceof WhatsAppSendUncertainError, inserted.id);
   }
 }
 
@@ -390,15 +366,7 @@ export async function sendAndPersistOutboundImageMessage({
 
   try {
     const result = await withConversationWhatsApp(conversationId, () => sendWhatsAppImage(phone, imageUrl, caption, phoneNumberId));
-    await supabaseAdmin
-      .from("messages")
-      .update({
-        whatsapp_msg_id: result.messageId,
-        delivery_status: "sent",
-        delivery_error: null,
-        delivery_status_updated_at: new Date().toISOString(),
-      })
-      .eq("id", inserted.id);
+    await persistAcceptedOutbound(inserted.id, result);
 
     return {
       id: inserted.id,
@@ -406,16 +374,15 @@ export async function sendAndPersistOutboundImageMessage({
     };
   } catch (error) {
     const message = toErrorMessage(error);
-    await supabaseAdmin
+    if (!(error instanceof OutboundMessageError && error.messageSent)) await supabaseAdmin
       .from("messages")
       .update({
-        delivery_status: "failed",
+        delivery_status: error instanceof WhatsAppSendUncertainError ? "pending" : "failed",
         delivery_error: message,
         delivery_status_updated_at: new Date().toISOString(),
       })
       .eq("id", inserted.id);
-    throw error;
+    if (error instanceof OutboundMessageError) throw error;
+    throw new OutboundMessageError(message, error instanceof WhatsAppSendUncertainError, inserted.id);
   }
 }
-
-

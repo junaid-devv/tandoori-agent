@@ -1,5 +1,6 @@
 import { supabaseAdmin } from "./supabase-admin";
 import type { StaffRole } from "./auth";
+import { ApiRequestError } from "./api-utils";
 
 export type AdminBranchSummary = {
   id: string;
@@ -70,6 +71,7 @@ function normalizeBranchIds(branchIds: string[]) {
 
 function normalizeStaffPayload(input: CreateStaffInput | UpdateStaffInput) {
   const role = input.role;
+  if (!["admin", "branch_staff"].includes(role)) throw new ApiRequestError("Invalid staff role", 400);
   const branchIds = normalizeBranchIds(input.branchIds);
   const defaultBranchId = input.defaultBranchId?.trim() || null;
 
@@ -86,6 +88,15 @@ function normalizeStaffPayload(input: CreateStaffInput | UpdateStaffInput) {
     branchIds,
     defaultBranchId: role === "branch_staff" ? defaultBranchId ?? branchIds[0] ?? null : defaultBranchId,
   };
+}
+
+async function validateStaffBranches(restaurantId: string, input: { branchIds: string[]; defaultBranchId: string | null }) {
+  const ids = [...new Set([...input.branchIds, ...(input.defaultBranchId ? [input.defaultBranchId] : [])])];
+  if (!ids.length) return;
+  const { data, error } = await supabaseAdmin.from("branches").select("id")
+    .eq("restaurant_id", restaurantId).in("id", ids);
+  if (error) throw error;
+  if (data?.length !== ids.length) throw new ApiRequestError("All assigned branches must belong to this restaurant", 400);
 }
 
 async function replaceBranchAssignments(userId: string, branchIds: string[]) {
@@ -264,11 +275,6 @@ export async function deleteBranch(branchId: string) {
     .eq("default_branch_id", branchId);
   if (profileError) throw profileError;
 
-  const { error: restaurantProfileError } = await supabaseAdmin
-    .from("restaurant_profiles")
-    .update({ default_branch_id: null, updated_at: new Date().toISOString() })
-    .eq("default_branch_id", branchId);
-  if (restaurantProfileError) throw restaurantProfileError;
 
   const { error: contactsError } = await supabaseAdmin
     .from("contacts")
@@ -349,6 +355,7 @@ export async function createStaffAccount(restaurantId: string, input: CreateStaf
   if (!fullName) throw new Error("Full name is required.");
 
   const normalized = normalizeStaffPayload(input);
+  await validateStaffBranches(restaurantId, normalized);
   const created = await supabaseAdmin.auth.admin.createUser({
     email,
     password,
@@ -387,6 +394,9 @@ export async function updateStaffAccount(userId: string, input: UpdateStaffInput
   if (!fullName) throw new Error("Full name is required.");
 
   const normalized = normalizeStaffPayload(input);
+  const { data: staff, error: staffError } = await supabaseAdmin.from("staff_profiles").select("restaurant_id, role").eq("user_id", userId).single();
+  if (staffError || !staff?.restaurant_id || staff.role === "super_admin") throw new ApiRequestError("Staff member not found", 404);
+  await validateStaffBranches(staff.restaurant_id, normalized);
   const { error: profileError } = await supabaseAdmin.from("staff_profiles").upsert(
     {
       user_id: userId,
@@ -440,10 +450,10 @@ export async function deleteStaffAccount(userId: string) {
   if (deleted.error) throw deleted.error;
 }
 
-async function deleteOrphanContacts() {
+async function deleteOrphanContacts(restaurantId: string) {
   const { data: contacts, error: contactsError } = await supabaseAdmin
     .from("contacts")
-    .select("id, active_branch_id");
+    .select("id, active_branch_id").eq("restaurant_id", restaurantId);
 
   if (contactsError) {
     throw contactsError;
@@ -482,6 +492,8 @@ export async function wipeOperationalData(restaurantId: string, options: { branc
   const branchId = options.branchId ?? null;
 
   if (branchId) {
+    const { data: owned } = await supabaseAdmin.from("branches").select("id").eq("id", branchId).eq("restaurant_id", restaurantId).maybeSingle();
+    if (!owned) throw new ApiRequestError("Branch not found", 404);
     const { error: orderError } = await supabaseAdmin.from("orders").delete().eq("branch_id", branchId);
     throwIfSupabaseError(orderError, "Failed to delete branch orders");
 
@@ -500,7 +512,7 @@ export async function wipeOperationalData(restaurantId: string, options: { branc
       .eq("active_branch_id", branchId);
     throwIfSupabaseError(contactError, "Failed to detach branch contacts");
 
-    await deleteOrphanContacts();
+    await deleteOrphanContacts(restaurantId);
     return;
   }
 

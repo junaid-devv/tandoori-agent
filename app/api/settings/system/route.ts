@@ -1,14 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
-import { resolveRequestBranch } from "@/lib/branch-request";
+import { requireSuperAdminSession } from "@/lib/admin-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { cache } from "@/lib/core/cache";
 
 const SYSTEM_BODY_LIMIT_BYTES = 4096;
 
-export async function GET(req: NextRequest) {
+export async function GET() {
   try {
-    const auth = await resolveRequestBranch(req, { allowAllForAdmin: true });
+    const auth = await requireSuperAdminSession();
     if (auth.response) {
       return auth.response;
     }
@@ -35,15 +35,16 @@ export async function GET(req: NextRequest) {
       supabaseAdmin.from("agent_turns").select("id", { count: "exact", head: true }),
       supabaseAdmin.from("webhook_events").select("id", { count: "exact", head: true }),
       supabaseAdmin.from("staff_alerts").select("id", { count: "exact", head: true }),
-      supabaseAdmin.from("rate_limits").select("key", { count: "exact", head: true }),
+      supabaseAdmin.from("rate_limits").select("scope", { count: "exact", head: true }),
     ]);
 
+    for (const result of [ordersRes, conversationsRes, messagesRes, contactsRes, menuItemsRes, agentTurnsRes, webhookEventsRes, staffAlertsRes, rateLimitsRes]) { if (result.error) throw result.error; }
     const pingLatencyMs = Date.now() - startTime;
 
     // Fetch active unread alerts & pending orders
     const [unreadAlertsRes, activeOrdersRes] = await Promise.all([
-      supabaseAdmin.from("staff_alerts").select("id", { count: "exact", head: true }).eq("is_read", false),
-      supabaseAdmin.from("orders").select("id", { count: "exact", head: true }).in("status", ["pending", "accepted", "preparing"]),
+      supabaseAdmin.from("staff_alerts").select("id", { count: "exact", head: true }).eq("status", "open"),
+      supabaseAdmin.from("orders").select("id", { count: "exact", head: true }).in("status", ["received", "preparing", "out_for_delivery"]),
     ]);
 
     return NextResponse.json({
@@ -78,7 +79,7 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
-    const auth = await resolveRequestBranch(req, { allowAllForAdmin: true });
+    const auth = await requireSuperAdminSession();
     if (auth.response) {
       return auth.response;
     }

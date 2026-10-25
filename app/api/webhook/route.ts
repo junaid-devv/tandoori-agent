@@ -1,4 +1,5 @@
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { replayStoredWebhook } from "@/lib/webhook-replay";
 /**
  * app/api/webhook/route.ts — Single-Branch Edition
  *
@@ -12,7 +13,7 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { after, NextRequest, NextResponse } from "next/server";
 import { processOneMessage, processEchoMessage, type IncomingWhatsAppMessage } from "@/lib/whatsapp-inbound";
-import { withWhatsAppTransport } from "@/lib/whatsapp-context";
+import { getActiveWhatsAppProvider, withWhatsAppTransport } from "@/lib/whatsapp-context";
 import { contactRepo } from "@/lib/data/contact.repo";
 import { messageRepo } from "@/lib/data/message.repo";
 import { getActiveBranches, type BranchRecord } from "@/lib/branches";
@@ -40,6 +41,7 @@ export const maxDuration = 60;
 type IncomingWhatsAppStatus = {
   id?: string;
   recipient_id?: string;
+  phoneNumberId?: string;
   status?: string;
   timestamp?: string;
   errors?: Array<{ code?: number; title?: string; message?: string; error_data?: { details?: string } }>;
@@ -80,6 +82,7 @@ export async function GET(req: NextRequest) {
 // POST — ingest + 200 immediately
 // ---------------------------------------------------------------------------
 export async function POST(req: NextRequest) {
+  if (req.headers.has("x-worker-key")) return replayStoredWebhook(req, "meta_whatsapp", processWebhookEventInBackground);
   const signature = req.headers.get("x-hub-signature-256");
   const rateLimit = await checkRateLimit({
     scope: "whatsapp_webhook",
@@ -96,7 +99,7 @@ export async function POST(req: NextRequest) {
   let body: unknown;
   try {
     rawBody = await req.text();
-    if (process.env.MOCK_WHATSAPP !== "true" && !isValidWhatsAppSignature(rawBody, signature)) {
+    if ((process.env.MOCK_WHATSAPP !== "true" || process.env.NODE_ENV === "production") && !isValidWhatsAppSignature(rawBody, signature)) {
       console.warn("[webhook] Incoming POST rejected with 401 Unauthorized due to signature mismatch.");
       return new Response("Unauthorized", { status: 401 });
     }
@@ -105,29 +108,7 @@ export async function POST(req: NextRequest) {
     return new Response("Bad Request", { status: 400 });
   }
 
-  // --- LAVISTA MULTI-TENANT WEBHOOK FORWARDER ---
-  const LAVISTA_PHONE_NUMBER_ID = process.env.LAVISTA_PHONE_NUMBER_ID;
-  const incomingPhoneNumberId =
-    (body as IncomingEnvelope)?.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
-  if (LAVISTA_PHONE_NUMBER_ID && incomingPhoneNumberId === LAVISTA_PHONE_NUMBER_ID) {
-    console.log(`[webhook-forwarder] Forwarding event for phone ${incomingPhoneNumberId} to LaVista...`);
-    try {
-      const forwardResponse = await fetch("https://lavista-kappa.vercel.app/api/webhook/whatsapp", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-hub-signature-256": req.headers.get("x-hub-signature-256") || "",
-        },
-        body: rawBody,
-      });
-      console.log(`[webhook-forwarder] LaVista response: ${forwardResponse.status}`);
-    } catch (err) {
-      console.error("[webhook-forwarder] Failed to forward to LaVista:", err);
-    }
-    // Always return 200 to Meta so it acknowledges delivery
-    return NextResponse.json({ status: "forwarded_to_lavista" }, { status: 200 });
-  }
-  // --- END LAVISTA FORWARDER ---
+
 
   try {
     const event = await recordWebhookEvent({ rawBody, payload: body, signature });
@@ -148,12 +129,12 @@ async function processWebhookEventInBackground(eventId: string) {
   try {
     await processWebhook(claimed.payload);
     // Fire-and-forget: marking processed doesn't affect customer experience
-    void markWebhookEventProcessed(eventId).catch((e) => console.error("[webhook] mark-processed failed:", e));
+    await markWebhookEventProcessed(eventId).catch((e) => console.error("[webhook] mark-processed failed:", e));
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[webhook] Background processing failed:", msg, error);
     // Fire-and-forget: don't let bookkeeping errors mask the original failure
-    void markWebhookEventFailed(eventId, msg).catch((e) => console.error("[webhook] mark-failed failed:", e));
+    await markWebhookEventFailed(eventId, msg).catch((e) => console.error("[webhook] mark-failed failed:", e));
     void alertStaffForFailedWebhook(claimed.payload, eventId, msg).catch((e) => {
       console.error("[webhook] Staff alert failed:", e);
     });
@@ -205,10 +186,11 @@ async function processWebhook(body: unknown) {
       if (branches.length === 0) continue;
       const businessPhone = restaurantCtx.whatsappConfig?.display_phone_number?.replace(/[^0-9]/g, "") ||
         restaurantCtx.profile?.support_phone?.replace(/[^0-9]/g, "") || undefined;
-      if (restaurantCtx.profile.whatsapp_provider !== "meta") continue;
+      if (await getActiveWhatsAppProvider(restaurantCtx.restaurantId) !== "meta") continue;
       await withWhatsAppTransport({ provider: "meta", restaurantId: restaurantCtx.restaurantId, phoneNumberId }, () => processEchoMessage(message, customerPhone, branches[0], restaurantCtx.restaurantId, businessPhone));
     } catch (error) {
       console.error("[webhook-coexistence] Failed to process echo:", { customerPhone, error });
+      throw error;
     }
   }
 
@@ -255,7 +237,7 @@ async function processWebhook(body: unknown) {
         getCachedBranches(restaurantCtx.restaurantId),
         getCachedProfile(restaurantCtx.restaurantId),
       ]);
-      if (profile.whatsapp_provider !== "meta") continue;
+      if (await getActiveWhatsAppProvider(restaurantCtx.restaurantId) !== "meta") continue;
       if (branches.length === 0) {
         console.warn(`[webhook] Restaurant ${restaurantCtx.restaurantId} has no active branches. Cannot process message from: ${message.from}`);
         continue;
@@ -267,6 +249,7 @@ async function processWebhook(body: unknown) {
       await withWhatsAppTransport({ provider: "meta", restaurantId: restaurantCtx.restaurantId, phoneNumberId }, () => processOneMessage(message, contactName, branch, profile, phoneNumberId, restaurantCtx.restaurantId, businessPhone));
     } catch (error) {
       console.error("[webhook] Failed to process message:", { from: message.from, phoneNumberId, error });
+      throw error;
     }
   }
 }
@@ -277,18 +260,20 @@ async function processWebhook(body: unknown) {
 // ---------------------------------------------------------------------------
 async function updateDeliveryStatuses(statuses: IncomingWhatsAppStatus[]) {
   // Fan out all delivery-status updates in parallel — no ordering requirement
-  await Promise.allSettled(
+  await Promise.all(
     statuses
       .filter((s) => s.id && s.status)
-      .map((s) => {
+      .map(async (s) => {
+        if (!s.phoneNumberId) return;
+        const { data: config, error } = await supabaseAdmin.from("whatsapp_configs").select("restaurant_id").eq("phone_number_id", s.phoneNumberId).maybeSingle();
+        if (error) throw error;
+        if (!config) return;
         const nextStatus = normalizeDeliveryStatus(s.status!);
         if (!nextStatus) return Promise.resolve();
         const errText = s.errors?.[0]
           ? `${s.errors[0].title ?? ""}: ${s.errors[0].error_data?.details ?? s.errors[0].message ?? ""}`.trim()
           : null;
-        return messageRepo
-          .applyDeliveryStatus(s.id!, nextStatus, { error: errText, atIso: s.timestamp ? toIso(s.timestamp) : null })
-          .catch((e) => console.error("[webhook] Delivery status update failed:", e));
+        return messageRepo.applyDeliveryStatus(s.id!, nextStatus, { restaurantId: config.restaurant_id, error: errText, atIso: s.timestamp ? toIso(s.timestamp) : null });
       }),
   );
 }
@@ -353,7 +338,7 @@ function extractStatusEvents(body: unknown): IncomingWhatsAppStatus[] {
   for (const entry of envelope.entry ?? []) {
     for (const change of entry.changes ?? []) {
       for (const s of (change.value as { statuses?: IncomingWhatsAppStatus[] })?.statuses ?? []) {
-        out.push(s);
+        out.push({ ...s, phoneNumberId: change.value?.metadata?.phone_number_id });
       }
     }
   }
@@ -401,7 +386,11 @@ async function alertStaffForFailedWebhook(payload: unknown, eventId: string, err
     const envelope = payload as IncomingEnvelope;
     const phone = envelope.entry?.[0]?.changes?.[0]?.value?.messages?.[0]?.from;
     if (!phone) return;
-    const contact = await contactRepo.getByPhone(phone);
+    const phoneId = envelope.entry?.[0]?.changes?.[0]?.value?.metadata?.phone_number_id;
+    if (!phoneId) return;
+    const restaurant = await getRestaurantByPhoneNumberId(phoneId);
+    if (!restaurant) return;
+    const contact = await contactRepo.getByPhone(phone, restaurant.restaurantId);
     if (!contact?.active_branch_id) return;
     const conv = await supabaseAdmin.from("conversations").select("id").eq("contact_id", contact.id).eq("branch_id", contact.active_branch_id).maybeSingle();
     if (!conv.data?.id) return;

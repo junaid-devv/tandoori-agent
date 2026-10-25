@@ -22,7 +22,8 @@ export async function GET(req: NextRequest) {
   catch (error) { return apiErrorResponse(error, { fallback: "Select a restaurant" }); }
   const { data: tenantBranches, error: branchError } = await supabaseAdmin.from("branches").select("id").eq("restaurant_id", restaurantId);
   if (branchError) return apiErrorResponse(branchError, { fallback: "Failed to load restaurant branches" });
-  const tenantBranchIds = (tenantBranches || []).map(branch => branch.id);
+  const tenantBranchIds = (tenantBranches || []).map(branch => branch.id)
+    .filter(id => auth.session?.allowedBranches.some(branch => branch.id === id));
   if (!tenantBranchIds.length) return NextResponse.json([]);
   const profile = await getRestaurantProfile(restaurantId);
   const activeProvider = profile.whatsapp_provider;

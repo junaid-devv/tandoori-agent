@@ -1,7 +1,7 @@
+import { getActiveWhatsAppProvider } from "@/lib/whatsapp-context";
 import { NextRequest, NextResponse } from "next/server";
 import { requireApiSession } from "@/lib/branch-request";
 import { apiErrorResponse } from "@/lib/api-utils";
-import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { getEvolutionFullStatus } from "@/lib/evolution-client";
 import { whatsappRestaurantId } from "@/lib/whatsapp-request";
@@ -16,7 +16,7 @@ export async function GET(req: NextRequest) {
 
   try {
     const targetRestaurantId = whatsappRestaurantId(req, auth.session);
-    const profile = await getRestaurantProfile(targetRestaurantId);
+    const activeProvider = await getActiveWhatsAppProvider(targetRestaurantId);
 
     const { data: config, error: configError } = targetRestaurantId
       ? await supabaseAdmin
@@ -37,7 +37,6 @@ export async function GET(req: NextRequest) {
     const configId = process.env.NEXT_PUBLIC_WHATSAPP_CONFIG_ID || process.env.WHATSAPP_CONFIG_ID || null;
 
     const isMetaConfigured = Boolean(
-      profile.whatsapp_provider !== "none" &&
       phoneId &&
       token &&
       token.length > 20
@@ -46,13 +45,14 @@ export async function GET(req: NextRequest) {
     let displayPhoneNumber: string | null = null;
     let verifiedName: string | null = null;
     let qualityRating: string | null = null;
+    let coexistenceEnabled = false;
     let status: string = isMetaConfigured ? "CONNECTED" : "NOT_CONFIGURED";
 
     // Optionally probe Meta Graph API to verify live token and phone status
     if (isMetaConfigured && phoneId) {
       try {
         const metaRes = await fetch(
-          `https://graph.facebook.com/v22.0/${encodeURIComponent(phoneId)}?fields=verified_name,display_phone_number,quality_rating,code_verification_status`,
+          `https://graph.facebook.com/v22.0/${encodeURIComponent(phoneId)}?fields=verified_name,display_phone_number,quality_rating,platform_type,is_on_biz_app`,
           {
             headers: { Authorization: `Bearer ${token}` },
             cache: "no-store",
@@ -64,20 +64,21 @@ export async function GET(req: NextRequest) {
           displayPhoneNumber = metaData.display_phone_number || null;
           verifiedName = metaData.verified_name || null;
           qualityRating = metaData.quality_rating || null;
-          status = "CONNECTED";
+          status = metaData.platform_type === "CLOUD_API" ? "CONNECTED" : "REGISTRATION_REQUIRED";
+          coexistenceEnabled = metaData.is_on_biz_app === true;
         } else {
           status = "AUTH_ERROR";
         }
       } catch {
-        // Network timeout / offline
+        status = "UNREACHABLE"; // Cannot confirm token health
       }
     }
 
     const evolutionStatus = await getEvolutionFullStatus(targetRestaurantId);
 
     return NextResponse.json({
-      activeProvider: profile.whatsapp_provider || "none",
-      whatsappEnabled: profile.whatsapp_provider !== "none",
+      activeProvider,
+      whatsappEnabled: activeProvider !== "none",
       metaConfig: {
         configured: isMetaConfigured,
         status,
@@ -89,7 +90,7 @@ export async function GET(req: NextRequest) {
         verifiedName: verifiedName || config?.verified_name || null,
         qualityRating,
         verifyTokenSet: Boolean(process.env.WHATSAPP_VERIFY_TOKEN),
-        coexistenceEnabled: true,
+        coexistenceEnabled,
       },
       evolution: evolutionStatus,
     });

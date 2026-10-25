@@ -1,17 +1,11 @@
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { RESTAURANT_ORDER_SCENARIO } from "@/demo/scenarios/restaurant-order.scenario";
-import { getDashboardSession } from "@/lib/auth";
+import { requireDemoAdmin } from "@/lib/legacy-api-access";
 
-export async function POST(request: Request) {
-  const isDemoEnabled = process.env.ENABLE_DEMO_MODE === "true" || process.env.NODE_ENV !== "production";
-  const demoSecret = request.headers.get("x-demo-secret");
-  const expectedSecret = process.env.DEMO_SECRET_KEY || "restaurant-demo-secret-key";
-  const session = await getDashboardSession();
-
-  if (!isDemoEnabled && demoSecret !== expectedSecret && !session) {
-    return NextResponse.json({ error: "Demo mode disabled or unauthorized" }, { status: 403 });
-  }
+export async function POST() {
+  const denied = await requireDemoAdmin();
+  if (denied) return denied;
 
   try {
     const demoOrder = RESTAURANT_ORDER_SCENARIO.finalOrder;

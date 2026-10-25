@@ -21,7 +21,7 @@ mustInclude(webhookRoute, "updateDeliveryStatuses(statusEvents)", "Missing Whats
 mustInclude(webhookRoute, "normalizeDeliveryStatus", "Missing delivery-status normalization.");
 // Delivery-status persistence behavior now lives in the message repository.
 mustInclude(messageRepo, "applyDeliveryStatus", "Missing delivery-status persistence in message repository.");
-mustInclude(messageRepo, "DELIVERY_RANK", "Missing delivery-status downgrade guard (monotonic rank).");
+mustInclude(schema, "whatsapp_delivery_rank", "Missing database delivery-status downgrade guard (monotonic rank).");
 mustInclude(messageRepo, "delivery_error", "Missing WhatsApp status failure detail persistence.");
 
 mustInclude(messages, "\"pending\" | \"sent\" | \"delivered\" | \"read\" | \"failed\"", "Missing expanded delivery status type.");

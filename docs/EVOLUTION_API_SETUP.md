@@ -7,7 +7,9 @@ that page; the Evolution Manager UI is not required.
 
 ## Application setup
 
-Apply `supabase/migrations/20261024150130_evolution_multi_tenant_provider.sql`
+Apply `supabase/migrations/20261024150130_evolution_multi_tenant_provider.sql`,
+`20261025065109_whatsapp_production_isolation.sql`, and
+`20261025070752_whatsapp_connection_lifecycle.sql`
 to every existing application database. Fresh installations using `db/schema.sql`
 already include the new tables and columns. Do not run the destructive rebuild
 schema against an existing database.
@@ -92,9 +94,13 @@ sudo systemctl show orderiq-evolution-backup.service -p Result
 ## Railway or another host
 
 Use Evolution API **v2**. The supplied Docker Compose file pins the release to
-`evoapicloud/evolution-api:v2.3.7`. Verify your host can pull that tag before deployment.
+a custom `orderiq/evolution-api:2.3.7-interactive.1` build based on the digest-pinned
+`evoapicloud/evolution-api:v2.3.7`. Build with `docker compose build evolution`;
+the Dockerfile backports the upstream 2.4.0-rc1 interactive rendering fix without
+changing the database or adopting its licensing runtime. The patch fails closed
+if the pinned bundle changes. Include Dockerfile, patch-interactive.cjs and .dockerignore.
 
-For Railway, create an Evolution service from that image, plus PostgreSQL and Redis
+For Railway, build the supplied Dockerfile into an Evolution service, plus PostgreSQL and Redis
 services. Set a public HTTPS domain and persist `/evolution/instances` on a volume.
 Use Railway's private PostgreSQL and Redis connection URLs for the variables below.
 Configure the service port as `8080` (or keep `SERVER_PORT` consistent with your host).
@@ -158,8 +164,8 @@ same dashboard and select it as the restaurant's active provider. Its credential
 remain in `whatsapp_configs`; Evolution has a separate `evolution_configs` mapping.
 Configuring one provider does not delete the other provider's credentials.
 Incoming customer turns run only for the selected provider, preventing two bots
-from answering the same business simultaneously. Existing conversations retain
-their inbound channel for staff replies and order notifications. A disabled tenant
+from answering the same business simultaneously. Existing conversations send new staff replies and order notifications through
+the currently selected provider. Historical media retains its original provider credentials. A disabled tenant
 cannot send new outbound messages.
 
 ## Interactive messages and additional features
@@ -212,9 +218,11 @@ URL/key and a linked phone; those cannot be verified before the gateway is deplo
   `/api/health` with the live database and all schema checks passing.
 - The connected Supabase migration and service-role access were verified. Anon
   and authenticated roles cannot read Evolution connection records.
-- Existing Supabase advisor findings remain: mutable function search path, public
-  extensions, client-callable menu SECURITY DEFINER RPCs, and disabled leaked-password
-  protection. These require a separate review; no broad security cleanup was applied.
+- The 25 October isolation migrations restrict sensitive menu RPCs, set the mutable
+  function search path, protect connection ownership, and enforce tenant relationships.
+  Remaining advisor warnings are public extensions and disabled leaked-password
+  protection. Enable the latter in Supabase Auth settings; extension relocation needs
+  a separate compatibility migration.
   The new table's RLS-without-policies advisory is intentional: only service-role
   access is granted.
 
@@ -223,3 +231,42 @@ Sources:
 - [Current message DTOs](https://github.com/evolution-foundation/evolution-api/blob/main/src/api/dto/sendMessage.dto.ts)
 - [Feature availability](https://github.com/evolution-foundation/docs-evolution/blob/main/v2/en/configuration/available-resources.mdx)
 - [Evolution 2.3.7 release](https://github.com/evolution-foundation/evolution-api/releases/tag/2.3.7)
+
+## Delivery repair and operations — 25 October 2026
+
+Native mode uses real buttons/lists. The server backport removes the view-once
+interactive wrapper and adds the upstream business stanzas; list messages use
+SINGLE_SELECT. The app also supplies Evolution's required footerText. Verify
+rendering and selection on a real recipient device before handing a tenant over.
+Compatible mode remains an explicit numbered-text fallback, not native UI.
+
+Delivery receipts are tenant scoped and monotonic, including receipts that arrive
+before a send is persisted. A server acknowledgment does not prove recipient
+rendering. Failed sends appear in the inbox. Network-interrupted sends stay
+unconfirmed and are not automatically resent, to avoid duplicate orders/messages.
+
+Only the active provider processes new inbound turns. Provider activation probes
+the live connection and uses an atomic tenant-scoped database operation. Disconnecting
+an inactive provider cannot disable the other provider. The same active phone cannot
+be assigned to different tenants. Integration credentials never reach the client.
+
+Meta onboarding requires the platform operator's approved Embedded Signup app,
+selected WABA/phone access and a successful webhook subscription. New Cloud API
+numbers require a six-digit registration PIN. WhatsApp Business App coexistence
+must be completed through Meta's supported flow. Closed customer-service windows
+require an approved template; the app does not substitute a generic greeting.
+
+The recovery endpoint `/api/internal/webhook-retry` requires a server-only
+WORKER_API_KEY of at least 32 characters. The VM timer runs retry-webhooks.py
+every minute with a private 0600 webhook-worker.json containing {"url":
+"https://YOUR_DASHBOARD/api/internal/webhook-retry","key":"SERVER_WORKER_KEY"}.
+Install the supplied service/timer in /etc/systemd/system only after deploying
+the application endpoint, then daemon-reload and enable --now the timer.
+Retries are bounded and replay stored events; uncertain outbound deliveries need
+inbox review. Backup archives include this credential file and must stay private.
+
+Run scripts/check-tenant-isolation.sql against the target database to test two
+fixture tenants and early/out-of-order receipts; it rolls back all fixture data.
+Run check:evolution, check:all-guards, npm audit and npm run build before release.
+Remaining operator work: off-VM backup storage, leaked-password protection, and
+a real Meta client signup/switch test with the client's own approved assets.

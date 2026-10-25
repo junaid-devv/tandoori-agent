@@ -71,7 +71,7 @@ export async function GET(
         : row.content;
 
       // Intelligent reconstruction for older assistant messages that had interactive options sent
-      if (!replyButtons && !listSelector && row.role === "assistant") {
+      if (meta.deliveryFormat !== "text_options" && !replyButtons && !listSelector && row.role === "assistant") {
         const c = row.content || "";
         if (/order\s+confirm\s+karein|confirm\s+your\s+order|order\s+confirm\s+kaway|confirm.*add\s+more/i.test(c)) {
           replyButtons = [
@@ -118,6 +118,7 @@ export async function GET(
         created_at: row.created_at,
         delivery_status: row.delivery_status,
         delivery_error: row.delivery_error,
+        delivery_warning: typeof meta.renderingWarning === "string" ? meta.renderingWarning : meta.deliveryFormat === "native" && String(row.whatsapp_msg_id).startsWith("evolution:") ? "Experimental native format: WhatsApp's acknowledgement does not confirm that buttons are visible." : null,
         delivery_status_updated_at: row.delivery_status_updated_at,
         replyButtons,
         listSelector,

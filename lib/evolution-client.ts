@@ -10,6 +10,7 @@ export type EvolutionConfig = {
   connection_status: string;
   display_phone_number: string | null;
   verified_name: string | null;
+  interactive_mode?: "compatible" | "native";
 };
 export type EvolutionAction = "start" | "stop" | "restart" | "logout" | "pair" | "create_session" | "auto_webhook";
 
@@ -93,6 +94,8 @@ export async function performEvolutionAction(action: EvolutionAction, restaurant
       });
     }
     await evolutionRequest(`/webhook/set/${instance}`, "POST", { webhook: hook });
+    const activated = await supabaseAdmin.from("evolution_configs").update({ is_active: true, updated_at: new Date().toISOString() }).eq("restaurant_id", restaurantId);
+    if (activated.error) throw activated.error;
     const data = await evolutionRequest(`/instance/connect/${instance}${action === "pair" ? `?number=${encodeURIComponent(phoneNumber!)}` : ""}`);
     const { error } = await supabaseAdmin.from("evolution_configs").update({ is_active: true, updated_at: new Date().toISOString() }).eq("restaurant_id", restaurantId);
     if (error) throw error;
@@ -107,7 +110,7 @@ export async function performEvolutionAction(action: EvolutionAction, restaurant
     await evolutionRequest(`/instance/${action === "stop" || action === "logout" ? "logout" : "restart"}/${instance}`,
       action === "stop" || action === "logout" ? "DELETE" : "PUT");
     if (action === "stop" || action === "logout") {
-      const { error } = await supabaseAdmin.from("evolution_configs").update({ is_active: false, connection_status: "close", updated_at: new Date().toISOString() }).eq("restaurant_id", restaurantId);
+      const { error } = await supabaseAdmin.rpc("disconnect_whatsapp_provider", { p_restaurant_id: restaurantId, p_provider: "evolution" });
       if (error) throw error;
     }
   }
@@ -126,14 +129,14 @@ export async function getEvolutionFullStatus(restaurantId: string) {
   const base = { provider: "evolution" as const, instanceName: config?.instance_name || null, sessionId: config?.instance_name || "", online: false, session: null as { sessionId: string; status: string; me: { id: string | null; name: string | null }; hasInstance: boolean } | null, qrBase64: null as string | null, error: null as string | null };
   try {
     evolutionEnvironment();
-    if (!config) return { ...base, online: true, error: "Create an Evolution connection for this restaurant." };
+    if (!config) return { ...base, interactiveMode: "compatible" as const, online: true, error: "Create an Evolution connection for this restaurant." };
     const instance = encodeURIComponent(config.instance_name);
     const state = await evolutionRequest(`/instance/connectionState/${instance}`);
     const connection = state.instance?.state || "close";
     const session = { sessionId: config.instance_name, status: connection === "open" && config.is_active ? "CONNECTED" : connection === "connecting" ? "CONNECTING" : "DISCONNECTED", me: { id: config.display_phone_number, name: config.verified_name }, hasInstance: true };
     // GET status must never create/restart an instance or refresh QR codes as a side effect.
-    return { ...base, online: true, session };
+    return { ...base, interactiveMode: config.interactive_mode || "compatible", online: true, session };
   } catch (error) {
-    return { ...base, error: error instanceof Error ? error.message : "Evolution server is unavailable" };
+    return { ...base, interactiveMode: config?.interactive_mode || "compatible", error: error instanceof Error ? error.message : "Evolution server is unavailable" };
   }
 }

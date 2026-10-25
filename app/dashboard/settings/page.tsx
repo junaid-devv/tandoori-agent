@@ -282,7 +282,7 @@ export default function SettingsPage() {
     { key: "delivery", label: "Delivery", icon: <Truck size={14} />, badge: settings.delivery_enabled ? "ON" : "OFF" },
     { key: "ai_brand", label: "AI Voice", icon: <Bot size={14} /> },
     { key: "contacts", label: "Contact", icon: <Phone size={14} /> },
-    { key: "database", label: "Database", icon: <Database size={14} /> },
+    ...(session.role === "super_admin" ? [{ key: "database" as const, label: "Database", icon: <Database size={14} /> }] : []),
     { key: "notifications", label: "Alerts", icon: <Bell size={14} /> },
   ];
 

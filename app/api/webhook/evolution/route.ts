@@ -7,17 +7,19 @@ import type { EvolutionEnvelope, EvolutionEventData, EvolutionInstance } from "@
 import { normalizeEvolutionMessage, evolutionMessageId, evolutionDeliveryStatus } from "@/lib/evolution-webhook";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { getActiveBranches } from "@/lib/branches";
-import { withWhatsAppTransport } from "@/lib/whatsapp-context";
+import { getActiveWhatsAppProvider, withWhatsAppTransport } from "@/lib/whatsapp-context";
 import { processOneMessage, processEchoMessage } from "@/lib/whatsapp-inbound";
 import { isBotSentMessageId } from "@/lib/whatsapp";
 import { messageRepo } from "@/lib/data/message.repo";
 import { claimWebhookEvent, recordWebhookEvent, markWebhookEventProcessed, markWebhookEventFailed } from "@/lib/webhook-events";
+import { replayStoredWebhook } from "@/lib/webhook-replay";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
+    if (req.headers.has("x-worker-key")) return await replayStoredWebhook(req, "evolution", processStoredEvolutionEvent);
     const body = await readLimitedJsonBody<EvolutionEnvelope>(req, 1024 * 1024);
     if (!body || typeof body !== "object" || Array.isArray(body)) return NextResponse.json({ error: "Expected a JSON object" }, { status: 400 });
     const instance = typeof body.instance === "string" ? body.instance : "";
@@ -29,27 +31,33 @@ export async function POST(req: NextRequest) {
     const { data: config, error } = await supabaseAdmin.from("evolution_configs").select("restaurant_id, instance_name, is_active")
       .eq("instance_name", instance).maybeSingle();
     if (error) throw error;
-    if (!config?.is_active) return NextResponse.json({ error: "Unknown or inactive instance" }, { status: 404 });
+    if (!config) return NextResponse.json({ error: "Unknown instance" }, { status: 404 });
+    if (!config.is_active && eventName === "messages.upsert") return NextResponse.json({ status: "inactive_instance" });
     // Do not persist the envelope's apikey, server_url, or caller-supplied tenant IDs.
     const payload = { event: eventName, instance, data: body.data };
     const rawBody = JSON.stringify(payload);
     const dataId = !Array.isArray(body.data) ? body.data?.key?.id : undefined;
     const identity = eventName === "messages.upsert" && dataId ? `${instance}:${eventName}:${dataId}` : `${instance}:${rawBody}`;
     const event = await recordWebhookEvent({ rawBody, payload, signature: null, provider: "evolution", deliveryKey: `evolution:${createHash("sha256").update(identity).digest("hex")}` });
-    after(async () => {
-      const claimed = await claimWebhookEvent(event.id);
-      if (!claimed) return;
-      try {
-        await processEvent(claimed.payload as typeof payload, config.restaurant_id);
-        await markWebhookEventProcessed(event.id);
-      } catch (failure) {
-        console.error("[evolution-webhook] Processing failed", event.id, failure);
-        await markWebhookEventFailed(event.id, failure instanceof Error ? failure.message : "Processing failed");
-      }
-    });
+    after(async () => { await processStoredEvolutionEvent(event.id); });
     return NextResponse.json({ status: "received" });
   } catch (error) {
     return apiErrorResponse(error, { fallback: "Failed to receive Evolution event", context: "POST /api/webhook/evolution" });
+  }
+}
+
+async function processStoredEvolutionEvent(eventId: string) {
+  const claimed = await claimWebhookEvent(eventId);
+  if (!claimed) return;
+  try {
+    const payload = claimed.payload as { event: string; instance: string; data?: EvolutionEventData | EvolutionEventData[] };
+    const { data: config, error } = await supabaseAdmin.from("evolution_configs").select("restaurant_id, is_active").eq("instance_name", payload.instance).single();
+    if (error || !config) throw error || new Error("Instance unavailable");
+    if (config.is_active || payload.event !== "messages.upsert") await processEvent(payload, config.restaurant_id);
+    await markWebhookEventProcessed(eventId);
+  } catch (failure) {
+    console.error("[evolution-webhook] Processing failed", eventId, failure);
+    await markWebhookEventFailed(eventId, failure instanceof Error ? failure.message : "Processing failed");
   }
 }
 
@@ -76,12 +84,12 @@ async function processEvent(payload: { event: string; instance: string; data?: E
     for (const receipt of Array.isArray(data) ? data : [data]) {
       const status = evolutionDeliveryStatus(receipt?.status ?? receipt?.update?.status);
       const id = receipt?.keyId || receipt?.key?.id;
-      if (status && id) await messageRepo.applyDeliveryStatus(evolutionMessageId(instance, String(id)), status);
+      if (status && id) await messageRepo.applyDeliveryStatus(evolutionMessageId(instance, String(id)), status, { restaurantId });
     }
     return;
   }
   const profile = await getRestaurantProfile(restaurantId);
-  if (profile.whatsapp_provider !== "evolution") return;
+  if (await getActiveWhatsAppProvider(restaurantId) !== "evolution") return;
   const branches = await getActiveBranches(restaurantId);
   if (!branches.length) throw new Error("Restaurant has no active branch");
   const { data: config, error } = await supabaseAdmin.from("evolution_configs").select("display_phone_number")

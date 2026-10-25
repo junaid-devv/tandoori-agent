@@ -1,3 +1,4 @@
+import { scopeBranchQuery } from "@/lib/tenant-scope";
 import { NextRequest, NextResponse } from "next/server";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
@@ -13,7 +14,6 @@ export async function GET(req: NextRequest) {
 
   const { searchParams } = new URL(req.url);
   const sinceOrder = searchParams.get("since_order_at");
-  const branchId = auth.branchId;
 
   try {
     // 1. Fetch unread conversations
@@ -24,9 +24,7 @@ export async function GET(req: NextRequest) {
       .order("updated_at", { ascending: false })
       .limit(20);
 
-    if (branchId) {
-      convQuery = convQuery.eq("branch_id", branchId);
-    }
+    convQuery = scopeBranchQuery(convQuery, auth);
 
     // 2. Fetch latest new/active orders (received status)
     let ordersQuery = supabaseAdmin
@@ -36,9 +34,7 @@ export async function GET(req: NextRequest) {
       .order("created_at", { ascending: false })
       .limit(10);
 
-    if (branchId) {
-      ordersQuery = ordersQuery.eq("branch_id", branchId);
-    }
+    ordersQuery = scopeBranchQuery(ordersQuery, auth);
 
     const [convRes, ordersRes] = await Promise.all([convQuery, ordersQuery]);
 

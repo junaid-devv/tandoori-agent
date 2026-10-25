@@ -1,3 +1,5 @@
+> Current shared deployment: clients use https://tandoori-agent.vercel.app and their own restaurant login. Provision their restaurant/staff membership first; each client then links its own WhatsApp in the dashboard. A separate Vercel or Supabase deployment is optional, not required per tenant. The scaffolding instructions below describe that separate-deployment option.
+
 > WhatsApp integration setup: use [EVOLUTION_API_SETUP.md](EVOLUTION_API_SETUP.md) as the current source of truth for multi-tenant Evolution and Meta configuration.
 
 # 📋 ORDERiQ - White-Label Client Handover Guide
@@ -10,17 +12,17 @@ This comprehensive guide outlines the end-to-end process for provisioning, confi
 
 ORDERiQ is an enterprise-grade AI conversational ordering platform designed for high-volume delivery, takeaway, and dine-in restaurants. Each client deployment consists of:
 
-1. **Frontend & AI Brain (Vercel)**: Next.js 14 application providing the WhatsApp AI ordering engine, customer web interface, and administrative management dashboard.
-2. **Database & Storage (Supabase)**: Dedicated or schema-isolated PostgreSQL database with `pgvector` for semantic menu search, row-level security (RLS), real-time order channels, and auth.
+1. **Frontend & AI Brain (Vercel)**: Next.js 16 application providing the WhatsApp AI ordering engine, customer web interface, and administrative management dashboard.
+2. **Database & Storage (Supabase)**: Shared PostgreSQL database with tenant-scoped application access with `pgvector` for semantic menu search, row-level security (RLS), real-time order channels, and auth.
 3. **WhatsApp Channel**:
-   - **Evolution API Gateway (Railway)**: Self-hosted multi-device WhatsApp Web gateway (Baileys) linked via QR code scan.
+   - **Evolution API Gateway (Azure VM)**: Self-hosted multi-device WhatsApp Web gateway (Baileys) linked via QR code scan.
    - **OR Meta Cloud API**: Official WhatsApp Business Platform webhook integration.
 
 ```
 +-----------------------------------------------------------------------------------+
 |                                 CLIENT ECOSYSTEM                                  |
 |                                                                                   |
-|  [ Customer WhatsApp ] <=======> [ Evolution API (Railway) OR Meta API ]                 |
+|  [ Customer WhatsApp ] <=======> [ Evolution API (Azure VM) OR Meta API ]                 |
 |                                                  |                                |
 |                                           Webhooks & API                          |
 |                                                  v                                |

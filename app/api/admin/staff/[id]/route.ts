@@ -1,3 +1,4 @@
+import { requireOwnedAdminRecord } from "@/lib/admin-access";
 import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse, readLimitedJsonBody } from "@/lib/api-utils";
 import { deleteStaffAccount, updateStaffAccount } from "@/lib/admin";
@@ -23,6 +24,7 @@ export async function PATCH(req: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
+    await requireOwnedAdminRecord(auth.session, "staff_profiles", id);
     const body = await readLimitedJsonBody<StaffBody>(req, STAFF_BODY_LIMIT_BYTES);
     await updateStaffAccount(id, {
       fullName: body.full_name ?? "",
@@ -50,6 +52,7 @@ export async function DELETE(_: NextRequest, { params }: Params) {
 
   try {
     const { id } = await params;
+    await requireOwnedAdminRecord(auth.session, "staff_profiles", id);
     if (id === auth.session.userId) {
       return NextResponse.json({ error: "You cannot delete your own admin account." }, { status: 400 });
     }

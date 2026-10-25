@@ -92,8 +92,8 @@ export interface Database {
         Update: Partial<Database["public"]["Tables"]["restaurant_profiles"]["Insert"]>;
       };
       evolution_configs: {
-        Row: { restaurant_id: string; instance_name: string; is_active: boolean; connection_status: string; display_phone_number: string | null; verified_name: string | null; created_at: string; updated_at: string };
-        Insert: { restaurant_id: string; instance_name: string; is_active?: boolean; connection_status?: string; display_phone_number?: string | null; verified_name?: string | null; created_at?: string; updated_at?: string };
+        Row: { interactive_mode: "compatible" | "native"; restaurant_id: string; instance_name: string; is_active: boolean; connection_status: string; display_phone_number: string | null; verified_name: string | null; created_at: string; updated_at: string };
+        Insert: { interactive_mode?: "compatible" | "native"; restaurant_id: string; instance_name: string; is_active?: boolean; connection_status?: string; display_phone_number?: string | null; verified_name?: string | null; created_at?: string; updated_at?: string };
         Update: Partial<Database["public"]["Tables"]["evolution_configs"]["Insert"]>;
       };
       whatsapp_configs: {

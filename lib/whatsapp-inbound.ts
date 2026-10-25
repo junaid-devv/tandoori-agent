@@ -11,6 +11,7 @@ import { sendAndPersistAssistantMessage } from "@/lib/assistant-dispatcher";
 import type { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { saveCustomerAddressFromOrder, updateCustomerOrderStats } from "@/lib/customer-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createStaffAlert } from "./staff-alerts";
 
 import {
   downloadWhatsAppMedia,
@@ -258,6 +259,10 @@ export async function processOneMessage(
 
     // Fire-and-forget: touch is low priority, don't block reply delivery
     void conversationRepo.touch(conversation.id).catch((e) => console.error("[webhook] touch failed:", e));
+  } catch (error) {
+    await createStaffAlert({ conversationId: conversation.id, branchId: activeBranch.id, kind: "delivery_notification", severity: "high",
+      message: "The automated reply could not be completed. Check its delivery status and reply from the inbox. " + (error instanceof Error ? error.message : "Processing failed") });
+    throw error;
   } finally {
     await releaseLock(conversation.id, lockToken);
   }
@@ -398,6 +403,7 @@ async function handleNonText(
           whatsappMsgId: message.id,
           metadata: {
             ...message.mediaMetadata,
+            whatsappTransport: getWhatsAppTransport(),
             isVoiceNote: true,
             audioUrl: voiceAudioUrl,
             mediaId: audioId,
@@ -476,6 +482,7 @@ async function handleNonText(
           whatsappMsgId: message.id,
           metadata: {
             ...message.mediaMetadata,
+            whatsappTransport: getWhatsAppTransport(),
             isVoiceNote: true,
             audioUrl: audioId ? `/api/media/${audioId}` : null,
             mediaId: audioId,
@@ -501,6 +508,7 @@ async function handleNonText(
       whatsappMsgId: message.id,
       metadata: {
         ...message.mediaMetadata,
+            whatsappTransport: getWhatsAppTransport(),
         isVoiceNote: true,
         audioUrl: audioId ? `/api/media/${audioId}` : null,
         mediaId: audioId,
