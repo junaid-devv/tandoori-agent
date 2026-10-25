@@ -1,0 +1,11 @@
+{$EVOLUTION_HOST} {
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+	# Tenants use the existing OrderIQ dashboard. Keep gateway management UI private.
+	@management path /manager /manager/* /docs /docs/*
+	respond @management 404
+	reverse_proxy evolution:8080
+}

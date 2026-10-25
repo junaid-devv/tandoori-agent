@@ -37,8 +37,57 @@ Provider selection is stored **per restaurant**, not in a global environment swi
 This workspace's ignored `.env.local` already has separately generated gateway and
 webhook secrets. Preserve them and copy the values privately to the dashboard host;
 use the gateway key as Evolution's `AUTHENTICATION_API_KEY` when deploying it.
-`EVOLUTION_API_BASE_URL` remains empty until your server exists. `APP_URL` must be
-your actual public dashboard URL. Production hosting variables have not been changed.
+The Azure setup uses `https://20.219.102.16.sslip.io` for Evolution and
+`https://tandoori-agent.vercel.app` for `APP_URL`. These four variables are configured
+in Vercel production as well as the ignored local environment; both secrets are
+stored as sensitive production variables. A deployment must load the new settings.
+
+## Azure VM deployment
+
+The Ubuntu VM `evolution-api-vm` runs the gateway, PostgreSQL 17, Redis 7, and Caddy
+from `/home/azureuser/evolution-api`. Evolution's internal PostgreSQL database is
+on this VM. The dashboard continues using the existing Supabase project for tenants,
+contacts, conversations, orders, and integration mappings. No Supabase service-role
+key is copied to the Evolution server.
+
+The free `20.219.102.16.sslip.io` hostname resolves to the VM's public IPv4 address.
+Keep that address static in Azure; if it changes, update the hostname, `SERVER_URL`,
+`EVOLUTION_HOST`, and Vercel's `EVOLUTION_API_BASE_URL`. A custom subdomain can replace
+it later. Azure's network security group must allow incoming TCP **80 and 443** for
+Caddy's certificate issuance, renewal, and HTTPS traffic. Do not open 8080, 5432, or
+6379 publicly. Evolution binds to localhost; databases have no host port mappings.
+The gateway Manager UI is blocked at the reverse proxy because tenants use ORDERiQ.
+
+Start or inspect the deployment over SSH:
+
+```sh
+cd /home/azureuser/evolution-api
+sudo docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+sudo docker compose -f docker-compose.yml -f docker-compose.https.yml ps
+sudo docker compose logs --tail=50 evolution
+sudo docker compose -f docker-compose.yml -f docker-compose.https.yml logs --tail=30 caddy
+```
+
+All services restart automatically after Docker or VM restarts. Persistent Docker
+volumes hold PostgreSQL, Redis, session files, and TLS certificates. Container logs
+are capped at three 10 MB files per service. Telemetry and verbose message logging
+are disabled.
+
+`orderiq-evolution-backup.timer` runs `deploy/evolution/backup.sh` daily at 03:00 UTC
+(with up to 15 minutes jitter). It backs up PostgreSQL, a Redis snapshot, instance
+files, and configuration to `/home/azureuser/evolution-backups`, retaining seven
+days. The first backup was run successfully. This directory and the deployment
+secrets are owner-only. Backups contain credentials and WhatsApp sessions: keep
+them private. Copy backups to separate storage for protection against VM/disk loss;
+local backups alone do not protect against losing the VM.
+
+Check or run a backup:
+
+```sh
+sudo systemctl list-timers orderiq-evolution-backup.timer
+sudo systemctl start orderiq-evolution-backup.service
+sudo systemctl show orderiq-evolution-backup.service -p Result
+```
 
 ## Railway or another host
 

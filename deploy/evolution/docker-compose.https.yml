@@ -1,0 +1,25 @@
+# Add automatic HTTPS on a VM. Set EVOLUTION_HOST to a hostname resolving to it.
+# Start: docker compose -f docker-compose.yml -f docker-compose.https.yml up -d
+services:
+  caddy:
+    image: caddy:2-alpine@sha256:eb4d35b7452d1ab6171fbdbe8d9275b2301dad6dad92115d91e19fb9b24d510f
+    restart: unless-stopped
+    environment:
+      EVOLUTION_HOST: ${EVOLUTION_HOST:?set EVOLUTION_HOST}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - evolution
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  caddy_data:
+  caddy_config:
