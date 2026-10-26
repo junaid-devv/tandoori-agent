@@ -14,6 +14,8 @@ import { executeTurn } from "./executor";
 import type { InteractivePayload } from "./interactive";
 import { loadTurnContext } from "./context";
 import { stateRepo } from "@/lib/data/state.repo";
+import { orderRepo } from "@/lib/data/order.repo";
+import { reply } from "./reply";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import { extractBaseItemName, extractSizeFromQuery } from "@/lib/menu/search";
@@ -65,6 +67,7 @@ function makeBase(language: TurnUnderstanding["language"]): TurnUnderstanding {
     reservation_time: null,
     pickup_time: null,
     info_query: null,
+    questions: [],
     sentiment: "neutral",
     wants_human: false,
     notes: "fast_path_interactive",
@@ -246,6 +249,23 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   });
   t.ctx = Date.now() - startedAt;
 
+  // Placement consumes the reviewed cart in its own DB transaction. If the
+  // process crashed before committing the reply receipt, recover that same
+  // order's acknowledgment instead of reinterpreting an empty-cart confirm.
+  if (ctx.state.stage === "placed" && !ctx.state.cart.length && input.sourceUserMessageId) {
+    const order = await orderRepo.getLatestForConversation(input.conversationId);
+    if (order?.source_user_message_id === input.sourceUserMessageId) {
+      const text = reply.orderPlaced(ctx.state.preferred_language, order.order_number ?? order.id,
+        input.currency, order.total, order.type, ctx.settings);
+      if (input.messageId) await stateRepo.commitTurn(input.conversationId, input.messageId,
+        { stage: "placed", summary_sent_at: null, pending_clarification: null,
+          last_user_whatsapp_msg_id: input.whatsappMessageId ?? undefined,
+          last_processed_user_message_at: new Date().toISOString() }, { replyText: text });
+      return { replyText: text, stage: "placed", placeOrder: false, escalate: false,
+        intent: "recovered_order_reply", usedSemanticSearch: false, latencyMs: Date.now() - startedAt };
+    }
+  }
+
   let understanding = fastUnderstanding(input.messageText, ctx.state, ctx.savedAddress?.id);
 
   // ── 2) NLU ─────────────────────────────────────────────────────────────────
@@ -316,7 +336,9 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       last_user_whatsapp_msg_id: input.whatsappMessageId ?? undefined,
       last_processed_user_message_at: new Date().toISOString(),
     };
-    if (input.messageId) await stateRepo.commitTurn(input.conversationId, input.messageId, statePatch);
+    if (input.messageId) await stateRepo.commitTurn(input.conversationId, input.messageId, statePatch, {
+      replyText: exec.replyText, interactive: exec.interactive ?? null, mediaUrls: exec.mediaUrls,
+    });
     else await stateRepo.patch(input.conversationId, statePatch);
   }
 

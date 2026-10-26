@@ -12,6 +12,12 @@ const deliveryHistory = [
 ];
 const fulfillment = { order_type: "delivery", address: "Sector A st 26", guests: null, reservation_time: null, pickup_time: null };
 const cases = [
+  { name: "production pizza and shake message retains both portions and delivery", text: "Ek bbq pizza or aik milkshake deliver kr dain", language: "roman_urdu",
+    test: (u) => u.items.length === 2 && u.items.some((i) => /bbq.*pizza/i.test(i.query)) && u.items.some((i) => /milkshake/i.test(i.query)) && u.order_type === "delivery" },
+  { name: "several questions plus an order keep independent answers", text: "Add 2 naan. Chicken tikka ka rate? Fajita pizza available? Delivery fee aur delivery time? COD?", language: "roman_urdu",
+    test: (u) => u.items.some((i) => /naan/i.test(i.query) && i.qty === 2) && u.questions.length >= 4 && u.questions.filter((q) => q.intent === "ask_item_info").length >= 2 && u.questions.some((q) => q.intent === "ask_delivery_info") && u.questions.some((q) => q.intent === "ask_payment") },
+  { name: "an unknown item cannot erase a second requested dish", text: "2 sushi aur 3 naan bhej do", language: "roman_urdu",
+    test: (u) => u.items.length === 2 && u.items.some((i) => /sushi/i.test(i.query) && i.qty === 2) && u.items.some((i) => /naan/i.test(i.query) && i.qty === 3) },
   { name: "English multi-item order", text: "Please add 2 chicken biryani and 3 plain naan", test: (u) => u.intents.includes("add_items") && u.items.length === 2 && u.items.some((i) => i.qty === 3) },
   { name: "Roman Urdu complete delivery", text: "2 zinger burger aur ek naan, delivery karwa do House 12 Street 4 Gulberg Lahore, rider gate pe call kare", language: "roman_urdu", test: (u) => u.items.length === 2 && u.order_type === "delivery" && !!u.address && !!u.notes },
   { name: "Urdu script quantities and preparation", text: "دو ہاف چکن کڑاہی کم مرچ کے ساتھ اور تین نان چاہیے", test: (u) => u.items.length >= 2 && u.items.some((i) => i.qty === 2 && /half/i.test(i.size ?? "") && !!i.notes) && u.language === "roman_urdu" },

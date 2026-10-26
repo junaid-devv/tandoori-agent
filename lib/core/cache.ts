@@ -37,7 +37,7 @@ interface Entry<T> {
  */
 export class InMemoryCacheStore implements CacheStore {
   private store = new Map<string, Entry<unknown>>();
-  private inflight = new Map<string, Promise<unknown>>();
+  private inflight = new Map<string, { promise: Promise<unknown>; token: symbol }>();
   private readonly maxEntries: number;
 
   constructor(maxEntries = 5000) {
@@ -68,16 +68,19 @@ export class InMemoryCacheStore implements CacheStore {
 
   async del(key: string): Promise<void> {
     this.store.delete(key);
+    this.inflight.delete(key);
   }
 
   async delByPrefix(prefix: string): Promise<void> {
     for (const k of this.store.keys()) {
       if (k.startsWith(prefix)) this.store.delete(k);
     }
+    for (const k of this.inflight.keys()) if (k.startsWith(prefix)) this.inflight.delete(k);
   }
 
   async clear(): Promise<void> {
     this.store.clear();
+    this.inflight.clear();
   }
 
   async size(): Promise<number> {
@@ -89,20 +92,21 @@ export class InMemoryCacheStore implements CacheStore {
     if (cached !== null) return cached;
 
     // De-duplicate concurrent loads for the same key (stampede protection).
-    const existing = this.inflight.get(key) as Promise<T> | undefined;
-    if (existing) return existing;
+    const existing = this.inflight.get(key);
+    if (existing) return existing.promise as Promise<T>;
+    const token = Symbol(key);
 
     const promise = (async () => {
       try {
         const value = await loader();
-        await this.set(key, value, ttlMs);
+        if (this.inflight.get(key)?.token === token) await this.set(key, value, ttlMs);
         return value;
       } finally {
-        this.inflight.delete(key);
+        if (this.inflight.get(key)?.token === token) this.inflight.delete(key);
       }
     })();
 
-    this.inflight.set(key, promise);
+    this.inflight.set(key, { promise, token });
     return promise;
   }
 }

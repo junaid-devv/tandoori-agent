@@ -112,7 +112,7 @@ function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null
     case "ask_recommendation":
       return { kind: "answer_info", payload: { query: u.info_query ?? "", intent } };
     case "ask_hours_or_location":
-      return { kind: "answer_hours_location" };
+      return { kind: "answer_hours_location", payload: { query: u.info_query ?? "" } };
     case "ask_payment":
       return { kind: "answer_payment" };
     case "ask_delivery_info":
@@ -159,12 +159,17 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
     if (!changedCart && view.cart.length === 0) nextStage = "browsing";
   }
   for (const intent of u.intents) {
+    if (u.questions?.some((question) => question.intent === intent)) continue;
     const action = infoActionFor(intent, u);
     if (action && !actions.some((a) => a.kind === action.kind)) actions.push(action);
     // Questions and menu interruptions preserve the checkout's missing slot.
     if (action?.kind === "show_menu" && !CHECKOUT_STAGES.includes(view.stage) && !changedCart) {
       nextStage = view.cart.length ? "building_cart" : "browsing";
     }
+  }
+  for (const question of u.questions ?? []) {
+    const action = infoActionFor(question.intent, { ...u, info_query: question.query });
+    if (action && !actions.some((a) => a.kind === action.kind && a.payload?.query === question.query)) actions.push(action);
   }
 
   const savedAddressRequested = u.intents.includes("use_saved_address") || Boolean(u.notes?.startsWith("use_saved_address:"));

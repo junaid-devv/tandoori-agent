@@ -14,6 +14,12 @@ const pa = (l: Lang) => l === "pashto";
 
 export const reply = {
 
+  catalogNotReady(l: Lang): string {
+    return pa(l) ? "Da menu qeemat ao items la tasdeeq shawi na di. Da order details ba staff sara verify kro."
+      : ur(l) ? "Menu ki items aur qeematein abhi verify nahi hui hain. Order ki details staff se check karwani hongi."
+      : "The menu items and prices have not been verified yet. Staff will need to check the order details.";
+  },
+
   greeting(l: Lang, appName: string, customerName?: string | null, wasSalam?: boolean): string {
     const isBusinessName =
       customerName &&
@@ -147,7 +153,7 @@ export const reply = {
       : `Here are our "${query}" options:\n${list}\nWhich one would you like to order?`;
   },
 
-  itemList(l: Lang, items: Array<{ name: string; price: number; description?: string | null }>, currency: string, categoryName?: string): string {
+  itemList(l: Lang, items: Array<{ name: string; price: number; description?: string | null; is_available?: boolean }>, currency: string, categoryName?: string): string {
     if (items.length === 0) {
       if (pa(l)) return "Menu da wakht nishta.";
       return ur(l) ? "Menu abhi available nahi." : "Menu not available right now.";
@@ -169,12 +175,14 @@ export const reply = {
             breakdown = `\n   ▫️ ${i.description}`;
           }
         }
-        return `🏷️ *${i.name}* — ${currency} ${i.price}${breakdown}`;
+        const status = i.is_available === false ? (ur(l) ? " — Abhi available nahi" : " — Currently unavailable") : "";
+        return `🏷️ *${i.name}* — ${currency} ${i.price}${status}${breakdown}`;
       }).join("\n\n");
     } else {
       list = items.slice(0, 10).map((i) => {
         const desc = i.description ? ` (${i.description})` : "";
-        return `• ${i.name} — ${currency} ${i.price}${desc}`;
+        const status = i.is_available === false ? (ur(l) ? " — Abhi available nahi" : " — Currently unavailable") : "";
+        return `• ${i.name} — ${currency} ${i.price}${desc}${status}`;
       }).join("\n");
     }
 

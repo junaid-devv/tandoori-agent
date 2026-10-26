@@ -16,17 +16,19 @@
  */
 import OpenAI from "openai";
 import { cache } from "@/lib/core/cache";
+import { createHash } from "node:crypto";
 import type { LanguagePreference } from "@/lib/schema.types";
 import type { RestaurantSettings } from "@/lib/settings";
 import type { MenuCatalogItem } from "@/lib/menu";
 
 function getModel(): string {
-  if (process.env.GROQ_API_KEY) return "qwen/qwen3.8-27b";
+  if (process.env.ORDER_AGENT_ANSWER_MODEL) return process.env.ORDER_AGENT_ANSWER_MODEL;
   if (process.env.ORDER_AGENT_NLU_MODEL) return process.env.ORDER_AGENT_NLU_MODEL;
+  if (process.env.GROQ_API_KEY) return "qwen/qwen3.8-27b";
   return process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
 }
 const MAX_TOKENS = Number(process.env.ORDER_AGENT_ANSWER_MAX_TOKENS) || 400;
-const TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 25_000;
+const TIMEOUT_MS = Number(process.env.ORDER_AGENT_ANSWER_TIMEOUT_MS) || 6000;
 const CACHE_TTL_MS = Number(process.env.ANSWER_CACHE_TTL_MS) || 3 * 60_000;
 
 let client: OpenAI | null = null;
@@ -62,11 +64,9 @@ export interface GroundedAnswerInput {
   /** Recently shown / relevant items to focus on (optional). */
   relevantItems?: Array<{ name: string; price: number; category: string | null; description?: string | null }>;
   isOpenNow: boolean;
+  /** Remaining shared answer-generation budget for this turn. */
+  timeoutMs?: number;
 }
-
-// Keywords that signal a pure logistics/operational question without food context.
-const NON_MENU_KEYWORDS = /\b(deliver|delivery|timing|hours|open|close|location|address|payment|cod|cash|pickup|dine.?in|halal|phone|number|contact|area|zone|charge|fee|minimum|min order|eta)\b/i;
-const MENU_INQUIRY_KEYWORDS = /\b(deal|deals|include|includes|contain|contains|detail|details|what is|whats in|burger|karahi|handi|bbq|biryani|naan|rice|drink|menu|item|items|price|cost|flavor|taste|ingredient|portion|size|combo)\b/i;
 
 function buildFacts(input: GroundedAnswerInput): string {
   const s = input.settings;
@@ -100,12 +100,9 @@ function buildFacts(input: GroundedAnswerInput): string {
     if (cats.length) lines.push(`MENU_CATEGORIES: ${cats.join(", ")}`);
   }
 
-  // Smart context trimming: skip full menu only for purely non-menu logistics questions
-  const isNonMenuQuestion =
-    NON_MENU_KEYWORDS.test(input.question) &&
-    !MENU_INQUIRY_KEYWORDS.test(input.question);
-
-  if (!isNonMenuQuestion) {
+  // Compound questions can mention any dish alongside logistics. Do not remove
+  // dishes based on a fixed cuisine keyword list or silently truncate a category.
+  {
     if (input.relevantItems?.length) {
       lines.push("", "RECENTLY_SHOWN_OPTIONS:");
       for (const it of input.relevantItems) {
@@ -127,7 +124,7 @@ function buildFacts(input: GroundedAnswerInput): string {
       lines.push("", "MENU:");
       for (const [cat, items] of byCat) {
         lines.push(`  [${cat}]`);
-        for (const it of items.slice(0, 40)) lines.push(`   - ${it}`);
+        for (const it of items) lines.push(`   - ${it}`);
       }
     } else {
       lines.push("", "MENU: (no items loaded yet)");
@@ -150,7 +147,7 @@ function buildSystemPrompt(personality?: string): string {
     "- You cannot edit carts, place/cancel orders, reserve tables, or notify staff. Never claim any of these actions happened in an informational reply. Never guarantee allergen safety or no cross-contamination; unknown ingredient/allergy questions need staff verification. Unavailable items cannot be recommended as available.",
     "- NEVER provide dummy, sample, or fabricated phone numbers (e.g. 042-111-222-333 or 0300-1234567). Only mention a phone number if PHONE_DELIVERY is explicitly listed in the facts AND the user specifically asked for a contact number.",
     "- When the customer asks what a deal, combo, or item includes or contains (e.g. 'Deal 1 mein kya hai', 'family deal mein kya milta hai'): look up the (Includes: ...) in the MENU facts and describe the exact items and contents clearly.",
-    "- If the customer asks for a dish or cuisine NOT on the menu: politely state that it is not available on our menu. If MENU_CATEGORIES is present in the facts, mention ONLY those exact categories (e.g. Karahi, Handi, BBQ); NEVER invent, assume, or list fast-food, pizza, burger, pasta, or other dishes not present in the facts. If MENU_CATEGORIES is not present, simply say the item is not on our menu and ask what they would like to order.",
+    "- The supplied MENU is the only authority for dishes and categories. Never infer cuisine or specialties from the restaurant name. Never claim a listed item is missing. Missing or incomplete menu facts mean you cannot verify availability; say that clearly instead of inventing categories or denying a dish. A temporarily unavailable item is different from a dish absent from the catalog.",
     "- If the customer asks about social media, facebook, instagram, website, or other unlisted info: politely state that you will connect them with staff.",
     "- If the answer is not in the facts, say honestly you're not sure and offer to connect them to staff — do NOT guess or make up facts.",
     "- Keep replies to 1-3 SHORT lines maximum. Do NOT provide extra information that wasn't asked for.",
@@ -181,11 +178,12 @@ async function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise
  * the caller can use a safe canned reply (never throws into the turn).
  */
 export async function groundedAnswer(input: GroundedAnswerInput): Promise<string | null> {
+  const timeoutMs = Math.max(1, Math.min(TIMEOUT_MS, Math.floor(input.timeoutMs ?? TIMEOUT_MS)));
   const q = input.question.trim();
   if (!q) return null;
 
   const facts = buildFacts(input);
-  const cacheKey = `answer:${input.language}:${q.toLowerCase()}:${hash(facts)}`;
+  const cacheKey = `answer:v2:${input.language}:${q.toLowerCase()}:${hash(facts + input.settings.ai_personality)}`;
   const cached = await cache.get<string>(cacheKey);
   if (cached) return cached;
 
@@ -207,8 +205,8 @@ export async function groundedAnswer(input: GroundedAnswerInput): Promise<string
           { role: "system", content: `FACTS:\n${facts}` },
           { role: "user", content: `${langInstr}\n\nCustomer asked: ${q}` },
         ],
-      }, { signal: AbortSignal.timeout(TIMEOUT_MS) }),
-      TIMEOUT_MS,
+      }, { signal: AbortSignal.timeout(timeoutMs) }),
+      timeoutMs,
       "groundedAnswer",
     );
     const text = completion.choices[0]?.message?.content?.trim();
@@ -222,10 +220,5 @@ export async function groundedAnswer(input: GroundedAnswerInput): Promise<string
 }
 
 function hash(s: string): string {
-  let h = 0;
-  for (let i = 0; i < s.length; i++) {
-    h = (h << 5) - h + s.charCodeAt(i);
-    h |= 0;
-  }
-  return String(h >>> 0);
+  return createHash("sha256").update(s).digest("hex");
 }

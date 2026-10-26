@@ -3,9 +3,11 @@ import { ApiRequestError, apiErrorResponse, readLimitedJsonBody, requireTrimmedS
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { processMenuImage } from "@/lib/ai";
 import { createMenuUpload, updateMenuUploadStatus } from "@/lib/menu";
+import { getRestaurantProfile } from "@/lib/restaurant-profile";
 
 type MenuProcessBody = {
   imageUrl?: string;
+  savedCards?: boolean;
 };
 
 const MENU_PROCESS_BODY_LIMIT_BYTES = 10 * 1024 * 1024; // 10 MB limit for camera photos
@@ -49,6 +51,21 @@ export async function POST(req: NextRequest) {
     }
 
     const body = await readLimitedJsonBody<MenuProcessBody>(req, MENU_PROCESS_BODY_LIMIT_BYTES);
+    if (body.savedCards === true) {
+      const profile = await getRestaurantProfile(auth.session?.restaurantId ?? undefined);
+      const cards = profile.menu_card_images;
+      if (!cards.length) return NextResponse.json({ error: "No saved menu pictures were found." }, { status: 422 });
+      if (cards.length > 8) return NextResponse.json({ error: "Import at most 8 menu pictures at a time." }, { status: 422 });
+      const items: unknown[] = [];
+      // Bound vision concurrency; this is an onboarding operation, never a
+      // customer-turn dependency. Extraction only prepares a review preview.
+      for (let index = 0; index < cards.length; index += 2) {
+        const pages = await Promise.all(cards.slice(index, index + 2).map((url) => processMenuImage(validateMenuImageUrl(url))));
+        items.push(...pages.flat());
+      }
+      if (!items.length) return NextResponse.json({ error: "No priced items were extracted. Check the pictures." }, { status: 422 });
+      return NextResponse.json({ items, source: "saved_menu_cards", requiresReview: true });
+    }
     const imageUrl = validateMenuImageUrl(body.imageUrl);
 
     // Save upload record with truncated URL reference if base64 to conserve database space

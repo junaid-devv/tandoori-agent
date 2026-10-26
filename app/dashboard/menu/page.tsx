@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
@@ -21,6 +21,7 @@ import { MenuItemDialog, type CatalogItem } from "@/app/components/dashboard/Men
 import { EmptyState, ErrorNotice } from "@/app/components/dashboard/WorkspaceUI";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
+import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 
 const WEEKDAYS = [
   { key: "mon", label: "M" },
@@ -46,7 +47,7 @@ interface MenuItem {
   _deleting?: boolean;
 }
 
-type ExtractedMenuItem = { name: string; price: number; category?: string };
+type ExtractedMenuItem = { name: string; price: number; category?: string; description?: string | null };
 type ImportWarning = { code: "duplicate" | "invalid_name" | "invalid_price"; message: string };
 
 const normalizeWhitespace = (value: string) => value.replace(/\s+/g, " ").trim();
@@ -70,7 +71,7 @@ function normalizeItems(items: MenuItem[]) {
 
   items.forEach((item) => {
     const name = normalizeWhitespace(item.name);
-    const price = Number(item.price);
+    const price = item.price == null || String(item.price).trim() === "" ? NaN : Number(item.price);
     const key = name.toLowerCase();
     const description = item.description ? normalizeWhitespace(item.description) : null;
 
@@ -116,6 +117,7 @@ async function patchItem(id: string, patch: Partial<MenuItem>) {
 }
 
 export default function MenuPage() {
+  const { profile } = useDashboardContext();
   const [editingItem, setEditingItem] = useState<CatalogItem | null>(null);
   const [showImport, setShowImport] = useState(false);
   const [items, setItems] = useState<MenuItem[]>([]);
@@ -141,12 +143,13 @@ export default function MenuPage() {
   // Single-branch: always load menu for the auto-resolved branch (no branch_id param needed)
   const { data: cachedMenu, isLoading: loading, error: menuError, revalidate: revalidateMenu } = useDataCache<MenuItem[]>("/api/menu");
 
-  // Sync cached menu into local editable state
-  useEffect(() => {
-    if (cachedMenu) {
-      setItems(cachedMenu);
-    }
-  }, [cachedMenu]);
+  // Reset optimistic edits when a new server snapshot arrives, before rendering
+  // stale rows. Keep edits local while that snapshot is unchanged.
+  const [menuSnapshot, setMenuSnapshot] = useState<MenuItem[] | null>(null);
+  if (cachedMenu !== menuSnapshot) {
+    setMenuSnapshot(cachedMenu);
+    setItems(cachedMenu ?? []);
+  }
 
   // Refresh helper used after mutations
   const loadMenu = useCallback(() => {
@@ -265,6 +268,24 @@ export default function MenuPage() {
     }
   };
 
+  const handleSavedCardsImport = async () => {
+    setProcessing(true);
+    try {
+      const response = await fetch("/api/menu/process", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ savedCards: true }) });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not read the saved menu pictures.");
+      const normalized = normalizeItems((payload.items ?? []).map((item: ExtractedMenuItem) => ({ ...item, category: item.category || "General", is_available: true })));
+      if (!normalized.items.length) throw new Error("No verified prices found. Please enter the menu items manually.");
+      setImportPreview(normalized.items);
+      setImportWarnings(normalized.warnings);
+      setImportMode("merge");
+      setShowImport(true);
+      showToast(`Read ${normalized.items.length} items. Review names, sizes and prices before saving.`, "success");
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Import failed.", "error");
+    } finally { setProcessing(false); }
+  };
+
   const handlePhotoUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) return;
@@ -287,6 +308,7 @@ export default function MenuPage() {
               name: item.name,
               price: item.price,
               category: item.category || "General",
+              description: item.description ?? null,
               is_available: true,
               available_days: [],
               available_start_time: null,
@@ -347,7 +369,7 @@ export default function MenuPage() {
           const item = (typeof entry === "object" && entry !== null ? entry : {}) as Record<string, unknown>;
           return {
             name: typeof item.name === "string" ? item.name : "",
-            price: typeof item.price === "number" ? item.price : Number(item.price) || 0,
+            price: item.price == null || String(item.price).trim() === "" ? NaN : Number(item.price),
             category: typeof item.category === "string" ? item.category : "General",
             description: typeof item.description === "string" ? item.description : null,
             is_available: typeof item.is_available === "boolean" ? item.is_available : true,
@@ -375,6 +397,7 @@ export default function MenuPage() {
       <>
         <PageHeader title="Menu catalog" description="A well-organized menu. Easy to browse, simple to keep up to date." actions={<><button disabled={loading || !!menuError} className="ui-button" onClick={() => setShowImport(!showImport)} aria-expanded={showImport}><UploadCloud size={15} />Import menu</button><button disabled={loading || !!menuError} className="ui-button ui-button-primary" onClick={() => setEditingItem({ name: "", price: 0, category: "General", is_available: true })}><Plus size={15} />Add item</button></>} />
         {menuError && <ErrorNotice message="We couldn’t load your menu. Please try again." retry={revalidateMenu} />}
+        {!loading && !menuError && items.length === 0 && <section role="alert" className="ui-card border-amber-200 bg-amber-50 p-5"><h2 className="ui-section-title">Ordering needs a priced menu</h2><p className="mt-2 text-sm text-slate-600">Menu pictures are sent to customers, but their items must also be saved here before the assistant can take orders.</p>{profile.menu_card_images.length > 0 && <button className="ui-button mt-4" disabled={processing} onClick={handleSavedCardsImport}><Sparkles size={15} />{processing ? "Reading saved pictures..." : "Import saved menu pictures"}</button>}</section>}
         {showImport && <section className="ui-card p-5 sm:p-6"><div className="mb-5 flex items-start justify-between gap-4"><div><h2 className="ui-section-title">Import your menu</h2><p className="mt-1.5 text-xs text-slate-500">Upload a menu photo or a JSON file. Review every item before adding it.</p></div><button onClick={() => setShowImport(false)} aria-label="Close import options" className="rounded-lg p-1 text-slate-500 hover:bg-slate-50"><X size={16} /></button></div><div className="flex flex-wrap gap-3"><label className="ui-button cursor-pointer"><Sparkles size={15} className="text-brand" />{processing ? "Reading photo..." : "Upload menu photo"}<input type="file" accept="image/*" onChange={handlePhotoUpload} className="sr-only" disabled={processing || jsonUploading} /></label><label className="ui-button cursor-pointer"><UploadCloud size={15} />{jsonUploading ? "Reading file..." : "Import JSON"}<input type="file" accept="application/json,.json" onChange={handleJsonUpload} className="sr-only" disabled={jsonUploading || processing} /></label></div></section>}
 
           {/* Import Preview */}

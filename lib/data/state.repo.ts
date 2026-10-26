@@ -13,6 +13,7 @@
  */
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { ConversationStateRow, ConversationStage } from "@/lib/schema.types";
+import type { StoredAgentReply } from "@/lib/agent/reply-delivery";
 
 const TABLE = "conversation_states";
 
@@ -69,9 +70,10 @@ export function parseState(raw: Partial<ConversationStateRow> & { conversation_i
 
 export const stateRepo = {
   /** Commit the draft and inbound receipt together so old webhook replays cannot add food twice. */
-  async commitTurn(conversationId: string, messageId: string, patch: Partial<ConversationStateRow>): Promise<void> {
-    const { data, error } = await supabaseAdmin.rpc("commit_restaurant_agent_turn", {
+  async commitTurn(conversationId: string, messageId: string, patch: Partial<ConversationStateRow>, reply?: StoredAgentReply): Promise<void> {
+    const { data, error } = await supabaseAdmin.rpc(reply ? "commit_restaurant_agent_reply" : "commit_restaurant_agent_turn", {
       p_conversation_id: conversationId, p_message_id: messageId, p_patch: patch,
+      ...(reply ? { p_reply: reply } : {}),
     });
     if (error) throw error;
     if (data !== true) throw new Error("Inbound message was already processed");

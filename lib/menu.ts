@@ -6,7 +6,7 @@ import {
   normalizeAvailabilityTime,
   type WeekdayKey,
 } from "./menu-availability";
-import { getRestaurantProfile } from "./restaurant-profile";
+import { getRestaurantProfile, getRestaurantProfileForBranch } from "./restaurant-profile";
 import { syncMenuEmbeddingsForBranch } from "./semantic-menu";
 import { supabaseAdmin } from "./supabase-admin";
 
@@ -85,7 +85,7 @@ export function sanitizeMenuItems(items: MenuItem[]) {
 
   items.forEach((item, index) => {
     const name = normalizeWhitespace(item.name ?? "");
-    const numericPrice = Number(item.price);
+    const numericPrice = item.price == null || String(item.price).trim() === "" ? NaN : Number(item.price);
 
     if (!name) {
       issues.push({
@@ -160,10 +160,6 @@ function getMenuAiCacheKey(branchId: string) {
 }
 
 export async function getMenuCatalog(branchId: string, restaurantId?: string): Promise<MenuCatalogItem[]> {
-  const cacheKey = getMenuCatalogCacheKey(branchId);
-  const cached = getCached<MenuCatalogItem[]>(cacheKey);
-  if (cached) return cached;
-
   const { data, error } = await supabaseAdmin
     .from("menu_items")
     .select("id, name, price, category, description, is_available, available_days, available_start_time, available_end_time")
@@ -172,11 +168,12 @@ export async function getMenuCatalog(branchId: string, restaurantId?: string): P
     .order("name", { ascending: true });
 
   if (error || !data) {
-    console.error("[getMenuCatalog] Failed to load menu:", error);
-    return [];
+    // A failed read is not an empty restaurant menu. Let webhook recovery retry;
+    // never cache a transient database outage as an authoritative missing dish.
+    throw error ?? new Error("Menu catalog could not be loaded");
   }
 
-  const profile = await getRestaurantProfile(restaurantId);
+  const profile = restaurantId ? await getRestaurantProfile(restaurantId) : await getRestaurantProfileForBranch(branchId);
   const items = data.map((item) => ({
     id: item.id,
     name: item.name,
@@ -196,7 +193,8 @@ export async function getMenuCatalog(branchId: string, restaurantId?: string): P
     available_end_time: normalizeAvailabilityTime(item.available_end_time),
   }));
 
-  setCached(cacheKey, items, MENU_CACHE_TTL_MS);
+  // Turn context owns the single menu TTL. Nested TTLs could otherwise keep a
+  // changed menu stale for twice the configured interval across workers.
   return items;
 }
 

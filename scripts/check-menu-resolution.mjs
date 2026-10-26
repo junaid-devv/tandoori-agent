@@ -23,7 +23,7 @@ try {
   const { getSupabaseAdmin } = await import("../lib/supabase-admin.ts");
   let rows = [];
   let rpcCalls = 0;
-  getSupabaseAdmin().rpc = async () => { rpcCalls++; return { data: rows, error: null }; };
+  getSupabaseAdmin().rpc = () => { rpcCalls++; return { abortSignal: async () => ({ data: rows, error: null }) }; };
   getSupabaseAdmin().from = () => { throw new Error("Unexpected catalog DB read"); };
   const food = (id, name, price = 99, available = true) => ({ id, name, price, category: "Soda Section", description: null, is_available: available });
   const drinks = [food("large", "1.5 Liter Drink", 199), food("small", "500ml Drink"), food("medium", "1 Liter Drink", 150)];
@@ -71,7 +71,11 @@ try {
     assert.equal((await resolve("drink", null, unavailable)).kind, "not_found");
     assert.equal((await searchMenu("offline", "drink", 8, [])).matches.length, 0);
   });
-  assert.ok(rpcCalls > 0, "Vector tests must actually reach the vector RPC");
+  const before = rpcCalls;
+  await resolve("drink");
+  assert.equal(rpcCalls, before, "Named catalog requests bypass the embedding service");
+  await searchMenu("offline", "refreshing beverage", 8, drinks);
+  assert.ok(rpcCalls > before, "Semantic descriptions must still reach the vector RPC");
   console.log(`MENU RESOLUTION: ${checks} checks passed.`);
 } finally {
   await new Promise((resolve) => server.close(resolve));

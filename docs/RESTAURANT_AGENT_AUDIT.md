@@ -1,5 +1,7 @@
 # Restaurant agent inspection and repair
 
+Latest follow-up: [26 October menu, multi-query, reply recovery and deployment verification](RESTAURANT_AGENT_RELIABILITY_2026_10_26.md). Catalog counts and deployment limitations below are historical snapshots; the follow-up supersedes them.
+
 Date: 25 October 2026. Scope: the active WhatsApp inbound path, language detection, NLU, history/context, cart and menu resolution, checkout state machine, fulfillment, order persistence, cancellation, replies, and deployment diagnostics.
 
 ## Result

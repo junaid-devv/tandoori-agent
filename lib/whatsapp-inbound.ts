@@ -2,6 +2,7 @@ import type { BranchRecord } from "./branches";
 // Shared restaurant message handling for Meta Cloud API and Evolution API.
 import OpenAI from "openai";
 import { runTurn } from "@/lib/agent/pipeline";
+import { deliverCommittedReply } from "@/lib/agent/reply-delivery";
 import { stateRepo, getDefaultState } from "@/lib/data/state.repo";
 import { contactRepo } from "@/lib/data/contact.repo";
 import { conversationRepo } from "@/lib/data/conversation.repo";
@@ -151,8 +152,17 @@ export async function processOneMessage(
   // State ensure is now a single-trip upsert, so this is fast
   let state = await stateRepo.ensure(conversation.id);
 
-  // Dedup: already processed this WhatsApp message id
-  if (state.last_user_whatsapp_msg_id === message.id) return;
+  // A processed inbound can still have an unsent committed reply. Recover its
+  // receipt before checking human mode or re-running transcription/NLU.
+  const previous = await messageRepo.getByWhatsappId(message.id);
+  if (previous?.conversation_id === conversation.id && previous.metadata?.agent_processed === true) {
+    const token = await acquireLock(conversation.id);
+    if (!token) throw new Error("Conversation is busy; retry reply recovery");
+    try {
+      await deliverCommittedReply({ conversationId: conversation.id, branchId: activeBranch.id, messageId: previous.id, phone, phoneNumberId });
+    } finally { await releaseLock(conversation.id, token); }
+    return;
+  }
 
   const createdAt = toIso(message.timestamp);
 
@@ -200,7 +210,10 @@ export async function processOneMessage(
   // cart, stage, and order details from any turn that completed while we waited.
   try {
     state = await stateRepo.ensure(conversation.id);
-    if (state.last_user_whatsapp_msg_id === message.id || await messageRepo.wasProcessed(persistedMsg.id, conversation.id)) return;
+    if (await messageRepo.wasProcessed(persistedMsg.id, conversation.id)) {
+      await deliverCommittedReply({ conversationId: conversation.id, branchId: activeBranch.id, messageId: persistedMsg.id, phone, phoneNumberId });
+      return;
+    }
   // Inactivity reset: clear cart/draft after 2 h idle
   if (shouldResetForInactivity(state, createdAt)) {
     const nextLang = incomingContent ? inferLanguagePreference(incomingContent, state.preferred_language) : state.preferred_language;
@@ -252,15 +265,7 @@ export async function processOneMessage(
       ]).catch((e) => console.error("[webhook] Post-order hooks failed:", e));
     }
 
-    await sendAndPersistAssistantMessage({
-      conversationId: conversation.id,
-      phone,
-      content: result.replyText,
-      interactiveList: result.interactive?.kind === "list" ? result.interactive.payload : null,
-      replyButtons: result.interactive?.kind === "buttons" ? result.interactive.payload : null,
-      mediaUrls: result.mediaUrls ?? null,
-      phoneNumberId,
-    });
+    await deliverCommittedReply({ conversationId: conversation.id, branchId: activeBranch.id, messageId: persistedMsg.id, phone, phoneNumberId });
 
     // Fire-and-forget: touch is low priority, don't block reply delivery
     void conversationRepo.touch(conversation.id).catch((e) => console.error("[webhook] touch failed:", e));
@@ -435,7 +440,10 @@ async function handleNonText(
         }
         try {
           let lockedState = await stateRepo.ensure(conversation.id);
-          if (lockedState.last_user_whatsapp_msg_id === message.id || await messageRepo.wasProcessed(persistedMsg.id, conversation.id)) return;
+          if (await messageRepo.wasProcessed(persistedMsg.id, conversation.id)) {
+            await deliverCommittedReply({ conversationId: conversation.id, branchId: activeBranch.id, messageId: persistedMsg.id, phone: message.from, phoneNumberId });
+            return;
+          }
           if (shouldResetForInactivity(lockedState, toIso(message.timestamp))) {
             lockedState = await stateRepo.patch(conversation.id, {
               ...getDefaultState(conversation.id), preferred_language: transcriptLang,
@@ -466,14 +474,7 @@ async function handleNonText(
               updateCustomerOrderStats({ conversationId: conversation.id, preferredLanguage: transcriptLang }),
             ]).catch((e) => console.error("[voice] Post-order hooks failed:", e));
           }
-          await sendAndPersistAssistantMessage({
-            conversationId: conversation.id,
-            phone: message.from,
-            content: result.replyText,
-            interactiveList: result.interactive?.kind === "list" ? result.interactive.payload : null,
-            replyButtons: result.interactive?.kind === "buttons" ? result.interactive.payload : null,
-            phoneNumberId,
-          });
+          await deliverCommittedReply({ conversationId: conversation.id, branchId: activeBranch.id, messageId: persistedMsg.id, phone: message.from, phoneNumberId });
           void conversationRepo.touch(conversation.id).catch((e) => console.error("[voice] touch failed:", e));
         } finally {
           await releaseLock(conversation.id, lockToken);

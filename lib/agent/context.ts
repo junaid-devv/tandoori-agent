@@ -79,16 +79,17 @@ export async function loadTurnContext(input: LoadContextInput): Promise<TurnCont
   // won't be delivery (determined by state after load, so we load it speculatively).
   const needsSavedAddress = input.needsSavedAddress !== false;
 
-  const [state, menu, settings, history] = await Promise.all([
+  const [state, menu, settings, history, saved] = await Promise.all([
     stateRepo.ensure(input.conversationId),
     needsMenu ? loadMenuCached(input.branchId) : Promise.resolve<MenuCatalogItem[]>([]),
     loadSettingsCached(input.branchId),
     messageRepo.recentHistory(input.conversationId, 16),
+    needsSavedAddress ? getLatestSavedAddress(input.conversationId).catch(() => null) : Promise.resolve(null),
   ]);
 
   // Load saved address in parallel only if delivery is plausible (order type not set or delivery)
   let savedAddress = needsSavedAddress && (state.order_type === null || state.order_type === "delivery")
-    ? await getLatestSavedAddress(input.conversationId).catch(() => null)
+    ? saved
     : null;
   if (savedAddress && (!isValidDeliveryAddress(savedAddress.address) || !isValidDeliveryAddress(savedAddress.label))) {
     savedAddress = null;

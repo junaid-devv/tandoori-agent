@@ -116,7 +116,7 @@ npm run check:production-readiness
 
 ## Production Deployment Notes
 
-- Apply the baseline `migrations.sql` and the ordered files in `supabase/migrations/` before routing live WhatsApp traffic. The new `20261025124633_restaurant_order_integrity.sql` is required by the agent; apply it before deploying this version. `/api/health` reports a failed order-integrity check when it is missing.
+- Apply the baseline `migrations.sql` and the ordered files in `supabase/migrations/` before routing live WhatsApp traffic. Both `20261025124633_restaurant_order_integrity.sql` and `20261026124645_restaurant_agent_reply_recovery.sql` are required before deploying this version. `/api/health` checks both migration versions and that ordering branches have priced catalogs.
 - Keep `WHATSAPP_ALLOW_UNSIGNED_FLOW_ENDPOINT=false` in production.
 - Keep `WEBHOOK_STORE_RAW_BODY=false` and `WEBHOOK_RETAIN_PROCESSED_PAYLOAD=false` unless temporarily debugging an incident.
 - Operational reset is available to authenticated admins in all environments and requires the exact typed confirmation phrase.
@@ -172,14 +172,16 @@ The codebase builds and passes local guards. Production launch is still gated on
 
 ## Restaurant Agent Verification
 
-The inspection, behavioral changes, evidence, and remaining deployment gates are documented in [docs/RESTAURANT_AGENT_AUDIT.md](docs/RESTAURANT_AGENT_AUDIT.md).
+The latest menu, multi-query, delivery recovery and latency repairs are documented in [docs/RESTAURANT_AGENT_RELIABILITY_2026_10_26.md](docs/RESTAURANT_AGENT_RELIABILITY_2026_10_26.md). Earlier inspection is retained in [docs/RESTAURANT_AGENT_AUDIT.md](docs/RESTAURANT_AGENT_AUDIT.md).
 
 ```bash
 npm run check:agent-conversations   # Real pipeline/executor with local parser HTTP fixture
 npm run check:order-integrity       # Real migration/RPC in isolated PostgreSQL via PGlite
+npm run check:reply-recovery        # Real delivery claim/retry logic, isolated PostgreSQL and a stub sender
 npm run check:live-order-understanding # Synthetic NLU cases using your configured AI provider
+npm run check:live-menu-catalog     # Read-only live catalog SKU/price resolution and migration check
 ```
 
-The first two checks never contact production services. The live check uses AI credits and intentionally pauses between requests; it never accesses the database or sends WhatsApp messages. Set `LIVE_NLU_PAUSE_MS` to pace it for your provider quota.
+The first three checks never contact production services. The live NLU check uses AI credits and intentionally pauses between requests; it never accesses the database or sends WhatsApp messages. Set `LIVE_NLU_PAUSE_MS` to pace it for your provider quota. The live catalog check reads the configured database without writing any data or sending messages.
 
-`ORDER_AGENT_NLU_MAX_TOKENS` controls the extraction/fallback allowance (default 1600). Groq primary requests default to at most 900 tokens; override with `ORDER_AGENT_NLU_PRIMARY_MAX_TOKENS` after verifying the account quota. A truncated or invalid primary extraction retries the fallback. Set `AI_REQUEST_TIMEOUT_MS` for the request timeout. Override `ORDER_AGENT_NLU_FALLBACK_MODEL` to select a compatible fallback. Groq uses its own endpoint; other credentials use `ORDER_AGENT_NLU_BASE_URL` when configured. Model and endpoint must belong to the selected provider. A Google AI key alone does not configure this agent's OpenAI-compatible client.
+`ORDER_AGENT_NLU_MAX_TOKENS` controls the extraction/fallback allowance (default 1600). Groq primary requests default to at most 900 tokens; override with `ORDER_AGENT_NLU_PRIMARY_MAX_TOKENS` after verifying the account quota. A truncated or invalid primary extraction retries the fallback. `ORDER_AGENT_NLU_TIMEOUT_MS` bounds each attempt (default 6000), and `ORDER_AGENT_NLU_TOTAL_TIMEOUT_MS` bounds primary plus fallback together (default 10000). `ORDER_AGENT_ANSWER_TIMEOUT_MS` is the shared free-form answer budget per turn (default 6000). Named catalog questions and ordinary item resolution do not need a second model or an embedding request. Override `ORDER_AGENT_NLU_FALLBACK_MODEL` to select a compatible fallback. Groq uses its own endpoint; other credentials use `ORDER_AGENT_NLU_BASE_URL` when configured. Model and endpoint must belong to the selected provider. A Google AI key alone does not configure this agent's OpenAI-compatible client.

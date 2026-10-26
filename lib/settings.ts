@@ -1,5 +1,6 @@
-import { getCached, invalidateCache, setCached } from "./cache";
-import { getRestaurantProfile } from "./restaurant-profile";
+import { invalidateCache } from "./cache";
+import { cache } from "./core/cache";
+import { getRestaurantProfile, getRestaurantProfileForBranch } from "./restaurant-profile";
 import { supabaseAdmin } from "./supabase-admin";
 import {
   buildRestaurantDateTimeIso,
@@ -9,7 +10,6 @@ import {
   parseRestaurantClock,
 } from "./restaurant-time";
 
-const SETTINGS_CACHE_TTL_MS = 1 * 60 * 1000; // 1 minute — invalidateCache() fires on every save, TTL is only a safety net
 
 export interface RestaurantSettings {
   branch_id: string;
@@ -46,8 +46,8 @@ const DEFAULT_SETTINGS = {
   timezone: process.env.RESTAURANT_TIMEZONE?.trim() || "Asia/Karachi",
 };
 
-async function getDefaultSettings(restaurantId?: string) {
-  const profile = await getRestaurantProfile(restaurantId);
+async function getDefaultSettings(restaurantId?: string, branchId?: string) {
+  const profile = branchId ? await getRestaurantProfileForBranch(branchId) : await getRestaurantProfile(restaurantId);
   return {
     ...DEFAULT_SETTINGS,
     city: profile.city,
@@ -184,25 +184,21 @@ export function validateRestaurantSettingsInput(settings: Partial<RestaurantSett
 }
 
 export async function getRestaurantSettings(branchId: string): Promise<RestaurantSettings> {
-  const cacheKey = `settings:${branchId}`;
-  const cached = getCached<RestaurantSettings>(cacheKey);
-  if (cached) return cached;
-
   const { data, error } = await supabaseAdmin
     .from("restaurant_settings")
     .select("*")
     .eq("branch_id", branchId)
     .maybeSingle();
 
-  if (error || !data) {
-    console.error("[getRestaurantSettings] Falling back to safe defaults:", error);
-    const defaultSettings = await getDefaultSettings();
+  if (error) throw error;
+  if (!data) {
+    const defaultSettings = await getDefaultSettings(undefined, branchId);
     return {
       branch_id: branchId,
       ...defaultSettings,
     };
   }
-  const defaultSettings = await getDefaultSettings();
+  const defaultSettings = await getDefaultSettings(undefined, branchId);
 
   const result: RestaurantSettings = {
     branch_id: data.branch_id,
@@ -222,7 +218,6 @@ export async function getRestaurantSettings(branchId: string): Promise<Restauran
     timezone: defaultSettings.timezone,
   };
 
-  setCached(cacheKey, result, SETTINGS_CACHE_TTL_MS);
   return result;
 }
 
@@ -239,7 +234,7 @@ function normalizeEstimate(value: unknown, fallback: number): number {
 
 export async function updateRestaurantSettings(branchId: string, settings: Partial<RestaurantSettings>) {
   const validated = validateRestaurantSettingsInput(settings);
-  const defaultSettings = await getDefaultSettings();
+  const defaultSettings = await getDefaultSettings(undefined, branchId);
   const { data: existing, error: existingError } = await supabaseAdmin
     .from("restaurant_settings")
     .select("id")
@@ -266,6 +261,7 @@ export async function updateRestaurantSettings(branchId: string, settings: Parti
   }
 
   invalidateCache(`settings:${branchId}`);
+  await cache.del(`settings:${branchId}`);
 }
 
 export function isWithinOperatingHours(openingTime: string, closingTime: string, timeZone?: string, date = new Date()): boolean {

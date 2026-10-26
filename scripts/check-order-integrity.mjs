@@ -33,6 +33,7 @@ try {
   const stateStart = schema.indexOf("create table conversation_states (");
   await db.exec(schema.slice(stateStart, schema.indexOf("\n);", stateStart) + 3));
   await db.exec(fs.readFileSync(migrationPath, "utf8"));
+  await db.exec(fs.readFileSync("supabase/migrations/20261026124645_restaurant_agent_reply_recovery.sql", "utf8"));
   pass("migration creates functions and deferred trigger in PostgreSQL");
   await db.query("insert into conversations values ($1,$2)", [conversation, branch]);
   await db.query("insert into restaurant_settings(branch_id) values ($1),($2)", [branch, otherBranch]);
@@ -108,5 +109,36 @@ try {
   await assert.rejects(() => commit(otherBranch, { stage: "human", cart: [] }), /does not belong/);
   assert.equal((await db.query("select stage from conversation_states")).rows[0].stage, "building_cart");
   pass("unknown or cross-conversation inbound message rolls back its state mutation");
+  const replyMessage = "44444444-4444-4444-8444-444444444445";
+  const token = "55555555-5555-4555-8555-555555555555";
+  const otherToken = "55555555-5555-4555-8555-555555555556";
+  await db.query("insert into messages(id,conversation_id,role) values ($1,$2,'user')", [replyMessage, conversation]);
+  const savedReply = { replyText: "2 naan added", interactive: null };
+  const commitReply = (reply = savedReply) => db.query("select commit_restaurant_agent_reply($1,$2,$3,$4) applied", [conversation, replyMessage, JSON.stringify({ cart: [] }), JSON.stringify(reply)]);
+  await assert.rejects(() => commitReply({ replyText: "" }), /nonempty reply/);
+  assert.equal((await db.query("select metadata from messages where id=$1", [replyMessage])).rows[0].metadata.agent_processed, undefined);
+  pass("invalid reply cannot commit its draft mutation or processed receipt");
+  assert.equal((await commitReply()).rows[0].applied, true);
+  assert.equal((await commitReply({ replyText: "changed" })).rows[0].applied, false);
+  const claim = async (owner = conversation, claimToken = token) => (await db.query("select claim_restaurant_agent_reply($1,$2,$3) reply", [owner, replyMessage, claimToken])).rows[0].reply;
+  const finish = (status, claimToken = token) => db.query("select finish_restaurant_agent_reply($1,$2,$3,$4)", [conversation, replyMessage, claimToken, status]);
+  assert.equal(await claim(otherBranch), null);
+  assert.deepEqual(await claim(), savedReply);
+  assert.equal(await claim(conversation, otherToken), null);
+  await assert.rejects(() => finish("sent", otherToken), /not owned/);
+  pass("reply receipt commits atomically, keeps its original content, rejects other conversations and only has one claimant");
+  await finish("failed");
+  assert.deepEqual(await claim(), savedReply);
+  await finish("sent");
+  assert.equal(await claim(), null);
+  pass("definitely failed sends recover the same saved reply, accepted sends cannot be replayed");
+  await db.query("update messages set metadata=jsonb_set(metadata,'{agent_reply_status}','\"ready\"') where id=$1", [replyMessage]);
+  assert.deepEqual(await claim(), savedReply);
+  await finish("uncertain");
+  assert.equal(await claim(), null);
+  pass("uncertain provider outcomes never trigger an automatic duplicate send");
+  await db.exec("set role anon");
+  try { await assert.rejects(() => claim(), /permission denied/); } finally { await db.exec("reset role"); }
+  pass("anonymous clients cannot claim or overwrite privileged replies");
   console.log(`\nORDER INTEGRITY: ${checks} PostgreSQL checks passed.`);
 } finally { await db.close(); }

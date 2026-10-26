@@ -9,6 +9,22 @@ import { supabaseAdmin } from "./supabase-admin";
 const PROFILE_CACHE_TTL_MS = 10 * 1000; // 10 seconds (absorbs bursts without holding stale settings)
 const DEFAULT_PROFILE_ID = "default";
 
+/** Branch facts must inherit their own restaurant's timezone/contact defaults.
+ * Never use the installation's first profile in a multi-tenant agent turn. */
+export async function getRestaurantProfileForBranch(branchId: string): Promise<RestaurantProfile> {
+  const key = `branch_restaurant:${branchId}`;
+  let restaurantId = getCached<string>(key);
+  if (!restaurantId) {
+    const { data, error } = await supabaseAdmin.from("branches").select("restaurant_id").eq("id", branchId).single();
+    if (error || !data?.restaurant_id) throw error ?? new Error("Branch restaurant could not be resolved");
+    restaurantId = data.restaurant_id as string;
+    setCached(key, restaurantId, 60_000);
+  }
+  const profile = await getRestaurantProfile(restaurantId);
+  if (profile.id !== restaurantId) throw new Error("Branch restaurant profile is missing");
+  return profile;
+}
+
 const HEX_COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 const BRANCH_MODES = new Set<BranchMode>(["single", "multiple"]);
 

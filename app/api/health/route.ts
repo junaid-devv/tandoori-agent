@@ -76,10 +76,25 @@ async function checkDatabaseShape(): Promise<HealthCheck> {
 async function checkOrderIntegrity(): Promise<HealthCheck> {
   try {
     const { data, error } = await supabaseAdmin.rpc("restaurant_agent_integrity_version");
-    return { ok: !error && data === "20261025124633", message: error || data !== "20261025124633" ? "restaurant order-integrity migration is required" : undefined };
+    if (error || data !== "20261025124633") return { ok: false, message: "restaurant order-integrity migration is required" };
+    const reply = await supabaseAdmin.rpc("restaurant_agent_reply_version");
+    return { ok: !reply.error && reply.data === "20261026124645", message: reply.error || reply.data !== "20261026124645" ? "restaurant reply-recovery migration is required" : undefined };
   } catch {
     return { ok: false, message: "restaurant order-integrity migration check failed" };
   }
+}
+
+async function checkOrderMenus(): Promise<HealthCheck> {
+  try {
+    const { data, error } = await supabaseAdmin.from("restaurant_settings").select("branch_id").eq("is_accepting_orders", true);
+    if (error) return { ok: false, message: "menu readiness could not be checked" };
+    const readiness = await Promise.all((data ?? []).map(async (branch) => {
+      const { count, error: menuError } = await supabaseAdmin.from("menu_items")
+        .select("id", { count: "exact", head: true }).eq("branch_id", branch.branch_id);
+      return !menuError && Number(count) > 0;
+    }));
+    return readiness.every(Boolean) ? { ok: true } : { ok: false, message: "An ordering branch has no priced menu catalog. Import and review its menu items." };
+  } catch { return { ok: false, message: "menu readiness check failed" }; }
 }
 
 export async function GET(req: NextRequest) {
@@ -107,6 +122,7 @@ export async function GET(req: NextRequest) {
     database: await checkDatabase(),
     databaseSchema: await checkDatabaseShape(),
     orderIntegrity: await checkOrderIntegrity(),
+    menuCatalogs: await checkOrderMenus(),
   };
 
   const ok = Object.values(checks).every((check) => check.ok);

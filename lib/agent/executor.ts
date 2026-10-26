@@ -6,8 +6,8 @@
  * Key principles:
  * - Factual questions (hours, payment, delivery info) are answered deterministically
  *   from settings — zero LLM calls, zero timeouts.
- * - Menu/item questions use one groundedAnswer call with relevantItems to keep
- *   the text and tap-list in sync.
+ * - Named menu facts are rendered directly. Free-form questions share a bounded
+ *   generation budget so several questions cannot multiply the timeout.
  * - Replies are built as a flat string[] and joined with a single newline.
  *   No \n\n inside individual reply strings.
  * - The final action owns the interactive payload shown to the customer.
@@ -16,7 +16,7 @@ import type { Transition } from "./state-machine";
 import type { TurnUnderstanding } from "./nlu";
 import { reply } from "./reply";
 import { addToCart, removeFromCart, findCartMatches, cartSubtotal } from "./cart";
-import { searchMenu, resolveItemDetailed, extractBaseItemName } from "@/lib/menu/search";
+import { searchMenu, resolveItemDetailed, extractBaseItemName, menuNameCoversQuery } from "@/lib/menu/search";
 import { orderRepo } from "@/lib/data/order.repo";
 import { groundedAnswer } from "./answer";
 import {
@@ -131,15 +131,16 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     }
   };
 
-  const presentPending = (pending: NonNullable<ConversationStateRow["pending_clarification"]>) => {
+  const presentPending = async (pending: NonNullable<ConversationStateRow["pending_clarification"]>) => {
     if (!pending.remaining_items?.length) return;
-    const choices = ctx.state.last_shown_options.flatMap((o) => {
-      const current = ctx.menu.find((m) => m.id === o.id && m.is_available);
-      return current ? [{ id: current.id, name: current.name, price: current.price }] : [];
-    });
+    const mention = pending.remaining_items[0];
+    const resolved = await resolveItemDetailed(branchId, mention.query, mention.size, ctx.menu);
+    const choices = resolved.kind === "variants" ? resolved.variants : resolved.kind === "ambiguous" ? resolved.matches
+      : resolved.kind === "exact" ? [resolved.item] : resolved.suggestions;
     patch.last_shown_options = choices;
     patch.last_shown_options_at = new Date().toISOString();
-    replies.push(choices.length ? reply.itemVariants(lang, pending.remaining_items[0].query, choices, cur) : reply.clarify(lang, "which_option"));
+    replies.push(choices.length ? reply.itemVariants(lang, mention.query, choices, cur)
+      : reply.notFound(lang, mention.query, [], [...new Set(ctx.menu.map((item) => item.category).filter(Boolean))] as string[]));
     if (choices.length) setInteractive(itemPickList(lang, choices, cur));
     patch.pending_clarification = { ...pending, options: choices.length ? patch.pending_clarification?.options ?? pending.options : [] };
     hasDisambiguation = true;
@@ -205,7 +206,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     return parts.join("\n");
   };
 
+  let answerDeadline: number | null = null;
   const grounded = async (question: string): Promise<string | null> => {
+    answerDeadline ??= Date.now() + (Number(process.env.ORDER_AGENT_ANSWER_TIMEOUT_MS) || 6000);
+    const remaining = answerDeadline - Date.now();
+    if (remaining <= 0) return null;
     const relevantItems = ctx.state.last_shown_options?.length
       ? ctx.state.last_shown_options.map((o) => ({ name: o.name, price: o.price, category: ctx.state.last_shown_category || null }))
       : undefined;
@@ -219,6 +224,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       menu: ctx.menu,
       relevantItems,
       isOpenNow: ctx.isOpenNow,
+      timeoutMs: remaining,
     });
   };
 
@@ -237,6 +243,16 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       escalate: true,
       usedSemanticSearch: false,
     };
+  }
+
+  // Pictures are customer-facing assets, never an authoritative priced catalog.
+  if (!ctx.menu.length && transition.actions.some((a) =>
+    ["add_items", "answer_info", "answer_grounded", "place_order", "show_summary"].includes(a.kind))) {
+    return { replyText: reply.catalogNotReady(lang), statePatch: { ...patch,
+      stage: "human", is_bot_active: false, summary_sent_at: null,
+      escalation_reason: "menu_catalog_missing", escalated_at: new Date().toISOString(),
+      last_error: "No verified menu catalog for this branch" },
+      placeOrder: false, escalate: true, usedSemanticSearch: false };
   }
 
   // Menu data has no priced addon catalog or allergen guarantees. Staff must verify these.
@@ -389,6 +405,14 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const added: Array<{ name: string; newCartQty: number; notes?: string | null }> = [];
         const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
 
+        // Resolve independent portions together. An unresolved first dish must
+        // not hide valid later dishes. Only unresolved portions enter the queue.
+        const resolutions = await Promise.all(mentions.map((m) => resolveItemDetailed(branchId,
+          isDelta && m.query === "__last_item__" && cart.length ? cart[cart.length - 1].name : m.query,
+          m.size, ctx.menu, ctx.state.last_shown_category ?? null)));
+        const unresolved: TurnUnderstanding["items"] = [];
+        let presentedChoice = false;
+
         for (const [mentionIndex, m] of mentions.entries()) {
           let query = m.query || "";
           if (isDelta && query === "__last_item__" && cart.length > 0) {
@@ -409,7 +433,15 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             continue;
           }
 
-          const res = await resolveItemDetailed(branchId, query, m.size, ctx.menu, ctx.state.last_shown_category ?? null);
+          const res = resolutions[mentionIndex];
+          if (res.kind !== "exact") {
+            unresolved.push(m);
+            if (presentedChoice) continue;
+            presentedChoice = true;
+            patch.last_shown_options = [];
+            patch.last_shown_options_at = null;
+            patch.pending_clarification = null;
+          }
           if (res.kind === "exact") {
             const resolved = res.item;
             if (carriedPending?.options.some((o) => o.id === `item:${resolved.id}`)) {
@@ -459,8 +491,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               replies.push(reply.notFound(lang, query, res.suggestions.map((x) => x.name), cats));
               setInteractive(itemPickList(lang, res.suggestions.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
             } else {
-              const ans = await grounded(`customer wants "${query}" which is not on the menu. State that it is not available and suggest our actual menu categories.`);
-              replies.push(ans ?? reply.notFound(lang, query, [], cats));
+              replies.push(reply.notFound(lang, query, [], cats));
               if (cats.length > 0 && cart.length === 0 && input.menuDisplayMode !== "menu_pictures") {
                 setInteractive(categoryList(lang, cats, lang === "pashto" ? "Menu katal ghwaray?" : lang === "roman_urdu" ? "Menu dekhna chahenge?" : "What would you like?"));
               }
@@ -468,14 +499,14 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           }
           if (res.kind !== "exact") {
             hasDisambiguation = true;
-            patch.pending_clarification = {
-              kind: "item_disambiguation",
-              options: patch.pending_clarification?.options ?? [],
-              remaining_items: [...mentions.slice(mentionIndex), ...(carriedPending?.remaining_items ?? [])],
-            };
-            carriedPending = null;
-            break;
           }
+        }
+
+        if (unresolved.length) {
+          patch.pending_clarification = { kind: "item_disambiguation",
+            options: patch.pending_clarification?.options ?? [],
+            remaining_items: [...unresolved, ...(carriedPending?.remaining_items ?? [])] };
+          carriedPending = null;
         }
 
         addedInTurn.push(...added);
@@ -497,7 +528,17 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "remove_items": {
         const removals = (action.payload?.removals as TurnUnderstanding["removals"]) ?? u.removals;
         for (const r of removals) {
+          const pending = carriedPending?.remaining_items ?? [];
+          const remaining = pending.filter((item) => !menuNameCoversQuery(r.query, item.query));
+          const removedPending = remaining.length < pending.length;
+          if (removedPending) {
+            carriedPending = remaining.length ? { ...carriedPending!, remaining_items: remaining } : null;
+            patch.pending_clarification = carriedPending;
+            patch.last_shown_options = [];
+            patch.last_shown_options_at = null;
+          }
           const matches = findCartMatches(cart, r.query);
+          if (!matches.length && removedPending) continue;
           if (!matches.length || matches.length > 1 && r.qty !== "all") {
             replies.push(reply.clarify(lang, "which_option"));
             hasDisambiguation = true;
@@ -549,9 +590,16 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       }
 
       // ── Information ───────────────────────────────────────────────────────
-      case "answer_hours_location":
-        replies.push(hoursAnswer());
+      case "answer_hours_location": {
+        const query = String(action.payload?.query ?? u.info_query ?? input.messageTextForFallback ?? "");
+        const wantsContact = /phone|contact|number|rabta|رابطہ|نمبر/i.test(query);
+        if (!wantsContact || /hours|tim|open|clos|location|address|kahan|waqt|khul|band/i.test(query)) replies.push(hoursAnswer());
+        if (wantsContact) {
+          const phones = [...new Set([ctx.settings.phone_delivery, ctx.settings.phone_dine_in].filter(Boolean))];
+          replies.push(phones.length ? `☎ ${phones.join(" / ")}` : (lang === "roman_urdu" ? "Contact number abhi listed nahi hai." : "A contact number has not been listed yet."));
+        }
         break;
+      }
 
       case "answer_payment":
         replies.push(paymentAnswer());
@@ -559,7 +607,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       case "answer_delivery_info": {
         const queryStr = String(action.payload?.query ?? u.info_query ?? input.messageTextForFallback ?? "").toLowerCase();
-        if (/k(?:i|t)n(?:i|a)\s*(?:d(?:e|a)y?r|time|waqt)|time\s+kitna|how\s+much\s+time|delivery\s+time|kab\s+tak\s*(?:pohanch|a(?:ye|jae)ga|milega)|kitni\s+der|der\s+lag|دیر|وقت|ٹائم|څومره\s+وخت|کله\s+رسیږي/i.test(queryStr)) {
+        if (!ctx.settings.delivery_enabled) { replies.push(deliveryInfoAnswer()); break; }
+        let answered = false;
+        if (/k(?:i|t)n(?:i|a)\s*(?:d(?:e|a)y?r|time|waqt)|time\s+kitna|how\s+much\s+time|delivery\s+time|\beta\b|kab\s+tak\s*(?:pohanch|a(?:ye|jae)ga|milega)|kitni\s+der|der\s+lag|دیر|وقت|ٹائم|څومره\s+وخت|کله\s+رسیږي/i.test(queryStr)) {
+          answered = true;
           const estDelivery = Math.round(Number(ctx.settings?.estimated_delivery_minutes) || 45);
           replies.push(
             lang === "pashto"
@@ -568,7 +619,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               ? `⏱ Delivery mein takreeban ~${estDelivery} minutes lagte hain.`
               : `⏱ Estimated delivery time is ~${estDelivery} mins.`
           );
-        } else if (/charge|fee|pesay|paise|paisa|kitnay\s+ka|پیسے|قیمت|چارجز|پیسی|څو/i.test(queryStr)) {
+        }
+        if (/charge|fee|pesay|paise|paisa|kitnay\s+ka|پیسے|قیمت|چارجز|پیسی|څو/i.test(queryStr)) {
+          answered = true;
           replies.push(
             lang === "pashto"
               ? (ctx.settings.delivery_fee === 0 ? "💰 Delivery bilkul muft (free) da!" : `💰 Delivery Fee: ${cur} ${ctx.settings.delivery_fee}`)
@@ -576,7 +629,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               ? (ctx.settings.delivery_fee === 0 ? "💰 Delivery bilkul free hai!" : `💰 Delivery Fee: ${cur} ${ctx.settings.delivery_fee}`)
               : (ctx.settings.delivery_fee === 0 ? "💰 Delivery is FREE!" : `💰 Delivery Fee: ${cur} ${ctx.settings.delivery_fee}`)
           );
-        } else {
+        }
+        if (!answered) {
           replies.push(deliveryInfoAnswer());
         }
         break;
@@ -593,7 +647,27 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       }
 
       case "answer_info": {
-        const q = String(action.payload?.info_query ?? u.info_query ?? "").trim();
+        const q = String(action.payload?.query ?? u.info_query ?? input.messageTextForFallback ?? "").trim();
+        // Render authoritative menu facts without a second language-model call.
+        const lookup = q.toLowerCase().replace(/[^\p{L}\p{N}.\s-]/gu, " ")
+          .replace(/\b(?:what|whats|is|are|the|a|an|of|for|do|does|you|your|have|how|much|please|tell|me|about|price|prices|cost|rate|available|availability|include|includes|contain|contains|contents|ingredients|in|kya|kia|hai|hain|ka|ki|ke|mein|me|kitna|kitne|kitni|batao|batayein|milta|milti)\b/g, " ")
+          .replace(/\s+/g, " ").trim();
+        const direct = ctx.menu.filter((item) => menuNameCoversQuery(lookup, item.name));
+        if (direct.length) {
+          replies.push(reply.itemList(lang, direct, cur));
+          if (/include|contain|content|ingredient|what.*in|kya.*(?:hai|milta)|mein.*kya/i.test(q)) {
+            for (const item of direct.slice(0, 10)) replies.push(item.description
+              ? `${item.name}: ${item.description}`
+              : `${item.name}: ${lang === "roman_urdu" ? "Ingredients ki tafseel listed nahi hai; staff se verify karwa sakte hain." : "Ingredient details are not listed; staff can verify them."}`);
+          }
+          if (!hasDisambiguation && !value("pending_clarification")?.remaining_items?.length) {
+            const available = direct.filter((item) => item.is_available);
+            patch.last_shown_options = available.slice(0, 10);
+            patch.last_shown_options_at = new Date().toISOString();
+            setInteractive(itemPickList(lang, available, cur));
+          }
+          break;
+        }
         // Menu item / general question:
         const ans = await grounded(q || "what are your popular items?");
         if (ans) {
@@ -616,7 +690,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           }
 
           const matchedItems = Array.from(mentionedMap.values());
-          if (matchedItems.length > 0 && !value("pending_clarification")?.remaining_items?.length) {
+          if (matchedItems.length > 0 && !hasDisambiguation && !value("pending_clarification")?.remaining_items?.length) {
             patch.last_shown_options = matchedItems.slice(0, 10);
             patch.last_shown_options_at = new Date().toISOString();
 
@@ -625,6 +699,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             setInteractive(itemPickList(lang, matchedItems.slice(0, 10), cur));
           }
         } else {
+          if (answerDeadline !== null && Date.now() >= answerDeadline) {
+            replies.push(reply.clarify(lang, "fallback"));
+            break;
+          }
           // Fallback to searching the menu (pass category context for better results)
           const searchRes = await resolveItemDetailed(branchId, q, undefined, ctx.menu, ctx.state.last_shown_category ?? null);
           if (searchRes.kind === "exact") {
@@ -760,7 +838,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Collect delivery address ─────────────────────────────────────────
       case "collect_delivery_address": {
-        if (hasDisambiguation) break;
+        // Store supplied destinations while food choices are pending; defer
+        // only the next-slot prompt, never silently discard an explicit slot.
+        if (hasDisambiguation && !action.payload?.address && !u.notes?.startsWith("use_saved_address:") && !u.intents.includes("use_saved_address")) break;
         // Clear stale/invalid addresses that leaked from button payloads or previous bugs
         const currentAddr = value("address");
         if (currentAddr && /^(addr:(new|saved:.*)|new|naya|naya\s+address|new\s+address)$/i.test(currentAddr.trim())) {
@@ -1266,7 +1346,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (u.notes === "fast_path_resume") {
           const pending = ctx.state.pending_clarification;
           if (pending?.remaining_items?.length) {
-            presentPending(pending);
+            await presentPending(pending);
           } else if (cart.length && checkoutReady()) {
             patch.stage = "confirming";
             patch.summary_sent_at = new Date().toISOString();
@@ -1294,7 +1374,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   // An unrelated addition, address reply or menu question must not discard an
   // earlier requested portion that is still waiting for a size/flavor choice.
   if (carriedPending && !hasDisambiguation && !transition.actions.some((a) => ["cancel_order", "restart_order", "reorder_previous"].includes(a.kind))) {
-    presentPending(carriedPending);
+    await presentPending(carriedPending);
   }
 
   if (!cart.length && patch.stage !== "placed" && patch.stage !== "human" && !u.order_type && !u.address && !u.guests && !u.pickup_time && !u.reservation_time) patch.stage = "browsing";

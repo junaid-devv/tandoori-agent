@@ -1,16 +1,10 @@
 /**
  * lib/menu/search.ts — Phase 6
  *
- * THE menu retrieval path. Vector-first, genuinely wired end-to-end:
- *   query -> embedding -> match_menu_items_by_embedding RPC -> ranked items.
- *
- * Fixes the old scaffolding problem:
- *   - Returns resolved items WITH menu_item_id + similarity + a `method` tag so
- *     callers (add_items / answer_info) resolve against embeddings, not just hints.
- *   - Lexical fallback ONLY triggers for genuinely un-embeddable queries
- *     (too short) or when embeddings are unavailable — and it says so via `method`.
- *   - Query-embedding LRU cache (menu-scale queries repeat a lot).
- *   - `assertSearchReady()` for a startup warning when the embedding key is missing.
+ * Resolve catalog names locally first, including spelling and size aliases.
+ * Optional bounded vector retrieval supplies suggestions for descriptive queries.
+ * Every result is reconciled with the current branch catalog; semantic similarity
+ * alone never authorizes adding a different named dish.
  */
 import OpenAI from "openai";
 import { cache } from "@/lib/core/cache";
@@ -54,7 +48,7 @@ let embeddingClient: OpenAI | null = null;
 function getEmbeddingClient(): OpenAI | null {
   if (!EMBEDDING_API_KEY) return null;
   if (embeddingClient) return embeddingClient;
-  embeddingClient = new OpenAI({ apiKey: EMBEDDING_API_KEY, baseURL: EMBEDDING_BASE_URL });
+  embeddingClient = new OpenAI({ apiKey: EMBEDDING_API_KEY, baseURL: EMBEDDING_BASE_URL, maxRetries: 0, timeout: 2000 });
   return embeddingClient;
 }
 
@@ -69,7 +63,7 @@ export function assertSearchReady(): void {
     console.warn(
       "[menu/search] MENU_EMBEDDING_API_KEY / OPENAI_API_KEY is not set. " +
         "Vector menu search is DISABLED and will fall back to lexical matching. " +
-        "Set the key to enable semantic search (required for production).",
+        "Set the key to enable optional descriptive menu suggestions.",
     );
   }
 }
@@ -113,6 +107,10 @@ function normalize(value: string): string {
     .replace(/\b(sadah|plain)\b/g, "sada")
     .replace(/\b(paani|water)\b/g, "pani")
     .replace(/\b(coldring|colddrink|cooldrink|botal)\b/g, "cold drink")
+    .replace(/\b(barbecue|barbeque|bar\s*b\s*q)\b/g, "bbq")
+    .replace(/\b(milk\s*shakes?|shakes?)\b/g, "milkshake")
+    .replace(/\b(pizzas)\b/g, "pizza")
+    .replace(/\b(burgers)\b/g, "burger")
     .replace(/\bwith\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
@@ -162,6 +160,16 @@ export function queryTokensCoveredByName(query: string, name: string): boolean {
   if (qTokens.length === 0) return false;
   const nameTokens = new Set(normalize(name).split(" "));
   return qTokens.every((t) => nameTokens.has(t));
+}
+
+/** All meaningful words must identify the dish. One shared word (e.g. BBQ)
+ * cannot turn a requested BBQ pizza into a chicken tikka. Short tokens and
+ * numbers require exact identity; longer spelling mistakes allow a small edit. */
+export function menuNameCoversQuery(query: string, name: string): boolean {
+  const tokens = normalize(query).split(" ").filter(Boolean);
+  const names = normalize(name).split(" ").filter(Boolean);
+  return tokens.length > 0 && tokens.every((token) => names.some((word) => token === word
+    || token.length >= 5 && word.length >= 5 && editDistance(token, word) <= (token.length >= 8 ? 2 : 1)));
 }
 
 function toVectorLiteral(embedding: number[]): string {
@@ -282,6 +290,22 @@ export async function searchMenu(
     return lexicalSearchFromDb(branchId, trimmed, limit);
   };
 
+  // Most restaurant requests refer directly to catalog names. Resolve those
+  // locally in microseconds, without an embedding HTTP call or vector RPC.
+  // Keep every matching sibling for downstream size/flavor clarification.
+  if (inMemoryMenu) {
+    const baseQuery = trimmed.replace(SIZE_WORDS_PATTERN, " ").replace(/\s+/g, " ").trim();
+    const direct = inMemoryMenu.filter((item) => item.is_available && (menuNameCoversQuery(trimmed, item.name)
+      || extractSizeFromQuery(trimmed) && menuNameCoversQuery(baseQuery, extractBaseItemName(item.name).baseName)));
+    if (direct.length) {
+      const matches = direct.map((item) => ({ ...item, description: item.description ?? null,
+        similarity: Math.max(0.7, lexicalScore(trimmed, item as MenuRow)), method: "lexical" as const }))
+        .sort((a, b) => b.similarity - a.similarity);
+      return { matches, method: "lexical", usedEmbedding: false };
+    }
+    if (!inMemoryMenu.length) return { matches: [], method: "none", usedEmbedding: false };
+  }
+
   // Genuinely un-embeddable (too short) -> lexical is the correct path.
   if (trimmed.length < MIN_EMBEDDABLE_LEN) {
     const matches = await lexicalFallback();
@@ -295,12 +319,19 @@ export async function searchMenu(
     return { matches, method: matches.length ? "lexical" : "none", usedEmbedding: false };
   }
 
-  const { data, error } = await supabaseAdmin.rpc("match_menu_items_by_embedding", {
-    branch_uuid: branchId,
-    query_embedding: toVectorLiteral(embedding),
-    match_count: limit,
-    similarity_threshold: SIMILARITY_THRESHOLD,
-  });
+  let result;
+  try {
+    result = await supabaseAdmin.rpc("match_menu_items_by_embedding", {
+      branch_uuid: branchId,
+      query_embedding: toVectorLiteral(embedding),
+      match_count: limit,
+      similarity_threshold: SIMILARITY_THRESHOLD,
+    }).abortSignal(AbortSignal.timeout(2000));
+  } catch {
+    const matches = await lexicalFallback();
+    return { matches, method: matches.length ? "lexical" : "none", usedEmbedding: false };
+  }
+  const { data, error } = result;
 
   if (error) {
     console.error("[menu/search] vector RPC failed, falling back to lexical:", error);
@@ -509,7 +540,8 @@ export async function resolveItemDetailed(
   }
 
   // Filter available candidates by semantic relevance to prevent unrelated suggestions
-  const relevantCandidates = available.filter((m) => isCandidateRelevant(trimmed, m));
+  const nameMatches = available.filter((m) => menuNameCoversQuery(baseQuery || trimmed, extractBaseItemName(m.name).baseName));
+  const relevantCandidates = nameMatches.length ? nameMatches : available.filter((m) => isCandidateRelevant(trimmed, m));
   if (relevantCandidates.length === 0) {
     return { kind: "not_found", query: trimmed, suggestions: [] };
   }
@@ -519,6 +551,10 @@ export async function resolveItemDetailed(
   if (topSim < 0.30) {
     return { kind: "not_found", query: trimmed, suggestions: [] };
   }
+
+  // Shared category/ingredient words are useful suggestions, never permission
+  // to add another dish. Semantic-only matches require an explicit selection.
+  if (!nameMatches.length) return { kind: "not_found", query: trimmed, suggestions: relevantCandidates.slice(0, 5) };
 
   // 1) Direct exact name match (e.g. "RAITA" -> item "RAITA", "Half Sajji" -> "Half Sajji", "1.5 Litre Pani" -> "1.5 Litre Pani")
   const combinedQ1 = requestedSize ? `${requestedSize} ${baseQuery || trimmed}` : trimmed;
@@ -628,6 +664,13 @@ export async function resolveItemDetailed(
       sizeMatches.sort((a, b) => a.price - b.price);
       return { kind: "variants", baseName: sizeDistinctBases[0], variants: sizeMatches };
     }
+  }
+
+  // A broad request for pizza/drink must first choose a flavor/brand. Do not
+  // narrow it to the top-ranked flavor's sizes.
+  const bases = new Set(relevantCandidates.map((c) => normalize(extractBaseItemName(c.name).baseName)));
+  if (bases.size > 1 && !relevantCandidates.some((c) => normalize(extractBaseItemName(c.name).baseName) === normalize(baseQuery || trimmed))) {
+    return { kind: "ambiguous", query: trimmed, matches: relevantCandidates.slice(0, 10) };
   }
 
   // 3) Check if top candidates share the same base name with multiple size variants

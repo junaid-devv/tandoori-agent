@@ -14,6 +14,9 @@ delete process.env.OPENAI_API_KEY;
 process.env.OPENROUTER_API_KEY = "offline-test-key";
 
 process.env.ORDER_AGENT_NLU_MODEL = "fixture-primary";
+process.env.ORDER_AGENT_ANSWER_TIMEOUT_MS = "150";
+let slowAnswers = false;
+let answerCalls = 0;
 let truncateNext = false;
 let response = null;
 let parserCalls = 0;
@@ -24,6 +27,10 @@ const server = createServer(async (req, res) => {
   const request = JSON.parse(body);
   const parser = request.response_format?.type === "json_object";
   if (parser) { parserCalls++; lastRequest = request; }
+  else {
+    answerCalls++;
+    if (slowAnswers) await new Promise((resolve) => setTimeout(resolve, 400));
+  }
   const finishReason = parser && truncateNext ? "length" : "stop";
   truncateNext = false;
   res.setHeader("Content-Type", "application/json");
@@ -136,10 +143,10 @@ try {
   check("variant clarification retains quantity, preparation and remaining order items", () => {
     assert.equal(variantState.pending_clarification.remaining_items[0].qty, 2);
     assert.equal(variantState.pending_clarification.remaining_items[0].notes, "less oil");
-    assert.equal(variantState.cart.length, 1);
+    assert.equal(variantState.cart.length, 2);
   });
   await send("variants", "what are your opening hours?", u("ask_hours_or_location"));
-  check("an information interruption preserves unresolved portions and remaining items", () => assert.equal(states.get("variants").pending_clarification.remaining_items.length, 2));
+  check("an information interruption preserves unresolved portions without replaying resolved ones", () => assert.equal(states.get("variants").pending_clarification.remaining_items.length, 1));
   await send("variants", "full");
   check("typing the variant resolves the original request and resumes the remaining order", () => {
     const cart = states.get("variants").cart;
@@ -434,6 +441,107 @@ try {
     assert.equal(result.stage, "confirming"); assert.equal(states.get("pending-edit").cart.length, 3);
     assert.ok(states.get("pending-edit").cart.every((item) => item.qty === 1)); assert.ok(result.replyText.includes("697"));
   });
+  menu.push(
+    { id: "ps", name: "BBQ Pizza Small", price: 399, category: "Pizza", is_available: true },
+    { id: "pm", name: "BBQ Pizza Medium", price: 699, category: "Pizza", is_available: true },
+    { id: "pl", name: "BBQ Pizza Large", price: 999, category: "Pizza", is_available: true },
+    { id: "fl", name: "Fajita Pizza Large", price: 999, category: "Pizza", is_available: true },
+    { id: "mb", name: "Banana Milkshake", price: 250, category: "Milkshake", is_available: true },
+    { id: "mm", name: "Mango Milkshake", price: 250, category: "Milkshake", is_available: true });
+  settings.min_delivery_amount = 0;
+  await seedCaches();
+  fresh("pizza-incident");
+  result = await send("pizza-incident", "Ek bbq pizza or aik milkshake deliver kr dain", u("add_items", {
+    items: [mention("bbq pizza"), mention("milkshake")], order_type: "delivery", language: "roman_urdu" }));
+  check("the real pizza/milkshake incident asks for choices and retains both portions", () => {
+    assert.equal(states.get("pizza-incident").pending_clarification.remaining_items.length, 2);
+    assert.ok(result.replyText.includes("BBQ Pizza")); assert.ok(!/nahi hai|not.*menu|sirf Karahi/.test(result.replyText));
+  });
+  await send("pizza-incident", "medium");
+  check("pizza size selection advances to shake flavor without losing delivery", () => {
+    assert.equal(states.get("pizza-incident").cart[0].menu_item_id, "pm");
+    assert.equal(states.get("pizza-incident").pending_clarification.remaining_items[0].query, "milkshake");
+    assert.equal(states.get("pizza-incident").order_type, "delivery");
+  });
+  await send("pizza-incident", "item:mb");
+  result = await send("pizza-incident", "House 42 Street 4 Lahore", u("provide_address", { address: "House 42 Street 4 Lahore" }));
+  check("the completed incident reviews exactly one selected pizza and shake", () => {
+    assert.equal(result.stage, "confirming"); assert.equal(states.get("pizza-incident").cart.length, 2);
+    assert.ok(states.get("pizza-incident").cart.every((item) => item.qty === 1));
+    assert.ok(result.replyText.includes("699")); assert.ok(result.replyText.includes("250"));
+  });
+  fresh("compound-questions");
+  const callsBeforeQuestions = parserCalls;
+  result = await send("compound-questions", "add 2 naan, tikka ka rate, fajita pizza available? delivery fee aur delivery time? COD?", u("add_items", {
+    intents: ["add_items", "ask_item_info", "ask_delivery_info", "ask_payment"], items: [mention("naan", 2)],
+    questions: [ { intent: "ask_item_info", query: "price of chicken tikka" },
+      { intent: "ask_item_info", query: "is Fajita Pizza available" },
+      { intent: "ask_delivery_info", query: "delivery fee and delivery time" },
+      { intent: "ask_payment", query: "COD?" } ] }));
+  check("compound questions preserve the addition and answer every independent question with catalog facts", () => {
+    assert.equal(states.get("compound-questions").cart[0].qty, 2);
+    for (const fact of ["400", "Fajita Pizza", "999", "100", "40", "COD"]) assert.ok(result.replyText.includes(fact), fact);
+    assert.equal(parserCalls - callsBeforeQuestions, 1);
+  });
+  menu.find((item) => item.id === "fl").is_available = false;
+  await seedCaches();
+  fresh("unavailable-inquiry");
+  result = await send("unavailable-inquiry", "Fajita Pizza available?", u("ask_item_info", {
+    questions: [{ intent: "ask_item_info", query: "Fajita Pizza available?" }] }));
+  check("an unavailable catalog item is identified without offering an order button", () => {
+    assert.match(result.replyText, /unavailable/i);
+    assert.equal(states.get("unavailable-inquiry").last_shown_options.length, 0);
+  });
+  menu.find((item) => item.id === "fl").is_available = true;
+  await seedCaches();
+  fresh("unknown-first");
+  result = await send("unknown-first", "2 sushi and 3 naan", u("add_items", { items: [mention("sushi", 2), mention("naan", 3)] }));
+  check("an unsupported first dish cannot discard valid later portions or permit a partial checkout", () => {
+    assert.equal(states.get("unknown-first").cart[0].qty, 3);
+    assert.equal(states.get("unknown-first").pending_clarification.remaining_items[0].query, "sushi");
+    assert.ok(result.replyText.includes("sushi")); assert.ok(!states.get("unknown-first").summary_sent_at);
+  });
+  await send("unknown-first", "remove sushi", u("remove_items", { removals: [{ query: "sushi", qty: "all" }] }));
+  check("a customer can remove an unresolved portion without deleting ordered food", () => {
+    assert.ok(!states.get("unknown-first").pending_clarification?.remaining_items?.length); assert.equal(states.get("unknown-first").cart[0].qty, 3);
+  });
+  fresh("address-with-choice");
+  await send("address-with-choice", "BBQ pizza delivery House 42 Street 4 Lahore", u("add_items", {
+    items: [mention("BBQ pizza", 2)], order_type: "delivery", address: "House 42 Street 4 Lahore" }));
+  check("an address in the same message survives a pending pizza size", () => assert.equal(states.get("address-with-choice").address, "House 42 Street 4 Lahore"));
+  await send("address-with-choice", "large");
+  check("choosing the size reviews the saved destination and original quantity", () => {
+    assert.equal(states.get("address-with-choice").stage, "confirming"); assert.equal(states.get("address-with-choice").cart[0].qty, 2);
+  });
+  fresh("slow-compound-answers");
+  slowAnswers = true;
+  const answersBefore = answerCalls;
+  const answerStarted = Date.now();
+  result = await send("slow-compound-answers", "Tell me about parking, wifi and seating", u("general_question", {
+    questions: ["parking", "wifi", "seating"].map((query) => ({ intent: "general_question", query })) }));
+  slowAnswers = false;
+  check("several free-form questions share one timeout instead of serial provider stalls", () => {
+    assert.equal(answerCalls - answersBefore, 1);
+    assert.ok(Date.now() - answerStarted < 1200);
+    assert.ok(result.replyText.length > 0);
+  });
+  fresh("missing-catalog");
+  await cache.set("menu:b", [], 600_000);
+  result = await send("missing-catalog", "Fajita pizza", u("add_items", { items: [mention("Fajita pizza")] }));
+  check("pictures without a catalog cannot invent missing dishes, categories or prices", () => {
+    assert.equal(result.escalate, true); assert.equal(states.get("missing-catalog").last_error, "No verified menu catalog for this branch");
+    assert.ok(!/Karahi|BBQ|not.*menu|nahi hai/.test(result.replyText));
+  });
+  await seedCaches();
+  fresh("committed-order-crash", { stage: "placed", cart: [] });
+  previousOrder = { id: "already-placed", order_number: 77, total: 550, type: "delivery", source_user_message_id: `m-${sequence + 1}` };
+  const ordersBeforeRecovery = placed.length;
+  result = await send("committed-order-crash", "confirm:yes");
+  check("a crash after order commit recovers its receipt without another placement or NLU", () => {
+    assert.equal(result.intent, "recovered_order_reply"); assert.ok(result.replyText.includes("77"));
+    assert.equal(placed.length, ordersBeforeRecovery);
+  });
+  previousOrder = null;
   console.log(`\nAGENT CONVERSATIONS: ${checks} checks passed; ${parserCalls} actual parser HTTP requests, ${placed.length} isolated test orders.`);
 } finally {
   await new Promise((resolve) => server.close(resolve));
