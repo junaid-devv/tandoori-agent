@@ -49,7 +49,6 @@ Fill `.env.local` with real Supabase, WhatsApp, and AI credentials. The most imp
 | `WHATSAPP_APP_SECRET` or `META_APP_SECRET` | Webhook and Flow signature validation |
 | `WHATSAPP_VERIFY_TOKEN` | Secret used by Meta webhook verification |
 | `RATE_LIMIT_HASH_SECRET` | HMAC secret for rate-limit identifiers |
-| `ADMIN_RESET_ENABLED` | Optional production gate for destructive dashboard reset |
 
 Optional WhatsApp Flows variables are documented in [.env.example](.env.example).
 
@@ -120,7 +119,7 @@ npm run check:production-readiness
 - Apply the baseline `migrations.sql` and the ordered files in `supabase/migrations/` before routing live WhatsApp traffic. The new `20261025124633_restaurant_order_integrity.sql` is required by the agent; apply it before deploying this version. `/api/health` reports a failed order-integrity check when it is missing.
 - Keep `WHATSAPP_ALLOW_UNSIGNED_FLOW_ENDPOINT=false` in production.
 - Keep `WEBHOOK_STORE_RAW_BODY=false` and `WEBHOOK_RETAIN_PROCESSED_PAYLOAD=false` unless temporarily debugging an incident.
-- Keep `ADMIN_RESET_ENABLED=false` unless production admins explicitly need destructive reset controls.
+- Operational reset is available to authenticated admins in all environments and requires the exact typed confirmation phrase.
 - Configure Meta webhook subscription for messages and status callbacks.
 - Make sure `WHATSAPP_VERIFY_TOKEN` exactly matches the token configured in Meta.
 - Set the restaurant profile in Admin -> Branding, then configure branch settings: open hours, delivery enabled, delivery fee, minimum delivery, delivery areas, prep ETA, delivery ETA, phone numbers, and AI tone.

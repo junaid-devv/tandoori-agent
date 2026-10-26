@@ -107,7 +107,7 @@ mustInclude(healthRoute, "supabaseAdmin.from(\"branches\")", "Missing healthchec
 mustInclude(healthRoute, "databaseSchema", "Missing healthcheck database schema-shape check.");
 mustInclude(healthRoute, "delivery_status_updated_at", "Missing healthcheck message schema check.");
 mustInclude(healthRoute, "rate_limits", "Missing healthcheck rate_limits schema check.");
-mustInclude(adminResetRoute, "ADMIN_RESET_ENABLED", "Missing production gate for destructive admin reset.");
+mustInclude(adminResetRoute, "requireAdminApiSession", "Missing admin authorization for operational reset.");
 mustInclude(adminResetRoute, "WIPE ALL OPERATIONAL DATA", "Missing typed confirmation for all-data wipe.");
 mustInclude(adminResetRoute, "expectedBranchConfirmation", "Missing typed confirmation for branch wipe.");
 mustInclude(adminHelpers, "throwIfSupabaseError", "Missing Supabase error checks in operational wipe helper.");
@@ -128,7 +128,6 @@ mustInclude(loginRouteForBodyLimits, "LOGIN_BODY_LIMIT_BYTES", "Missing login bo
 mustInclude(adminBranchesRoute, "BRANCH_BODY_LIMIT_BYTES", "Missing admin branch mutation body limit.");
 mustInclude(adminStaffRoute, "STAFF_BODY_LIMIT_BYTES", "Missing admin staff mutation body limit.");
 mustInclude(gitignore, "!.env.example", "Missing .env.example tracking exception in .gitignore.");
-mustInclude(envExample, "ADMIN_RESET_ENABLED=false", "Missing ADMIN_RESET_ENABLED example.");
 mustInclude(envExample, "RATE_LIMIT_HASH_SECRET=", "Missing rate-limit secret example.");
 mustInclude(staffAlertsRoute, "resolveRequestBranch", "Missing branch-scoped staff alerts list API.");
 mustInclude(staffAlertRoute, "isBranchAllowed", "Missing branch access check for staff alert mutation.");

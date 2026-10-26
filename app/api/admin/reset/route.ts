@@ -9,7 +9,6 @@ type ResetBody = {
 };
 
 const WIPE_ALL_CONFIRMATION = "WIPE ALL OPERATIONAL DATA";
-const RESET_ENABLED_IN_PRODUCTION = process.env.ADMIN_RESET_ENABLED === "true";
 const RESET_BODY_LIMIT_BYTES = 4 * 1024;
 
 function expectedBranchConfirmation(branchId: string) {
@@ -35,10 +34,6 @@ export async function POST(req: NextRequest) {
   const auth = await requireAdminApiSession();
   if (auth.response) {
     return auth.response;
-  }
-
-  if (process.env.NODE_ENV === "production" && !RESET_ENABLED_IN_PRODUCTION) {
-    return NextResponse.json({ error: "Operational reset is disabled in production." }, { status: 403 });
   }
 
   try {

@@ -83,10 +83,6 @@ if (value("WEBHOOK_RETAIN_PROCESSED_PAYLOAD") === "true") {
   warnings.push("WEBHOOK_RETAIN_PROCESSED_PAYLOAD=true retains processed webhook payloads with customer data.");
 }
 
-if (value("ADMIN_RESET_ENABLED") === "true" && value("NODE_ENV") === "production") {
-  warnings.push("ADMIN_RESET_ENABLED=true allows admin users to wipe operational data from the dashboard.");
-}
-
 if (value("WHATSAPP_FLOW_USE_DATA_EXCHANGE") === "true") {
   requireEnv("WHATSAPP_FLOW_PRIVATE_KEY", "Data exchange Flows need the configured private key.");
 }
