@@ -1,13 +1,11 @@
 @import "tailwindcss";
+@source not "../output";
+@source not "../.playwright-cli";
 
 :root {
-  /* Soft background for the main canvas to contrast with white cards */
-  --bg-app: #f8fafc;
-  /* slate-50 */
+  --bg-app: #f7f8fa;
   --brand: #ea580c;
-  /* Orange 600 */
   --brand-hover: #c2410c;
-  /* Orange 700 */
 }
 
 @theme {
@@ -15,37 +13,55 @@
   --color-brand-hover: var(--brand-hover);
   --color-brand-dark: var(--brand-hover);
   --color-bg-app: var(--bg-app);
+  --font-sans: var(--font-geist-sans), Arial, sans-serif;
+  --font-mono: var(--font-geist-mono), monospace;
 }
 
-body {
-  background-color: var(--bg-app);
-  @apply text-slate-900 antialiased selection:bg-brand selection:text-white;
-}
-
-/* Modern, minimal card design */
-.ui-card {
-  background-color: #ffffff;
-  border: 1px solid #e2e8f0;
-  /* slate-200 */
-  border-radius: 0.875rem;
-  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.no-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
-.no-scrollbar {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-/* Prevent auto-zooming on focus in mobile browsers (iOS WebKit / Android) */
-@media screen and (max-width: 768px) {
-  input,
-  textarea,
-  select {
-    font-size: 16px !important;
-  }
-}
+body { background: var(--bg-app); @apply font-sans text-slate-900 antialiased selection:bg-brand/20; }
+button:not(:disabled), a, summary, select { cursor: pointer; }
+button, a, input, textarea, select { -webkit-tap-highlight-color: transparent; }
+:focus-visible { outline: 2px solid var(--brand); outline-offset: 3px; }
+button:disabled { cursor: not-allowed; }
+input, select, textarea { scroll-margin-top: 100px; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--brand); }
+input[type="number"] { font-variant-numeric: tabular-nums; }
+.ui-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 2px 4px -3px rgb(15 23 42 / 0.12); }
+.ui-input { width: 100%; min-height: 42px; border: 1px solid #e2e8f0; background: #fff; border-radius: 8px; padding: 10px 12px; font-size: 13px; color: #334155; transition: border-color .15s, box-shadow .15s; }
+.ui-input.ui-input-search { padding-left: 36px; }
+.ui-input.ui-input-action { padding-right: 44px; }
+.ui-input::placeholder { color: #94a3b8; }
+.ui-input:focus { border-color: var(--brand); outline: none; box-shadow: 0 0 0 3px color-mix(in srgb, var(--brand) 10%, transparent); }
+.ui-input:disabled { background: #f8fafc; opacity: .6; }
+.ui-button { display: inline-flex; min-height: 40px; align-items: center; justify-content: center; gap: 8px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 9px 14px; background: white; color: #475569; font-size: 12px; font-weight: 550; white-space: nowrap; transition: background .15s, border-color .15s; }
+.ui-button:hover { background: #f8fafc; border-color: #cbd5e1; }
+.ui-button:disabled { opacity: .5; }
+.ui-button-primary { border-color: var(--brand); background: var(--brand); color: #fff; box-shadow: 0 2px 3px color-mix(in srgb, var(--brand) 12%, transparent); }
+.ui-button-primary:hover { border-color: var(--brand-hover); background: var(--brand-hover); }
+.ui-label { display: block; margin-bottom: 8px; font-size: 12px; font-weight: 550; color: #475569; }
+.ui-section-title { font-size: 14px; font-weight: 600; letter-spacing: -.2px; color: #1e293b; }
+.ui-eyebrow { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .14em; color: #94a3b8; }
+.status-pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; padding: 4px 8px; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.metric-value { font-variant-numeric: tabular-nums; letter-spacing: -1px; }
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+.dashboard-content { scrollbar-color: #cbd5e1 transparent; scrollbar-width: thin; }
+.skip-link { position: fixed; left: 16px; top: -60px; z-index: 100; border-radius: 8px; background: white; padding: 12px 18px; font-size: 13px; box-shadow: 0 2px 12px #0002; }
+.skip-link:focus { top: 16px; }
+.nav-dialog[open] { display: block; }
+.command-dialog { margin-top: 0; }
+.section-nav { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 12px; border-bottom: 1px solid #e2e8f0; }
+.section-nav button { flex-shrink: 0; display: inline-flex; align-items: center; gap: 8px; min-height: 40px; padding: 9px 14px; border-radius: 8px; font-size: 12px; font-weight: 500; color: #64748b; white-space: nowrap; }
+.section-nav button:hover { background: #eef0f3; color: #1e293b; }
+.section-nav button[aria-current="page"] { background: white; color: #1e293b; box-shadow: 0 1px 4px #0f172a0d; border: 1px solid #e2e8f0; }
+.settings-body > div > .ui-card, .admin-body > section > .ui-card { box-shadow: none; }
+.settings-body input:not([type="range"]):not([type="checkbox"]):not([type="color"]), .settings-body select { min-height: 40px; }
+.settings-body > div > div { padding-top: 20px; padding-bottom: 20px; }
+.settings-body > div > div:first-child { padding-top: 0; }
+.settings-body label { text-transform: none; letter-spacing: 0; font-size: 12px; color: #64748b; }
+.catalog-table input { box-shadow: none; }
+.catalog-table input:focus { border-color: var(--brand); }
+.inbox-shell { border: 1px solid #e2e8f0; border-radius: 14px; box-shadow: 0 2px 6px -4px #0f172a26; }
+@media (max-width: 1023px) { .inbox-shell { border: 0; border-radius: 0; } }
+@media (max-width: 767px) { input, textarea, select { font-size: 16px !important; } .page-heading { gap: 18px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
+@media print { .dashboard-shell > aside, .dashboard-shell header, .skip-link { display: none !important; } .dashboard-shell, .dashboard-shell main, .dashboard-content { height: auto !important; overflow: visible !important; } }

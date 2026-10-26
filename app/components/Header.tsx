@@ -1,166 +1,75 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
-import {
-  Building2,
-  ChevronDown,
-  ChevronRight,
-  Check,
-  Volume2,
-  VolumeX,
-} from "lucide-react";
-import { clsx } from "clsx";
-import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
-import { useNotifications } from "@/app/components/dashboard/NotificationHub";
+import { Building2, Check, ChevronDown, ChevronRight, Loader2, Search, Volume2, VolumeX, X } from "lucide-react";
 import { toast } from "sonner";
-
-const PAGE_TITLES: Record<string, { title: string; subtitle: string }> = {
-  "/dashboard": { title: "Overview", subtitle: "Live restaurant performance & fulfillment" },
-  "/dashboard/conversations": { title: "Conversations", subtitle: "Customer WhatsApp chats & order drafts" },
-  "/dashboard/orders": { title: "Orders Queue", subtitle: "Live incoming, active & fulfilled orders" },
-  "/dashboard/analytics": { title: "Analytics", subtitle: "Demand trends, revenue & top selling items" },
-  "/dashboard/menu": { title: "Menu Catalog", subtitle: "Menu items, pricing & AI photo digitizer" },
-  "/dashboard/settings": { title: "Settings", subtitle: "Store hours, delivery rules & AI personality" },
-  "/dashboard/admin": { title: "Admin Console", subtitle: "Staff access & system diagnostics" },
-};
+import { useDashboardContext } from "./dashboard/DashboardProvider";
+import { workspaceNavigation } from "./Sidebar";
 
 export function Header() {
   const pathname = usePathname();
+  const router = useRouter();
   const { session, profile, isSoundEnabled, toggleSoundEnabled } = useDashboardContext();
-
-  // useNotifications is still needed for the notification hub side-effect
-  useNotifications();
-
-  const [restaurantDropdownOpen, setRestaurantDropdownOpen] = useState(false);
-  const restaurantDropdownRef = useRef<HTMLDivElement>(null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [workspaceSearch, setWorkspaceSearch] = useState("");
+  const [search, setSearch] = useState("");
+  const [switching, setSwitching] = useState<string | null>(null);
+  const dropdown = useRef<HTMLDivElement>(null);
+  const command = useRef<HTMLDialogElement>(null);
+  const items = workspaceNavigation.filter(item => !item.role || session.role === "super_admin" || (item.role === "admin" && session.role === "admin"));
+  const currentPage = [...items].reverse().find(item => pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(item.href)));
 
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (restaurantDropdownRef.current && !restaurantDropdownRef.current.contains(event.target as Node)) {
-        setRestaurantDropdownOpen(false);
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setWorkspaceOpen(false);
+      if ((event.ctrlKey || event.metaKey) && event.key === "k") {
+        event.preventDefault();
+        setSearch("");
+        command.current?.showModal();
       }
     }
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    function onClick(event: MouseEvent) {
+      if (!dropdown.current?.contains(event.target as Node)) setWorkspaceOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    document.addEventListener("mousedown", onClick);
+    return () => { document.removeEventListener("keydown", onKey); document.removeEventListener("mousedown", onClick); };
   }, []);
 
-  async function handleSwitchRestaurant(restaurantId: string) {
+  async function switchWorkspace(id: string) {
+    if (switching || id === session.restaurantId) return;
+    setSwitching(id);
     try {
-      const res = await fetch("/api/admin/switch-restaurant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ restaurantId }),
-      });
-      if (!res.ok) throw new Error("Failed to switch restaurant");
-      window.location.reload();
-    } catch {
-      toast.error("Failed to switch restaurant.");
-    }
+      const response = await fetch("/api/admin/switch-restaurant", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ restaurantId: id }) });
+      if (!response.ok) throw new Error("Could not switch workspace. Please try again.");
+      window.location.assign("/dashboard");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not switch workspace."); setSwitching(null); }
   }
 
-  const pageInfo = PAGE_TITLES[pathname] || {
-    title: pathname.split("/").pop()?.replace(/^\w/, (c) => c.toUpperCase()) || "Dashboard",
-    subtitle: "Management Console",
-  };
-
-  return (
-    <header className="sticky top-0 z-30 flex h-11 w-full items-center gap-2 border-b border-slate-200 bg-white/95 px-3 backdrop-blur-sm sm:px-4 lg:px-6">
-      {/* Left: Breadcrumb + Restaurant Switcher */}
-      <div className="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden">
-        <span className="hidden shrink-0 text-xs text-slate-400 sm:inline">{profile.app_name}</span>
-        <ChevronRight size={12} className="hidden shrink-0 text-slate-300 sm:inline" />
-        <span className="truncate text-xs font-semibold text-slate-800">{pageInfo.title}</span>
-
-        {/* Super Admin Restaurant Switcher */}
-        {session.role === "super_admin" && (
-          <div className="relative ml-1 shrink-0" ref={restaurantDropdownRef}>
-            <button
-              onClick={() => setRestaurantDropdownOpen((prev) => !prev)}
-              className="flex items-center gap-1 rounded-md border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-semibold text-purple-800 transition hover:bg-purple-100"
-              aria-expanded={restaurantDropdownOpen}
-            >
-              <Building2 size={11} className="shrink-0 text-purple-500" />
-              <span className="max-w-[90px] truncate sm:max-w-[130px]">
-                {session.availableRestaurants?.find((r) => r.id === session.restaurantId)?.name ?? "Select"}
-              </span>
-              <ChevronDown
-                size={11}
-                className={clsx("shrink-0 text-purple-400 transition-transform", restaurantDropdownOpen && "rotate-180")}
-              />
-            </button>
-
-            {restaurantDropdownOpen && (
-              <div className="absolute left-0 top-full mt-1 w-52 rounded-xl border border-slate-200 bg-white p-1 shadow-xl ring-1 ring-black/5 z-50">
-                <p className="px-2 py-1 text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                  Switch Restaurant
-                </p>
-                <div className="max-h-48 overflow-y-auto">
-                  {(session.availableRestaurants ?? []).map((rest) => {
-                    const isSelected = rest.id === session.restaurantId;
-                    return (
-                      <button
-                        key={rest.id}
-                        onClick={() => void handleSwitchRestaurant(rest.id)}
-                        className={clsx(
-                          "flex w-full items-center justify-between rounded-lg px-2.5 py-1.5 text-xs transition text-left",
-                          isSelected ? "bg-purple-50 font-semibold text-purple-900" : "text-slate-700 hover:bg-slate-50"
-                        )}
-                      >
-                        <span className="truncate">{rest.name}</span>
-                        {isSelected && <Check size={12} className="shrink-0 text-purple-600" />}
-                      </button>
-                    );
-                  })}
-                </div>
-                <div className="border-t border-slate-100 mt-1 pt-1">
-                  <Link
-                    href="/dashboard/admin"
-                    onClick={() => setRestaurantDropdownOpen(false)}
-                    className="flex w-full items-center gap-1 rounded-lg px-2.5 py-1.5 text-[11px] font-semibold text-purple-700 hover:bg-purple-50 transition"
-                  >
-                    + Onboard New Client
-                  </Link>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
+  const results = items.filter(item => `${item.label} ${item.description}`.toLowerCase().includes(search.toLowerCase()));
+  return <header className="relative z-30 flex h-[76px] shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white px-5 pl-16 sm:px-7 sm:pl-16 lg:pl-7 xl:px-10">
+    <div className="flex min-w-0 items-center gap-2 text-xs"><span className="hidden text-slate-500 sm:inline">Workspace</span><ChevronRight size={13} className="hidden text-slate-300 sm:block" /><span className="truncate font-medium text-slate-700">{currentPage?.label || "Dashboard"}</span>{pathname.endsWith("/new") && <><ChevronRight size={13} className="text-slate-300" /><span className="text-slate-500">New client</span></>}</div>
+    <div className="flex min-w-0 items-center gap-2 sm:gap-4">
+      <button onClick={() => { setSearch(""); command.current?.showModal(); }} aria-label="Search pages" className="flex h-9 items-center gap-2 rounded-lg px-2 text-slate-500 transition hover:bg-slate-50 sm:border sm:border-slate-200 sm:pr-2.5"><Search size={16} /><span className="hidden text-xs xl:inline">Go to a page...</span><kbd className="ml-5 hidden rounded border border-slate-200 px-1 py-0.5 text-[10px] sm:block">Ctrl K</kbd></button>
+      <div className="hidden h-5 w-px bg-slate-200 sm:block" />
+      <div className="relative min-w-0" ref={dropdown}>
+        {session.role === "super_admin" ? <>
+          <button onClick={() => setWorkspaceOpen(!workspaceOpen)} aria-expanded={workspaceOpen} aria-controls="workspace-menu" className="flex h-9 max-w-[180px] items-center gap-2 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-medium text-slate-700 hover:bg-slate-50 sm:max-w-[220px]"><Building2 size={15} className="shrink-0 text-slate-500" /><span className="truncate">{session.availableRestaurants?.find(item => item.id === session.restaurantId)?.name || profile.app_name}</span><ChevronDown size={13} className="shrink-0 text-slate-500" /></button>
+          {workspaceOpen && <div id="workspace-menu" className="absolute right-0 top-full z-50 mt-2 w-[min(310px,85vw)] rounded-xl border border-slate-200 bg-white p-2 shadow-xl shadow-slate-900/10">
+            <p className="px-2 py-2 text-[10px] font-semibold uppercase tracking-widest text-slate-500">Switch client workspace</p>
+            <input autoFocus aria-label="Find a client workspace" value={workspaceSearch} onChange={event => setWorkspaceSearch(event.target.value)} placeholder="Find a client..." className="ui-input mb-2" />
+            <div className="max-h-64 overflow-y-auto">{(session.availableRestaurants || []).filter(item => item.name.toLowerCase().includes(workspaceSearch.toLowerCase())).map(item => <button key={item.id} disabled={!!switching} onClick={() => void switchWorkspace(item.id)} className="flex min-h-11 w-full items-center justify-between gap-3 rounded-lg px-3 text-left text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"><span className="truncate">{item.name}</span>{switching === item.id ? <Loader2 size={14} className="animate-spin" /> : session.restaurantId === item.id && <Check size={15} className="shrink-0 text-brand" />}</button>)}{!(session.availableRestaurants || []).some(item => item.name.toLowerCase().includes(workspaceSearch.toLowerCase())) && <p className="p-3 text-xs text-slate-500">No clients found.</p>}</div>
+            <Link href="/dashboard/clients" onClick={() => setWorkspaceOpen(false)} className="mt-2 flex items-center justify-between border-t border-slate-100 px-3 pt-3 pb-1 text-xs font-medium text-brand">Manage all clients<ChevronRight size={14} /></Link>
+          </div>}
+        </> : <span className="hidden max-w-48 truncate text-xs font-medium text-slate-600 sm:block">{profile.app_name}</span>}
       </div>
-
-      {/* Right: Sound + User pill */}
-      <div className="flex shrink-0 items-center gap-1.5">
-        <button
-          onClick={() => {
-            toggleSoundEnabled();
-            toast.message(isSoundEnabled ? "Sounds muted" : "Sounds active");
-          }}
-          title={isSoundEnabled ? "Mute sounds" : "Unmute sounds"}
-          className={clsx(
-            "flex h-7 w-7 shrink-0 items-center justify-center rounded-md border transition",
-            isSoundEnabled
-              ? "border-slate-200 bg-white text-slate-500 hover:text-slate-800"
-              : "border-amber-200 bg-amber-50 text-amber-600"
-          )}
-          aria-label={isSoundEnabled ? "Mute sounds" : "Unmute sounds"}
-        >
-          {isSoundEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
-        </button>
-
-        {/* User Pill */}
-        <div className="flex items-center gap-1.5 rounded-md border border-slate-200 bg-slate-50 px-2 py-1">
-          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-800 text-[10px] font-bold text-white">
-            {(session.fullName || session.email || "U").charAt(0).toUpperCase()}
-          </div>
-          <span className="hidden max-w-[90px] truncate text-[11px] font-semibold text-slate-700 sm:block">
-            {session.fullName || session.email || "Staff"}
-          </span>
-          <span className="rounded bg-slate-200 px-1 py-0.5 text-[9px] font-bold uppercase text-slate-500">
-            {session.role === "super_admin" ? "SA" : session.role === "admin" ? "Admin" : "Staff"}
-          </span>
-        </div>
-      </div>
-    </header>
-  );
+      <button onClick={() => { toggleSoundEnabled(); toast.message(isSoundEnabled ? "Notification sounds muted" : "Notification sounds enabled"); }} aria-label={isSoundEnabled ? "Mute notification sounds" : "Enable notification sounds"} aria-pressed={isSoundEnabled} className="hidden h-9 w-9 items-center justify-center rounded-lg text-slate-500 hover:bg-slate-50 hover:text-slate-700 sm:flex">{isSoundEnabled ? <Volume2 size={17} /> : <VolumeX size={17} />}</button>
+    </div>
+    <dialog ref={command} aria-labelledby="command-title" className="command-dialog fixed top-[15vh] mx-auto w-[min(560px,calc(100%-32px))] rounded-2xl border border-slate-200 bg-white p-0 shadow-2xl backdrop:bg-slate-950/30" onClick={event => { if (event.target === event.currentTarget) { const rect = event.currentTarget.getBoundingClientRect(); if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) event.currentTarget.close(); } }}>
+      <div className="flex items-center gap-3 border-b border-slate-100 p-4"><Search size={18} className="text-slate-500" /><h2 id="command-title" className="sr-only">Search pages</h2><input autoFocus value={search} onChange={event => setSearch(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && results[0]) { command.current?.close(); router.push(results[0].href); } }} placeholder="Where would you like to go?" aria-label="Search pages" className="min-w-0 flex-1 bg-transparent text-sm outline-none" /><button onClick={() => command.current?.close()} className="rounded p-1 text-slate-500 hover:bg-slate-100" aria-label="Close search"><X size={17} /></button></div>
+      <div className="max-h-[55vh] overflow-y-auto p-2">{results.map(({ href, label, description, icon: Icon }) => <Link key={href} href={href} onClick={() => command.current?.close()} className="flex items-center gap-3 rounded-xl p-3 hover:bg-slate-50"><span className="rounded-lg border border-slate-200 p-2 text-slate-500"><Icon size={18} /></span><div><p className="text-sm font-medium text-slate-800">{label}</p><p className="mt-0.5 text-xs text-slate-500">{description}</p></div><ChevronRight size={14} className="ml-auto text-slate-300" /></Link>)}{results.length === 0 && <p className="p-8 text-center text-sm text-slate-500">No matching pages. Try “orders” or “settings”.</p>}</div>
+    </dialog>
+  </header>;
 }

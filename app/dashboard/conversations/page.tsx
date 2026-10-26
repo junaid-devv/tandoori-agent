@@ -34,6 +34,8 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { ResponsiveDrawer } from "@/app/components/dashboard/ResponsiveDrawer";
+import { ErrorNotice } from "@/app/components/dashboard/WorkspaceUI";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 import { DemoController, type DemoControllerState } from "@/demo/controllers/demo-controller";
@@ -406,6 +408,7 @@ export default function ConversationsPage() {
   const {
     data: cachedConversations,
     isLoading: loadingList,
+    error: inboxError,
     revalidate: revalidateList,
   } = useDataCache<ConversationPreview[]>(conversationsUrl);
 
@@ -751,22 +754,22 @@ export default function ConversationsPage() {
   };
 
   return (
-    <div className="flex h-full w-full min-h-0 flex-1 overflow-hidden bg-white font-sans text-slate-900 border-t border-slate-200 lg:border-t-0">
+    <div className="inbox-shell flex h-full w-full min-h-0 flex-1 overflow-hidden bg-white font-sans text-slate-900">
       
       {/* ─────────────────────────────────────────────────────────────
           PANE 1: INBOX LIST (w-72 sm:w-80 lg:w-[310px])
          ───────────────────────────────────────────────────────────── */}
       <aside
         className={clsx(
-          "flex min-w-0 shrink-0 flex-col border-r border-slate-200 bg-slate-50/50 transition-all duration-300 ease-in-out",
-          selectedId ? "hidden w-full md:flex md:w-72 lg:w-80" : "flex w-full md:w-72 lg:w-80"
+          "flex min-w-0 shrink-0 flex-col border-r border-slate-200 bg-white transition-all duration-200 ease-in-out",
+          selectedId ? "hidden w-full md:flex md:w-[280px] 2xl:w-[320px]" : "flex w-full md:w-[280px] 2xl:w-[320px]"
         )}
       >
         {/* Inbox Header & Search */}
-        <div className="flex-shrink-0 border-b border-slate-200 bg-white p-2.5 sm:p-3 space-y-2">
+        <div className="flex-shrink-0 border-b border-slate-200 bg-white p-4 space-y-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
-              <h1 className="text-base font-bold tracking-tight text-slate-900">Chats</h1>
+              <h1 className="text-lg font-semibold tracking-tight text-slate-900">Inbox</h1>
               <span className="rounded-full bg-slate-100 px-2 py-0.2 text-xs font-bold text-slate-600">
                 {conversations.length}
               </span>
@@ -778,7 +781,7 @@ export default function ConversationsPage() {
               title="Refresh conversation list"
             >
               <RefreshCw size={11} className={clsx("mr-1", (loadingList || refreshing) && "animate-spin text-brand")} />
-              <span>Sync</span>
+              <span className="sr-only">Refresh inbox</span>
             </button>
           </div>
 
@@ -821,8 +824,8 @@ export default function ConversationsPage() {
             <input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
-              placeholder="Search customer, phone..."
-              className="w-full rounded-lg border border-slate-200 bg-slate-50/80 py-1.5 pl-8 pr-7 text-base sm:text-xs outline-none transition focus:border-brand/40 focus:bg-white focus:ring-1 focus:ring-brand/20"
+              aria-label="Search conversations" placeholder="Search conversations..."
+              className="w-full rounded-lg border border-slate-200 bg-slate-50/80 py-2.5 pl-8 pr-7 text-base sm:text-xs outline-none transition focus:border-brand/40 focus:bg-white focus:ring-1 focus:ring-brand/20"
             />
             {searchTerm && (
               <button
@@ -839,14 +842,14 @@ export default function ConversationsPage() {
             {[
               { id: "all", label: "All", count: filterCounts.all },
               { id: "unread", label: "Unread", count: filterCounts.unread },
-              { id: "human", label: "Human", count: filterCounts.human },
-              { id: "cart", label: "Cart", count: filterCounts.cart },
+              { id: "human", label: "Team", count: filterCounts.human },
+              { id: "cart", label: "Drafts", count: filterCounts.cart },
             ].map((f) => (
               <button
                 key={f.id}
                 onClick={() => setInboxFilter(f.id as typeof inboxFilter)}
                 className={clsx(
-                  "flex items-center justify-center gap-1 rounded-md py-1 transition capitalize text-[10.5px]",
+                  "flex items-center justify-center gap-1 rounded-md py-2 transition capitalize text-[11px]",
                   inboxFilter === f.id
                     ? "bg-white text-slate-900 font-bold shadow-2xs"
                     : "text-slate-500 hover:text-slate-900"
@@ -872,8 +875,9 @@ export default function ConversationsPage() {
           </div>
         </div>
 
+        {inboxError && <div className="p-3"><ErrorNotice message="Couldn’t load conversations." retry={revalidateList} /></div>}
         {/* Conversation List Scroll Area */}
-        <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 overscroll-contain">
+        <div className="flex-1 overflow-y-auto p-2 space-y-1 overscroll-contain">
           {loadingList && conversations.length === 0 ? (
             <div className="space-y-1.5 p-1">
               {Array.from({ length: 6 }).map((_, index) => (
@@ -890,7 +894,6 @@ export default function ConversationsPage() {
             filteredConversations.map((item) => {
               const state = pickState(item.conversation_states);
               const session = pickSession(item.user_sessions, item.conversation_states);
-              const activeStep = state?.stage ?? state?.workflow_step;
               const isActive = item.id === selectedId;
               const draftLines = getDraftLines(state?.cart);
               
@@ -903,9 +906,9 @@ export default function ConversationsPage() {
                   data-testid={`conversation-item-${item.phone.replace(/[^0-9]/g, "")}`}
                   onClick={() => setSelectedId(item.id)}
                   className={clsx(
-                    "w-full rounded-lg px-2.5 py-2 text-left transition-colors relative border",
+                    "w-full rounded-xl px-3 py-3.5 text-left transition-colors relative border",
                     isActive
-                      ? "bg-slate-100 border-slate-200/90 shadow-2xs"
+                      ? "bg-orange-50/60 border-orange-200/70"
                       : "bg-white border-transparent hover:border-slate-100 hover:bg-slate-50"
                   )}
                 >
@@ -914,8 +917,8 @@ export default function ConversationsPage() {
                     <div className="relative shrink-0">
                       <div
                         className={clsx(
-                          "flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold transition-colors",
-                          isActive ? "bg-slate-900 text-white" : "bg-slate-100 text-slate-700 group-hover:bg-slate-200"
+                          "flex h-10 w-10 items-center justify-center rounded-xl text-xs font-bold transition-colors",
+                          isActive ? "bg-orange-100 text-brand" : "bg-slate-100 text-slate-700 group-hover:bg-slate-200"
                         )}
                       >
                         {getConversationInitials(item)}
@@ -941,7 +944,7 @@ export default function ConversationsPage() {
                               Self Test
                             </span>
                           )}
-                          {selectedChannelPhone === "all" && item.whatsapp_phone && (
+                          {selectedChannelPhone === "all" && uniqueChannels.length > 1 && item.whatsapp_phone && (
                             <span className="shrink-0 rounded bg-slate-200/60 px-1 py-0.2 text-[8px] font-medium text-slate-600">
                               +{item.whatsapp_phone.slice(-4)}
                             </span>
@@ -972,11 +975,7 @@ export default function ConversationsPage() {
                               Handoff
                             </span>
                           )}
-                          {activeStep && !session?.status && draftLines.length === 0 && (
-                            <span className="rounded bg-slate-100 px-1 py-0.2 text-[8.5px] font-bold uppercase text-slate-500">
-                              {formatStep(activeStep)}
-                            </span>
-                          )}
+
                         </div>
                       </div>
                     </div>
@@ -991,7 +990,7 @@ export default function ConversationsPage() {
       {/* ─────────────────────────────────────────────────────────────
           PANE 2: ACTIVE CHAT STREAM (Center)
          ───────────────────────────────────────────────────────────── */}
-      <main className={clsx("flex min-w-0 flex-1 flex-col bg-slate-50/30", !selectedId ? "hidden md:flex" : "flex")}>
+      <section aria-label="Conversation" className={clsx("flex min-w-0 flex-1 flex-col bg-[#fafbfc]", !selectedId ? "hidden md:flex" : "flex")}>
         {!activeConversation ? (
           <div className="flex h-full flex-col items-center justify-center bg-slate-50/50 p-6 text-center text-slate-400">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-sm mb-4">
@@ -999,13 +998,13 @@ export default function ConversationsPage() {
             </div>
             <h2 className="text-base font-bold text-slate-800">Select a conversation</h2>
             <p className="text-xs text-slate-500 mt-1 max-w-sm">
-              Choose a customer chat from the inbox list to view messages, place orders, or respond manually.
+              Your customers, all in one place. Select a conversation to see messages, review an order draft, or lend a hand.
             </p>
           </div>
         ) : (
           <>
             {/* Chat Top Header */}
-            <header className="flex-shrink-0 border-b border-slate-200 bg-white px-3 py-2 sm:px-5 sm:py-2.5">
+            <header className="flex-shrink-0 border-b border-slate-200 bg-white px-4 py-4 sm:px-5">
               <div className="flex items-center justify-between gap-2 sm:gap-4">
                 {/* Left: Customer metadata */}
                 <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1">
@@ -1078,6 +1077,8 @@ export default function ConversationsPage() {
                         <button
                           key={mode}
                           data-testid={`mode-toggle-${mode}`}
+                          aria-label={mode === "agent" ? "AI assistant mode" : "Human response mode"}
+                          aria-pressed={isActive}
                           onClick={() => void handleModeChange(mode)}
                           disabled={modeSaving}
                           className={clsx(
@@ -1103,6 +1104,8 @@ export default function ConversationsPage() {
                   {/* Context & Live Draft Panel Toggle Button */}
                   <button
                     onClick={toggleContextPanelOpen}
+                    aria-expanded={isContextPanelOpen}
+                    aria-label={isContextPanelOpen ? "Close customer and order details" : "Open customer and order details"}
                     title={isContextPanelOpen ? "Close order drawer" : "Open order draft drawer"}
                     className={clsx(
                       "flex items-center gap-1 rounded-lg border px-2.5 py-1 text-xs font-bold transition shadow-2xs",
@@ -1522,26 +1525,19 @@ export default function ConversationsPage() {
             </div>
           </>
         )}
-      </main>
+      </section>
 
       {/* ─────────────────────────────────────────────────────────────
           PANE 3: DOCKABLE CONTEXT & LIVE CART PANEL (Right)
          ───────────────────────────────────────────────────────────── */}
       {isContextPanelOpen && activeConversation && (
         <>
-          {/* Mobile Overlay Backdrop */}
-          <div
-            className="fixed inset-0 z-40 bg-black/40 backdrop-blur-xs lg:hidden animate-in fade-in-0 duration-200"
-            onClick={toggleContextPanelOpen}
-          />
-
-          {/* Drawer Panel */}
-          <aside className="fixed inset-y-0 right-0 z-50 flex w-full max-w-sm flex-col border-l border-slate-200 bg-white shadow-2xl transition-transform lg:static lg:z-auto lg:w-80 xl:w-[320px] lg:shadow-none overflow-hidden animate-in slide-in-from-right duration-200">
+          <ResponsiveDrawer label="Customer and order details" onClose={toggleContextPanelOpen}>
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
               <div className="flex items-center gap-2">
                 <ShoppingCart size={15} className="text-brand" />
-                <h3 className="font-bold text-slate-900 text-sm">Order Draft & Profile</h3>
+                <h3 className="font-bold text-slate-900 text-sm">Customer & order</h3>
               </div>
               <button
                 onClick={toggleContextPanelOpen}
@@ -1579,6 +1575,7 @@ export default function ConversationsPage() {
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 mb-1">Tags</label>
                 <input
+                  aria-label="Customer tags"
                   value={customerTags}
                   onChange={(event) => setCustomerTags(event.target.value)}
                   placeholder="e.g. VIP, frequent, spicy"
@@ -1590,6 +1587,7 @@ export default function ConversationsPage() {
               <div>
                 <label className="block text-[11px] font-bold text-slate-500 mb-1">Staff Notes</label>
                 <textarea
+                  aria-label="Staff notes"
                   value={customerNotes}
                   onChange={(event) => setCustomerNotes(event.target.value)}
                   rows={2}
@@ -1668,8 +1666,8 @@ export default function ConversationsPage() {
             </div>
 
             {/* 3. AI Turn & Sentiment Observability */}
-            <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-2 text-xs">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Agent Observability</p>
+            <details className="rounded-xl border border-slate-200 bg-slate-50/60 p-3.5 space-y-3 text-xs">
+              <summary className="font-medium text-slate-600">Assistant details</summary>
               <div className="flex justify-between">
                 <span className="text-slate-500">Bot Active:</span>
                 <span className={clsx("font-bold", activeSession?.is_bot_active ? "text-emerald-600" : "text-amber-600")}>
@@ -1687,9 +1685,9 @@ export default function ConversationsPage() {
                   Escalated: {activeSession.escalation_reason}
                 </div>
               )}
-            </div>
+            </details>
           </div>
-          </aside>
+          </ResponsiveDrawer>
         </>
       )}
     </div>

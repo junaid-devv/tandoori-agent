@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { ErrorNotice } from "@/app/components/dashboard/WorkspaceUI";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { toast } from "sonner";
 import { printTestReceipt } from "@/lib/thermal-printer";
@@ -129,6 +130,14 @@ export default function SettingsPage() {
   } = useDashboardContext();
 
   const [activeTab, setActiveTab] = useState<SettingsTab>("operations");
+  useEffect(() => {
+    const sync = () => {
+      const key = window.location.hash.slice(1);
+      if (["operations", "delivery", "ai_brand", "contacts", "notifications"].includes(key) || (key === "database" && session.role === "super_admin")) setActiveTab(key as SettingsTab);
+    };
+    sync(); window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, [session.role]);
   const [saving, setSaving] = useState(false);
   const [purgingCache, setPurgingCache] = useState(false);
   const [dbStats, setDbStats] = useState<DatabaseSystemStats | null>(null);
@@ -151,7 +160,7 @@ export default function SettingsPage() {
   });
 
   // Single-branch: always load settings for the auto-resolved branch (no branch_id param needed)
-  const { data: cachedSettings, isLoading: loading } = useDataCache<Partial<SettingsState>>("/api/settings");
+  const { data: cachedSettings, isLoading: loading, error: settingsError, revalidate: revalidateSettings } = useDataCache<Partial<SettingsState>>("/api/settings");
 
   // Merge cached data into local editable state
   useEffect(() => {
@@ -177,7 +186,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (activeTab === "database") {
+    if (activeTab === "database" && session.role === "super_admin") {
       void loadDatabaseStats();
     }
   }, [activeTab, loadDatabaseStats]);
@@ -278,80 +287,37 @@ export default function SettingsPage() {
   };
 
   const tabs: { key: SettingsTab; label: string; icon: React.ReactNode; badge?: string }[] = [
-    { key: "operations", label: "Store", icon: <Store size={14} /> },
+    { key: "operations", label: "Business hours", icon: <Store size={14} /> },
     { key: "delivery", label: "Delivery", icon: <Truck size={14} />, badge: settings.delivery_enabled ? "ON" : "OFF" },
-    { key: "ai_brand", label: "AI Voice", icon: <Bot size={14} /> },
-    { key: "contacts", label: "Contact", icon: <Phone size={14} /> },
-    ...(session.role === "super_admin" ? [{ key: "database" as const, label: "Database", icon: <Database size={14} /> }] : []),
-    { key: "notifications", label: "Alerts", icon: <Bell size={14} /> },
+    { key: "ai_brand", label: "Assistant voice", icon: <Bot size={14} /> },
+    { key: "contacts", label: "Contact details", icon: <Phone size={14} /> },
+    ...(session.role === "super_admin" ? [{ key: "database" as const, label: "System health", icon: <Database size={14} /> }] : []),
+    { key: "notifications", label: "Notifications & printing", icon: <Bell size={14} /> },
   ];
 
   return (
-    <div className="space-y-3 pb-10">
-      {/* ── Single-row header bar ── */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-sm font-bold text-slate-900">Settings</h1>
-        {activeTab !== "database" && (
-          <button
-            onClick={() => void save()}
-            disabled={saving}
-            className="inline-flex items-center gap-1.5 h-8 px-3 text-xs font-bold rounded-lg bg-brand text-white shadow-sm transition hover:bg-brand-hover disabled:opacity-50"
-          >
-            {saving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
-            Save
-          </button>
-        )}
-      </div>
-
-      {/* ── WhatsApp compact pill banner ── */}
-      <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2">
-        <span className="text-[11px] text-emerald-800 font-medium">Meta WhatsApp Cloud API &amp; Coexistence</span>
-        <Link
-          href="/dashboard/whatsapp"
-          className="flex items-center gap-1.5 rounded-lg border border-emerald-200 bg-white px-3 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 transition shrink-0"
-        >
-          <Phone size={13} /> Manage WhatsApp
-        </Link>
-      </div>
-
-      {/* ── Horizontal scrollable pill tabs ── */}
-      <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-        {tabs.map(({ key, label, icon, badge }) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            className={clsx(
-              "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all sm:flex-1 whitespace-nowrap",
-              activeTab === key
-                ? "bg-slate-900 text-white shadow-sm"
-                : "text-slate-500 hover:bg-slate-50 hover:text-slate-800"
-            )}
-          >
-            {icon}
-            <span>{label}</span>
-            {badge && (
-              <span
-                className={clsx(
-                  "rounded px-1 py-0.5 text-[9px] font-bold leading-none",
-                  badge === "ON"
-                    ? activeTab === key ? "bg-emerald-500 text-white" : "bg-emerald-100 text-emerald-800"
-                    : activeTab === key ? "bg-slate-700 text-slate-300" : "bg-slate-100 text-slate-500"
-                )}
-              >
-                {badge}
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
+    <div className="space-y-7 pb-6">
+      <PageHeader title="Settings" description="Make the workspace work the way your restaurant does." actions={!["database", "notifications"].includes(activeTab) && <button onClick={() => void save()} disabled={saving || loading || !!settingsError} className="ui-button ui-button-primary">{saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}{saving ? "Saving..." : "Save changes"}</button>} />
+      {settingsError && <ErrorNotice message="We couldn’t load your saved settings. Please try again." retry={revalidateSettings} />}
+      <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
+        <aside className="min-w-0 lg:sticky lg:top-0">
+          <p className="ui-eyebrow mb-3 hidden px-3 lg:block">Preferences</p>
+          <nav aria-label="Settings sections" className="no-scrollbar flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
+            {tabs.map(({key, label, icon}) => <button key={key} onClick={() => { setActiveTab(key); window.history.replaceState(null, "", `#${key}`); }} aria-current={activeTab === key ? "page" : undefined} className={clsx("flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-xs font-medium transition", activeTab === key ? "border border-slate-200 bg-white text-slate-800 shadow-xs" : "border border-transparent text-slate-500 hover:bg-slate-100")}><span className={activeTab === key ? "text-brand" : "text-slate-400"}>{icon}</span><span>{label}</span></button>)}
+          </nav>
+          {session.role !== "branch_staff" && <div className="mt-5 hidden border-t border-slate-200 px-3 pt-5 lg:block"><p className="text-[11px] leading-relaxed text-slate-400">Need to change the business profile or team access?</p><Link href="/dashboard/admin" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-brand">Open Administration <span aria-hidden="true">→</span></Link></div>}
+        </aside>
+        <div className="settings-body min-w-0 space-y-5">
+          <div className="px-1"><h2 className="ui-section-title">{tabs.find(item => item.key === activeTab)?.label}</h2><p className="mt-1.5 text-xs leading-relaxed text-slate-400">{({ operations: "Set service hours and how long orders take to prepare.", delivery: "Set delivery fees, minimum orders and the areas you serve.", ai_brand: "Choose how your assistant speaks to customers.", contacts: "Keep your restaurant’s contact details up to date.", database: "Monitor your database connection and workspace data.", notifications: "Configure notifications and receipts for this device. Changes apply immediately." })[activeTab]}</p></div>
+          {loading && <div className="ui-card flex items-center gap-2 p-5 text-xs text-slate-500"><RefreshCw size={15} className="animate-spin" />Loading your saved preferences...</div>}
+          <fieldset disabled={loading || !!settingsError} className="min-w-0 disabled:opacity-50">
       {/* ─────────────────────────────────────────────────────────────
           TAB 1: STORE
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "operations" && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+        <div className="ui-card p-5 sm:p-6 space-y-4">
           {/* Order Taking Status */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-semibold text-slate-700">Order Taking</span>
               <span
@@ -384,11 +350,11 @@ export default function SettingsPage() {
           <div className="space-y-2">
             <p className="text-xs font-semibold text-slate-700">Business Hours</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Opening Time</label>
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
+                <label htmlFor="settings-field-0" className="ui-label">Opening Time</label>
                 <div className="flex items-center gap-2">
                   <Clock size={13} className="text-slate-400 shrink-0" />
-                  <input
+                  <input id="settings-field-0"
                     type="time"
                     value={toTimeInputValue(settings.opening_time)}
                     onChange={(e) =>
@@ -403,11 +369,11 @@ export default function SettingsPage() {
                 <p className="text-[11px] text-slate-400">Current: <span className="font-bold text-slate-600">{settings.opening_time}</span></p>
               </div>
 
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Closing Time</label>
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
+                <label htmlFor="settings-field-1" className="ui-label">Closing Time</label>
                 <div className="flex items-center gap-2">
                   <Clock size={13} className="text-slate-400 shrink-0" />
-                  <input
+                  <input id="settings-field-1"
                     type="time"
                     value={toTimeInputValue(settings.closing_time)}
                     onChange={(e) =>
@@ -428,13 +394,14 @@ export default function SettingsPage() {
           <div className="border-t border-slate-100 pt-3 space-y-2">
             <p className="text-xs font-semibold text-slate-700">Fulfillment Estimates</p>
             <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-2">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-semibold text-slate-700">Kitchen Prep</span>
                   <span className="font-bold text-slate-900">{settings.estimated_prep_minutes} min</span>
                 </div>
                 <input
                   type="range"
+                  aria-label="Kitchen preparation time in minutes"
                   min={10}
                   max={120}
                   step={5}
@@ -444,13 +411,14 @@ export default function SettingsPage() {
                 />
               </div>
 
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-2">
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-2">
                 <div className="flex justify-between items-center text-xs">
                   <span className="font-semibold text-slate-700">Rider Delivery</span>
                   <span className="font-bold text-slate-900">{settings.estimated_delivery_minutes} min</span>
                 </div>
                 <input
                   type="range"
+                  aria-label="Delivery time in minutes"
                   min={15}
                   max={120}
                   step={5}
@@ -468,9 +436,9 @@ export default function SettingsPage() {
           TAB 2: DELIVERY
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "delivery" && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+        <div className="ui-card p-5 sm:p-6 space-y-4">
           {/* Master Delivery Toggle */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-lg border border-slate-100 bg-slate-50 p-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="text-xs font-semibold text-slate-700">Delivery Service</span>
               <span
@@ -503,9 +471,9 @@ export default function SettingsPage() {
 
           {/* Pricing & Minimums */}
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Delivery Fee (Rs.)</label>
-              <input
+            <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
+              <label htmlFor="settings-field-2" className="ui-label">Delivery Fee (Rs.)</label>
+              <input id="settings-field-2"
                 type="number"
                 min={0}
                 step={50}
@@ -517,9 +485,9 @@ export default function SettingsPage() {
               <p className="text-[11px] text-slate-400">Set 0 for free delivery</p>
             </div>
 
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Min Order (Rs.)</label>
-              <input
+            <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
+              <label htmlFor="settings-field-3" className="ui-label">Min Order (Rs.)</label>
+              <input id="settings-field-3"
                 type="number"
                 min={0}
                 step={100}
@@ -638,7 +606,7 @@ export default function SettingsPage() {
           TAB 3: AI VOICE
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "ai_brand" && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+        <div className="ui-card p-5 sm:p-6 space-y-4">
           <div className="flex items-center gap-2">
             <Bot size={14} className="text-brand" />
             <p className="text-xs font-semibold text-slate-700">AI Personality &amp; Conversation Voice</p>
@@ -650,11 +618,13 @@ export default function SettingsPage() {
             {AI_PERSONALITY_PRESETS.map((preset) => {
               const isSelected = settings.ai_personality === preset.title;
               return (
-                <div
+                <button
+                  type="button"
+                  aria-pressed={isSelected}
                   key={preset.title}
                   onClick={() => setSettings((curr) => ({ ...curr, ai_personality: preset.title }))}
                   className={clsx(
-                    "cursor-pointer rounded-lg border p-3 transition-all",
+                    "min-w-0 cursor-pointer rounded-lg border p-4 text-left transition-all",
                     isSelected
                       ? "border-brand bg-brand/5 ring-1 ring-brand/30"
                       : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
@@ -664,21 +634,21 @@ export default function SettingsPage() {
                     <span className="text-xs font-semibold text-slate-900">{preset.title}</span>
                     {isSelected && <Check size={13} className="text-brand" />}
                   </div>
-                  <p className="text-[11px] text-slate-400 mt-0.5 truncate">{preset.desc}</p>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{preset.desc}</p>
                   {isSelected && (
                     <div className="mt-2 rounded-md bg-white p-2 border border-slate-100 text-[10px] text-slate-500 italic">
                       &ldquo;{preset.sample}&rdquo;
                     </div>
                   )}
-                </div>
+                </button>
               );
             })}
           </div>
 
           {/* Custom Personality Input */}
           <div className="border-t border-slate-100 pt-3 space-y-1.5">
-            <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Custom Brand Voice</label>
-            <input
+            <label htmlFor="settings-field-4" className="ui-label">Custom Brand Voice</label>
+            <input id="settings-field-4"
               type="text"
               value={settings.ai_personality}
               onChange={(e) => setSettings((curr) => ({ ...curr, ai_personality: e.target.value }))}
@@ -694,16 +664,16 @@ export default function SettingsPage() {
           TAB 4: CONTACT
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "contacts" && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+        <div className="ui-card p-5 sm:p-6 space-y-4">
           <div className="flex items-center gap-2">
             <p className="text-xs font-semibold text-slate-700">Contact Numbers &amp; City</p>
             <span className="text-[11px] text-slate-400">Shared with customers on request</span>
           </div>
 
           <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">City</label>
-              <select
+            <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
+              <label htmlFor="settings-field-5" className="ui-label">City</label>
+              <select id="settings-field-5"
                 value={selectedCityOption}
                 onChange={(e) =>
                   setSettings((curr) => ({
@@ -723,9 +693,9 @@ export default function SettingsPage() {
             </div>
 
             {selectedCityOption === "__custom__" && (
-              <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
-                <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Custom City Name</label>
-                <input
+              <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
+                <label htmlFor="settings-field-6" className="ui-label">Custom City Name</label>
+                <input id="settings-field-6"
                   type="text"
                   value={settings.city}
                   onChange={(e) => setSettings((curr) => ({ ...curr, city: e.target.value }))}
@@ -735,9 +705,9 @@ export default function SettingsPage() {
               </div>
             )}
 
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Delivery Hotline</label>
-              <input
+            <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
+              <label htmlFor="settings-field-7" className="ui-label">Delivery Hotline</label>
+              <input id="settings-field-7"
                 type="text"
                 value={settings.phone_delivery}
                 onChange={(e) => setSettings((curr) => ({ ...curr, phone_delivery: e.target.value }))}
@@ -746,9 +716,9 @@ export default function SettingsPage() {
               />
             </div>
 
-            <div className="rounded-lg border border-slate-100 bg-slate-50 p-3 space-y-1.5">
-              <label className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Dine-in / Reservation</label>
-              <input
+            <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
+              <label htmlFor="settings-field-8" className="ui-label">Dine-in / Reservation</label>
+              <input id="settings-field-8"
                 type="text"
                 value={settings.phone_dine_in}
                 onChange={(e) => setSettings((curr) => ({ ...curr, phone_dine_in: e.target.value }))}
@@ -764,7 +734,7 @@ export default function SettingsPage() {
           TAB 5: DATABASE
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "database" && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm space-y-4">
+        <div className="ui-card p-5 sm:p-6 space-y-4">
           {/* Connection Health Header */}
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
@@ -821,7 +791,7 @@ export default function SettingsPage() {
                 { table: "rate_limits", label: "Throttles", count: dbStats?.table_counts.rate_limits ?? 0, sub: "IP blocks" },
                 { table: "cache", label: "Cache", count: dbStats?.cache.active_entries ?? 0, sub: "in-memory" },
               ].map((item) => (
-                <div key={item.table} className="rounded-lg border border-slate-100 bg-slate-50 p-3">
+                <div key={item.table} className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4">
                   <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">{item.label}</p>
                   <p className="mt-0.5 text-lg font-bold text-slate-900">{item.count}</p>
                   <p className="text-[10px] text-slate-400">{item.sub}</p>
@@ -836,7 +806,7 @@ export default function SettingsPage() {
           TAB 6: ALERTS
          ───────────────────────────────────────────────────────────── */}
       {activeTab === "notifications" && (
-        <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm divide-y divide-slate-100 space-y-0">
+        <div className="ui-card p-5 sm:p-6 divide-y divide-slate-100 space-y-0">
           {/* Audio Alerts Row */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4">
             <div className="flex items-center gap-2 flex-wrap">
@@ -971,6 +941,9 @@ export default function SettingsPage() {
           </div>
         </div>
       )}
+          </fieldset>
+        </div>
+      </div>
     </div>
   );
 }

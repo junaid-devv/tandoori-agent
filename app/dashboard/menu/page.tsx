@@ -4,7 +4,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AlertCircle,
   CheckCircle2,
-  Filter,
+  Pencil,
+  UtensilsCrossed,
   Layers,
   Loader2,
   Plus,
@@ -16,7 +17,8 @@ import {
   Zap,
 } from "lucide-react";
 import { clsx } from "clsx";
-import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { MenuItemDialog, type CatalogItem } from "@/app/components/dashboard/MenuItemDialog";
+import { EmptyState, ErrorNotice } from "@/app/components/dashboard/WorkspaceUI";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 
@@ -113,12 +115,9 @@ async function patchItem(id: string, patch: Partial<MenuItem>) {
   if (!response.ok) throw new Error(await response.text());
 }
 
-async function deleteItem(id: string) {
-  const response = await fetch(`/api/menu/${id}`, { method: "DELETE" });
-  if (!response.ok) throw new Error(await response.text());
-}
-
 export default function MenuPage() {
+  const [editingItem, setEditingItem] = useState<CatalogItem | null>(null);
+  const [showImport, setShowImport] = useState(false);
   const [items, setItems] = useState<MenuItem[]>([]);
   const [importPreview, setImportPreview] = useState<MenuItem[]>([]);
   const [importWarnings, setImportWarnings] = useState<ImportWarning[]>([]);
@@ -126,7 +125,6 @@ export default function MenuPage() {
   const [processing, setProcessing] = useState(false);
   const [jsonUploading, setJsonUploading] = useState(false);
   const [savingImport, setSavingImport] = useState(false);
-  const [bulkSaving, setBulkSaving] = useState(false);
   const [clearingAll, setClearingAll] = useState(false);
   const [showClearModal, setShowClearModal] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -141,7 +139,7 @@ export default function MenuPage() {
   }, []);
 
   // Single-branch: always load menu for the auto-resolved branch (no branch_id param needed)
-  const { data: cachedMenu, isLoading: loading, revalidate: revalidateMenu } = useDataCache<MenuItem[]>("/api/menu");
+  const { data: cachedMenu, isLoading: loading, error: menuError, revalidate: revalidateMenu } = useDataCache<MenuItem[]>("/api/menu");
 
   // Sync cached menu into local editable state
   useEffect(() => {
@@ -187,66 +185,18 @@ export default function MenuPage() {
     setItems((prev) => prev.map((item, itemIndex) => (itemIndex === index ? { ...item, ...patch } : item)));
   };
 
-  const handleBlurSave = async (item: MenuItem, index: number) => {
-    if (!item.id || !item.name.trim()) return;
-    mutateItem(index, { _saving: true });
-    try {
-      await patchItem(item.id, {
-        name: item.name,
-        price: item.price,
-        category: item.category,
-        description: item.description ?? null,
-        is_available: item.is_available,
-        available_days: normalizeDays(item.available_days),
-        available_start_time: item.available_start_time || null,
-        available_end_time: item.available_end_time || null,
-      });
-    } catch {
-      showToast("Failed to save row.", "error");
-    } finally {
-      mutateItem(index, { _saving: false });
-    }
-  };
-
   const handleToggle = async (item: MenuItem, index: number) => {
+    if (item._saving || !item.id) return;
     const nextValue = !item.is_available;
-    mutateItem(index, { is_available: nextValue });
-    if (!item.id) return;
+    mutateItem(index, { is_available: nextValue, _saving: true });
 
     try {
       await patchItem(item.id, { is_available: nextValue });
     } catch {
       mutateItem(index, { is_available: !nextValue });
       showToast("Could not update availability.", "error");
-    }
-  };
-
-  const handleSchedulePatch = async (item: MenuItem, index: number, patch: Partial<MenuItem>) => {
-    mutateItem(index, patch);
-    if (!item.id) return;
-
-    try {
-      await patchItem(item.id, patch);
-    } catch {
-      showToast("Could not update schedule.", "error");
-      await loadMenu();
-    }
-  };
-
-  const handleDelete = async (item: MenuItem, index: number) => {
-    if (!item.id) {
-      setItems((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
-      return;
-    }
-
-    mutateItem(index, { _deleting: true });
-    try {
-      await deleteItem(item.id);
-      setItems((prev) => prev.filter((entry) => entry.id !== item.id));
-      showToast("Item deleted.", "success");
-    } catch {
-      mutateItem(index, { _deleting: false });
-      showToast("Delete failed.", "error");
+    } finally {
+      mutateItem(index, { _saving: false });
     }
   };
 
@@ -266,33 +216,6 @@ export default function MenuPage() {
       showToast(error instanceof Error ? error.message : "Failed to clear menu.", "error");
     } finally {
       setClearingAll(false);
-    }
-  };
-
-  const handleSaveAll = async () => {
-    setBulkSaving(true);
-    try {
-      const response = await fetch("/api/menu", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: items.filter((item) => item.name.trim()),
-          replaceAll: false,
-        }),
-      });
-
-      const body = await response.json();
-      if (!response.ok) {
-        const issues = body.issues?.map((issue: { message: string }) => issue.message).join(" ");
-        throw new Error(issues || body.error || "Failed to save menu");
-      }
-
-      showToast("All changes saved & AI search indexed.", "success");
-      await loadMenu();
-    } catch (error) {
-      showToast(error instanceof Error ? error.message : "Failed to save menu.", "error");
-    } finally {
-      setBulkSaving(false);
     }
   };
 
@@ -448,65 +371,11 @@ export default function MenuPage() {
   };
 
   return (
-    <div className="space-y-3 pb-10">
+    <div className="space-y-6 pb-6">
       <>
-        {/* Compact header bar */}
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <h1 className="text-sm font-bold text-slate-900">Menu Catalog</h1>
-            <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[11px] font-bold text-brand">{items.length} items</span>
-            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-semibold text-slate-500">{categories.length} cats</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {items.length > 0 && (
-              <button
-                onClick={() => setShowClearModal(true)}
-                className="flex h-8 items-center gap-1.5 rounded-lg border border-red-200 bg-white px-2.5 text-xs font-semibold text-red-600 transition hover:bg-red-50"
-              >
-                <Trash2 size={13} />
-                <span className="hidden sm:inline">Clear</span>
-              </button>
-            )}
-            <button
-              onClick={() => void handleSaveAll()}
-              disabled={bulkSaving || items.length === 0}
-              className="flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-semibold text-white transition hover:bg-brand-hover disabled:opacity-50"
-            >
-              {bulkSaving ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={13} />}
-              Save All
-            </button>
-          </div>
-        </div>
-
-        {/* AI Upload toolbar — compact single-row */}
-        <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5 shadow-sm">
-          <Sparkles size={13} className="shrink-0 text-brand" />
-          <span className="text-xs font-semibold text-slate-700">AI Import:</span>
-          <label className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-orange-200 bg-orange-50 px-2.5 text-xs font-semibold text-brand transition hover:bg-orange-100">
-            {processing ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}
-            {processing ? "Scanning…" : "Upload Photo"}
-            <input type="file" accept="image/*" onChange={handlePhotoUpload} className="hidden" disabled={processing || jsonUploading} />
-          </label>
-          <label className="flex h-8 cursor-pointer items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">
-            {jsonUploading ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} className="text-slate-400" />}
-            {jsonUploading ? "Reading…" : "Import JSON"}
-            <input type="file" accept="application/json,.json" onChange={handleJsonUpload} className="hidden" disabled={jsonUploading || processing} />
-          </label>
-          <div className="ml-auto">
-            <button
-              onClick={() =>
-                setItems((prev) => [
-                  { name: "", price: 0, category: "General", is_available: true, available_days: [], available_start_time: null, available_end_time: null },
-                  ...prev,
-                ])
-              }
-              className="flex h-8 items-center gap-1 rounded-lg bg-slate-900 px-3 text-xs font-bold text-white transition hover:bg-slate-800"
-            >
-              <Plus size={13} />
-              New Item
-            </button>
-          </div>
-        </div>
+        <PageHeader title="Menu catalog" description="A well-organized menu. Easy to browse, simple to keep up to date." actions={<><button disabled={loading || !!menuError} className="ui-button" onClick={() => setShowImport(!showImport)} aria-expanded={showImport}><UploadCloud size={15} />Import menu</button><button disabled={loading || !!menuError} className="ui-button ui-button-primary" onClick={() => setEditingItem({ name: "", price: 0, category: "General", is_available: true })}><Plus size={15} />Add item</button></>} />
+        {menuError && <ErrorNotice message="We couldn’t load your menu. Please try again." retry={revalidateMenu} />}
+        {showImport && <section className="ui-card p-5 sm:p-6"><div className="mb-5 flex items-start justify-between gap-4"><div><h2 className="ui-section-title">Import your menu</h2><p className="mt-1.5 text-xs text-slate-500">Upload a menu photo or a JSON file. Review every item before adding it.</p></div><button onClick={() => setShowImport(false)} aria-label="Close import options" className="rounded-lg p-1 text-slate-500 hover:bg-slate-50"><X size={16} /></button></div><div className="flex flex-wrap gap-3"><label className="ui-button cursor-pointer"><Sparkles size={15} className="text-brand" />{processing ? "Reading photo..." : "Upload menu photo"}<input type="file" accept="image/*" onChange={handlePhotoUpload} className="sr-only" disabled={processing || jsonUploading} /></label><label className="ui-button cursor-pointer"><UploadCloud size={15} />{jsonUploading ? "Reading file..." : "Import JSON"}<input type="file" accept="application/json,.json" onChange={handleJsonUpload} className="sr-only" disabled={jsonUploading || processing} /></label></div></section>}
 
           {/* Import Preview */}
           {importPreview.length > 0 && (
@@ -523,7 +392,7 @@ export default function MenuPage() {
                     setImportPreview([]);
                     setImportWarnings([]);
                   }}
-                  className="rounded-lg p-1 text-slate-400 hover:bg-orange-100 hover:text-slate-700"
+                  className="rounded-lg p-1 text-slate-500 hover:bg-orange-100 hover:text-slate-700"
                 >
                   <X size={18} />
                 </button>
@@ -625,13 +494,13 @@ export default function MenuPage() {
                   {importPreview.slice(0, 10).map((it, idx) => (
                     <div key={idx} className="flex justify-between py-1 px-1">
                       <span className="font-medium text-slate-800">
-                        {it.name} <span className="text-slate-400">({it.category})</span>
+                        {it.name} <span className="text-slate-500">({it.category})</span>
                       </span>
                       <span className="font-bold text-slate-900">Rs. {it.price}</span>
                     </div>
                   ))}
                   {importPreview.length > 10 && (
-                    <p className="pt-2 text-center text-slate-400 font-medium">
+                    <p className="pt-2 text-center text-slate-500 font-medium">
                       + and {importPreview.length - 10} more items...
                     </p>
                   )}
@@ -658,7 +527,7 @@ export default function MenuPage() {
                   {savingImport ? (
                     <>
                       <Loader2 size={14} className="animate-spin" />
-                      <span>Saving & Indexing AI Vectors...</span>
+                      <span>Saving menu...</span>
                     </>
                   ) : (
                     <>
@@ -675,59 +544,24 @@ export default function MenuPage() {
             </div>
           )}
 
-          {/* Category Chips Bar */}
-          {categories.length > 0 && (
-            <div className="no-scrollbar flex items-center gap-1.5 overflow-x-auto py-1 text-xs">
-              <span className="flex shrink-0 items-center gap-1 font-bold text-slate-400 pr-1">
-                <Filter size={13} />
-                <span className="hidden sm:inline">Filter:</span>
-              </span>
-              <button
-                onClick={() => setSelectedCategory("all")}
-                className={clsx(
-                  "shrink-0 rounded-full px-3 py-1.5 font-bold transition",
-                  selectedCategory === "all"
-                    ? "bg-slate-900 text-white shadow-sm"
-                    : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50",
-                )}
-              >
-                All Items ({items.length})
-              </button>
-              {categories.map((cat) => (
-                <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(cat)}
-                  className={clsx(
-                    "shrink-0 rounded-full px-3 py-1.5 font-semibold transition",
-                    selectedCategory === cat
-                      ? "bg-brand text-white shadow-sm"
-                      : "bg-white text-slate-600 border border-slate-200 hover:bg-slate-50",
-                  )}
-                >
-                  {cat} ({categoryCounts[cat]})
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Search & Filter Toolbar */}
-          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white px-2.5 py-2 shadow-sm">
-            <div className="relative min-w-0 flex-1">
-              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <div className="flex flex-wrap items-center gap-2 flex-col sm:flex-row">
+            <div className="relative min-w-0 w-full sm:flex-1">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" />
               <input
                 value={searchTerm}
                 onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder={`Search ${filteredItems.length} items…`}
-                className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-3 text-xs outline-none focus:border-orange-200 focus:bg-white focus:ring-1 focus:ring-brand/10"
+                aria-label="Search menu items" placeholder="Search items or categories..."
+                className="h-10 w-full rounded-lg border border-slate-200 bg-white pl-8 pr-3 text-xs outline-none focus:border-orange-200 focus:bg-white focus:ring-1 focus:ring-brand/10"
               />
             </div>
 
             <select
               value={selectedCategory}
               onChange={(event) => setSelectedCategory(event.target.value)}
-              className="h-8 rounded-lg border border-slate-200 bg-slate-50 px-2 text-xs text-slate-700 outline-none focus:border-orange-200"
+              aria-label="Filter by category" className="h-10 max-w-[180px] rounded-lg border border-slate-200 bg-white px-3 text-xs text-slate-700 outline-none focus:border-orange-200"
             >
-              <option value="all">All ({items.length})</option>
+              <option value="all">All categories</option>
               {categories.map((category) => (
                 <option key={category} value={category}>
                   {category} ({categoryCounts[category]})
@@ -736,274 +570,22 @@ export default function MenuPage() {
             </select>
           </div>
 
-        {/* Items Table */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            {/* Mobile Cards */}
-            <div className="block divide-y divide-slate-100 md:hidden">
-              {loading && filteredItems.length === 0 ? (
-                Array.from({ length: 4 }).map((_, index) => (
-                  <div key={index} className="h-36 animate-pulse bg-slate-50" />
-                ))
-              ) : filteredItems.length === 0 ? (
-                <div className="px-4 py-16 text-center text-slate-500">
-                  <p className="text-sm font-medium">No menu items match your search or filter.</p>
-                </div>
-              ) : (
-                filteredItems.map((item) => {
-                  const index = items.findIndex((entry) => (item.id ? entry.id === item.id : entry === item));
-                  return (
-                    <div
-                      key={item.id ?? `mobile-draft-${index}`}
-                      className={clsx("space-y-2.5 p-3", item._deleting && "pointer-events-none opacity-40")}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            {item._saving && <Loader2 size={12} className="shrink-0 animate-spin text-brand" />}
-                            <input
-                              value={item.name}
-                              onChange={(event) => mutateItem(index, { name: event.target.value })}
-                              onBlur={() => void handleBlurSave(item, index)}
-                              placeholder="e.g. Chicken Handi"
-                              className="h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold outline-none focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
-                            />
-                          </div>
-                        </div>
-                        <button
-                          onClick={() => void handleDelete(item, index)}
-                          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
-                        >
-                          {item._deleting ? <Loader2 size={16} className="animate-spin text-red-400" /> : <Trash2 size={16} />}
-                        </button>
-                      </div>
-
-                      <div className="grid grid-cols-[minmax(0,1fr)_104px_44px] items-end gap-2">
-                        <label className="block min-w-0">
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Category</span>
-                          <input
-                            value={item.category}
-                            onChange={(event) => mutateItem(index, { category: event.target.value })}
-                            onBlur={() => void handleBlurSave(item, index)}
-                            placeholder="Special Flavor"
-                            className="mt-1 h-9 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
-                          />
-                        </label>
-                        <label className="block">
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Price (Rs.)</span>
-                          <div className="mt-1 flex h-9 items-center rounded-lg border border-slate-200 bg-slate-50 px-2 focus-within:border-orange-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-brand/10">
-                            <input
-                              type="number"
-                              value={item.price || ""}
-                              onChange={(event) => mutateItem(index, { price: Number(event.target.value) || 0 })}
-                              onBlur={() => void handleBlurSave(item, index)}
-                              className="w-full bg-transparent text-sm font-semibold outline-none"
-                            />
-                          </div>
-                        </label>
-                        <label className="block">
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Live</span>
-                          <button
-                            onClick={() => void handleToggle(item, index)}
-                            className={clsx(
-                              "mt-1 relative inline-flex h-9 w-11 items-center rounded-lg transition-colors",
-                              item.is_available ? "bg-emerald-500" : "bg-slate-200",
-                            )}
-                          >
-                            <span
-                              className={clsx(
-                                "inline-block h-4 w-4 transform rounded-full bg-white shadow-sm transition-transform",
-                                item.is_available ? "translate-x-5" : "translate-x-1",
-                              )}
-                            />
-                          </button>
-                        </label>
-                      </div>
-
-                      <label className="block pt-1">
-                        <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">Description / Deals Details</span>
-                        <input
-                          value={item.description ?? ""}
-                          onChange={(event) => mutateItem(index, { description: event.target.value || null })}
-                          onBlur={() => void handleBlurSave(item, index)}
-                          placeholder="e.g. 1 Large Pizza, 2 Burgers, 1.5L Drink"
-                          className="mt-1 h-8 w-full rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-xs text-slate-600 outline-none focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
-                        />
-                      </label>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Desktop Table */}
-            <div className="hidden overflow-x-auto md:block">
-              <div className="min-w-[1100px]">
-                <div className="grid grid-cols-[1.8fr_1fr_1.8fr_90px_230px_60px_50px] gap-2 border-b border-slate-200 bg-slate-50 px-4 py-2 text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                  <div>Item Name</div>
-                  <div>Category</div>
-                  <div>Description / Deals Info</div>
-                  <div>Price (Rs.)</div>
-                  <div>Schedule / Days</div>
-                  <div className="text-center">Live</div>
-                  <div className="text-center">Delete</div>
-                </div>
-
-                <div className="divide-y divide-slate-100">
-                  {loading && filteredItems.length === 0 ? (
-                    Array.from({ length: 6 }).map((_, index) => (
-                      <div key={index} className="h-14 animate-pulse bg-slate-50" />
-                    ))
-                  ) : filteredItems.length === 0 ? (
-                    <div className="py-20 text-center text-slate-500">
-                      <p className="text-sm font-medium">No menu items match your search or filter.</p>
-                    </div>
-                  ) : (
-                    filteredItems.map((item) => {
-                      const index = items.findIndex((entry) => (item.id ? entry.id === item.id : entry === item));
-                      return (
-                        <div
-                          key={item.id ?? `draft-${index}`}
-                          className={clsx(
-                            "grid grid-cols-[1.8fr_1fr_1.8fr_90px_230px_60px_50px] gap-2 px-4 py-2 items-center hover:bg-slate-50/70 transition-colors",
-                            item._deleting && "pointer-events-none opacity-40",
-                          )}
-                        >
-                          {/* Name */}
-                          <div className="flex items-center gap-2">
-                            {item._saving && <Loader2 size={12} className="animate-spin text-brand" />}
-                            <input
-                              value={item.name}
-                              onChange={(event) => mutateItem(index, { name: event.target.value })}
-                              onBlur={() => void handleBlurSave(item, index)}
-                              placeholder="e.g. Garlic Naan"
-                              className="h-8 w-full rounded-lg border border-transparent bg-transparent px-2 text-sm font-medium outline-none transition hover:bg-slate-100/80 focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
-                            />
-                          </div>
-
-                          {/* Category */}
-                          <input
-                            value={item.category}
-                            onChange={(event) => mutateItem(index, { category: event.target.value })}
-                            onBlur={() => void handleBlurSave(item, index)}
-                            placeholder="e.g. Breads"
-                            className="h-8 w-full rounded-lg border border-transparent bg-transparent px-2 text-sm outline-none transition hover:bg-slate-100/80 focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
-                          />
-
-                          {/* Description */}
-                          <input
-                            value={item.description ?? ""}
-                            onChange={(event) => mutateItem(index, { description: event.target.value || null })}
-                            onBlur={() => void handleBlurSave(item, index)}
-                            placeholder="e.g. 1 Pizza, 2 Burgers..."
-                            className="h-8 w-full rounded-lg border border-transparent bg-transparent px-2 text-xs text-slate-600 outline-none transition hover:bg-slate-100/80 focus:border-orange-200 focus:bg-white focus:ring-2 focus:ring-brand/10"
-                          />
-
-                          {/* Price */}
-                          <div className="flex h-8 items-center rounded-lg border border-transparent px-2 transition hover:bg-slate-100/80 focus-within:border-orange-200 focus-within:bg-white focus-within:ring-2 focus-within:ring-brand/10">
-                            <input
-                              type="number"
-                              value={item.price || ""}
-                              onChange={(event) => mutateItem(index, { price: Number(event.target.value) || 0 })}
-                              onBlur={() => void handleBlurSave(item, index)}
-                              className="w-full bg-transparent text-sm font-semibold outline-none"
-                            />
-                          </div>
-
-                          {/* Schedule / Weekdays */}
-                          <div className="space-y-1">
-                            <div className="flex items-center gap-1">
-                              {WEEKDAYS.map((day) => {
-                                const selectedDays = normalizeDays(item.available_days);
-                                const isSelected = selectedDays.includes(day.key);
-                                return (
-                                  <button
-                                    key={day.key}
-                                    type="button"
-                                    title={day.key}
-                                    onClick={() => {
-                                      const nextDays = isSelected
-                                        ? selectedDays.filter((entry) => entry !== day.key)
-                                        : [...selectedDays, day.key];
-                                      void handleSchedulePatch(item, index, { available_days: nextDays });
-                                    }}
-                                    className={clsx(
-                                      "h-5 w-5 rounded text-[10px] font-bold transition",
-                                      isSelected
-                                        ? "bg-brand text-white"
-                                        : "bg-slate-100 text-slate-500 hover:bg-slate-200",
-                                    )}
-                                  >
-                                    {day.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                            <div className="grid grid-cols-2 gap-1.5">
-                              <input
-                                type="time"
-                                value={item.available_start_time ?? ""}
-                                onChange={(event) => mutateItem(index, { available_start_time: event.target.value || null })}
-                                onBlur={(event) => void handleSchedulePatch(item, index, { available_start_time: event.currentTarget.value || null })}
-                                className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[10px] outline-none focus:border-orange-200"
-                              />
-                              <input
-                                type="time"
-                                value={item.available_end_time ?? ""}
-                                onChange={(event) => mutateItem(index, { available_end_time: event.target.value || null })}
-                                onBlur={(event) => void handleSchedulePatch(item, index, { available_end_time: event.currentTarget.value || null })}
-                                className="h-6 rounded border border-slate-200 bg-white px-1.5 text-[10px] outline-none focus:border-orange-200"
-                              />
-                            </div>
-                          </div>
-
-                          {/* Live Toggle */}
-                          <div className="flex justify-center">
-                            <button
-                              onClick={() => void handleToggle(item, index)}
-                              className={clsx(
-                                "relative inline-flex h-5 w-9 items-center rounded-full transition-colors",
-                                item.is_available ? "bg-emerald-500" : "bg-slate-200",
-                              )}
-                            >
-                              <span
-                                className={clsx(
-                                  "inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow-sm transition-transform",
-                                  item.is_available ? "translate-x-4.5" : "translate-x-0.5",
-                                )}
-                              />
-                            </button>
-                          </div>
-
-                          {/* Delete */}
-                          <div className="flex justify-center">
-                            {item._deleting ? (
-                              <Loader2 size={16} className="animate-spin text-red-400" />
-                            ) : (
-                              <button
-                                onClick={() => void handleDelete(item, index)}
-                                className="rounded-lg p-1 text-slate-400 transition hover:bg-red-50 hover:text-red-500"
-                              >
-                                <Trash2 size={15} />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
+        <section className="ui-card overflow-hidden">
+          <div className="flex items-center justify-between border-b border-slate-100 px-5 py-4 sm:px-6"><h2 className="ui-section-title">{selectedCategory === "all" ? "All menu items" : selectedCategory}<span className="ml-2 text-xs font-normal text-slate-500">{filteredItems.length}</span></h2><span className="text-[11px] text-slate-500">{items.filter(item => item.is_available).length} available</span></div>
+          {loading ? <div className="space-y-4 p-6">{[0,1,2,3].map(index => <div key={index} className="h-14 animate-pulse rounded-lg bg-slate-50" />)}</div> : menuError && !items.length ? <EmptyState title="Menu temporarily unavailable" description="Use Try again above to reload your saved menu." icon={UtensilsCrossed} /> : !filteredItems.length ? <EmptyState title={items.length ? "No matching menu items" : "Build a menu customers will love"} description={items.length ? "Try another search or choose a different category." : "Add your first item or import a menu photo to get started."} icon={UtensilsCrossed} action={!items.length ? <button className="ui-button ui-button-primary" onClick={() => setEditingItem({ name: "", price: 0, category: "General", is_available: true })}><Plus size={15} />Add your first item</button> : <button className="ui-button" onClick={() => { setSearchTerm(""); setSelectedCategory("all"); }}>Clear filters</button>} /> : <div className="divide-y divide-slate-100">{filteredItems.map(item => { const index=items.findIndex(entry => entry.id === item.id); return <article key={item.id} className="group flex flex-wrap items-center gap-4 px-5 py-5 hover:bg-slate-50/40 sm:flex-nowrap sm:px-6"><div className="hidden h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-200/80 bg-slate-50 text-slate-500 sm:flex"><UtensilsCrossed size={18} strokeWidth={1.5} /></div><div className="min-w-0 flex-1"><h3 className="text-[13px] font-medium text-slate-800">{item.name}</h3><p className="mt-1.5 text-[11px] text-slate-500"><span className="font-medium text-slate-500">{item.category || "General"}</span>{item.description && <span className="ml-2 hidden sm:inline">· {item.description}</span>}</p>{(item.available_days?.length || item.available_start_time || item.available_end_time) && <p className="mt-1 text-[10px] text-slate-500">{item.available_days?.length ? item.available_days.join(", ") : "Every day"}{item.available_start_time ? " · " + item.available_start_time + "–" + (item.available_end_time || "close") : ""}</p>}</div><div className="ml-auto flex items-center gap-4 sm:gap-6"><span className="whitespace-nowrap text-[13px] font-semibold text-slate-700">Rs. {Number(item.price).toLocaleString()}</span><button aria-label={"Mark " + item.name + " as " + (item.is_available ? "unavailable" : "available")} role="switch" aria-checked={item.is_available} disabled={item._saving} onClick={() => void handleToggle(item,index)} className={clsx("relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition", item.is_available ? "bg-emerald-500" : "bg-slate-200")}><span className={clsx("h-3.5 w-3.5 rounded-full bg-white shadow-xs transition-transform", item.is_available ? "translate-x-[19px]" : "translate-x-[3px]")} /></button><button onClick={() => setEditingItem(item)} aria-label={"Edit " + item.name} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-200 text-slate-500 transition hover:border-slate-300 hover:bg-white hover:text-slate-700"><Pencil size={14} /></button></div></article>; })}</div>}
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 px-6 py-4 text-[11px] text-slate-500"><span>{items.length} items across {categories.length} categories</span><span className="flex items-center gap-1.5"><span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />Available to order</span></div>
+        </section>
+        {items.length > 0 && <details className="px-1 text-xs text-slate-500"><summary className="w-fit">Advanced menu actions</summary><button onClick={() => setShowClearModal(true)} className="mt-3 flex items-center gap-2 rounded-lg border border-red-200 bg-white px-3 py-2 text-xs text-red-600 hover:bg-red-50"><Trash2 size={13} />Clear entire menu</button></details>}
+        {editingItem && <MenuItemDialog item={editingItem} categories={categories} onClose={() => setEditingItem(null)} onSaved={() => { loadMenu(); showToast("Menu updated.", "success"); }} />}
 
       {/* Clear All Confirmation Modal */}
       {showClearModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-sm p-4">
+        <dialog ref={node => { if (node && !node.open) node.showModal(); }} aria-labelledby="clear-menu-title" onCancel={event => { event.preventDefault(); if (!clearingAll) setShowClearModal(false); }} className="m-auto w-[min(448px,calc(100%-32px))] rounded-2xl border-0 bg-white p-0 shadow-2xl backdrop:bg-slate-950/30">
           <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-2xl">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-red-100 text-red-600 mb-4">
               <Trash2 size={24} />
             </div>
-            <h3 className="text-lg font-bold text-slate-900">Delete Entire Menu?</h3>
+            <h3 id="clear-menu-title" className="text-lg font-semibold text-slate-900">Clear the entire menu?</h3>
             <p className="mt-2 text-sm text-slate-600">
               Are you sure you want to permanently delete all <strong className="text-slate-900">{items.length} menu items</strong>, categories, and AI search embeddings? This will clear the entire menu catalog.
             </p>
@@ -1027,12 +609,12 @@ export default function MenuPage() {
               </button>
             </div>
           </div>
-        </div>
+        </dialog>
       )}
 
       {/* Floating Toast Notification */}
       {toast.text && (
-        <div className="fixed bottom-8 right-8 z-[100] flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-3.5 shadow-xl">
+        <div role="status" className="fixed bottom-5 left-4 right-4 sm:left-auto sm:right-8 z-[100] flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-5 py-3.5 shadow-xl">
           {toast.type === "success" ? (
             <CheckCircle2 size={18} className="text-emerald-500" />
           ) : (

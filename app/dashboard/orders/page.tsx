@@ -21,7 +21,6 @@ import {
   Search,
   ShoppingBag,
   Truck,
-  UserCheck,
   UtensilsCrossed,
   X,
   Printer,
@@ -29,6 +28,7 @@ import {
 import { clsx } from "clsx";
 import { format, formatDistanceToNow } from "date-fns";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
+import { ErrorNotice } from "@/app/components/dashboard/WorkspaceUI";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { toast } from "sonner";
 import { printOrderReceipt } from "@/lib/thermal-printer";
@@ -144,14 +144,6 @@ function formatOrderItemLabel(item: OrderItem) {
   return `${item.name} (${details.join(" | ")})`;
 }
 
-function getCancellationMinutesRemaining(order: Order): number {
-  const createdAt = new Date(order.created_at).getTime();
-  if (!Number.isFinite(createdAt)) return 0;
-  const windowMs = 10 * 60 * 1000;
-  const remaining = Math.ceil((windowMs - (Date.now() - createdAt)) / 60000);
-  return Math.max(0, remaining);
-}
-
 function formatElapsedTime(createdAt: string) {
   const date = new Date(createdAt);
   const elapsedMs = Date.now() - date.getTime();
@@ -200,6 +192,7 @@ export default function OrdersPage() {
   const {
     data: orders,
     isLoading: loading,
+    error: ordersError,
     revalidate,
   } = useDataCache<Order[]>(ordersUrl);
 
@@ -302,65 +295,15 @@ export default function OrdersPage() {
   }, [orders, activeTab, searchTerm]);
 
   return (
-    <div className="space-y-3 pb-10">
-      {/* ── Compact Header Bar ─────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-bold text-slate-900">Orders Queue</h1>
-          <span className="inline-flex items-center gap-1 rounded-full border border-orange-200/80 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-brand">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand animate-pulse" />
-            {counts.active} Active
-          </span>
-          {counts.cancelled > 0 && (
-            <span className="inline-flex items-center rounded-full border border-rose-200/80 bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
-              {counts.cancelled} Cancelled
-            </span>
-          )}
+    <div className="orders-page space-y-6 pb-6">
+      <PageHeader title="Orders" description="A clear path from a new order to a happy customer." meta={<span className="status-pill bg-orange-50 text-brand">{counts.active} active</span>} actions={<>
+        <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
+          <button aria-pressed={viewMode === "cards"} onClick={() => setViewMode("cards")} className={clsx("flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium", viewMode === "cards" ? "bg-slate-100 text-slate-800" : "text-slate-400")}><LayoutGrid size={14} />List</button>
+          <button aria-pressed={viewMode === "kds"} onClick={() => setViewMode("kds")} className={clsx("flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium", viewMode === "kds" ? "bg-slate-100 text-slate-800" : "text-slate-400")}><Kanban size={14} />Kitchen board</button>
         </div>
-
-        <div className="flex items-center gap-2">
-          {/* View Mode Toggle: Cards vs KDS */}
-          <div className="flex items-center rounded-lg border border-slate-200 bg-slate-100 p-0.5 text-slate-600">
-            <button
-              onClick={() => setViewMode("cards")}
-              className={clsx(
-                "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-all",
-                viewMode === "cards"
-                  ? "bg-white text-slate-900 shadow-xs font-bold"
-                  : "text-slate-500 hover:text-slate-900"
-              )}
-              title="Detailed Cards View"
-            >
-              <LayoutGrid size={13} />
-              <span>Cards</span>
-            </button>
-            <button
-              onClick={() => setViewMode("kds")}
-              className={clsx(
-                "flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-all",
-                viewMode === "kds"
-                  ? "bg-white text-slate-900 shadow-xs font-bold"
-                  : "text-slate-500 hover:text-slate-900"
-              )}
-              title="Kitchen Display Board View"
-            >
-              <Kanban size={13} />
-              <span>KDS</span>
-            </button>
-          </div>
-
-          {/* Refresh Action */}
-          <button
-            onClick={() => revalidate()}
-            disabled={loading}
-            className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-            title="Refresh order queue"
-          >
-            <RefreshCw size={12} className={clsx(loading && "animate-spin text-brand")} />
-            <span className="hidden sm:inline">Refresh</span>
-          </button>
-        </div>
-      </div>
+        <button className="ui-button" disabled={loading} onClick={revalidate} aria-label="Refresh orders"><RefreshCw size={14} className={clsx(loading && "animate-spin")} /><span className="hidden sm:inline">Refresh</span></button>
+      </>} />
+      {ordersError && <ErrorNotice message="We couldn’t load your orders. Please try again." retry={revalidate} />}
 
       {/* ── Cancellation Request Urgent Alert ────────────────────────── */}
       {counts.cancellationRequests > 0 && (
@@ -388,7 +331,7 @@ export default function OrdersPage() {
       )}
 
       {/* ── Filter Bar & Search Controls ─────────────────────────────── */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between rounded-xl border border-slate-200 bg-white p-1.5 shadow-xs">
+      <div className="flex flex-col-reverse gap-4 rounded-xl border border-slate-200 bg-white p-4 xl:flex-row xl:items-center xl:justify-between">
         {/* Navigation Tabs */}
         <div className="no-scrollbar flex items-center gap-1 overflow-x-auto p-0.5">
           {[
@@ -429,13 +372,13 @@ export default function OrdersPage() {
         </div>
 
         {/* Search Input */}
-        <div className="relative w-full sm:w-64 lg:w-72">
+        <div className="relative w-full xl:w-64 xl:shrink-0">
           <Search size={13} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search #, customer, phone..."
-            className="w-full rounded-lg border border-slate-200 bg-slate-50 py-1 pl-8 pr-7 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand/40 focus:bg-white"
+            aria-label="Search orders" placeholder="Search orders, customers or phone..."
+            className="w-full rounded-lg border border-slate-200 bg-slate-50 min-h-10 py-2 pl-8 pr-7 text-xs text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-brand/40 focus:bg-white"
           />
           {searchTerm && (
             <button
@@ -458,7 +401,7 @@ export default function OrdersPage() {
           onPrint={handlePrintOrder}
         />
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {loading && filteredOrders.length === 0 ? (
             Array.from({ length: 3 }).map((_, index) => (
               <div key={index} className="h-28 animate-pulse rounded-2xl border border-slate-200/80 bg-white" />
@@ -477,7 +420,7 @@ export default function OrdersPage() {
               const statusMeta = STATUS_CONFIG[order.status];
               const total = Number(order.subtotal) + Number(order.delivery_fee);
               const totalItems = order.order_items.reduce((sum, item) => sum + item.qty, 0);
-              const cancelWindowRemaining = getCancellationMinutesRemaining(order);
+
               const cleanPhone = (order.conversations?.phone ?? "").replace(/\D/g, "");
               const timeDisplay = formatElapsedTime(order.created_at);
 
@@ -524,11 +467,11 @@ export default function OrdersPage() {
 
                   {/* Main Card Body */}
                   <div
-                    className="p-3 cursor-pointer"
+                    className="p-5 cursor-pointer"
                     onClick={() => setExpandedId(expanded ? null : order.id)}
                   >
                     {/* Row 1: Order Identity, Customer, Status, Amount & Actions */}
-                    <div className="flex flex-col gap-2 lg:flex-row lg:items-center lg:justify-between">
+                    <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
                       {/* Left: Info */}
                       <div className="flex flex-wrap items-center gap-2">
                         {/* Order Number */}
@@ -629,10 +572,10 @@ export default function OrdersPage() {
                                 void handleStatusChange(order, "preparing");
                               }}
                               disabled={savingId === order.id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-brand h-7 px-2.5 text-[11px] font-bold text-white hover:bg-brand-hover transition disabled:opacity-50"
+                              className="inline-flex items-center gap-1 rounded-lg bg-brand h-9 px-3 text-[11px] font-bold text-white hover:bg-brand-hover transition disabled:opacity-50"
                             >
                               <ChefHat size={12} />
-                              <span>Cooking</span>
+                              <span>Start preparing</span>
                             </button>
                           )}
 
@@ -643,7 +586,7 @@ export default function OrdersPage() {
                                 void handleStatusChange(order, "out_for_delivery");
                               }}
                               disabled={savingId === order.id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 h-7 px-2.5 text-[11px] font-bold text-white hover:bg-indigo-700 transition disabled:opacity-50"
+                              className="inline-flex items-center gap-1 rounded-lg bg-indigo-600 h-9 px-3 text-[11px] font-bold text-white hover:bg-indigo-700 transition disabled:opacity-50"
                             >
                               <Truck size={12} />
                               <span>Dispatch</span>
@@ -657,57 +600,18 @@ export default function OrdersPage() {
                                 void handleStatusChange(order, "delivered");
                               }}
                               disabled={savingId === order.id}
-                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 h-7 px-2.5 text-[11px] font-bold text-white hover:bg-emerald-700 transition disabled:opacity-50"
+                              className="inline-flex items-center gap-1 rounded-lg bg-emerald-600 h-9 px-3 text-[11px] font-bold text-white hover:bg-emerald-700 transition disabled:opacity-50"
                             >
                               <Check size={12} />
                               <span>Delivered</span>
                             </button>
                           )}
 
-                          {/* Quick Cancel Button */}
-                          {(order.status === "received" || order.status === "preparing") && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                void handleStatusChange(order, "cancelled");
-                              }}
-                              disabled={savingId === order.id}
-                              className="flex h-7 items-center justify-center rounded-lg border border-slate-200 px-2 text-[11px] font-medium text-slate-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 transition disabled:opacity-50"
-                              title="Cancel order"
-                            >
-                              <Ban size={11} className="mr-1" />
-                              <span>Cancel</span>
-                            </button>
-                          )}
-
-                          {/* Secondary Status Dropdown */}
-                          <div className="relative">
-                            <select
-                              data-testid={`order-status-select-${order.order_number}`}
-                              value={order.status}
-                              disabled={savingId === order.id}
-                              onClick={(e) => e.stopPropagation()}
-                              onChange={(e) => void handleStatusChange(order, e.target.value as OrderStatus)}
-                              className="h-7 appearance-none rounded-lg border border-slate-200 bg-slate-50 py-0 pl-2 pr-5 text-[11px] font-semibold text-slate-700 outline-none hover:bg-white focus:border-slate-300"
-                              aria-label={`Change status for order #${order.order_number}`}
-                            >
-                              {getStatusOptions(order.status).map((status) => (
-                                <option key={status} value={status}>
-                                  {status.replaceAll("_", " ")}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown
-                              size={10}
-                              className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400"
-                            />
-                          </div>
-
                           {/* Print Receipt Button */}
                           <button
                             data-testid={`order-print-${order.order_number}`}
                             onClick={(e) => void handlePrintOrder(order, e)}
-                            className="flex h-7 items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs"
+                            className="flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-2 text-[11px] font-semibold text-slate-700 hover:bg-slate-50 transition shadow-2xs"
                             title="Print thermal receipt"
                           >
                             <Printer size={12} className="mr-1 text-slate-500" />
@@ -722,9 +626,11 @@ export default function OrdersPage() {
                               setExpandedId(expanded ? null : order.id);
                             }}
                             className={clsx(
-                              "flex h-7 w-7 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100",
+                              "flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition hover:bg-slate-100",
                               expanded && "bg-slate-200/80"
                             )}
+                            aria-expanded={expanded}
+                            aria-label={expanded ? "Collapse order details" : "Expand order details"}
                             title={expanded ? "Collapse details" : "Expand details"}
                           >
                             <ChevronDown
@@ -737,7 +643,7 @@ export default function OrdersPage() {
                     </div>
 
                     {/* Row 2: Clean Items Summary & Special Instruction Callout */}
-                    <div className="mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-t border-slate-100 pt-2">
+                    <div className="mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-slate-100 pt-4">
                       <div className="flex flex-wrap items-center gap-1">
                         <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1">
                           <UtensilsCrossed size={11} /> Items:
@@ -745,7 +651,7 @@ export default function OrdersPage() {
                         {order.order_items.map((item) => (
                           <span
                             key={item.id}
-                            className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-700 font-medium"
+                            className="inline-flex items-center gap-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-600 font-medium"
                           >
                             <span className="font-bold text-slate-900">{item.qty}×</span>
                             <span>{item.name}</span>
@@ -767,6 +673,30 @@ export default function OrdersPage() {
                   {/* ── Expanded Order Details Drawer ─────────────────────────── */}
                   {expanded && (
                     <div className="border-t border-slate-200/80 bg-slate-50/50 p-4 sm:p-5">
+                      <div className="mb-5 flex flex-wrap items-center justify-between gap-3"><div><h3 className="text-sm font-semibold text-slate-800">Order details</h3><p className="mt-1 text-xs text-slate-500">Update status, check the receipt and manage fulfillment.</p></div>                          {/* Secondary Status Dropdown */}
+                          <div className="relative">
+                            <select
+                              data-testid={`order-status-select-${order.order_number}`}
+                              value={order.status}
+                              disabled={savingId === order.id}
+                              onClick={(e) => e.stopPropagation()}
+                              onChange={(e) => void handleStatusChange(order, e.target.value as OrderStatus)}
+                              className="h-10 appearance-none rounded-lg border border-slate-200 bg-slate-50 py-0 pl-2 pr-5 text-[11px] font-semibold text-slate-700 outline-none hover:bg-white focus:border-slate-300"
+                              aria-label={`Change status for order #${order.order_number}`}
+                            >
+                              {getStatusOptions(order.status).map((status) => (
+                                <option key={status} value={status}>
+                                  {status.replaceAll("_", " ")}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown
+                              size={10}
+                              className="pointer-events-none absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400"
+                            />
+                          </div>
+
+</div>
                       <div className="grid gap-4 lg:grid-cols-2">
                         {/* Column 1: Itemized Receipt Table */}
                         <section className="rounded-xl border border-slate-200/80 bg-white p-4 shadow-xs">

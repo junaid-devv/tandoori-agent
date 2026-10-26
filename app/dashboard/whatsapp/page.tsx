@@ -18,6 +18,8 @@ import {
 } from "lucide-react";
 import { clsx } from "clsx";
 import { toast } from "sonner";
+import { PageHeader } from "@/app/components/dashboard/PageHeader";
+import { ErrorNotice } from "@/app/components/dashboard/WorkspaceUI";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 
 type MetaConfig = {
@@ -93,6 +95,7 @@ export default function WhatsAppPage() {
 function WhatsAppIntegration() {
   const { profile } = useDashboardContext();
   const [data, setData] = useState<WaStatusResponse | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isActionLoading, setIsActionLoading] = useState(false);
@@ -126,6 +129,7 @@ function WhatsAppIntegration() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json: WaStatusResponse = await res.json();
       setData(json);
+      setStatusError(null);
 
       // Auto-set initial active tab based on active provider
       if (!isSilent && json.activeProvider === "evolution") {
@@ -142,8 +146,9 @@ function WhatsAppIntegration() {
       prevEvolutionStatusRef.current = currentEvolutionStatus || null;
       if (currentEvolutionStatus === "CONNECTED") setEvolutionQr(null);
     } catch {
+      setStatusError("We couldn’t load the connection status. Refresh to try again.");
       if (!isSilent) {
-        toast.error("Failed to connect to WhatsApp status API");
+        toast.error("Failed to load WhatsApp status");
       }
     } finally {
       if (!isSilent) setIsLoading(false);
@@ -409,6 +414,7 @@ function WhatsAppIntegration() {
 
   const isMetaConnected = data?.metaConfig?.configured && data?.metaConfig?.status === "CONNECTED";
   const isEvolutionConnected = data?.evolution?.session?.status === "CONNECTED";
+  const isActiveConnected = data?.activeProvider === "meta" ? isMetaConnected : data?.activeProvider === "evolution" ? isEvolutionConnected : false;
   const isEvolutionOnline = data?.evolution?.online ?? false;
   const qrBase64 = evolutionQr || data?.evolution?.qrBase64;
   const evolutionSession = data?.evolution?.session;
@@ -423,145 +429,13 @@ function WhatsAppIntegration() {
       />
 
       <div className="space-y-6">
-        {/* Top Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              WhatsApp Integration
-              <span
-                className={clsx(
-                  "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-semibold",
-                  data?.whatsappEnabled
-                    ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-                    : "bg-slate-100 text-slate-600 border border-slate-200"
-                )}
-              >
-                <span
-                  className={clsx(
-                    "h-2 w-2 rounded-full",
-                    data?.whatsappEnabled ? "bg-emerald-500 animate-pulse" : "bg-slate-400"
-                  )}
-                />
-                {data?.whatsappEnabled
-                  ? `Live (${data.activeProvider === "evolution" ? "Evolution API" : "Meta"})`
-                  : "Not Connected"}
-              </span>
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-500 mt-1">
-              Choose your WhatsApp provider: official Meta Cloud API or direct WhatsApp Web (Evolution API).
-            </p>
-          </div>
-
-          <button
-            onClick={() => fetchStatus(false)}
-            disabled={isLoading || isActionLoading}
-            className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-xs hover:bg-slate-50 transition-colors disabled:opacity-50 self-start sm:self-auto"
-          >
-            <RefreshCw className={clsx("h-3.5 w-3.5", (isLoading || isActionLoading) && "animate-spin")} />
-            Refresh
-          </button>
-        </div>
-
-        {/* Dual Provider Selection Tabs */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Tab 1: Meta Cloud API */}
-          <div
-            onClick={() => setProviderTab("meta")}
-            className={clsx(
-              "relative cursor-pointer rounded-2xl border-2 p-5 transition-all shadow-xs",
-              providerTab === "meta"
-                ? "border-blue-600 bg-white ring-2 ring-blue-600/10 shadow-sm"
-                : "border-slate-200 bg-slate-50/60 hover:bg-white"
-            )}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-100 text-blue-700 font-black">
-                  Meta
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm sm:text-base">Meta WhatsApp Cloud API</h3>
-                  <p className="text-xs text-slate-500">Official Cloud API • Embedded Signup • Coexistence</p>
-                </div>
-              </div>
-
-              {data?.activeProvider === "meta" && (
-                <span className="inline-flex items-center rounded-full bg-blue-100 px-2.5 py-0.5 text-[11px] font-bold text-blue-800">
-                  Active
-                </span>
-              )}
-            </div>
-
-            <p className="mt-3 text-xs text-slate-600 leading-relaxed">
-              Official WhatsApp Business Cloud integration with Facebook OAuth popup. Ideal for production restaurants.
-            </p>
-
-            {data?.activeProvider !== "meta" && (
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSwitchProvider("meta");
-                  }}
-                  disabled={isActionLoading}
-                  className="text-xs font-semibold text-blue-600 hover:text-blue-700"
-                >
-                  Set as Active Provider →
-                </button>
-              </div>
-            )}
-          </div>
-
-          {/* Tab 2: Evolution API Baileys Direct */}
-          <div
-            onClick={() => setProviderTab("evolution")}
-            className={clsx(
-              "relative cursor-pointer rounded-2xl border-2 p-5 transition-all shadow-xs",
-              providerTab === "evolution"
-                ? "border-emerald-600 bg-white ring-2 ring-emerald-600/10 shadow-sm"
-                : "border-slate-200 bg-slate-50/60 hover:bg-white"
-            )}
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-100 text-emerald-700 font-black">
-                  WA
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-900 text-sm sm:text-base">Direct WhatsApp Web (Evolution API)</h3>
-                  <p className="text-xs text-slate-500">QR Code Scan • Zero Meta API Approval • Multi-Device</p>
-                </div>
-              </div>
-
-              {data?.activeProvider === "evolution" && (
-                <span className="inline-flex items-center rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-bold text-emerald-800">
-                  Active
-                </span>
-              )}
-            </div>
-
-            <p className="mt-3 text-xs text-slate-600 leading-relaxed">
-              Link any WhatsApp number instantly via QR code scan or 8-digit pairing code. No Meta verification needed.
-            </p>
-
-            {data?.activeProvider !== "evolution" && (
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleSwitchProvider("evolution");
-                  }}
-                  disabled={isActionLoading}
-                  className="text-xs font-semibold text-emerald-600 hover:text-emerald-700"
-                >
-                  Set as Active Provider →
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <PageHeader title="WhatsApp" description="Connect your business number and keep customer conversations flowing." meta={<span className={clsx("status-pill", isLoading ? "bg-slate-100 text-slate-500" : isActiveConnected ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500")}>{isLoading ? "Checking status" : statusError ? "Status unavailable" : isActiveConnected ? "Connected" : "Not connected"}</span>} actions={<button onClick={() => void fetchStatus(false)} disabled={isLoading || isActionLoading} className="ui-button"><RefreshCw size={14} className={clsx(isLoading && "animate-spin")} />Refresh status</button>} />
+        {statusError && <ErrorNotice message={statusError} retry={() => void fetchStatus(false)} />}
+        <section className="ui-card overflow-hidden">
+          <div className="border-b border-slate-100 p-5 sm:px-6"><h2 className="ui-section-title">Connection method</h2><p className="mt-1.5 text-xs text-slate-400">Choose a method to view setup and connection details.</p></div>
+          <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">{[{key: "meta" as const, title: "WhatsApp Business Platform", subtitle: "Official Meta connection", icon: ShieldCheck}, {key: "evolution" as const, title: "Link a WhatsApp device", subtitle: "Scan a QR code or use a pairing code", icon: QrCode}].map(({key,title,subtitle,icon: Icon}) => <button key={key} type="button" aria-pressed={providerTab === key} onClick={() => setProviderTab(key)} className={clsx("flex items-center gap-3 rounded-xl border p-4 text-left transition", providerTab === key ? "border-orange-200 bg-orange-50/40 ring-1 ring-orange-100" : "border-slate-200 hover:bg-slate-50")}><span className={clsx("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-white", providerTab === key ? "border-orange-200 text-brand" : "border-slate-200 text-slate-400")}><Icon size={19} /></span><div className="min-w-0"><p className="text-xs font-semibold text-slate-700">{title}</p><p className="mt-1 text-[11px] text-slate-400">{subtitle}</p></div>{data?.activeProvider === key && <span className="status-pill ml-auto hidden bg-emerald-50 text-emerald-700 sm:inline-flex">In use</span>}</button>)}</div>
+          <div className="flex flex-col justify-between gap-3 border-t border-slate-100 bg-slate-50/40 px-6 py-4 sm:flex-row sm:items-center"><p className="max-w-xl text-xs leading-relaxed text-slate-500">{providerTab === "meta" ? "Connect through Facebook to use the official WhatsApp Business Platform." : "Connect a business number from WhatsApp’s Linked devices screen. Powered by Evolution."}</p>{data && data.activeProvider !== providerTab && <button disabled={isActionLoading || !!statusError} onClick={() => void handleSwitchProvider(providerTab)} className="ui-button shrink-0">{isActionLoading ? "Updating..." : "Use this method"}<Link2 size={14} /></button>}{data?.activeProvider === providerTab && <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-emerald-600"><Check size={14} />Current connection method</span>}</div>
+        </section>
 
         {/* ========================================================================= */}
         {/* VIEW 1: META CLOUD API SECTION */}
@@ -577,7 +451,7 @@ function WhatsAppIntegration() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h2 className="text-lg font-black text-slate-900">
+                      <h2 className="text-lg font-semibold text-slate-900">
                         {data?.metaConfig?.verifiedName || "Meta Cloud API Connection"}
                       </h2>
                       <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
@@ -585,7 +459,7 @@ function WhatsAppIntegration() {
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Connected via official Meta WhatsApp Business Cloud API with real-time sync.
+                      {isMetaConnected ? "Your WhatsApp Business account is connected." : "Link a WhatsApp Business account to start receiving customer messages."}
                     </p>
                   </div>
                 </div>
@@ -1016,7 +890,7 @@ function WhatsAppIntegration() {
                       <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-center space-y-2">
                         <p className="text-xs text-slate-500 font-medium">Enter this code on your WhatsApp app:</p>
                         <div className="flex items-center justify-center gap-2">
-                          <span className="text-2xl font-black font-mono tracking-widest text-slate-900 bg-white px-4 py-1.5 rounded-lg border border-slate-200">
+                          <span className="text-2xl font-semibold font-mono tracking-widest text-slate-900 bg-white px-4 py-1.5 rounded-lg border border-slate-200">
                             {generatedPairCode}
                           </span>
                           <button

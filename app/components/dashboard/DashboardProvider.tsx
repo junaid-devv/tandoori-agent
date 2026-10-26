@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useMemo, useState, startTransition } from "react";
+import { createContext, useContext, useMemo, useState, useCallback, useSyncExternalStore, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import type { DashboardSession } from "@/lib/auth";
 import type { RestaurantProfile } from "@/lib/restaurant-profile-types";
@@ -88,6 +88,24 @@ function resolveStoredBranchId(
   return isAllowed ? rawValue : null;
 }
 
+// Read persisted preferences after hydration, so saved layouts never disagree with SSR.
+const preferenceEvent = "dashboard-preference-change";
+function subscribePreferences(notify: () => void) {
+  window.addEventListener("storage", notify);
+  window.addEventListener(preferenceEvent, notify);
+  return () => { window.removeEventListener("storage", notify); window.removeEventListener(preferenceEvent, notify); };
+}
+const getServerPreference = () => null;
+function usePreference(key: string) {
+  const read = useCallback(() => { try { return window.localStorage.getItem(key); } catch { return null; } }, [key]);
+  const value = useSyncExternalStore(subscribePreferences, read, getServerPreference);
+  const set = useCallback((next: string) => {
+    try { window.localStorage.setItem(key, next); } catch { return; }
+    window.dispatchEvent(new Event(preferenceEvent));
+  }, [key]);
+  return [value, set] as const;
+}
+
 export function DashboardProvider({
   session,
   profile,
@@ -99,41 +117,18 @@ export function DashboardProvider({
 }) {
   const router = useRouter();
   const [profileState, setProfileState] = useState(profile);
-  const [selectedBranchId, setSelectedBranchIdState] = useState<SelectedBranchId>(() => {
-    const fallbackBranchId = getInitialBranchId(session, profile);
-    if (typeof window === "undefined") {
-      return fallbackBranchId;
-    }
-
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    return resolveStoredBranchId(session, profile, stored) ?? fallbackBranchId;
-  });
-
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
-  });
-
-  const [isSoundEnabled, setIsSoundEnabled] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage.getItem(SOUND_ENABLED_KEY) !== "false";
-  });
-
-  const [isAutoPrintEnabled, setIsAutoPrintEnabled] = useState<boolean>(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(AUTO_PRINT_ENABLED_KEY) === "true";
-  });
-
-  const [receiptPaperWidth, setReceiptPaperWidthState] = useState<"58mm" | "80mm">(() => {
-    if (typeof window === "undefined") return "80mm";
-    const stored = window.localStorage.getItem(RECEIPT_WIDTH_KEY);
-    return stored === "58mm" ? "58mm" : "80mm";
-  });
-
-  const [isContextPanelOpen, setIsContextPanelOpen] = useState<boolean>(() => {
-    if (typeof window === "undefined") return true;
-    return window.localStorage.getItem(CONTEXT_PANEL_KEY) !== "false";
-  });
+  const [storedBranch, storeBranch] = usePreference(STORAGE_KEY);
+  const selectedBranchId = resolveStoredBranchId(session, profileState, storedBranch) ?? getInitialBranchId(session, profileState);
+  const [sidebar, storeSidebar] = usePreference(SIDEBAR_COLLAPSED_KEY);
+  const [sound, storeSound] = usePreference(SOUND_ENABLED_KEY);
+  const [autoPrint, storeAutoPrint] = usePreference(AUTO_PRINT_ENABLED_KEY);
+  const [paperWidth, storePaperWidth] = usePreference(RECEIPT_WIDTH_KEY);
+  const [contextPanel, storeContextPanel] = usePreference(CONTEXT_PANEL_KEY);
+  const isSidebarCollapsed = sidebar === "true";
+  const isSoundEnabled = sound !== "false";
+  const isAutoPrintEnabled = autoPrint === "true";
+  const receiptPaperWidth = paperWidth === "58mm" ? "58mm" : "80mm";
+  const isContextPanelOpen = contextPanel === "true";
 
   const selectedBranch = useMemo(() => {
     if (selectedBranchId === "all") return null;
@@ -147,47 +142,17 @@ export function DashboardProvider({
       setProfile: setProfileState,
       selectedBranchId,
       selectedBranch,
-      setSelectedBranchId: (branchId) => {
-        setSelectedBranchIdState(branchId);
-        window.localStorage.setItem(STORAGE_KEY, branchId);
-      },
+      setSelectedBranchId: storeBranch,
       isSidebarCollapsed,
-      toggleSidebarCollapsed: () => {
-        setIsSidebarCollapsed((prev) => {
-          const next = !prev;
-          window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(next));
-          return next;
-        });
-      },
+      toggleSidebarCollapsed: () => storeSidebar(String(!isSidebarCollapsed)),
       isSoundEnabled,
-      toggleSoundEnabled: () => {
-        setIsSoundEnabled((prev) => {
-          const next = !prev;
-          window.localStorage.setItem(SOUND_ENABLED_KEY, String(next));
-          return next;
-        });
-      },
+      toggleSoundEnabled: () => storeSound(String(!isSoundEnabled)),
       isAutoPrintEnabled,
-      toggleAutoPrintEnabled: () => {
-        setIsAutoPrintEnabled((prev) => {
-          const next = !prev;
-          window.localStorage.setItem(AUTO_PRINT_ENABLED_KEY, String(next));
-          return next;
-        });
-      },
+      toggleAutoPrintEnabled: () => storeAutoPrint(String(!isAutoPrintEnabled)),
       receiptPaperWidth,
-      setReceiptPaperWidth: (width: "58mm" | "80mm") => {
-        setReceiptPaperWidthState(width);
-        window.localStorage.setItem(RECEIPT_WIDTH_KEY, width);
-      },
+      setReceiptPaperWidth: storePaperWidth,
       isContextPanelOpen,
-      toggleContextPanelOpen: () => {
-        setIsContextPanelOpen((prev) => {
-          const next = !prev;
-          window.localStorage.setItem(CONTEXT_PANEL_KEY, String(next));
-          return next;
-        });
-      },
+      toggleContextPanelOpen: () => storeContextPanel(String(!isContextPanelOpen)),
       logout: async () => {
         await fetch("/api/auth/logout", { method: "POST" });
         startTransition(() => {
@@ -207,6 +172,7 @@ export function DashboardProvider({
     selectedBranch,
     selectedBranchId,
     session,
+    storeBranch, storeSidebar, storeSound, storeAutoPrint, storePaperWidth, storeContextPanel,
   ]);
 
   return <DashboardContext.Provider value={value}>{children}</DashboardContext.Provider>;

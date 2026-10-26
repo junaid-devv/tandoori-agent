@@ -19,16 +19,12 @@ export default async function DashboardLayout({ children }: { children: React.Re
   return (
     <DashboardProvider session={session} profile={profile}>
       <NotificationProvider>
-        <div className="flex h-dvh flex-col overflow-hidden bg-slate-50 text-slate-900 lg:flex-row">
+        <div className="dashboard-shell relative flex h-dvh overflow-hidden bg-bg-app text-slate-900">
+          <a href="#main-content" className="skip-link">Skip to content</a>
           <Sidebar />
 
-          <main className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+          <main className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
             <Header />
-
-          <div
-            className="absolute inset-0 pointer-events-none z-0 opacity-[0.02]"
-            style={{ backgroundImage: 'radial-gradient(circle at 2px 2px, black 1px, transparent 0)', backgroundSize: '24px 24px' }}
-          />
 
           <DashboardContentWrapper>
             {children}

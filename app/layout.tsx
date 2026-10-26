@@ -22,7 +22,6 @@ export async function generateViewport(): Promise<Viewport> {
     themeColor: profile.brand_color || "#EA580C",
     width: "device-width",
     initialScale: 1,
-    maximumScale: 1,
     viewportFit: "cover",
   };
 }

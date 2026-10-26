@@ -1,194 +1,39 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
-import { BarChart3, Loader2, RefreshCw, ShoppingBag, Users, Utensils } from "lucide-react";
+import { useMemo } from "react";
+import { BarChart3, CalendarDays, Clock3, RefreshCw, ShoppingBag, TrendingUp, Users } from "lucide-react";
 import { clsx } from "clsx";
-import { useDataCache, invalidateCache } from "@/lib/useDataCache";
+import { useDataCache } from "@/lib/useDataCache";
+import { PageHeader } from "@/app/components/dashboard/PageHeader";
+import { EmptyState, ErrorNotice, MetricCard } from "@/app/components/dashboard/WorkspaceUI";
 
-type AnalyticsPayload = {
-  generatedAt: string;
-  rangeDays: number;
-  totals: {
-    orders: number;
-    activeOrders: number;
-    deliveredOrders: number;
-    cancelledOrders: number;
-    revenue: number;
-    conversations: number;
-    unreadConversations: number;
-    humanConversations: number;
-    repeatCustomers: number;
-  };
-  typeBreakdown: Record<string, number>;
-  statusBreakdown: Record<string, number>;
-  hourlyDemand: Array<{ hour: string; count: number }>;
-  topItems: Array<{ name: string; qty: number; revenue: number }>;
-};
-
-function money(value: number) {
-  return `Rs. ${Math.round(value).toLocaleString()}`;
-}
-
-function label(value: string) {
-  return value.replaceAll("_", " ").replaceAll("-", " ");
-}
+type AnalyticsPayload = { generatedAt: string; rangeDays: number; totals: { orders: number; activeOrders: number; deliveredOrders: number; cancelledOrders: number; revenue: number; conversations: number; unreadConversations: number; humanConversations: number; repeatCustomers: number }; typeBreakdown: Record<string, number>; statusBreakdown: Record<string, number>; hourlyDemand: { hour: string; count: number }[]; topItems: { name: string; qty: number; revenue: number }[] };
+const money = (value: number) => `Rs. ${Math.round(value).toLocaleString()}`;
+const label = (value: string) => value.replaceAll("_", " ").replaceAll("-", " ");
+const statusColors: Record<string, string> = { received: "bg-blue-500", preparing: "bg-orange-400", out_for_delivery: "bg-violet-400", delivered: "bg-emerald-500", cancelled: "bg-slate-300" };
 
 export default function AnalyticsPage() {
-  const [refreshing, setRefreshing] = useState(false);
-
-  // Single-branch: always load analytics for this restaurant
-  const analyticsUrl = "/api/dashboard/analytics";
-
-  const {
-    data,
-    isLoading: loading,
-    error: fetchError,
-    revalidate,
-  } = useDataCache<AnalyticsPayload>(analyticsUrl);
-
-  const error = fetchError?.message ?? null;
-
-  const loadAnalytics = useCallback((showRefreshing = false) => {
-    if (showRefreshing) {
-      setRefreshing(true);
-      invalidateCache("/api/dashboard/analytics");
-      setTimeout(() => setRefreshing(false), 600);
-    }
-    revalidate();
-  }, [revalidate]);
-
-  const maxHourCount = useMemo(
-    () => Math.max(1, ...(data?.hourlyDemand.map((item) => item.count) ?? [1])),
-    [data],
-  );
-  const maxTopItemQty = useMemo(
-    () => Math.max(1, ...(data?.topItems.map((item) => item.qty) ?? [1])),
-    [data],
-  );
-
-  return (
-    <div className="space-y-3 pb-10">
-      {/* Compact Header */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-bold text-slate-900">Analytics</h1>
-          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
-            Last {data?.rangeDays ?? 30} days
-          </span>
-        </div>
-        <button
-          onClick={() => void loadAnalytics(true)}
-          disabled={refreshing}
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50 disabled:opacity-50"
-          aria-label="Refresh analytics"
-        >
-          {refreshing ? <Loader2 size={13} className="animate-spin text-brand" /> : <RefreshCw size={13} />}
-          <span>Refresh</span>
-        </button>
-      </div>
-
-      {error ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-medium text-red-700">{error}</div>
-      ) : null}
-
-      {loading && !data ? (
-        <div className="flex h-48 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-400 shadow-sm">
-          <Loader2 size={20} className="animate-spin text-brand" />
-        </div>
-      ) : null}
-
-      {data ? (
-        <>
-          <section className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-            {[
-              { label: "Orders", value: data.totals.orders, icon: ShoppingBag, color: "text-brand", bg: "bg-orange-50" },
-              { label: "Revenue", value: money(data.totals.revenue), icon: BarChart3, color: "text-emerald-600", bg: "bg-emerald-50" },
-              { label: "Repeat Customers", value: data.totals.repeatCustomers, icon: Users, color: "text-indigo-600", bg: "bg-indigo-50" },
-              { label: "Active Queue", value: data.totals.activeOrders, icon: Utensils, color: "text-blue-600", bg: "bg-blue-50" },
-            ].map((metric) => (
-              <div key={metric.label} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-slate-300">
-                <div className="mb-1.5 flex items-center justify-between gap-1">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{metric.label}</p>
-                  <div className={clsx("rounded-md p-1", metric.bg)}>
-                    <metric.icon size={13} className={metric.color} />
-                  </div>
-                </div>
-                <p className="break-words text-xl font-bold tracking-tight text-slate-900">{metric.value}</p>
-              </div>
-            ))}
-          </section>
-
-          <section className="grid gap-3 lg:grid-cols-[1.2fr_0.8fr]">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-xs font-bold text-slate-800">Hourly Demand</h2>
-              <div className="mt-3 space-y-2">
-                {data.hourlyDemand.length === 0 ? (
-                  <p className="text-xs text-slate-400">No order activity in this range.</p>
-                ) : (
-                  data.hourlyDemand.map((item) => (
-                    <div key={item.hour} className="grid grid-cols-[40px_1fr_28px] items-center gap-2 text-xs">
-                      <span className="text-[11px] font-semibold text-slate-500">{item.hour}</span>
-                      <div className="h-2 rounded-full bg-slate-100">
-                        <div
-                          className="h-2 rounded-full bg-brand"
-                          style={{ width: `${Math.max(6, (item.count / maxHourCount) * 100)}%` }}
-                        />
-                      </div>
-                      <span className="text-right text-[11px] font-bold text-slate-700">{item.count}</span>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <h2 className="text-xs font-bold text-slate-800">Order Mix</h2>
-              <div className="mt-3 space-y-2">
-                {Object.entries(data.typeBreakdown).map(([type, count]) => (
-                  <div key={type} className="flex items-center justify-between text-xs">
-                    <span className="capitalize text-slate-600">{label(type)}</span>
-                    <span className="font-bold text-slate-900">{count}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="mt-4 border-t border-slate-100 pt-3">
-                <h3 className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Status Breakdown</h3>
-                <div className="mt-2 flex flex-wrap gap-1.5">
-                  {Object.entries(data.statusBreakdown).map(([status, count]) => (
-                    <span key={status} className={clsx("rounded-md px-2 py-0.5 text-[11px] font-semibold capitalize", status === "cancelled" ? "bg-red-50 text-red-700" : "bg-slate-100 text-slate-700")}>
-                      {label(status)}: {count}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <h2 className="text-xs font-bold text-slate-800">Top Selling Items</h2>
-            <div className="mt-3 space-y-2.5">
-              {data.topItems.length === 0 ? (
-                <p className="text-xs text-slate-400">No item sales in this range.</p>
-              ) : (
-                data.topItems.map((item) => (
-                  <div key={item.name} className="grid gap-2 text-xs sm:grid-cols-[minmax(140px,200px)_1fr_80px] sm:items-center sm:gap-3">
-                    <span className="min-w-0 truncate font-semibold text-slate-800">{item.name}</span>
-                    <div className="h-2 rounded-full bg-slate-100">
-                      <div
-                        className="h-2 rounded-full bg-slate-800"
-                        style={{ width: `${Math.max(6, (item.qty / maxTopItemQty) * 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-right text-[11px] font-semibold text-slate-500">
-                      {item.qty} sold
-                    </span>
-                  </div>
-                ))
-              )}
-            </div>
-          </section>
-        </>
-      ) : null}
+  const { data, isLoading, error, isRevalidating, revalidate } = useDataCache<AnalyticsPayload>("/api/dashboard/analytics");
+  const hourly = useMemo(() => Array.from({ length: 24 }, (_, hour) => { const key = `${String(hour).padStart(2, "0")}:00`; return { hour: key, count: data?.hourlyDemand.find(item => item.hour === key)?.count || 0 }; }), [data]);
+  const maxDemand = Math.max(1, ...hourly.map(item => item.count));
+  const completedRate = data?.totals.orders ? Math.round(data.totals.deliveredOrders / data.totals.orders * 100) : 0;
+  return <div className="space-y-7 pb-6">
+    <PageHeader title="Analytics" description="Understand what’s working, what’s popular, and when customers order." actions={<><span className="ui-button cursor-default text-slate-500"><CalendarDays size={14} />Last {data?.rangeDays || 30} days</span><button className="ui-button" onClick={revalidate} disabled={isRevalidating} aria-label="Refresh analytics"><RefreshCw size={14} className={clsx(isRevalidating && "animate-spin")} />Refresh</button></>} />
+    {error && <ErrorNotice message="We couldn’t load analytics. Please try again." retry={revalidate} />}
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-5">
+      <MetricCard label="Total revenue" value={data ? money(data.totals.revenue) : "—"} detail="From delivered orders" icon={TrendingUp} loading={isLoading} accent />
+      <MetricCard label="Total orders" value={data?.totals.orders ?? "—"} detail={data ? `${data.totals.deliveredOrders} delivered · ${data.totals.activeOrders} active` : "Orders in this period"} icon={ShoppingBag} loading={isLoading} />
+      <MetricCard label="Average order value" value={data ? money(data.totals.deliveredOrders ? data.totals.revenue / data.totals.deliveredOrders : 0) : "—"} detail="Average revenue per delivered order" icon={BarChart3} loading={isLoading} />
+      <MetricCard label="Returning customers" value={data?.totals.repeatCustomers ?? "—"} detail="Customers with more than one order" icon={Users} loading={isLoading} />
     </div>
-  );
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
+      <section className="ui-card overflow-hidden"><div className="flex items-center justify-between border-b border-slate-100 p-5 sm:px-6"><div><h2 className="ui-section-title">When customers order</h2><p className="mt-1.5 text-xs text-slate-500">Order volume by hour across this period</p></div><Clock3 size={17} className="text-slate-500" /></div>{isLoading ? <div className="m-6 h-60 animate-pulse rounded-xl bg-slate-50" /> : !data || !data.totals.orders ? <EmptyState title="Your busiest hours will appear here" description="As orders come in, see the hours your customers prefer." icon={BarChart3} /> : <div className="p-5 sm:p-6"><svg role="img" aria-label="Number of orders for each hour of the day" viewBox="0 0 740 260" className="w-full"><title>Hourly order demand</title>{[0,1,2,3,4].map(row => { const y=220-row*47; return <g key={row}><line x1="34" x2="730" y1={y} y2={y} stroke="#f1f5f9" strokeDasharray={row ? "3 4" : undefined} /><text x="22" y={y+4} textAnchor="end" fill="#94a3b8" fontSize="10">{Math.round(maxDemand*row/4)}</text></g>; })}{hourly.map((item,index) => { const h=item.count / maxDemand*188; return <g key={item.hour}><rect x={42+index*28.5} y={220-h} width="17" height={h} rx="4" fill={item.count === maxDemand ? "var(--brand)" : "#fed7aa"}><title>{item.hour}: {item.count} orders</title></rect>{index % 3 === 0 && <text x={50+index*28.5} y="244" textAnchor="middle" fill="#94a3b8" fontSize="10">{item.hour}</text>}</g>; })}</svg><div className="mt-4 flex items-center justify-center gap-2 text-[11px] text-slate-500"><span className="h-2 w-2 rounded-sm bg-orange-200" />Orders by hour<span className="ml-3 h-2 w-2 rounded-sm bg-brand" />Peak demand</div></div>}</section>
+      <section className="ui-card p-5 sm:p-6"><h2 className="ui-section-title">Order fulfillment</h2><p className="mt-1.5 text-xs text-slate-500">Where your orders stand</p><div className="my-6 flex items-end gap-2"><span className="metric-value text-4xl font-semibold text-slate-900">{data ? `${completedRate}%` : "—"}</span><span className="pb-1 text-[11px] text-slate-500">delivered</span></div><div className="flex h-2 overflow-hidden rounded-full bg-slate-100">{Object.entries(data?.statusBreakdown || {}).map(([status,count]) => <div key={status} title={`${label(status)}: ${count}`} className={statusColors[status] || "bg-slate-300"} style={{ width: `${data?.totals.orders ? count/data.totals.orders*100 : 0}%` }} />)}</div><div className="mt-6 space-y-4">{Object.entries(data?.statusBreakdown || {}).map(([status,count]) => <div key={status} className="flex items-center gap-2 text-xs"><span className={clsx("h-2 w-2 rounded-full", statusColors[status] || "bg-slate-300")} /><span className="flex-1 capitalize text-slate-500">{label(status)}</span><span className="font-medium text-slate-700">{count}</span></div>)}{data && !data.totals.orders && <p className="text-xs text-slate-500">No orders in this period.</p>}</div></section>
+    </div>
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_310px]">
+      <section className="ui-card overflow-hidden"><div className="border-b border-slate-100 px-6 py-5"><h2 className="ui-section-title">Menu bestsellers</h2><p className="mt-1.5 text-xs text-slate-500">The items your customers keep coming back for</p></div>{data?.topItems.length ? <div className="overflow-x-auto"><table className="w-full min-w-[440px] text-left text-xs"><thead className="bg-slate-50/60 text-[10px] uppercase tracking-wider text-slate-500"><tr><th className="w-12 px-6 py-3 font-medium">#</th><th className="px-2 py-3 font-medium">Menu item</th><th className="px-4 py-3 text-right font-medium">Quantity</th><th className="px-6 py-3 text-right font-medium">Sales value</th></tr></thead><tbody className="divide-y divide-slate-100">{data.topItems.map((item,index) => <tr key={item.name} className="hover:bg-slate-50/50"><td className="px-6 py-4 text-slate-500">{String(index+1).padStart(2,"0")}</td><td className="px-2 py-4 font-medium text-slate-700">{item.name}</td><td className="px-4 py-4 text-right text-slate-500">{item.qty}</td><td className="px-6 py-4 text-right font-medium text-slate-700">{money(item.revenue)}</td></tr>)}</tbody></table></div> : isLoading ? <div className="m-6 h-40 animate-pulse rounded bg-slate-50" /> : <EmptyState title="Discover your next bestseller" description="Item sales will appear after your first orders." icon={ShoppingBag} />}</section>
+      <div className="space-y-5"><section className="ui-card p-6"><h2 className="ui-section-title">Service mix</h2><div className="mt-5 space-y-5">{Object.entries(data?.typeBreakdown || {}).map(([type,count]) => <div key={type}><div className="mb-2 flex items-center justify-between text-xs"><span className="capitalize text-slate-500">{label(type)}</span><span className="font-medium text-slate-700">{count}</span></div><div className="h-1.5 rounded-full bg-slate-100"><div className="h-full rounded-full bg-slate-700" style={{ width: `${data?.totals.orders ? count/data.totals.orders*100 : 0}%` }} /></div></div>)}{data && !data.totals.orders && <p className="text-xs text-slate-500">No service activity yet.</p>}</div></section><section className="rounded-xl border border-slate-200 bg-white/60 p-6"><h2 className="ui-section-title">Customer conversations</h2><dl className="mt-5 space-y-4 text-xs">{[["Total conversations",data?.totals.conversations], ["Needs a human",data?.totals.humanConversations], ["Unread conversations",data?.totals.unreadConversations]].map(([title,value]) => <div key={title} className="flex items-center justify-between gap-3"><dt className="text-slate-500">{title}</dt><dd className="font-semibold text-slate-700">{value ?? "—"}</dd></div>)}</dl></section></div>
+    </div>
+    {data && <p className="text-[11px] text-slate-500">Updated {new Intl.DateTimeFormat("en-PK", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Karachi" }).format(new Date(data.generatedAt))} · Last {data.rangeDays} days</p>}
+  </div>;
 }

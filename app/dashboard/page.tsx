@@ -1,396 +1,74 @@
 "use client";
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { MessageSquare, ShoppingBag, TrendingUp, Zap, Settings, Activity, ArrowUpRight, AlertTriangle, CheckCircle2 } from "lucide-react";
+
+import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { Activity, ArrowRight, ArrowUpRight, Check, CheckCircle2, Clock3, MessageSquare, RefreshCw, ShoppingBag, TrendingUp, UtensilsCrossed } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { clsx } from "clsx";
+import { toast } from "sonner";
 import { useDashboardContext } from "@/app/components/dashboard/DashboardProvider";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
+import { EmptyState, ErrorNotice, MetricCard } from "@/app/components/dashboard/WorkspaceUI";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 import UniversityAdmissionsDashboard from "@/app/admissions/page";
 
-const STATUS_CONFIG: Record<string, { label: string; bg: string; text: string; dot: string }> = {
-  received: { label: "New", bg: "bg-blue-50", text: "text-blue-700", dot: "bg-blue-500" },
-  preparing: { label: "Preparing", bg: "bg-orange-50", text: "text-orange-700", dot: "bg-orange-500" },
-  out_for_delivery: { label: "On Way", bg: "bg-indigo-50", text: "text-indigo-700", dot: "bg-indigo-500" },
-  delivered: { label: "Done", bg: "bg-emerald-50", text: "text-emerald-700", dot: "bg-emerald-500" },
-  cancelled: { label: "Dropped", bg: "bg-slate-50", text: "text-slate-600", dot: "bg-slate-400" },
-};
-
-type DashboardOrder = {
-  id: string;
-  order_number: number;
-  status: string;
-  type: "delivery" | "pickup" | "dine-in";
-  subtotal: number;
-  created_at: string;
-  branches?: { name?: string | null } | null;
-  conversations?: { name?: string | null } | null;
-};
-
-type DashboardSummaryResponse = {
-  active: number;
-  today: number;
-  revenue: number;
-  chats: number;
-  breakdown: Record<string, number>;
-  recentOrders: DashboardOrder[];
-};
-
-type StaffAlert = {
-  id: string;
-  conversation_id: string;
-  branch_id: string;
-  kind: "human_handoff" | "tool_validation" | "webhook_processing" | "delivery_notification" | "customer_cancellation" | string;
-  severity: "low" | "medium" | "high" | string;
-  status: "open" | "acknowledged" | "resolved" | string;
-  message: string;
-  created_at: string;
-  conversations?: { phone?: string | null; name?: string | null } | null;
-  branches?: { name?: string | null; slug?: string | null } | null;
-};
-
-const ALERT_KIND_LABELS: Record<string, string> = {
-  human_handoff: "Human Handoff",
-  tool_validation: "AI Review",
-  webhook_processing: "Webhook Failure",
-  delivery_notification: "Delivery Notice",
-  customer_cancellation: "Cancellation",
+type DashboardOrder = { id: string; order_number: number; status: string; type: string; subtotal: number; created_at: string; branches?: { name?: string | null } | null; conversations?: { name?: string | null } | null };
+type Summary = { active: number; today: number; revenue: number; chats: number; breakdown: Record<string, number>; recentOrders: DashboardOrder[] };
+type StaffAlert = { id: string; conversation_id: string; kind: string; severity: string; message: string; created_at: string; conversations?: { phone?: string | null; name?: string | null } | null };
+const statuses: Record<string, { label: string; style: string; color: string }> = {
+  received: { label: "New", style: "bg-blue-50 text-blue-700", color: "bg-blue-500" },
+  preparing: { label: "Preparing", style: "bg-orange-50 text-orange-700", color: "bg-orange-500" },
+  out_for_delivery: { label: "Out for delivery", style: "bg-violet-50 text-violet-700", color: "bg-violet-500" },
+  delivered: { label: "Delivered", style: "bg-emerald-50 text-emerald-700", color: "bg-emerald-500" },
+  cancelled: { label: "Cancelled", style: "bg-slate-100 text-slate-500", color: "bg-slate-400" },
 };
 
 export default function DashboardPage() {
-  if (
-    process.env.NEXT_PUBLIC_APP_MODE === "university" ||
-    process.env.APP_MODE === "university" ||
-    process.env.NEXT_PUBLIC_APP_NAME?.toLowerCase().includes("university")
-  ) {
-    return <UniversityAdmissionsDashboard />;
-  }
+  if (process.env.NEXT_PUBLIC_APP_MODE === "university" || process.env.APP_MODE === "university" || process.env.NEXT_PUBLIC_APP_NAME?.toLowerCase().includes("university")) return <UniversityAdmissionsDashboard />;
+  return <RestaurantOverview />;
+}
 
-  const [lastUpdatedAt, setLastUpdatedAt] = useState<string | null>(null);
-  const [localAlerts, setLocalAlerts] = useState<StaffAlert[] | null>(null);
-
-  // Single-branch: no branch_id filter — always scoped to the restaurant
-  const summaryUrl = "/api/dashboard/summary";
-  const alertsUrl = "/api/staff-alerts?status=open&limit=8";
-
-  const {
-    data: summary,
-    isLoading: summaryLoading,
-    revalidate: revalidateSummary,
-  } = useDataCache<DashboardSummaryResponse>(summaryUrl);
-
-  const {
-    data: fetchedAlerts,
-    isLoading: alertsLoading,
-    revalidate: revalidateAlerts,
-  } = useDataCache<StaffAlert[]>(alertsUrl);
-
-  // Merge fetched alerts into local state (so optimistic resolve works)
-  useEffect(() => {
-    if (fetchedAlerts) {
-      setLocalAlerts(fetchedAlerts);
-      setLastUpdatedAt(new Date().toISOString());
-    }
-  }, [fetchedAlerts]);
-
-  const loading = summaryLoading || alertsLoading;
-  const stats = summary
-    ? { active: summary.active, today: summary.today, revenue: summary.revenue, chats: summary.chats, breakdown: summary.breakdown }
-    : { active: 0, today: 0, revenue: 0, chats: 0, breakdown: {} as Record<string, number> };
-  const recentOrders = summary?.recentOrders ?? [];
-  const alerts = localAlerts ?? fetchedAlerts ?? [];
-
-  const revalidate = useCallback(() => {
-    revalidateSummary();
-    revalidateAlerts();
-  }, [revalidateSummary, revalidateAlerts]);
-
-  const resolveAlert = useCallback(async (alertId: string) => {
-    // Optimistic remove
-    setLocalAlerts((current) => (current ?? []).filter((a) => a.id !== alertId));
-
+function RestaurantOverview() {
+  const { profile } = useDashboardContext();
+  const summary = useDataCache<Summary>("/api/dashboard/summary");
+  const alertsQuery = useDataCache<StaffAlert[]>("/api/staff-alerts?status=open&limit=8");
+  const [resolving, setResolving] = useState<string | null>(null);
+  const refreshSummary = summary.revalidate;
+  const refreshAlerts = alertsQuery.revalidate;
+  const refresh = useCallback(() => { refreshSummary(); refreshAlerts(); }, [refreshSummary, refreshAlerts]);
+  useEffect(() => { const timer = window.setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 12000); return () => clearInterval(timer); }, [refresh]);
+  const data = summary.data;
+  const alerts = alertsQuery.data || [];
+  const orders = data?.recentOrders || [];
+  async function resolveAlert(id: string) {
+    setResolving(id);
     try {
-      const response = await fetch(`/api/staff-alerts/${alertId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "resolved" }),
-      });
-      if (!response.ok) throw new Error("Failed to resolve staff alert");
-      // Bust the alerts cache so next load is fresh
-      invalidateCache("/api/staff-alerts");
-    } catch (error) {
-      console.error("Alert resolve failed", error);
-      // Roll back optimistic update
-      revalidateAlerts();
-    }
-  }, [revalidateAlerts]);
-
-  // Periodic auto-refresh (12 s) — silent, no skeleton
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      if (document.visibilityState !== "visible") return;
-      revalidate();
-    }, 12000);
-    return () => window.clearInterval(interval);
-  }, [revalidate]);
-
-  return (
-    <div className="space-y-3 pb-10">
-      {/* Compact header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-bold text-slate-900">Dashboard Overview</h1>
-          <span className="flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 border border-emerald-200">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-            Live
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/dashboard/settings"
-            className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:bg-slate-50 hover:text-slate-800"
-            aria-label="Open settings"
-          >
-            <Settings size={14} />
-          </Link>
-          <Link
-            href="/dashboard/orders"
-            className="flex h-8 items-center gap-1.5 rounded-lg bg-brand px-3 text-xs font-semibold text-white transition hover:bg-brand-hover shadow-sm"
-          >
-            <span>Orders Queue</span>
-            <ArrowUpRight size={13} />
-          </Link>
-        </div>
-      </div>
-
-      {/* KPI Section */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[
-          { label: "Active Orders", val: stats.active, icon: Activity, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Orders Today", val: stats.today, icon: ShoppingBag, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Gross Revenue", val: `Rs. ${stats.revenue.toLocaleString()}`, icon: TrendingUp, color: "text-indigo-600", bg: "bg-indigo-50" },
-          { label: "AI Interactions", val: stats.chats, icon: MessageSquare, color: "text-brand", bg: "bg-orange-50" },
-        ].map((item, i) => (
-          <div
-            key={i}
-            data-testid={`kpi-${item.label.toLowerCase().replace(/\s+/g, "-")}`}
-            className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm transition hover:border-slate-300"
-          >
-            <div className="flex items-center justify-between gap-1 mb-1.5">
-              <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{item.label}</span>
-              <div className={clsx("rounded-md p-1", item.bg)}>
-                <item.icon size={13} className={item.color} />
-              </div>
-            </div>
-            <div className="text-xl font-bold tracking-tight text-slate-900">
-              {loading ? (
-                <div className="h-7 w-20 bg-slate-100 animate-pulse rounded-md" />
-              ) : (
-                item.val
-              )}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      <div className="grid gap-3 lg:grid-cols-3">
-        {/* Activity Feed */}
-        <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden flex flex-col lg:col-span-2">
-          <div className="flex items-center justify-between border-b border-slate-100 px-3.5 py-2.5 bg-slate-50/50">
-            <h3 className="text-xs font-bold text-slate-800">Recent Transactions</h3>
-            <div className="flex items-center gap-1.5 text-[10px] font-medium text-slate-500">
-              <span className="relative flex h-1.5 w-1.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-500"></span>
-              </span>
-              <span>Real-time</span>
-            </div>
-          </div>
-
-          <div className="divide-y divide-slate-100">
-            {loading ? (
-              Array(4).fill(0).map((_, i) => (
-                <div key={i} className="p-3.5 flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="w-8 h-8 bg-slate-100 rounded-full animate-pulse" />
-                    <div className="space-y-1.5">
-                      <div className="h-3 w-28 bg-slate-100 rounded animate-pulse" />
-                      <div className="h-2.5 w-16 bg-slate-50 rounded animate-pulse" />
-                    </div>
-                  </div>
-                </div>
-              ))
-            ) : (
-              recentOrders.map((o) => {
-                const s = STATUS_CONFIG[o.status] || STATUS_CONFIG.received;
-                const customerName = o.conversations?.name || "Guest User";
-                const initials = customerName.substring(0, 2).toUpperCase();
-
-                return (
-                  <div key={o.id} className="flex flex-col gap-2 p-3 sm:flex-row sm:items-center sm:justify-between hover:bg-slate-50/60 transition">
-                    <div className="flex min-w-0 items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center text-[10px] font-bold text-slate-600 shrink-0">
-                        {initials}
-                      </div>
-
-                      <div className="min-w-0">
-                        <p className="text-xs font-semibold text-slate-900 truncate">
-                          {customerName}
-                        </p>
-                        <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
-                          <span>#{o.order_number}</span>
-                          <span>•</span>
-                          <span className="capitalize">{o.type}</span>
-                          {o.branches?.name ? (
-                            <>
-                              <span>•</span>
-                              <span className="truncate">{o.branches.name}</span>
-                            </>
-                          ) : null}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between gap-3 pl-10 sm:pl-0 sm:gap-4">
-                      <div className="text-left sm:text-right">
-                        <p className="text-xs font-bold text-slate-900">Rs. {Number(o.subtotal).toLocaleString()}</p>
-                        <p className="text-[10px] text-slate-400">{formatDistanceToNow(new Date(o.created_at), { addSuffix: true })}</p>
-                      </div>
-
-                      <div className={clsx("flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[10px] font-semibold shrink-0", s.bg, s.text)}>
-                        <div className={clsx("w-1.5 h-1.5 rounded-full", s.dot)} />
-                        {s.label}
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-
-            {!loading && recentOrders.length === 0 && (
-              <div className="p-8 text-center text-slate-400 text-xs">
-                No recent orders found.
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right Sidebar Area */}
-        <div className="space-y-3">
-          {/* Staff Alerts Card */}
-          <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b border-slate-100 px-3.5 py-2.5 bg-slate-50/50">
-              <div className="flex items-center gap-1.5">
-                <h3 className="text-xs font-bold text-slate-800">Staff Alerts</h3>
-                <span className="rounded-full bg-slate-100 px-1.5 py-0.2 text-[10px] font-bold text-slate-600">
-                  {alerts.length}
-                </span>
-              </div>
-              <AlertTriangle size={14} className={alerts.length > 0 ? "text-amber-500" : "text-slate-300"} />
-            </div>
-
-            <div className="divide-y divide-slate-100">
-              {loading ? (
-                Array(2).fill(0).map((_, index) => (
-                  <div key={index} className="space-y-1.5 p-3">
-                    <div className="h-2.5 w-20 animate-pulse rounded bg-slate-100" />
-                    <div className="h-3 w-full animate-pulse rounded bg-slate-100" />
-                  </div>
-                ))
-              ) : alerts.length === 0 ? (
-                <div className="p-6 text-center text-xs text-slate-400">
-                  No open staff alerts.
-                </div>
-              ) : (
-                alerts.map((alert) => {
-                  const label = ALERT_KIND_LABELS[alert.kind] ?? alert.kind.replaceAll("_", " ");
-                  const customer = alert.conversations?.name || alert.conversations?.phone || "Customer";
-
-                  return (
-                    <div key={alert.id} className="p-3">
-                      <div className="mb-1 flex items-center justify-between gap-2">
-                        <span className={clsx(
-                          "rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase",
-                          alert.severity === "high" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700",
-                        )}>
-                          {label}
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          {formatDistanceToNow(new Date(alert.created_at), { addSuffix: true })}
-                        </span>
-                      </div>
-                      <p className="text-xs font-medium text-slate-800 leading-snug">{alert.message}</p>
-                      <div className="mt-2 flex items-center justify-between gap-2">
-                        <Link
-                          href={`/dashboard/conversations?conversation_id=${encodeURIComponent(alert.conversation_id)}`}
-                          className="truncate text-[11px] font-semibold text-brand hover:underline"
-                        >
-                          {customer}
-                        </Link>
-                        <button
-                          onClick={() => void resolveAlert(alert.id)}
-                          className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-50 transition"
-                        >
-                          <CheckCircle2 size={11} />
-                          Resolve
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-            </div>
-          </div>
-
-          {/* Fulfillment Pipeline */}
-          <div className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-sm space-y-3">
-            <h3 className="text-xs font-bold text-slate-800">Fulfillment Pipeline</h3>
-            <div className="space-y-2.5">
-              {['received', 'preparing', 'out_for_delivery'].map((key) => {
-                const s = STATUS_CONFIG[key];
-                const count = stats.breakdown[key] || 0;
-                const progress = stats.today > 0 ? (count / stats.today) * 100 : 0;
-
-                return (
-                  <div key={key} className="space-y-1">
-                    <div className="flex justify-between items-center text-xs">
-                      <span className="text-slate-600 font-medium">{s.label}</span>
-                      <span className="text-slate-900 font-bold">{count}</span>
-                    </div>
-                    <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={clsx("h-full rounded-full transition-all duration-700", s.dot)}
-                        style={{ width: `${Math.max(progress, 2)}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Realtime Status Widget */}
-          <div className="rounded-xl border border-zinc-900 bg-zinc-950 p-3.5 text-white shadow-sm space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5">
-                <Zap size={12} className="text-brand fill-brand" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Live Agent Sync</span>
-              </div>
-              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-            </div>
-            <p className="text-xs text-zinc-300">
-              <strong className="text-white font-bold">{stats.active} orders</strong> active in kitchen &amp; delivery queue.
-            </p>
-            <Link
-              href="/dashboard/conversations"
-              className="flex items-center justify-center gap-1.5 w-full py-1.5 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-xs font-semibold text-zinc-200 transition"
-            >
-              Open Live Chats
-            </Link>
-          </div>
-        </div>
+      const response = await fetch(`/api/staff-alerts/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ status: "resolved" }) });
+      if (!response.ok) throw new Error("Could not resolve this alert. Please try again.");
+      invalidateCache("/api/staff-alerts"); alertsQuery.revalidate(); toast.success("Alert resolved");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "Could not resolve alert."); } finally { setResolving(null); }
+  }
+  return <div className="space-y-7 pb-6">
+    <PageHeader title="Overview" description={`Welcome back. Here’s what’s happening at ${profile.app_name}.`} actions={<><button className="ui-button" onClick={refresh} disabled={summary.isRevalidating} aria-label="Refresh overview"><RefreshCw size={14} className={clsx(summary.isRevalidating && "animate-spin")} /><span className="hidden sm:inline">Refresh</span></button><Link href="/dashboard/orders" className="ui-button ui-button-primary">View orders<ArrowUpRight size={15} /></Link></>} />
+    {summary.error && <ErrorNotice message="We couldn’t load your overview. Please try again." retry={refresh} />}
+    <div className="flex flex-wrap items-center justify-between gap-2"><div className="flex items-center gap-2 text-xs font-medium text-slate-600"><span className="h-1.5 w-1.5 rounded-full bg-brand" />Today’s performance</div><span className="flex items-center gap-1.5 text-[11px] text-slate-500"><Clock3 size={12} />Updates every 12 seconds</span></div>
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4 xl:gap-5">
+      <MetricCard label="Orders today" value={data?.today ?? "—"} detail="Orders placed today" icon={ShoppingBag} loading={summary.isLoading} testId="kpi-orders-today" />
+      <MetricCard label="Revenue · 30 days" value={data ? `Rs. ${data.revenue.toLocaleString()}` : "—"} detail="Delivered orders · latest 500" icon={TrendingUp} loading={summary.isLoading} accent testId="kpi-gross-revenue" />
+      <MetricCard label="Active orders" value={data?.active ?? "—"} detail="In the kitchen or on the way" icon={Activity} loading={summary.isLoading} testId="kpi-active-orders" />
+      <MetricCard label="Conversations" value={data?.chats ?? "—"} detail="Across this workspace" icon={MessageSquare} loading={summary.isLoading} testId="kpi-ai-interactions" />
+    </div>
+    <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+      <section className="ui-card overflow-hidden">
+        <div className="flex items-center justify-between gap-3 border-b border-slate-100 px-5 py-5 sm:px-6"><div><h2 className="ui-section-title">Recent orders</h2><p className="mt-1 text-xs text-slate-500">Your latest customer activity</p></div><Link href="/dashboard/orders" className="flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-brand">View all<ArrowRight size={14} /></Link></div>
+        {summary.isLoading ? <div className="space-y-4 p-6">{[0,1,2,3].map(item => <div key={item} className="h-14 animate-pulse rounded-lg bg-slate-50" />)}</div> : orders.length ? <div className="overflow-x-auto"><table className="w-full min-w-[540px] text-left text-xs"><thead className="border-b border-slate-100 bg-slate-50/50 text-[10px] font-medium uppercase tracking-wider text-slate-500"><tr><th className="px-6 py-3 font-medium">Order / Customer</th><th className="px-3 py-3 font-medium">Status</th><th className="px-3 py-3 font-medium">Amount</th><th className="px-6 py-3 text-right font-medium">Received</th></tr></thead><tbody className="divide-y divide-slate-100">{orders.map(order => { const status = statuses[order.status] || statuses.received; return <tr key={order.id} className="hover:bg-slate-50/60"><td className="px-6 py-4"><Link href="/dashboard/orders" className="font-semibold text-slate-800 hover:text-brand">#{order.order_number}<span className="ml-2 font-normal text-slate-500">{order.conversations?.name || "Walk-in customer"}</span></Link><p className="mt-1 capitalize text-[11px] text-slate-500">{order.type}{order.branches?.name && ` · ${order.branches.name}`}</p></td><td className="px-3 py-4"><span className={clsx("status-pill", status.style)}><span className={clsx("h-1 w-1 rounded-full", status.color)} />{status.label}</span></td><td className="whitespace-nowrap px-3 py-4 font-medium text-slate-700">Rs. {Number(order.subtotal).toLocaleString()}</td><td className="whitespace-nowrap px-6 py-4 text-right text-[11px] text-slate-500">{formatDistanceToNow(new Date(order.created_at), { addSuffix: true })}</td></tr>; })}</tbody></table></div> : <EmptyState title="Ready for your next order" description="Orders will appear here as customers place them through WhatsApp." icon={ShoppingBag} action={<Link className="ui-button" href="/dashboard/whatsapp">Manage WhatsApp<ArrowRight size={14} /></Link>} />}
+        <div className="flex items-center justify-between border-t border-slate-100 px-6 py-3 text-[11px] text-slate-500"><span>{orders.length} recent orders</span><span>Restaurant activity</span></div>
+      </section>
+      <div className="space-y-5">
+        <section className="ui-card p-5 sm:p-6"><div className="mb-5 flex items-center justify-between"><h2 className="ui-section-title">Order pipeline</h2><UtensilsCrossed size={16} className="text-slate-500" /></div><div className="space-y-5">{["received", "preparing", "out_for_delivery"].map(key => { const status = statuses[key]; const count = data?.breakdown[key] || 0; return <div key={key}><div className="mb-2 flex justify-between text-xs"><span className="text-slate-500">{status.label}</span><span className="font-semibold text-slate-800">{data ? count : "—"}</span></div><div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className={clsx("h-full rounded-full transition-[width]", status.color)} style={{ width: `${data?.today ? Math.min(100, count / data.today * 100) : 0}%` }} /></div></div>; })}</div><Link href="/dashboard/orders" className="mt-6 flex items-center justify-between border-t border-slate-100 pt-4 text-xs font-medium text-slate-500 hover:text-brand">Open order queue<ArrowRight size={14} /></Link></section>
+        <section className="ui-card overflow-hidden"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><h2 className="ui-section-title">Needs attention</h2><span className="status-pill bg-slate-100 text-slate-500">{alerts.length}</span></div>{alertsQuery.error ? <div className="p-4"><ErrorNotice message="Couldn’t load staff alerts." retry={alertsQuery.revalidate} /></div> : alertsQuery.isLoading ? <div className="m-5 h-20 animate-pulse rounded bg-slate-50" /> : alerts.length ? <div className="divide-y divide-slate-100">{alerts.map(alert => <div key={alert.id} className="p-5"><span className={clsx("status-pill mb-2", alert.severity === "high" ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700")}>{alert.kind.replaceAll("_", " ")}</span><p className="text-xs leading-relaxed text-slate-600">{alert.message}</p><div className="mt-3 flex items-center justify-between gap-2"><Link href={`/dashboard/conversations?conversation_id=${encodeURIComponent(alert.conversation_id)}`} className="truncate text-xs font-medium text-brand">{alert.conversations?.name || "Open conversation"}</Link><button disabled={resolving === alert.id} onClick={() => void resolveAlert(alert.id)} className="flex items-center gap-1 text-[11px] font-medium text-slate-500 hover:text-slate-900 disabled:opacity-50"><Check size={13} />Resolve</button></div></div>)}</div> : <div className="flex items-start gap-3 p-5"><CheckCircle2 size={19} className="mt-0.5 shrink-0 text-emerald-500" /><div><p className="text-xs font-medium text-slate-700">You’re all caught up</p><p className="mt-1 text-[11px] leading-relaxed text-slate-500">Customer requests that need your team will appear here.</p></div></div>}</section>
       </div>
     </div>
-  );
+    <section className="grid gap-3 sm:grid-cols-3">{[{ href: "/dashboard/menu", title: "Keep your menu fresh", text: "Update items, pricing and availability.", icon: UtensilsCrossed }, { href: "/dashboard/conversations", title: "Stay close to customers", text: "Review conversations and help your team.", icon: MessageSquare }, { href: "/dashboard/analytics", title: "Understand your business", text: "See what sells and when customers order.", icon: TrendingUp }].map(({ href, title, text, icon: Icon }) => <Link key={href} href={href} className="group flex items-start gap-3 rounded-xl border border-slate-200/70 bg-white/50 p-5 transition hover:border-slate-300 hover:bg-white"><Icon size={18} strokeWidth={1.6} className="mt-0.5 shrink-0 text-slate-500 group-hover:text-brand" /><div><p className="text-xs font-medium text-slate-700">{title}</p><p className="mt-1.5 text-[11px] leading-relaxed text-slate-500">{text}</p></div><ArrowUpRight size={14} className="ml-auto shrink-0 text-slate-300 group-hover:text-brand" /></Link>)}</section>
+  </div>;
 }

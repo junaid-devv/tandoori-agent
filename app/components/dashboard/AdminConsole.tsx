@@ -1,10 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
+import Link from "next/link";
+import { PageHeader } from "./PageHeader";
+import { ErrorNotice, SectionNav } from "./WorkspaceUI";
 import { clsx } from "clsx";
 import {
   Loader2,
-  LogOut,
   Trash2,
   GitBranch,
   Users,
@@ -18,27 +20,19 @@ import {
   Save,
   AlertTriangle,
   Palette,
-  Bot,
   Activity,
-  Cpu,
-  Sparkles,
   RefreshCw,
-  Zap,
   Check,
-  Terminal,
-  Radio,
   Image as ImageIcon,
-  Smartphone,
   UploadCloud,
   ExternalLink,
-  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useDashboardContext } from "./DashboardProvider";
 import { useDataCache, invalidateCache } from "@/lib/useDataCache";
 import type { RestaurantProfile } from "@/lib/restaurant-profile-types";
 
-type Tab = "restaurants" | "branding" | "branches" | "staff" | "ai_config" | "diagnostics" | "safety";
+type Tab = "branding" | "presentation" | "branches" | "staff" | "diagnostics" | "safety";
 
 type BranchSummary = {
   id: string;
@@ -92,14 +86,14 @@ function FieldLabel({ children }: { children: React.ReactNode }) {
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div>
-      <FieldLabel>{label}</FieldLabel>
+    <label className="block">
+      <span className="ui-label">{label}</span>
       {children}
-    </div>
+    </label>
   );
 }
 
-const inputCls = "w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:border-orange-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-orange-100 transition-all";
+const inputCls = "ui-input";
 const selectCls = inputCls;
 
 function colorInputValue(value: string) {
@@ -107,102 +101,20 @@ function colorInputValue(value: string) {
 }
 
 export default function AdminConsole() {
-  const { session, profile, setProfile, selectedBranchId, selectedBranch, setSelectedBranchId, logout } = useDashboardContext();
-  const [tab, setTab] = useState<Tab>(session.role === "super_admin" ? "restaurants" : "branding");
+  const { session, profile, setProfile, selectedBranchId, selectedBranch, setSelectedBranchId } = useDashboardContext();
+  const [tab, setTab] = useState<Tab>("branding");
+  useEffect(() => {
+    const sync = () => {
+      const key = window.location.hash.slice(1);
+      if (["branding", "presentation", "branches", "staff", "diagnostics", "safety"].includes(key)) setTab(key as Tab);
+    };
+    sync();
+    window.addEventListener("hashchange", sync);
+    return () => window.removeEventListener("hashchange", sync);
+  }, []);
   const [branches, setBranches] = useState<BranchSummary[]>([]);
   const [staff, setStaff] = useState<StaffSummary[]>([]);
   const [profileDraft, setProfileDraft] = useState<RestaurantProfile>(profile);
-
-  // Super Admin Tenant Management State
-  const [restaurants, setRestaurants] = useState<any[]>([]);
-  const [loadingRestaurants, setLoadingRestaurants] = useState(false);
-  const [showNewRestaurantModal, setShowNewRestaurantModal] = useState(false);
-  const [creatingRestaurant, setCreatingRestaurant] = useState(false);
-  const [newRestaurant, setNewRestaurant] = useState({
-    name: "",
-    city: "Islamabad",
-    brandColor: "#EA580C",
-    logoUrl: "",
-    supportPhone: "",
-    aiPersonality: "Warm & Professional",
-    menuDisplayMode: "interactive_list" as "interactive_list" | "menu_pictures" | "text_only",
-    primaryBranchName: "Main Branch",
-    primaryBranchAddress: "",
-    adminFullName: "",
-    adminEmail: "",
-    adminPassword: "",
-  });
-
-  const loadRestaurants = useCallback(async () => {
-    setLoadingRestaurants(true);
-    try {
-      const res = await fetch("/api/admin/restaurants");
-      if (res.ok) {
-        const data = await res.json();
-        setRestaurants(data);
-      }
-    } catch {
-      toast.error("Failed to load restaurants.");
-    } finally {
-      setLoadingRestaurants(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    if (session.role === "super_admin") {
-      void loadRestaurants();
-    }
-  }, [session.role, loadRestaurants]);
-
-  async function handleCreateNewRestaurant(e: React.FormEvent) {
-    e.preventDefault();
-    if (!newRestaurant.name.trim()) {
-      toast.error("Restaurant name is required.");
-      return;
-    }
-    if (!newRestaurant.adminEmail.trim() || !newRestaurant.adminPassword.trim()) {
-      toast.error("Admin email and password are required.");
-      return;
-    }
-    if (newRestaurant.adminPassword.length < 8) {
-      toast.error("Password must be at least 8 characters.");
-      return;
-    }
-
-    setCreatingRestaurant(true);
-    try {
-      const res = await fetch("/api/admin/restaurants", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newRestaurant),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Failed to create restaurant.");
-
-      toast.success(data.message || `Restaurant "${newRestaurant.name}" created! 🎉`);
-      setShowNewRestaurantModal(false);
-      window.location.reload();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create restaurant.");
-    } finally {
-      setCreatingRestaurant(false);
-    }
-  }
-
-  async function handleSwitchTenant(restaurantId: string) {
-    try {
-      const res = await fetch("/api/admin/switch-restaurant", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ restaurantId }),
-      });
-      if (!res.ok) throw new Error("Failed to switch restaurant.");
-      toast.success("Switched active restaurant!");
-      window.location.reload();
-    } catch {
-      toast.error("Failed to switch restaurant.");
-    }
-  }
 
   const [creatingBranch, setCreatingBranch] = useState(false);
   const [creatingStaff, setCreatingStaff] = useState(false);
@@ -266,17 +178,6 @@ export default function AdminConsole() {
   const [loadingDiagnostics, setLoadingDiagnostics] = useState(false);
   const [expandedTurnId, setExpandedTurnId] = useState<string | null>(null);
 
-  // AI sandbox test state
-  const [sandboxPrompt, setSandboxPrompt] = useState("bhai 2 chicken biryani aur 1 sprite bhej do gulberg me");
-  const [sandboxResult, setSandboxResult] = useState<{
-    intent: string;
-    confidence: number;
-    extractedItems: string[];
-    addressDetected: string;
-    stage: string;
-  } | null>(null);
-  const [simulatingAi, setSimulatingAi] = useState(false);
-
   const loadDiagnostics = useCallback(async () => {
     setLoadingDiagnostics(true);
     try {
@@ -298,24 +199,12 @@ export default function AdminConsole() {
     }
   }, [tab, loadDiagnostics]);
 
-  const totals = useMemo(() => {
-    return branches.reduce(
-      (acc, branch) => ({
-        branchCount: acc.branchCount + 1,
-        activeOrders: acc.activeOrders + branch.stats.activeOrders,
-        unread: acc.unread + branch.stats.unread,
-        menuItems: acc.menuItems + branch.stats.menuItems,
-      }),
-      { branchCount: 0, activeOrders: 0, unread: 0, menuItems: 0 },
-    );
-  }, [branches]);
-
   // Stale-while-revalidate for admin data
-  const { data: cachedBranches, isLoading: branchesLoading, revalidate: revalidateBranches } =
+  const { data: cachedBranches, isLoading: branchesLoading, error: branchesError, revalidate: revalidateBranches } =
     useDataCache<BranchSummary[]>("/api/admin/branches");
-  const { data: cachedStaff, isLoading: staffLoading, revalidate: revalidateStaff } =
+  const { data: cachedStaff, isLoading: staffLoading, error: staffError, revalidate: revalidateStaff } =
     useDataCache<StaffSummary[]>("/api/admin/staff");
-  const { data: cachedProfile, isLoading: profileLoading, revalidate: revalidateProfile } =
+  const { data: cachedProfile, isLoading: profileLoading, error: profileError, revalidate: revalidateProfile } =
     useDataCache<RestaurantProfile>("/api/admin/restaurant-profile");
 
   const loading = branchesLoading || staffLoading || profileLoading;
@@ -431,257 +320,29 @@ export default function AdminConsole() {
     const updated = [...current, url];
     updateProfileDraft("menu_card_images", updated);
     setManualUrlInput("");
-    toast.success("Image URL added to draft. Click 'Save Profile' to persist.");
+    toast.success("Image URL added to draft. Click 'Save presentation' to persist.");
   }
 
   if (session.role !== "admin" && session.role !== "super_admin") return null;
 
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
-    ...(session.role === "super_admin"
-      ? [{ key: "restaurants" as Tab, label: "Client Tenants", icon: <Building2 size={15} /> }]
-      : []),
-    { key: "branding", label: "Branding", icon: <Palette size={15} /> },
+    { key: "branding", label: "Business profile", icon: <Palette size={15} /> },
     { key: "branches", label: "Branches", icon: <GitBranch size={15} /> },
-    { key: "staff", label: "Staff", icon: <Users size={15} /> },
-    { key: "ai_config", label: "AI Tuning", icon: <Bot size={15} /> },
+    { key: "staff", label: "Team & access", icon: <Users size={15} /> },
+    { key: "presentation", label: "Menu presentation", icon: <ImageIcon size={15} /> },
     { key: "diagnostics", label: "Diagnostics", icon: <Activity size={15} /> },
-    { key: "safety", label: "Danger Zone", icon: <ShieldAlert size={15} /> },
+    { key: "safety", label: "Data controls", icon: <ShieldAlert size={15} /> },
   ];
 
   return (
-    <div className="space-y-3 pb-10">
-      {/* Compact header bar */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <h1 className="text-sm font-bold text-slate-900">Admin Console</h1>
-          <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-semibold text-brand">
-            <span className="h-1.5 w-1.5 rounded-full bg-brand animate-pulse" />
-            {session.role === "super_admin" ? "Super Admin" : "Admin"}
-          </span>
-        </div>
-        <button
-          onClick={() => void logout()}
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 hover:text-slate-900"
-        >
-          <LogOut size={13} />
-          Sign Out
-        </button>
-      </div>
-
-      {/* Metrics */}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        {[
-          { label: "Branches", value: totals.branchCount, sub: `${branches.filter((b) => b.is_active).length} active` },
-          { label: "Staff", value: staff.length, sub: `${staff.filter((s) => s.role === "admin").length} admins` },
-          { label: "Unread", value: totals.unread, sub: "across branches" },
-          { label: "Orders", value: totals.activeOrders, sub: "currently active" },
-        ].map((m) => (
-          <div key={m.label} className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
-            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">{m.label}</p>
-            <p className="mt-0.5 text-xl font-bold text-slate-900">{m.value}</p>
-            <p className="text-[10px] text-slate-400">{m.sub}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Tab Navigation */}
-      <div className="no-scrollbar flex gap-1 overflow-x-auto rounded-xl border border-slate-200 bg-white p-1 shadow-sm">
-        {tabs.map(({ key, label, icon }) => (
-          <button
-            key={key}
-            onClick={() => setTab(key)}
-            className={clsx(
-              "flex shrink-0 items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-semibold transition-all sm:flex-1 sm:justify-center whitespace-nowrap",
-              tab === key
-                ? key === "safety"
-                  ? "bg-red-600 text-white shadow-sm"
-                  : "bg-zinc-900 text-white shadow-sm"
-                : "text-slate-500 hover:bg-slate-50 hover:text-slate-700",
-            )}
-          >
-            {icon}
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* ────────── CLIENT TENANTS TAB (SUPER ADMIN) ────────── */}
-      {tab === "restaurants" && session.role === "super_admin" && (
-        <section className="space-y-6">
-          {/* Header Card */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-slate-900">Client Restaurant Tenants</h2>
-                  <span className="rounded-full bg-purple-100 px-2.5 py-0.5 text-xs font-bold text-purple-800">
-                    {restaurants.length} {restaurants.length === 1 ? "Client" : "Clients"}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Manage multi-tenant client accounts. Create client credentials, configure custom logos, menu styles, and switch directly into any client&apos;s dashboard view to finalize configuration.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void loadRestaurants()}
-                  disabled={loadingRestaurants}
-                  className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 px-3.5 py-2 text-xs font-semibold text-slate-700 transition hover:bg-slate-100 disabled:opacity-50"
-                  title="Refresh clients list"
-                >
-                  <RefreshCw size={13} className={clsx(loadingRestaurants && "animate-spin")} />
-                  Refresh
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowNewRestaurantModal(true)}
-                  className="inline-flex items-center gap-2 rounded-xl bg-purple-700 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-purple-800"
-                >
-                  <Plus size={15} />
-                  Onboard New Restaurant
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Tenants Grid or Empty State */}
-          {loadingRestaurants ? (
-            <div className="flex h-48 items-center justify-center rounded-2xl border border-slate-200 bg-white">
-              <Loader2 size={24} className="animate-spin text-purple-600" />
-            </div>
-          ) : restaurants.length === 0 ? (
-            <div className="rounded-2xl border-2 border-dashed border-slate-200 bg-white p-8 text-center sm:p-12">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-purple-50 text-purple-600">
-                <Building2 size={28} />
-              </div>
-              <h3 className="mt-4 text-base font-bold text-slate-900">No Restaurant Clients Yet</h3>
-              <p className="mx-auto mt-1.5 max-w-md text-xs text-slate-500">
-                You haven&apos;t onboarded any restaurant clients yet. Create your first client with custom branding, initial branches, and administrator credentials.
-              </p>
-              <button
-                type="button"
-                onClick={() => setShowNewRestaurantModal(true)}
-                className="mt-5 inline-flex items-center gap-2 rounded-xl bg-purple-700 px-5 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-purple-800"
-              >
-                <Plus size={15} />
-                Onboard First Restaurant
-              </button>
-            </div>
-          ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {restaurants.map((rest) => {
-                const isCurrent = rest.id === session.restaurantId;
-                const branchCount = rest.branches?.length ?? 0;
-                const hasWhatsApp = rest.whatsapp_configs?.length > 0;
-
-                return (
-                  <div
-                    key={rest.id}
-                    className={clsx(
-                      "flex flex-col justify-between rounded-2xl border bg-white p-5 shadow-xs transition-all",
-                      isCurrent
-                        ? "border-purple-500 ring-2 ring-purple-100"
-                        : "border-slate-200 hover:border-slate-300"
-                    )}
-                  >
-                    <div>
-                      {/* Top Row: Brand Color & Active Status */}
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2.5">
-                          <div
-                            className="h-4 w-4 rounded-full border border-black/10 shadow-2xs shrink-0"
-                            style={{ backgroundColor: rest.brand_color || "#EA580C" }}
-                            title={`Brand color: ${rest.brand_color}`}
-                          />
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                            {rest.city || "Pakistan"}
-                          </span>
-                        </div>
-                        {isCurrent ? (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-purple-100 px-2.5 py-0.5 text-[10px] font-bold text-purple-800">
-                            <span className="h-1.5 w-1.5 rounded-full bg-purple-600 animate-pulse" />
-                            Currently Active
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
-                            Active Tenant
-                          </span>
-                        )}
-                      </div>
-
-                      {/* Restaurant Title & Slug */}
-                      <div className="mt-3.5 flex items-start gap-3">
-                        {rest.logo_url ? (
-                          <img
-                            src={rest.logo_url}
-                            alt={rest.name}
-                            className="h-11 w-11 rounded-xl border border-slate-100 object-cover shrink-0 bg-slate-50"
-                            onError={(e) => {
-                              (e.target as HTMLElement).style.display = "none";
-                            }}
-                          />
-                        ) : (
-                          <div className="flex h-11 w-11 items-center justify-center rounded-xl bg-purple-50 text-purple-700 shrink-0 font-bold text-base">
-                            {rest.name.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <h3 className="truncate font-bold text-slate-900 text-sm sm:text-base">
-                            {rest.name}
-                          </h3>
-                          <p className="truncate text-[11px] text-slate-400 font-mono">
-                            /{rest.slug}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Meta Pills */}
-                      <div className="mt-4 flex flex-wrap gap-2 text-xs">
-                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
-                          <GitBranch size={12} className="text-slate-400" />
-                          <span>{branchCount} {branchCount === 1 ? "branch" : "branches"}</span>
-                        </div>
-                        <div className="inline-flex items-center gap-1.5 rounded-lg border border-slate-100 bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
-                          <Radio size={12} className={hasWhatsApp ? "text-emerald-500" : "text-slate-400"} />
-                          <span>{hasWhatsApp ? "WhatsApp Live" : "WhatsApp Pending"}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Bottom Action */}
-                    <div className="mt-5 pt-3 border-t border-slate-100 flex items-center justify-between">
-                      <span className="text-[10px] text-slate-400">
-                        ID: <span className="font-mono">{rest.id.slice(0, 8)}...</span>
-                      </span>
-                      {isCurrent ? (
-                        <span className="text-xs font-semibold text-purple-700">
-                          Viewing this restaurant
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => void handleSwitchTenant(rest.id)}
-                          className="inline-flex items-center gap-1 rounded-lg border border-purple-200 bg-purple-50 px-3 py-1.5 text-xs font-bold text-purple-700 transition hover:bg-purple-100"
-                        >
-                          Switch Dashboard
-                          <ChevronRight size={13} />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-      )}
-
+    <div className="admin-body space-y-7 pb-6">
+      <PageHeader title="Administration" description="Business identity, locations, team access and system tools." actions={<Link href="/dashboard/settings" className="ui-button">Business settings<ChevronRight size={14} /></Link>} />
+      {(branchesError || staffError || profileError) && <ErrorNotice message="Some administration data could not be loaded." retry={reloadData} />}
+      <SectionNav items={tabs} value={tab} onChange={key => { setTab(key); window.history.replaceState(null, "", `#${key}`); }} label="Administration sections" />
       {/* ────────── BRANDING TAB ────────── */}
       {tab === "branding" && (
-        <section className="space-y-5">
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+        <section className="space-y-6">
+          <div className="ui-card p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
                 <h2 className="text-base font-bold text-slate-900">Restaurant Profile</h2>
@@ -692,7 +353,7 @@ export default function AdminConsole() {
               <button
                 onClick={() => void saveProfile()}
                 disabled={savingProfile}
-                className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+                className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
               >
                 {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 Save Profile
@@ -715,13 +376,13 @@ export default function AdminConsole() {
               <Field label="Brand Color">
                 <div className="flex gap-2">
                   <input type="color" value={colorInputValue(profileDraft.brand_color)} onChange={(event) => updateProfileDraft("brand_color", event.target.value.toUpperCase())} className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1" />
-                  <input value={profileDraft.brand_color} onChange={(event) => updateProfileDraft("brand_color", event.target.value)} className={inputCls} />
+                  <input aria-label="Brand color hex value" value={profileDraft.brand_color} onChange={(event) => updateProfileDraft("brand_color", event.target.value)} className={inputCls} />
                 </div>
               </Field>
               <Field label="Hover Color">
                 <div className="flex gap-2">
                   <input type="color" value={colorInputValue(profileDraft.brand_hover_color)} onChange={(event) => updateProfileDraft("brand_hover_color", event.target.value.toUpperCase())} className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1" />
-                  <input value={profileDraft.brand_hover_color} onChange={(event) => updateProfileDraft("brand_hover_color", event.target.value)} className={inputCls} />
+                  <input aria-label="Hover color hex value" value={profileDraft.brand_hover_color} onChange={(event) => updateProfileDraft("brand_hover_color", event.target.value)} className={inputCls} />
                 </div>
               </Field>
               <Field label="Currency Label">
@@ -734,7 +395,7 @@ export default function AdminConsole() {
           </div>
 
           <div className="grid gap-5 lg:grid-cols-2">
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="ui-card p-5 sm:p-6">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white">
                   <GitBranch size={16} />
@@ -742,7 +403,7 @@ export default function AdminConsole() {
                 <div>
                   <h2 className="text-base font-bold text-slate-900">Location Mode</h2>
                   <p className="mt-1 text-xs text-slate-400">
-                    Single location keeps branch IDs internally but hides branch choice from customers and staff.
+                    Customers order directly from your main location. Choose multiple branches to let them pick a location.
                   </p>
                 </div>
               </div>
@@ -759,7 +420,7 @@ export default function AdminConsole() {
                     className={clsx(
                       "rounded-xl border p-4 text-left transition-colors",
                       profileDraft.branch_mode === option.value
-                        ? "border-zinc-900 bg-zinc-950 text-white"
+                        ? "border-orange-200 bg-orange-50 text-orange-900"
                         : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300",
                     )}
                   >
@@ -783,15 +444,15 @@ export default function AdminConsole() {
               </div>
             </div>
 
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="ui-card p-5 sm:p-6">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white">
                   <Users size={16} />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-slate-900">Contact & Voice Defaults</h2>
+                  <h2 className="text-base font-bold text-slate-900">Fallback contact details</h2>
                   <p className="mt-1 text-xs text-slate-400">
-                    Used when branch-level settings are missing and in global dashboard copy.
+                    Optional defaults used when a location has no contact details. Manage daily preferences in Settings.
                   </p>
                 </div>
               </div>
@@ -806,17 +467,21 @@ export default function AdminConsole() {
                 <Field label="Dine-in Phone">
                   <input value={profileDraft.dine_in_phone} onChange={(event) => updateProfileDraft("dine_in_phone", event.target.value)} className={inputCls} />
                 </Field>
-                <Field label="Default AI Tone">
-                  <textarea value={profileDraft.ai_personality_default} onChange={(event) => updateProfileDraft("ai_personality_default", event.target.value)} rows={3} className={clsx(inputCls, "resize-none")} />
-                </Field>
+
               </div>
             </div>
           </div>
 
+        </section>
+      )}
+
+      {tab === "presentation" && (
+        <section className="space-y-6">
+          <div className="flex justify-end"><button onClick={() => void saveProfile()} disabled={savingProfile} className="ui-button ui-button-primary">{savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}Save presentation</button></div>
           {/* Menu Display & WhatsApp Engine Configuration */}
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="space-y-6">
             {/* Menu Display Mode */}
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="ui-card p-5 sm:p-6">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-orange-600 text-white">
                   <ImageIcon size={16} />
@@ -839,7 +504,7 @@ export default function AdminConsole() {
                   {
                     value: "menu_pictures",
                     title: "Menu Pictures",
-                    body: "Directly sends high-res menu cards & deals pictures (Cheezo Bites style).",
+                    body: "Send uploaded menu cards and deal images.",
                   },
                   {
                     value: "text_only",
@@ -850,21 +515,8 @@ export default function AdminConsole() {
                   <button
                     key={option.value}
                     type="button"
-                    onClick={async () => {
-                      const nextMode = option.value as RestaurantProfile["menu_display_mode"];
-                      updateProfileDraft("menu_display_mode", nextMode);
-                      try {
-                        await fetch("/api/admin/restaurant-profile", {
-                          method: "PATCH",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ menu_display_mode: nextMode }),
-                        });
-                        invalidateCache("/api/admin/restaurant-profile");
-                        toast.success(`Display mode saved: ${option.title}`);
-                      } catch (err) {
-                        toast.error("Failed to auto-save display mode.");
-                      }
-                    }}
+                    onClick={() => updateProfileDraft("menu_display_mode", option.value as RestaurantProfile["menu_display_mode"])}
+                    aria-pressed={(profileDraft.menu_display_mode || "interactive_list") === option.value}
                     className={clsx(
                       "rounded-xl border p-3.5 text-left transition-colors flex flex-col justify-between",
                       (profileDraft.menu_display_mode || "interactive_list") === option.value
@@ -1039,97 +691,17 @@ export default function AdminConsole() {
               )}
             </div>
 
-            {/* WhatsApp Gateway Engine */}
-            <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-              <div className="flex items-start gap-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-600 text-white">
-                  <Smartphone size={16} />
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-slate-900">WhatsApp Gateway Provider</h2>
-                  <p className="mt-1 text-xs text-slate-400">
-                    Choose which messaging transport layer powers this restaurant&apos;s AI agent.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                {[
-                  {
-                    value: "meta",
-                    title: "Meta Cloud API (Official)",
-                    badge: "Coexistence Active",
-                    body: "Official Meta WhatsApp Business Cloud API with Embedded Signup, Coexistence, and Webhooks.",
-                  },
-                  {
-                    value: "evolution",
-                    title: "Evolution API",
-                    badge: "QR or pairing code",
-                    body: "Connect a dedicated WhatsApp instance for this restaurant from your existing dashboard.",
-                  },
-                  {
-                    value: "none",
-                    title: "Disabled",
-                    badge: "Off",
-                    body: "WhatsApp automation disabled for this project instance.",
-                  },
-                ].map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() =>
-                      updateProfileDraft(
-                        "whatsapp_provider",
-                        option.value as RestaurantProfile["whatsapp_provider"],
-                      )
-                    }
-                    className={clsx(
-                      "rounded-xl border p-3.5 text-left transition-colors flex flex-col justify-between",
-                      (profileDraft.whatsapp_provider || "none") === option.value
-                        ? "border-emerald-600 bg-emerald-50/70 text-emerald-950 font-medium"
-                        : "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-300",
-                    )}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-1">
-                        <span className="block text-xs font-bold text-slate-900">{option.title}</span>
-                      </div>
-                      <span className="mt-1 inline-block rounded bg-slate-200/70 px-1.5 py-0.5 text-[9px] font-bold text-slate-600 uppercase">
-                        {option.badge}
-                      </span>
-                      <span className="mt-1.5 block text-[11px] leading-relaxed text-slate-500">
-                        {option.body}
-                      </span>
-                    </div>
-                    {(profileDraft.whatsapp_provider || "none") === option.value && (
-                      <span className="mt-2 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 uppercase tracking-wider">
-                        <Check size={12} /> Active
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-
-              <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-xs text-slate-600 space-y-1">
-                <p className="font-semibold text-slate-800">Connection status:</p>
-                <p>
-                  To manage QR codes, pairing codes, or Meta webhooks for this provider, head over to the{" "}
-                  <a href="/dashboard/whatsapp" className="font-semibold text-orange-600 hover:underline">
-                    WhatsApp Gateway Manager
-                  </a>.
-                </p>
-              </div>
-            </div>
           </div>
         </section>
       )}
 
       {tab === "branches" && (
-        <section className="space-y-5">
+        <section className="space-y-6">
           {/* Create Branch Card */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <details className="ui-card group"><summary className="flex items-center justify-between p-5 text-sm font-medium text-slate-700 sm:px-6">Add a location<Plus size={16} className="text-brand" /></summary>
+          <div className="border-t border-slate-100 p-5 sm:p-6">
             <div className="flex items-center gap-3 mb-5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-white">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white">
                 <Plus size={15} />
               </div>
               <div>
@@ -1184,12 +756,14 @@ export default function AdminConsole() {
                   }
                 }}
                 disabled={creatingBranch || !branchDraft.name.trim() || !branchDraft.city.trim()}
-                className="flex h-11 items-center justify-center gap-2 rounded-xl bg-zinc-900 px-5 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 md:h-[72px] md:min-w-[140px]"
+                className="flex h-11 items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-40 md:h-[72px] md:min-w-[140px]"
               >
                 {creatingBranch ? <Loader2 size={16} className="animate-spin" /> : <><Plus size={14} /> Create Branch</>}
               </button>
             </div>
           </div>
+
+          </details>
 
           {/* Branches List */}
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -1226,8 +800,10 @@ export default function AdminConsole() {
                 <div key={branch.id} className={clsx("border-slate-100", idx < branches.length - 1 && "border-b")}>
                   {/* Collapsed Row */}
                   <div
+                    role="button" tabIndex={0} aria-expanded={isExpanded}
                     className="group flex cursor-pointer items-center gap-3 px-4 py-4 transition-colors hover:bg-slate-50 sm:gap-4 sm:px-6"
                     onClick={() => setExpandedBranch(isExpanded ? null : branch.id)}
+                    onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setExpandedBranch(isExpanded ? null : branch.id); } }}
                   >
                     <div className={clsx("flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-xs font-bold", branch.is_active ? "bg-green-50 text-green-700" : "bg-slate-100 text-slate-400")}>
                       {branch.name.slice(0, 2).toUpperCase()}
@@ -1294,7 +870,7 @@ export default function AdminConsole() {
                             }
                           }}
                           disabled={isSaving}
-                          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
                         >
                           {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                           Save Changes
@@ -1330,11 +906,12 @@ export default function AdminConsole() {
 
       {/* ────────── STAFF TAB ────────── */}
       {tab === "staff" && (
-        <section className="space-y-5">
+        <section className="space-y-6">
           {/* Create Staff Card */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <details className="ui-card"><summary className="flex items-center justify-between p-5 text-sm font-medium text-slate-700 sm:px-6">Add a team member<Plus size={16} className="text-brand" /></summary>
+          <div className="border-t border-slate-100 p-5 sm:p-6">
             <div className="flex items-center gap-3 mb-5">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-900 text-white">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand text-white">
                 <Plus size={15} />
               </div>
               <div>
@@ -1399,13 +976,14 @@ export default function AdminConsole() {
                     staffDraft.password.trim().length < MIN_STAFF_PASSWORD_LENGTH ||
                     (staffDraft.role === "branch_staff" && !staffDraft.branch_id)
                   }
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-40 sm:w-auto"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-40 sm:w-auto"
                 >
                   {creatingStaff ? <Loader2 size={14} className="animate-spin" /> : <><Plus size={14} /> Create Account</>}
                 </button>
               </div>
             </div>
           </div>
+          </details>
 
           {/* Staff List */}
           <div className="rounded-xl border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -1445,8 +1023,10 @@ export default function AdminConsole() {
                 <div key={member.user_id} className={clsx("border-slate-100", idx < staff.length - 1 && "border-b")}>
                   {/* Collapsed Row */}
                   <div
+                    role="button" tabIndex={0} aria-expanded={isExpanded}
                     className="group flex cursor-pointer items-center gap-3 px-4 py-4 transition-colors hover:bg-slate-50 sm:gap-4 sm:px-6"
                     onClick={() => setExpandedStaff(isExpanded ? null : member.user_id)}
+                    onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setExpandedStaff(isExpanded ? null : member.user_id); } }}
                   >
                     <div className={clsx("flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-xs font-bold", member.role === "admin" ? "bg-purple-100 text-purple-700" : "bg-blue-50 text-blue-700")}>
                       {initials}
@@ -1526,7 +1106,7 @@ export default function AdminConsole() {
                             }
                           }}
                           disabled={isSaving}
-                          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-zinc-900 px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+                          className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-brand px-3.5 py-2 text-xs font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
                         >
                           {isSaving ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
                           Save Changes
@@ -1561,214 +1141,11 @@ export default function AdminConsole() {
         </section>
       )}
 
-      {/* ────────── AI TUNING TAB ────────── */}
-      {tab === "ai_config" && (
-        <section className="space-y-6">
-          {/* Header */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex items-center gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-brand">
-                  <Bot size={20} />
-                </div>
-                <div>
-                  <h2 className="text-base font-bold text-slate-900">AI Agent Tuning & Engine Configuration</h2>
-                  <p className="mt-0.5 text-xs text-slate-500">
-                    Fine-tune LLM models, token thresholds, Roman Urdu fluency, and system prompt personality.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => void saveProfile()}
-                disabled={savingProfile}
-                className="inline-flex items-center gap-2 rounded-xl bg-zinc-900 px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
-              >
-                {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                Save AI Settings
-              </button>
-            </div>
-
-            {/* Providers Status */}
-            <div className="mt-6 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              {[
-                { name: "Groq Cloud", role: "Primary NLU & Fast Voice", model: "qwen-2.5-32b / whisper", status: "Active", speed: "< 450ms" },
-                { name: "OpenAI", role: "Embeddings & Semantic Search", model: "text-embedding-3-small", status: "Connected", speed: "~ 600ms" },
-                { name: "DeepSeek / Router", role: "Complex Reasoning Fallback", model: "deepseek-chat", status: "Ready", speed: "~ 900ms" },
-                { name: "Supabase pgvector", role: "Menu Semantic Matcher", model: "Cosine Similarity (1536d)", status: "Active", speed: "< 80ms" },
-              ].map((prov) => (
-                <div key={prov.name} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 text-xs">{prov.name}</span>
-                    <span className="flex items-center gap-1 text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                      {prov.status}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 mt-1">{prov.role}</p>
-                  <div className="mt-2 flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-200/60 pt-1.5">
-                    <span className="truncate max-w-[110px] font-mono">{prov.model}</span>
-                    <span className="font-semibold text-slate-600">{prov.speed}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Parameters Tuning */}
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              <Field label="NLU Max Tokens">
-                <input
-                  type="number"
-                  defaultValue={1200}
-                  className={inputCls}
-                  placeholder="1200"
-                />
-              </Field>
-              <Field label="Answer Max Tokens">
-                <input
-                  type="number"
-                  defaultValue={800}
-                  className={inputCls}
-                  placeholder="800"
-                />
-              </Field>
-              <Field label="Request Timeout (ms)">
-                <input
-                  type="number"
-                  defaultValue={12000}
-                  className={inputCls}
-                  placeholder="12000"
-                />
-              </Field>
-              <Field label="Vector Similarity Threshold">
-                <input
-                  type="number"
-                  step="0.05"
-                  defaultValue={0.35}
-                  className={inputCls}
-                  placeholder="0.35"
-                />
-              </Field>
-            </div>
-
-            {/* Personality & Tone Selector */}
-            <div className="mt-6 border-t border-slate-200 pt-6">
-              <h3 className="text-sm font-bold text-slate-900 mb-3">AI Agent Tone & Hospitality Profile</h3>
-              <div className="grid gap-3 sm:grid-cols-3">
-                {[
-                  {
-                    id: "warm",
-                    title: "Warm & Hospitable (Default)",
-                    desc: "Polite Pakistani hospitality style. Uses 'Salam', 'Jee zaroor', and ensures polite confirmation before finalizing orders.",
-                  },
-                  {
-                    id: "fast",
-                    title: "Fast & Concise",
-                    desc: "Optimized for high-speed delivery. Direct answers, minimal fluff, quick button responses.",
-                  },
-                  {
-                    id: "bilingual",
-                    title: "Bilingual Roman Urdu + English",
-                    desc: "Seamlessly adapts language based on customer input. Understands street food slang, Urdu numbers, and English menu terms.",
-                  },
-                ].map((preset, i) => (
-                  <div
-                    key={preset.id}
-                    className={clsx(
-                      "cursor-pointer rounded-xl border p-4 transition-all",
-                      i === 0
-                        ? "border-brand/40 bg-brand/5 ring-1 ring-brand/20"
-                        : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50"
-                    )}
-                  >
-                    <div className="flex items-center justify-between">
-                      <p className="font-bold text-slate-900 text-xs">{preset.title}</p>
-                      {i === 0 && <Check size={14} className="text-brand" />}
-                    </div>
-                    <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">{preset.desc}</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Interactive NLU Simulator */}
-            <div className="mt-8 rounded-xl border border-slate-200 bg-slate-900 p-4 sm:p-5 text-white">
-              <div className="flex items-center gap-2 mb-2">
-                <Terminal size={16} className="text-orange-400" />
-                <h3 className="text-sm font-bold text-white">Interactive NLU & Order Intent Simulator</h3>
-              </div>
-              <p className="text-xs text-slate-400 mb-4">
-                Test how the AI categorizes raw customer phrases, extracts quantities, and resolves addresses in real-time.
-              </p>
-
-              <div className="flex flex-col sm:flex-row gap-2">
-                <input
-                  value={sandboxPrompt}
-                  onChange={(e) => setSandboxPrompt(e.target.value)}
-                  placeholder="e.g. bhai 2 chicken biryani aur 1 sprite bhej do gulberg me"
-                  className="flex-1 rounded-lg border border-slate-700 bg-slate-800 px-3.5 py-2.5 text-xs text-white placeholder:text-slate-500 outline-none focus:border-orange-400"
-                />
-                <button
-                  onClick={() => {
-                    setSimulatingAi(true);
-                    setTimeout(() => {
-                      const lower = sandboxPrompt.toLowerCase();
-                      const hasAddress = lower.includes("gulberg") || lower.includes("defence") || lower.includes("dha") || lower.includes("street");
-                      const items: string[] = [];
-                      if (lower.includes("biryani")) items.push("2x Chicken Biryani");
-                      if (lower.includes("sprite") || lower.includes("coke") || lower.includes("drink")) items.push("1x Sprite Can");
-                      if (lower.includes("karahi")) items.push("1x Mutton Karahi (Half)");
-
-                      setSandboxResult({
-                        intent: lower.includes("bhej") || lower.includes("order") || lower.includes("chahiye") ? "order_intent" : "menu_inquiry",
-                        confidence: 0.96,
-                        extractedItems: items.length > 0 ? items : ["1x Selected Menu Item"],
-                        addressDetected: hasAddress ? "Gulberg, Lahore" : "Not specified (Address required)",
-                        stage: hasAddress ? "confirming" : "collecting_address",
-                      });
-                      setSimulatingAi(false);
-                      toast.success("Intent classified successfully");
-                    }, 400);
-                  }}
-                  disabled={simulatingAi || !sandboxPrompt.trim()}
-                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-orange-500 px-4 py-2.5 text-xs font-bold text-white transition hover:bg-orange-600 disabled:opacity-50"
-                >
-                  {simulatingAi ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-                  <span>Test Parsing</span>
-                </button>
-              </div>
-
-              {/* Simulator Output Box */}
-              {sandboxResult && (
-                <div className="mt-4 rounded-lg border border-slate-800 bg-slate-950 p-3.5 space-y-2 text-xs font-mono">
-                  <div className="flex items-center justify-between text-emerald-400">
-                    <span>CLASSIFIED INTENT:</span>
-                    <span className="font-bold">{sandboxResult.intent} ({Math.round(sandboxResult.confidence * 100)}% confidence)</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-300">
-                    <span>EXTRACTED CART ITEMS:</span>
-                    <span className="text-orange-300 font-bold">{sandboxResult.extractedItems.join(", ")}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-300">
-                    <span>DETECTED ADDRESS:</span>
-                    <span>{sandboxResult.addressDetected}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-slate-300">
-                    <span>NEXT FSM STAGE:</span>
-                    <span className="text-emerald-300 uppercase">{sandboxResult.stage}</span>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </section>
-      )}
-
       {/* ────────── DIAGNOSTICS & LOGS TAB ────────── */}
       {tab === "diagnostics" && (
         <section className="space-y-6">
           {/* Header & Metrics */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="ui-card p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-orange-100 text-brand">
@@ -1904,7 +1281,7 @@ export default function AdminConsole() {
           </div>
 
           {/* Webhook Events Summary */}
-          <div className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="ui-card p-5 sm:p-6">
             <h3 className="text-sm font-bold text-slate-900 mb-1">WhatsApp Webhook Events Monitor</h3>
             <p className="text-xs text-slate-400 mb-4">Realtime ingestion logs from Meta Cloud API</p>
 
@@ -2041,277 +1418,6 @@ export default function AdminConsole() {
         </section>
       )}
 
-      {/* ────────── ONBOARD NEW RESTAURANT MODAL (SUPER ADMIN) ────────── */}
-      {showNewRestaurantModal && session.role === "super_admin" && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-black/60 p-4 backdrop-blur-xs">
-          <div className="relative my-8 w-full max-w-2xl rounded-2xl border border-slate-200 bg-white shadow-2xl">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4">
-              <div className="flex items-center gap-2.5">
-                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 text-purple-700">
-                  <Building2 size={18} />
-                </div>
-                <div>
-                  <h3 className="text-base font-bold text-slate-900">Onboard New Restaurant Client</h3>
-                  <p className="text-xs text-slate-400">Configure branding, initial branch, and create handover credentials.</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowNewRestaurantModal(false)}
-                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Form */}
-            <form onSubmit={handleCreateNewRestaurant} className="max-h-[80vh] overflow-y-auto p-6 space-y-6">
-              {/* Section 1: Restaurant Identity */}
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-800 mb-3 flex items-center gap-1.5">
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-100 text-[10px]">1</span>
-                  Restaurant Identity &amp; Branding
-                </h4>
-                <div className="grid gap-3.5 sm:grid-cols-2">
-                  <div className="sm:col-span-2">
-                    <Field label="Restaurant Name *">
-                      <input
-                        required
-                        value={newRestaurant.name}
-                        onChange={(e) => setNewRestaurant({ ...newRestaurant, name: e.target.value })}
-                        className={inputCls}
-                        placeholder="e.g. Tandoori Nights or Cheezo Bites"
-                      />
-                    </Field>
-                  </div>
-
-                  <div>
-                    <Field label="City">
-                      <select
-                        value={newRestaurant.city}
-                        onChange={(e) => setNewRestaurant({ ...newRestaurant, city: e.target.value })}
-                        className={selectCls}
-                      >
-                        <option value="Islamabad">Islamabad</option>
-                        <option value="Rawalpindi">Rawalpindi</option>
-                        <option value="Lahore">Lahore</option>
-                        <option value="Karachi">Karachi</option>
-                        <option value="Peshawar">Peshawar</option>
-                      </select>
-                    </Field>
-                  </div>
-
-                  <div>
-                    <Field label="Brand Theme Color">
-                      <div className="flex gap-2">
-                        <input
-                          type="color"
-                          value={colorInputValue(newRestaurant.brandColor)}
-                          onChange={(e) => setNewRestaurant({ ...newRestaurant, brandColor: e.target.value.toUpperCase() })}
-                          className="h-10 w-12 rounded-lg border border-slate-200 bg-white p-1"
-                        />
-                        <input
-                          value={newRestaurant.brandColor}
-                          onChange={(e) => setNewRestaurant({ ...newRestaurant, brandColor: e.target.value })}
-                          className={inputCls}
-                          placeholder="#EA580C"
-                        />
-                      </div>
-                    </Field>
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <Field label="Logo Image URL (Optional)">
-                      <div className="flex gap-2">
-                        <input
-                          value={newRestaurant.logoUrl}
-                          onChange={(e) => setNewRestaurant({ ...newRestaurant, logoUrl: e.target.value })}
-                          className={inputCls}
-                          placeholder="https://example.com/logo.png"
-                        />
-                        {newRestaurant.logoUrl && (
-                          <div className="h-10 w-10 shrink-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                            <img
-                              src={newRestaurant.logoUrl}
-                              alt="Preview"
-                              className="h-full w-full object-cover"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = "none";
-                              }}
-                            />
-                          </div>
-                        )}
-                      </div>
-                    </Field>
-                  </div>
-
-                  <div className="sm:col-span-2">
-                    <Field label="Support / WhatsApp Phone Number">
-                      <input
-                        value={newRestaurant.supportPhone}
-                        onChange={(e) => setNewRestaurant({ ...newRestaurant, supportPhone: e.target.value })}
-                        className={inputCls}
-                        placeholder="e.g. +923001234567"
-                      />
-                    </Field>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 2: Menu & AI Setup */}
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-800 mb-3 flex items-center gap-1.5">
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-100 text-[10px]">2</span>
-                  WhatsApp Menu &amp; AI Tone
-                </h4>
-                <div className="grid gap-3.5 sm:grid-cols-2">
-                  <div>
-                    <Field label="Menu Display Mode">
-                      <select
-                        value={newRestaurant.menuDisplayMode}
-                        onChange={(e) =>
-                          setNewRestaurant({
-                            ...newRestaurant,
-                            menuDisplayMode: e.target.value as "interactive_list" | "menu_pictures" | "text_only",
-                          })
-                        }
-                        className={selectCls}
-                      >
-                        <option value="interactive_list">Interactive Buttons &amp; Lists</option>
-                        <option value="menu_pictures">Menu Pictures &amp; Flyers</option>
-                        <option value="text_only">Plain Text Formatted</option>
-                      </select>
-                    </Field>
-                  </div>
-
-                  <div>
-                    <Field label="AI Voice Tone">
-                      <select
-                        value={newRestaurant.aiPersonality}
-                        onChange={(e) => setNewRestaurant({ ...newRestaurant, aiPersonality: e.target.value })}
-                        className={selectCls}
-                      >
-                        <option value="Warm & Professional">Warm &amp; Professional</option>
-                        <option value="Fast & Direct">Fast &amp; Direct</option>
-                        <option value="Friendly & Casual">Friendly &amp; Casual</option>
-                        <option value="Premium & Polished">Premium &amp; Polished</option>
-                      </select>
-                    </Field>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 3: Primary Branch */}
-              <div>
-                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-800 mb-3 flex items-center gap-1.5">
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-100 text-[10px]">3</span>
-                  Primary Branch Outlet
-                </h4>
-                <div className="grid gap-3.5 sm:grid-cols-2">
-                  <div>
-                    <Field label="Primary Branch Name">
-                      <input
-                        value={newRestaurant.primaryBranchName}
-                        onChange={(e) => setNewRestaurant({ ...newRestaurant, primaryBranchName: e.target.value })}
-                        className={inputCls}
-                        placeholder="e.g. Main Branch or F-7 Markaz"
-                      />
-                    </Field>
-                  </div>
-                  <div>
-                    <Field label="Branch Physical Address">
-                      <input
-                        value={newRestaurant.primaryBranchAddress}
-                        onChange={(e) => setNewRestaurant({ ...newRestaurant, primaryBranchAddress: e.target.value })}
-                        className={inputCls}
-                        placeholder="e.g. Shop 4, Jinnah Super Market"
-                      />
-                    </Field>
-                  </div>
-                </div>
-              </div>
-
-              {/* Section 4: Client Admin Credentials */}
-              <div className="rounded-xl border border-purple-200 bg-purple-50/50 p-4">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-purple-900 mb-3 flex items-center gap-1.5">
-                  <span className="flex h-4 w-4 items-center justify-center rounded-full bg-purple-200 text-purple-900 text-[10px]">4</span>
-                  Client Admin Login Credentials (To Handover)
-                </h4>
-                <p className="text-[11px] text-purple-700 mb-3">
-                  These credentials will allow the restaurant owner or manager to log into their dashboard. They will only see their own restaurant.
-                </p>
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <div>
-                    <Field label="Admin Full Name">
-                      <input
-                        value={newRestaurant.adminFullName}
-                        onChange={(e) => setNewRestaurant({ ...newRestaurant, adminFullName: e.target.value })}
-                        className={inputCls}
-                        placeholder="e.g. Rashid Khan"
-                      />
-                    </Field>
-                  </div>
-                  <div>
-                    <Field label="Admin Email *">
-                      <input
-                        required
-                        type="email"
-                        value={newRestaurant.adminEmail}
-                        onChange={(e) => setNewRestaurant({ ...newRestaurant, adminEmail: e.target.value })}
-                        className={inputCls}
-                        placeholder="owner@restaurant.com"
-                      />
-                    </Field>
-                  </div>
-                  <div>
-                    <Field label="Admin Password *">
-                      <input
-                        required
-                        type="password"
-                        minLength={8}
-                        value={newRestaurant.adminPassword}
-                        onChange={(e) => setNewRestaurant({ ...newRestaurant, adminPassword: e.target.value })}
-                        className={inputCls}
-                        placeholder="Min. 8 characters"
-                      />
-                    </Field>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer Actions */}
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowNewRestaurantModal(false)}
-                  disabled={creatingRestaurant}
-                  className="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={creatingRestaurant}
-                  className="inline-flex items-center gap-2 rounded-xl bg-purple-700 px-5 py-2.5 text-xs font-bold text-white shadow-sm hover:bg-purple-800 transition disabled:opacity-50"
-                >
-                  {creatingRestaurant ? (
-                    <>
-                      <Loader2 size={14} className="animate-spin" />
-                      Provisioning Client...
-                    </>
-                  ) : (
-                    <>
-                      <CheckCircle2 size={14} />
-                      Create Restaurant &amp; Provision Admin
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
