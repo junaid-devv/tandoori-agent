@@ -165,11 +165,11 @@ export function queryTokensCoveredByName(query: string, name: string): boolean {
 /** All meaningful words must identify the dish. One shared word (e.g. BBQ)
  * cannot turn a requested BBQ pizza into a chicken tikka. Short tokens and
  * numbers require exact identity; longer spelling mistakes allow a small edit. */
-export function menuNameCoversQuery(query: string, name: string): boolean {
+export function menuNameCoversQuery(query: string, name: string, allowTypos = true): boolean {
   const tokens = normalize(query).split(" ").filter(Boolean);
   const names = normalize(name).split(" ").filter(Boolean);
   return tokens.length > 0 && tokens.every((token) => names.some((word) => token === word
-    || token.length >= 5 && word.length >= 5 && editDistance(token, word) <= (token.length >= 8 ? 2 : 1)));
+    || allowTypos && token.length >= 6 && word.length >= 5 && editDistance(token, word) <= (token.length >= 8 ? 2 : 1)));
 }
 
 function toVectorLiteral(embedding: number[]): string {
@@ -295,8 +295,10 @@ export async function searchMenu(
   // Keep every matching sibling for downstream size/flavor clarification.
   if (inMemoryMenu) {
     const baseQuery = trimmed.replace(SIZE_WORDS_PATTERN, " ").replace(/\s+/g, " ").trim();
-    const direct = inMemoryMenu.filter((item) => item.is_available && (menuNameCoversQuery(trimmed, item.name)
-      || extractSizeFromQuery(trimmed) && menuNameCoversQuery(baseQuery, extractBaseItemName(item.name).baseName)));
+    const matching = (allowTypos: boolean) => inMemoryMenu.filter((item) => item.is_available && (menuNameCoversQuery(trimmed, item.name, allowTypos)
+      || extractSizeFromQuery(trimmed) && menuNameCoversQuery(baseQuery, extractBaseItemName(item.name).baseName, allowTypos)));
+    const literal = matching(false);
+    const direct = literal.length ? literal : matching(true);
     if (direct.length) {
       const matches = direct.map((item) => ({ ...item, description: item.description ?? null,
         similarity: Math.max(0.7, lexicalScore(trimmed, item as MenuRow)), method: "lexical" as const }))
@@ -540,7 +542,8 @@ export async function resolveItemDetailed(
   }
 
   // Filter available candidates by semantic relevance to prevent unrelated suggestions
-  const nameMatches = available.filter((m) => menuNameCoversQuery(baseQuery || trimmed, extractBaseItemName(m.name).baseName));
+  const literalNames = available.filter((m) => menuNameCoversQuery(baseQuery || trimmed, extractBaseItemName(m.name).baseName, false));
+  const nameMatches = literalNames.length ? literalNames : available.filter((m) => menuNameCoversQuery(baseQuery || trimmed, extractBaseItemName(m.name).baseName));
   const relevantCandidates = nameMatches.length ? nameMatches : available.filter((m) => isCandidateRelevant(trimmed, m));
   if (relevantCandidates.length === 0) {
     return { kind: "not_found", query: trimmed, suggestions: [] };

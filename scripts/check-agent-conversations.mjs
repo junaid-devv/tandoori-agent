@@ -16,6 +16,7 @@ process.env.OPENROUTER_API_KEY = "offline-test-key";
 process.env.ORDER_AGENT_NLU_MODEL = "fixture-primary";
 process.env.ORDER_AGENT_ANSWER_TIMEOUT_MS = "150";
 let slowAnswers = false;
+let rejectAnswers = false;
 let answerCalls = 0;
 let truncateNext = false;
 let response = null;
@@ -29,6 +30,10 @@ const server = createServer(async (req, res) => {
   if (parser) { parserCalls++; lastRequest = request; }
   else {
     answerCalls++;
+    if (rejectAnswers) {
+      res.statusCode = 400; res.setHeader("Content-Type", "application/json");
+      res.end(JSON.stringify({ error: { message: "fixture rejection" } })); return;
+    }
     if (slowAnswers) await new Promise((resolve) => setTimeout(resolve, 400));
   }
   const finishReason = parser && truncateNext ? "length" : "stop";
@@ -52,6 +57,7 @@ try {
   const { findMatchingDeliveryArea } = await import("../lib/agent/delivery.ts");
   const { parseCustomerTimeToIso } = await import("../lib/restaurant-time.ts");
   const { inferLanguagePreference } = await import("../lib/core/lang-detect.ts");
+  const { isSimpleCatalogQuestion } = await import("../lib/agent/questions.ts");
 
   let checks = 0;
   const check = (name, fn) => { fn(); checks++; console.log(`PASS: ${name}`); };
@@ -102,6 +108,7 @@ try {
     let owner;
     const chain = { select: () => chain, eq: (key, value) => { if (key === "id" || key === "contact_id") owner = value; return chain; }, insert: () => chain,
       not: () => chain, order: () => chain, limit: () => chain,
+      single: async () => ({ data: { id: "fixture-alert" }, error: null }),
       maybeSingle: async () => ({ data: savedAddresses.has(owner) ? { contact_id: owner, branch_id: "b" } : null, error: null }),
       then: (resolve) => Promise.resolve({ data: table === "customer_addresses" ? [savedAddresses.get(owner)].filter(Boolean) : null, error: null }).then(resolve) };
     return chain;
@@ -525,6 +532,15 @@ try {
     assert.ok(Date.now() - answerStarted < 1200);
     assert.ok(result.replyText.length > 0);
   });
+  fresh("answer-provider-down");
+  rejectAnswers = true;
+  result = await send("answer-provider-down", "Are there parking spaces?", u("general_question", { info_query: "Are there parking spaces?" }));
+  rejectAnswers = false;
+  check("a failed answer service is distinguished from a misunderstood customer", () => {
+    assert.match(result.replyText, /couldn't verify/);
+    assert.ok(!/rephrase|didn't.*catch/.test(result.replyText));
+    assert.equal(states.get("answer-provider-down").last_error, "Information answer could not be verified");
+  });
   fresh("missing-catalog");
   await cache.set("menu:b", [], 600_000);
   result = await send("missing-catalog", "Fajita pizza", u("add_items", { items: [mention("Fajita pizza")] }));
@@ -540,6 +556,67 @@ try {
   check("a crash after order commit recovers its receipt without another placement or NLU", () => {
     assert.equal(result.intent, "recovered_order_reply"); assert.ok(result.replyText.includes("77"));
     assert.equal(placed.length, ordersBeforeRecovery);
+  });
+  previousOrder = null;
+  menu.push(
+    { id: "ff", name: "French Fries", price: 320, category: "Side Order", is_available: true },
+    { id: "gf", name: "Garlic Fries", price: 350, category: "Side Order", is_available: true },
+    { id: "cf", name: "Fries with Melted Cheese", price: 470, category: "Side Order", is_available: true },
+    { id: "fr", name: "Chicken Fried Rice", price: 700, category: "Rice", is_available: true });
+  await seedCaches();
+  fresh("latest-incident", { stage: "placed", preferred_language: "roman_urdu" });
+  check("catalog question shortcuts cannot swallow additions, dietary constraints or bare dish orders", () => {
+    assert.equal(isSimpleCatalogQuestion("Fries hain?", menu), true);
+    for (const text of ["Fries", "Fries hain? add 2 naan", "Are fries gluten free?", "add 2 fries?"]) {
+      assert.equal(isSimpleCatalogQuestion(text, menu), false, text);
+    }
+  });
+  previousOrder = { id: "incident-order", order_number: 2, total: 1885, type: "delivery", status: "received", created_at: new Date().toISOString() };
+  result = await send("latest-incident", "Kitna time lge ga?", u("ask_delivery_info", {
+    info_query: "Kitna time lge ga?", language: "roman_urdu" }));
+  check("the exact post-confirmation ETA question answers the owned order without repeating delivery policy", () => {
+    assert.ok(result.replyText.includes("#2") && result.replyText.includes("40"));
+    assert.ok(!/Fee|Min order|Timings|available hai/.test(result.replyText));
+    assert.equal(states.get("latest-incident").stage, "placed");
+  });
+  const cancelsBeforeIncident = cancellations;
+  await send("latest-incident", "Cancel krdo", u("cancel_order", { language: "roman_urdu" }));
+  check("cancellation after an ETA question returns to a clean browsing state", () => {
+    assert.equal(cancellations, cancelsBeforeIncident + 1);
+    assert.equal(states.get("latest-incident").stage, "browsing");
+    assert.equal(states.get("latest-incident").order_type, null);
+    assert.equal(states.get("latest-incident").cart.length, 0);
+  });
+  previousOrder.status = "cancelled";
+  const parsersBeforeFries = parserCalls;
+  const answersBeforeFries = answerCalls;
+  result = await send("latest-incident", "Fries hain?");
+  check("the exact fries question after cancellation lists all three real SKUs without either model", () => {
+    for (const fact of ["French Fries", "320", "Garlic Fries", "350", "Melted Cheese", "470"]) assert.ok(result.replyText.includes(fact));
+    assert.equal(parserCalls, parsersBeforeFries); assert.equal(answerCalls, answersBeforeFries);
+    assert.equal(states.get("latest-incident").cart.length, 0);
+    assert.equal(result.intent, "ask_item_info");
+    assert.ok(!result.replyText.includes("Fried Rice"));
+    assert.ok(states.get("latest-incident").last_shown_options.every((item) => /fries/i.test(item.name)));
+  });
+  result = await send("latest-incident", "Tell me about fries", u("general_question", { info_query: "Fries hain?" }));
+  check("a broad NLU question label still uses catalog facts instead of answer generation", () => {
+    assert.ok(result.replyText.includes("French Fries")); assert.equal(answerCalls, answersBeforeFries);
+  });
+  fresh("late-eta", { stage: "placed" });
+  previousOrder.status = "received"; previousOrder.created_at = new Date(Date.now() - 90 * 60_000).toISOString();
+  result = await send("late-eta", "ETA?", u("ask_delivery_info", { info_query: "ETA?" }));
+  check("an overdue order does not receive a fresh forty-minute promise", () => {
+    assert.match(result.replyText, /window has passed/); assert.ok(!result.replyText.includes("40"));
+  });
+  result = await send("late-eta", "How long until my order arrives?", u("order_status", { info_query: "How long until my order arrives?" }));
+  check("an ETA classified as order status uses the same overdue order facts", () => {
+    assert.match(result.replyText, /window has passed/); assert.ok(!result.replyText.includes("40"));
+  });
+  previousOrder.status = "cancelled";
+  result = await send("late-eta", "ETA?", u("ask_delivery_info", { info_query: "ETA?" }));
+  check("a cancelled order cannot get a delivery estimate", () => {
+    assert.match(result.replyText, /cancelled/); assert.ok(!result.replyText.includes("40"));
   });
   previousOrder = null;
   console.log(`\nAGENT CONVERSATIONS: ${checks} checks passed; ${parserCalls} actual parser HTTP requests, ${placed.length} isolated test orders.`);

@@ -16,6 +16,7 @@ import { loadTurnContext } from "./context";
 import { stateRepo } from "@/lib/data/state.repo";
 import { orderRepo } from "@/lib/data/order.repo";
 import { reply } from "./reply";
+import { isSimpleCatalogQuestion } from "./questions";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import { extractBaseItemName, extractSizeFromQuery } from "@/lib/menu/search";
@@ -267,6 +268,11 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   }
 
   let understanding = fastUnderstanding(input.messageText, ctx.state, ctx.savedAddress?.id);
+  if (!understanding && isSimpleCatalogQuestion(input.messageText, ctx.menu)) {
+    understanding = { ...makeBase(inferLanguagePreference(input.messageText, ctx.state.preferred_language)),
+      intents: ["ask_item_info"], primary_intent: "ask_item_info", info_query: input.messageText,
+      notes: "fast_path_catalog_question" };
+  }
 
   // ── 2) NLU ─────────────────────────────────────────────────────────────────
   const nluStart = Date.now();

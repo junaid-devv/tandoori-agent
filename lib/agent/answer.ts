@@ -27,6 +27,10 @@ function getModel(): string {
   if (process.env.GROQ_API_KEY) return "qwen/qwen3.8-27b";
   return process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
 }
+function getFallbackModel(): string {
+  return process.env.ORDER_AGENT_ANSWER_FALLBACK_MODEL || process.env.ORDER_AGENT_NLU_FALLBACK_MODEL
+    || (process.env.GROQ_API_KEY ? "openai/gpt-oss-20b" : getModel());
+}
 const MAX_TOKENS = Number(process.env.ORDER_AGENT_ANSWER_MAX_TOKENS) || 400;
 const TIMEOUT_MS = Number(process.env.ORDER_AGENT_ANSWER_TIMEOUT_MS) || 6000;
 const CACHE_TTL_MS = Number(process.env.ANSWER_CACHE_TTL_MS) || 3 * 60_000;
@@ -194,29 +198,37 @@ export async function groundedAnswer(input: GroundedAnswerInput): Promise<string
       ? "Reply in Roman Urdu (Latin script), casual and warm."
       : "Reply in English, casual and warm.";
 
-  try {
-    const completion = await withTimeout(
-      getClient().chat.completions.create({
-        model: getModel(),
-        temperature: 0.3,
-        max_tokens: MAX_TOKENS,
-        messages: [
-          { role: "system", content: buildSystemPrompt(input.settings.ai_personality) },
-          { role: "system", content: `FACTS:\n${facts}` },
-          { role: "user", content: `${langInstr}\n\nCustomer asked: ${q}` },
-        ],
-      }, { signal: AbortSignal.timeout(timeoutMs) }),
-      timeoutMs,
-      "groundedAnswer",
-    );
-    const text = completion.choices[0]?.message?.content?.trim();
-    if (!text) return null;
-    await cache.set(cacheKey, text, CACHE_TTL_MS);
-    return text;
-  } catch (error) {
-    console.error("[answer] groundedAnswer failed:", error instanceof OpenAI.APIError ? `${error.name}, status ${error.status ?? "unknown"}` : error instanceof Error ? error.name : "Unknown provider error");
-    return null;
+  const models = [...new Set([getModel(), getFallbackModel()])];
+  const deadline = Date.now() + timeoutMs;
+  for (const [index, model] of models.entries()) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) break;
+    const attemptMs = index === models.length - 1 ? remaining : Math.min(remaining, Math.max(250, Math.floor(timeoutMs * 0.6)));
+    try {
+      const completion = await withTimeout(
+        getClient().chat.completions.create({
+          model,
+          temperature: 0.3,
+          max_tokens: MAX_TOKENS,
+          messages: [
+            { role: "system", content: buildSystemPrompt(input.settings.ai_personality) },
+            { role: "system", content: `FACTS:\n${facts}` },
+            { role: "user", content: `${langInstr}\n\nCustomer asked: ${q}` },
+          ],
+        }, { signal: AbortSignal.timeout(attemptMs) }),
+        attemptMs,
+        "groundedAnswer",
+      );
+      const choice = completion.choices[0];
+      const text = choice?.message?.content?.trim();
+      if (!text || choice.finish_reason === "length") throw new Error("Incomplete answer");
+      await cache.set(cacheKey, text, CACHE_TTL_MS);
+      return text;
+    } catch (error) {
+      console.error(`[answer] ${model} failed:`, error instanceof OpenAI.APIError ? `${error.name}, status ${error.status ?? "unknown"}` : error instanceof Error ? error.name : "Unknown provider error");
+    }
   }
+  return null;
 }
 
 function hash(s: string): string {

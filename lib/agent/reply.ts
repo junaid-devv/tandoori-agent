@@ -6,6 +6,7 @@
  */
 import type { CartItem, LanguagePreference, OrderType } from "@/lib/schema.types";
 import type { RestaurantSettings } from "@/lib/settings";
+import type { OrderRow } from "@/lib/data/order.repo";
 import { cartSubtotal } from "./cart";
 
 type Lang = LanguagePreference;
@@ -13,6 +14,34 @@ const ur = (l: Lang) => l === "roman_urdu";
 const pa = (l: Lang) => l === "pashto";
 
 export const reply = {
+
+  answerUnavailable(l: Lang): string {
+    return pa(l) ? "Da sawal jawab da wakht verify kawalay na sham. Bia koshish wakray ya staff sara khabare wakray."
+      : ur(l) ? "Is sawal ka jawab abhi verify nahi kar pa raha. Dobara pooch lein ya staff se baat kar lein."
+      : "I couldn't verify that answer right now. Please try again or ask to speak with staff.";
+  },
+
+  orderTiming(l: Lang, order: Pick<OrderRow, "order_number" | "status" | "type" | "created_at" | "pickup_time" | "reservation_time">, settings: RestaurantSettings): string {
+    if (["cancelled", "delivered", "out_for_delivery"].includes(order.status)) {
+      return reply.orderStatus(l, order.order_number, order.status);
+    }
+    const scheduled = order.type === "pickup" ? order.pickup_time : order.type === "dine-in" ? order.reservation_time : null;
+    if (scheduled && Number.isFinite(Date.parse(scheduled))) {
+      const time = new Intl.DateTimeFormat("en-GB", { timeZone: settings.timezone, dateStyle: "medium", timeStyle: "short" }).format(new Date(scheduled));
+      return `Order #${order.order_number} — ${order.type === "pickup" ? "Pickup" : "Dine-in"}: ${time}`;
+    }
+    const estimate = order.type === "delivery" ? settings.estimated_delivery_minutes : settings.estimated_prep_minutes;
+    if (!Number.isFinite(estimate) || estimate <= 0) return reply.answerUnavailable(l);
+    if (Date.now() - Date.parse(order.created_at) > estimate * 60_000) {
+      return pa(l) ? `Order #${order.order_number}: andazay wakht ter shaway day. Naway arrival time la verify shaway na day.`
+        : ur(l) ? `Order #${order.order_number}: pehle diya gaya andazay ka waqt guzar chuka hai. Naya arrival time abhi verify nahi hua.`
+        : `Order #${order.order_number}: the original estimated window has passed. A revised arrival time has not been verified.`;
+    }
+    const service = order.type === "delivery" ? "delivery" : "preparation";
+    return pa(l) ? `⏱ Order #${order.order_number}: da confirmation na ${service} takreeban ~${estimate} minutes. Da andaza day.`
+      : ur(l) ? `⏱ Order #${order.order_number}: confirmation se ${service} ka andaza ~${estimate} minutes hai.`
+      : `⏱ Order #${order.order_number}: estimated ${service} is ~${estimate} minutes from confirmation.`;
+  },
 
   catalogNotReady(l: Lang): string {
     return pa(l) ? "Da menu qeemat ao items la tasdeeq shawi na di. Da order details ba staff sara verify kro."

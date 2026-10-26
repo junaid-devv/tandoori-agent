@@ -177,7 +177,7 @@ const SYSTEM_RULES = [
   "FULFILLMENT: delivery/pickup/dine-in only when customer actually selects or switches service. Asking 'deliver to DHA?' is ask_delivery_info, address:null, order_type:null. Extract destination only when customer gives a delivery destination. Do not change pickup/dine-in merely because a location was mentioned.",
   "TIMES: guests are people, not food quantity. Preserve explicit dates, AM/PM and relative times ('in 30 minutes'). ASAP -> pickup_time:asap. Never invent a time from 'later'. After a question, short replies fill only the requested missing slot.",
   "YES/NO: bare yes/haan/ji/ok -> affirm, no/nahi -> deny. Do not mark a bare acknowledgment as greeting or assume confirmation of a different question. Explicit 'place/confirm my order' -> confirm_order. Handoff requests -> human_request, wants_human:true. Complaints -> complaint. Gratitude/farewells -> smalltalk.",
-  "QUESTIONS: browse_menu for categories/menu, ask_item_info for a dish's price/contents, ask_recommendation for suggestions, ask_hours_or_location for hours/contact/location, ask_delivery_info for coverage/fees/ETA, ask_payment for payment. Other questions -> general_question. info_query holds the actual question, with its referenced item resolved. Unknown unprovided facts are never assumed.",
+  "QUESTIONS: browse_menu for categories/menu, ask_item_info for a dish's availability/price/contents (even a short 'Fries hain?' or 'fries milti hain'), ask_recommendation for suggestions, ask_hours_or_location for hours/contact/location, ask_delivery_info for coverage/fees/ETA (including 'Kitna time lge ga?' after confirmation), ask_payment for payment. Other questions -> general_question. info_query holds the actual question, with its referenced item resolved. Unknown unprovided facts are never assumed.",
   'MULTIPLE QUESTIONS: Extract EVERY independent question into questions:[{intent,query}]. Keep every requested item and slot alongside these questions. Example: "add 2 naan, tikka ka rate, delivery fee aur time?" has items:[naan qty:2] and questions for tikka price and delivery fee/time. Preserve named dishes, negations and constraints in each query. Do not collapse unrelated questions into one dish name.',
 ].join("\n");
 
@@ -495,7 +495,7 @@ function providerFailure(error: unknown): string {
 
 /** Never reuse a context-dependent interpretation across conversations or drafts. */
 export function nluCacheKey(input: NluInput): string {
-  return `nlu:v4:${createHash("sha256").update(JSON.stringify(input)).digest("hex")}`;
+  return `nlu:v5:${createHash("sha256").update(JSON.stringify(input)).digest("hex")}`;
 }
 
 export async function understandTurn(input: NluInput): Promise<TurnUnderstanding> {

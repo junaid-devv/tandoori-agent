@@ -120,7 +120,7 @@ function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null
     case "general_question":
       return { kind: "answer_grounded", payload: { query: u.info_query ?? "", intent } };
     case "order_status":
-      return { kind: "report_order_status" };
+      return { kind: "report_order_status", payload: { query: u.info_query ?? "" } };
     case "view_cart":
       return { kind: "show_cart" };
     case "smalltalk":

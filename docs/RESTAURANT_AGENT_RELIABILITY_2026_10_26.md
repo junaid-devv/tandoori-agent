@@ -48,3 +48,17 @@ For another environment, apply all ordered migrations before deploying the appli
 6. Existing database advisories remain: [extension placement](https://supabase.com/docs/guides/database/database-linter?lint=0014_extension_in_public) for vector/pg_trgm and [leaked password protection](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection). The two service-only tables retain RLS without client policies intentionally; no policies were loosened.
 
 Earlier audit observations are historical snapshots. This document supersedes the older claims that the active catalog has 128 items, that no further migration is needed, or that replies have no durable receipt/retry path.
+
+## Follow-up: ETA, cancellation and fries availability
+
+The next production screenshot exposed two uncovered paths. The stored turns show that `Kitna time lge ga?` was correctly classified as delivery information, but a malformed wording matcher missed it and returned all delivery policies. `Fries hain?` was classified as `general_question`, bypassed the deterministic menu answer and received a misunderstanding reply when generation returned no usable answer. The cancellation had succeeded and left the conversation in browsing; it was not the cause of the availability failure. Order #2 was already cancelled when inspected. No customer state or order was changed during this repair.
+
+Simple, complete catalog questions now bypass both language models. Other questions use the same catalog facts regardless of whether NLU chooses an item-specific or general-question label. Cart edits, mixed requests, dietary constraints and unrecognized food wording retain the normal interpretation path. Pending unresolved items are preserved during information replies.
+
+Live-catalog verification also caught an unintended typo match: `fries` matched `fried`, offering fried-rice dishes among fries choices. Exact catalog words now take priority over typo matches, and short words require exact identity or explicit normalized aliases. Fries cannot become fried rice even when actual fries are missing or unavailable.
+
+ETA follow-ups now read the owned order's status and service. An active delivery quotes an approximate window from confirmation, rather than restarting a fresh 40-minute estimate. Cancelled, delivered and dispatched orders use their actual status; overdue orders say a revised arrival time is unverified. Scheduled pickup/dine-in uses its saved time. Fees and coverage are not repeated for a time-only question.
+
+Free-form answering now has a compatible fallback within the existing shared deadline. Rejected, empty, truncated or stalled primary responses can recover, and incomplete answers are never cached. If all attempts fail, the reply explains that the answer could not be verified and records a partial processing result, rather than blaming the customer's wording.
+
+Verification: 83 isolated conversation checks including the screenshot sequence, dietary/edit boundaries and consistent overdue timing across intent labels; 24 menu resolution checks including fries/fried-rice isolation; six local HTTP answer-recovery checks; 2/2 live NLU incident cases; and read-only verification of all 79 live SKUs plus exactly the three fries entries. A separate synthetic live answer returned those three fries and their correct prices in 1,110 ms. Full guards, TypeScript/build and scoped lint were rerun. No migration, real order or WhatsApp message is required by this follow-up.

@@ -71,6 +71,14 @@ try {
     assert.equal((await resolve("drink", null, unavailable)).kind, "not_found");
     assert.equal((await searchMenu("offline", "drink", 8, [])).matches.length, 0);
   });
+  await test("fries cannot be replaced by fried rice, even when fries are unavailable or missing", async () => {
+    const rice = food("r", "Chicken Fried Rice", 700);
+    const fries = food("f", "French Fries", 320);
+    const named = await searchMenu("offline", "fries", 8, [fries, rice]);
+    assert.deepEqual(named.matches.map((item) => item.id), ["f"]);
+    assert.equal((await resolve("fries", null, [rice])).kind, "not_found");
+    assert.equal((await resolve("fries", null, [{ ...fries, is_available: false }, rice])).kind, "not_found");
+  });
   const before = rpcCalls;
   await resolve("drink");
   assert.equal(rpcCalls, before, "Named catalog requests bypass the embedding service");

@@ -8,6 +8,7 @@ for (const path of [".env.production.local", ".env.local", ".env"]) {
 const { supabaseAdmin } = await import("../lib/supabase-admin.ts");
 const { getMenuCatalog } = await import("../lib/menu.ts");
 const { resolveItemDetailed } = await import("../lib/menu/search.ts");
+const { catalogQuestionMatches } = await import("../lib/agent/questions.ts");
 const { data: branches, error } = await supabaseAdmin.from("branches").select("id").eq("is_active", true);
 if (error) throw error;
 assert.ok(branches?.length, "At least one active branch is required");
@@ -26,6 +27,11 @@ for (const branch of branches) {
     verified++;
   }
   console.log(`PASS: branch catalog has ${catalog.length} priced items; every available full name resolves to its own SKU/price locally.`);
+  const fries = catalog.filter((item) => /\bfries\b/i.test(item.name));
+  if (fries.length) {
+    assert.deepEqual(catalogQuestionMatches("Fries hain?", catalog).map((item) => item.id).sort(), fries.map((item) => item.id).sort());
+    console.log(`PASS: the incident availability question resolves ${fries.length} fries SKUs from the live catalog without AI.`);
+  }
 }
 const version = await supabaseAdmin.rpc("restaurant_agent_reply_version");
 if (version.error) throw version.error;

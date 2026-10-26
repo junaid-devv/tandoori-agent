@@ -19,6 +19,7 @@ import { addToCart, removeFromCart, findCartMatches, cartSubtotal } from "./cart
 import { searchMenu, resolveItemDetailed, extractBaseItemName, menuNameCoversQuery } from "@/lib/menu/search";
 import { orderRepo } from "@/lib/data/order.repo";
 import { groundedAnswer } from "./answer";
+import { catalogQuestionMatches, deliveryQuestionTopics } from "./questions";
 import {
   orderTypeButtons,
   confirmButtons,
@@ -226,6 +227,24 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       isOpenNow: ctx.isOpenNow,
       timeoutMs: remaining,
     });
+  };
+
+  const answerCatalogQuestion = (q: string): boolean => {
+    const direct = catalogQuestionMatches(q, ctx.menu);
+    if (!direct.length) return false;
+    replies.push(reply.itemList(lang, direct, cur));
+    if (/include|contain|content|ingredient|what.*in|kya.*(?:hai|milta)|mein.*kya/i.test(q)) {
+      for (const item of direct.slice(0, 10)) replies.push(item.description
+        ? `${item.name}: ${item.description}`
+        : `${item.name}: ${lang === "roman_urdu" ? "Ingredients ki tafseel listed nahi hai; staff se verify karwa sakte hain." : "Ingredient details are not listed; staff can verify them."}`);
+    }
+    if (!hasDisambiguation && !value("pending_clarification")?.remaining_items?.length) {
+      const available = direct.filter((item) => item.is_available);
+      patch.last_shown_options = available.slice(0, 10);
+      patch.last_shown_options_at = new Date().toISOString();
+      setInteractive(itemPickList(lang, available, cur));
+    }
+    return true;
   };
 
   // ── Escalation ────────────────────────────────────────────────────────────
@@ -607,9 +626,21 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       case "answer_delivery_info": {
         const queryStr = String(action.payload?.query ?? u.info_query ?? input.messageTextForFallback ?? "").toLowerCase();
+        const topics = deliveryQuestionTopics(queryStr);
+        // Follow-ups refer to the accepted order even when new delivery is
+        // disabled. Read its actual status before quoting any arrival estimate.
+        let answeredOrderTime = false;
+        if (topics.time && (ctx.state.stage === "placed" || ctx.state.stage === "post_order" || /\b(?:my|mera|mere)\s+order\b/.test(queryStr))) {
+          const recent = await orderRepo.getLatestForConversation(input.conversationId);
+          if (recent) {
+            replies.push(reply.orderTiming(lang, recent, ctx.settings));
+            answeredOrderTime = true;
+            if (!topics.fee) break;
+          }
+        }
         if (!ctx.settings.delivery_enabled) { replies.push(deliveryInfoAnswer()); break; }
-        let answered = false;
-        if (/k(?:i|t)n(?:i|a)\s*(?:d(?:e|a)y?r|time|waqt)|time\s+kitna|how\s+much\s+time|delivery\s+time|\beta\b|kab\s+tak\s*(?:pohanch|a(?:ye|jae)ga|milega)|kitni\s+der|der\s+lag|دیر|وقت|ٹائم|څومره\s+وخت|کله\s+رسیږي/i.test(queryStr)) {
+        let answered = answeredOrderTime;
+        if (topics.time && !answeredOrderTime) {
           answered = true;
           const estDelivery = Math.round(Number(ctx.settings?.estimated_delivery_minutes) || 45);
           replies.push(
@@ -620,7 +651,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               : `⏱ Estimated delivery time is ~${estDelivery} mins.`
           );
         }
-        if (/charge|fee|pesay|paise|paisa|kitnay\s+ka|پیسے|قیمت|چارجز|پیسی|څو/i.test(queryStr)) {
+        if (topics.fee) {
           answered = true;
           replies.push(
             lang === "pashto"
@@ -639,35 +670,17 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "answer_grounded": {
         const question = (action.payload?.query as string) ?? u.info_query ?? input.messageTextForFallback ?? "";
         if (question) {
+          if (answerCatalogQuestion(question)) break;
           const ans = await grounded(question);
           if (ans) replies.push(ans);
-          else replies.push(reply.clarify(lang, "fallback"));
+          else { patch.last_error = "Information answer could not be verified"; replies.push(reply.answerUnavailable(lang)); }
         }
         break;
       }
 
       case "answer_info": {
         const q = String(action.payload?.query ?? u.info_query ?? input.messageTextForFallback ?? "").trim();
-        // Render authoritative menu facts without a second language-model call.
-        const lookup = q.toLowerCase().replace(/[^\p{L}\p{N}.\s-]/gu, " ")
-          .replace(/\b(?:what|whats|is|are|the|a|an|of|for|do|does|you|your|have|how|much|please|tell|me|about|price|prices|cost|rate|available|availability|include|includes|contain|contains|contents|ingredients|in|kya|kia|hai|hain|ka|ki|ke|mein|me|kitna|kitne|kitni|batao|batayein|milta|milti)\b/g, " ")
-          .replace(/\s+/g, " ").trim();
-        const direct = ctx.menu.filter((item) => menuNameCoversQuery(lookup, item.name));
-        if (direct.length) {
-          replies.push(reply.itemList(lang, direct, cur));
-          if (/include|contain|content|ingredient|what.*in|kya.*(?:hai|milta)|mein.*kya/i.test(q)) {
-            for (const item of direct.slice(0, 10)) replies.push(item.description
-              ? `${item.name}: ${item.description}`
-              : `${item.name}: ${lang === "roman_urdu" ? "Ingredients ki tafseel listed nahi hai; staff se verify karwa sakte hain." : "Ingredient details are not listed; staff can verify them."}`);
-          }
-          if (!hasDisambiguation && !value("pending_clarification")?.remaining_items?.length) {
-            const available = direct.filter((item) => item.is_available);
-            patch.last_shown_options = available.slice(0, 10);
-            patch.last_shown_options_at = new Date().toISOString();
-            setInteractive(itemPickList(lang, available, cur));
-          }
-          break;
-        }
+        if (answerCatalogQuestion(q)) break;
         // Menu item / general question:
         const ans = await grounded(q || "what are your popular items?");
         if (ans) {
@@ -700,7 +713,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           }
         } else {
           if (answerDeadline !== null && Date.now() >= answerDeadline) {
-            replies.push(reply.clarify(lang, "fallback"));
+            patch.last_error = "Information answer could not be verified";
+            replies.push(reply.answerUnavailable(lang));
             break;
           }
           // Fallback to searching the menu (pass category context for better results)
@@ -1308,7 +1322,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "report_order_status": {
         try {
           const recent = await orderRepo.getLatestForConversation(input.conversationId);
-          if (recent) replies.push(reply.orderStatus(lang, recent.order_number, recent.status, ctx.settings?.estimated_delivery_minutes));
+          if (recent) {
+            const question = String(action.payload?.query ?? u.info_query ?? input.messageTextForFallback ?? "");
+            replies.push(deliveryQuestionTopics(question).time ? reply.orderTiming(lang, recent, ctx.settings)
+              : reply.orderStatus(lang, recent.order_number, recent.status, ctx.settings?.estimated_delivery_minutes));
+          }
           else replies.push(reply.noRecentOrder(lang));
         } catch {
           replies.push(reply.noRecentOrder(lang));

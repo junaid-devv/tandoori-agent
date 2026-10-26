@@ -12,6 +12,12 @@ const deliveryHistory = [
 ];
 const fulfillment = { order_type: "delivery", address: "Sector A st 26", guests: null, reservation_time: null, pickup_time: null };
 const cases = [
+  { name: "incident fries availability after cancellation", text: "Fries hain?", language: "roman_urdu", stage: "browsing",
+    history: [{ role: "user", content: "Cancel krdo" }, { role: "assistant", content: "Order cancel ho gaya." }],
+    test: (u) => u.intents.includes("ask_item_info") && !u.items.length && !u.removals.length },
+  { name: "incident ETA after confirmation", text: "Kitna time lge ga?", language: "roman_urdu", stage: "placed",
+    history: [{ role: "assistant", content: "Order #2 confirmed. Estimated delivery ~40 mins." }],
+    test: (u) => (u.intents.includes("ask_delivery_info") || u.intents.includes("order_status")) && !u.items.length },
   { name: "production pizza and shake message retains both portions and delivery", text: "Ek bbq pizza or aik milkshake deliver kr dain", language: "roman_urdu",
     test: (u) => u.items.length === 2 && u.items.some((i) => /bbq.*pizza/i.test(i.query)) && u.items.some((i) => /milkshake/i.test(i.query)) && u.order_type === "delivery" },
   { name: "several questions plus an order keep independent answers", text: "Add 2 naan. Chicken tikka ka rate? Fajita pizza available? Delivery fee aur delivery time? COD?", language: "roman_urdu",
@@ -45,7 +51,9 @@ const cases = [
 ];
 let failures = 0;
 const times = [];
-for (const [index, c] of cases.entries()) {
+const selectedCases = process.env.LIVE_NLU_FILTER ? cases.filter((c) => c.name.includes(process.env.LIVE_NLU_FILTER)) : cases;
+assert.ok(selectedCases.length, "No matching live NLU cases");
+for (const [index, c] of selectedCases.entries()) {
   if (index) await new Promise((resolve) => setTimeout(resolve, Number(process.env.LIVE_NLU_PAUSE_MS) || 15_000));
   const started = Date.now();
   const u = await understandTurn({ conversationId: `synthetic-${index}`, messageText: c.text,
@@ -57,5 +65,5 @@ for (const [index, c] of cases.entries()) {
   console.log(`${passed ? "PASS" : "FAIL"}: ${c.name} (${elapsed}ms) ${JSON.stringify(u)}`);
 }
 times.sort((a, b) => a - b);
-console.log(`LIVE ORDER UNDERSTANDING: ${cases.length - failures}/${cases.length} passed; median ${times[Math.floor(times.length / 2)]}ms.`);
+console.log(`LIVE ORDER UNDERSTANDING: ${selectedCases.length - failures}/${selectedCases.length} passed; median ${times[Math.floor(times.length / 2)]}ms.`);
 assert.equal(failures, 0, `${failures} live language understanding cases failed`);
