@@ -77,6 +77,8 @@ export interface CartItem {
 export interface PendingClarification {
   kind: "item_disambiguation" | "order_type" | "quantity" | "branch";
   options: Array<{ id: string; label: string }>;
+  /** Unresolved mentions, in order. Stored in the existing JSONB column. */
+  remaining_items?: Array<{ query: string; qty: number | null; size: string | null; addons: string[]; notes: string | null }>;
 }
 
 // ---- conversation_states row (single state store) ----

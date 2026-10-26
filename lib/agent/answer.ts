@@ -12,7 +12,7 @@
  *
  * Strict guardrails: it may ONLY use the facts provided. No inventing prices,
  * discounts, items, or policies. If a fact isn't provided, it says so and offers
- * to connect a human — it never hallucinates.
+ * to connect a human. Model-generated answers still require evaluation.
  */
 import OpenAI from "openai";
 import { cache } from "@/lib/core/cache";
@@ -25,7 +25,7 @@ function getModel(): string {
   if (process.env.ORDER_AGENT_NLU_MODEL) return process.env.ORDER_AGENT_NLU_MODEL;
   return process.env.DEEPSEEK_MODEL || "claude-sonnet-5";
 }
-const MAX_TOKENS = Number(process.env.ORDER_AGENT_ANSWER_MAX_TOKENS) || 180;
+const MAX_TOKENS = Number(process.env.ORDER_AGENT_ANSWER_MAX_TOKENS) || 400;
 const TIMEOUT_MS = Number(process.env.AI_REQUEST_TIMEOUT_MS) || 25_000;
 const CACHE_TTL_MS = Number(process.env.ANSWER_CACHE_TTL_MS) || 3 * 60_000;
 
@@ -36,6 +36,7 @@ function getClient(): OpenAI {
     client = new OpenAI({
       baseURL: "https://api.groq.com/openai/v1",
       apiKey: process.env.GROQ_API_KEY,
+      maxRetries: 0,
     });
     return client;
   }
@@ -46,7 +47,7 @@ function getClient(): OpenAI {
     process.env.DEEPSEEK_API_KEY ||
     process.env.OPENROUTER_API_KEY ||
     "dummy_key_to_prevent_build_crash";
-  client = new OpenAI({ baseURL, apiKey });
+  client = new OpenAI({ baseURL, apiKey, maxRetries: 0 });
   return client;
 }
 
@@ -118,7 +119,7 @@ function buildFacts(input: GroundedAnswerInput): string {
       const desc = "description" in it && (it as { description?: string | null }).description
         ? ` (Includes: ${(it as { description?: string | null }).description})`
         : "";
-      const line = `${it.name} — ${cur} ${it.price}${desc}`;
+      const line = `${it.name} — ${cur} ${it.price}${desc}${it.is_available === false ? " [UNAVAILABLE]" : ""}`;
       if (!byCat.has(cat)) byCat.set(cat, []);
       byCat.get(cat)!.push(line);
     }
@@ -145,6 +146,8 @@ function buildSystemPrompt(personality?: string): string {
     "",
     "HARD RULES:",
     "- Use ONLY the given facts. NEVER invent prices, items, discounts, timings, delivery areas, or policies.",
+    "- Do not greet or introduce yourself in informational replies. Do not claim bestseller, most popular, customer favourite, halal certification or dietary safety unless that exact fact is supplied. Recommendations are suggestions, never invented popularity rankings.",
+    "- You cannot edit carts, place/cancel orders, reserve tables, or notify staff. Never claim any of these actions happened in an informational reply. Never guarantee allergen safety or no cross-contamination; unknown ingredient/allergy questions need staff verification. Unavailable items cannot be recommended as available.",
     "- NEVER provide dummy, sample, or fabricated phone numbers (e.g. 042-111-222-333 or 0300-1234567). Only mention a phone number if PHONE_DELIVERY is explicitly listed in the facts AND the user specifically asked for a contact number.",
     "- When the customer asks what a deal, combo, or item includes or contains (e.g. 'Deal 1 mein kya hai', 'family deal mein kya milta hai'): look up the (Includes: ...) in the MENU facts and describe the exact items and contents clearly.",
     "- If the customer asks for a dish or cuisine NOT on the menu: politely state that it is not available on our menu. If MENU_CATEGORIES is present in the facts, mention ONLY those exact categories (e.g. Karahi, Handi, BBQ); NEVER invent, assume, or list fast-food, pizza, burger, pasta, or other dishes not present in the facts. If MENU_CATEGORIES is not present, simply say the item is not on our menu and ask what they would like to order.",
@@ -204,7 +207,7 @@ export async function groundedAnswer(input: GroundedAnswerInput): Promise<string
           { role: "system", content: `FACTS:\n${facts}` },
           { role: "user", content: `${langInstr}\n\nCustomer asked: ${q}` },
         ],
-      }),
+      }, { signal: AbortSignal.timeout(TIMEOUT_MS) }),
       TIMEOUT_MS,
       "groundedAnswer",
     );
@@ -213,7 +216,7 @@ export async function groundedAnswer(input: GroundedAnswerInput): Promise<string
     await cache.set(cacheKey, text, CACHE_TTL_MS);
     return text;
   } catch (error) {
-    console.error("[answer] groundedAnswer failed:", error);
+    console.error("[answer] groundedAnswer failed:", error instanceof OpenAI.APIError ? `${error.name}, status ${error.status ?? "unknown"}` : error instanceof Error ? error.name : "Unknown provider error");
     return null;
   }
 }

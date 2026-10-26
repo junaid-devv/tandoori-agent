@@ -2,6 +2,7 @@
  * scripts/check-cart.mjs — Phase 7 pure cart-operation tests.
  * Run: node --no-warnings --import ./scripts/alias-register.mjs --experimental-strip-types scripts/check-cart.mjs
  */
+import assert from "node:assert/strict";
 import { addToCart, removeFromCart, updateQuantity, cartSubtotal } from "../lib/agent/cart.ts";
 
 let failures = 0;
@@ -31,8 +32,8 @@ check(cart.length === 2, "different size creates separate line");
 check(cartSubtotal(cart) === 300 * 3 + 350 * 1, "subtotal computed correctly");
 
 // qty cap at 50
-let capped = addToCart([], mk("b", "Coke", 100, 60));
-check(capped[0].qty === 50, "quantity capped at 50");
+assert.throws(() => addToCart([], mk("b", "Coke", 100, 60)), /quantity/);
+pass("invalid quantity rejected without silently changing the customer request");
 
 // remove partial
 let c2 = addToCart([], mk("a", "Roll", 200, 5));

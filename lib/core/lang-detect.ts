@@ -36,7 +36,6 @@ const ROMAN_URDU_SIGNAL_WORDS = [
   "ledo",
   "chahta",
   "chahti",
-  "order",
   "karni",
   "karni hai",
   "theek",
@@ -63,11 +62,7 @@ const ENGLISH_SIGNAL_WORDS = [
   "hi",
   "please",
   "price",
-  "delivery",
-  "address",
-  "confirm",
-  "order",
-  "menu",
+  "what", "how", "can i", "could you", "would like", "thank you", "thanks", "do you",
 ];
 
 /**
@@ -156,7 +151,7 @@ const PASHTO_SCRIPT_WORDS = [
 function scoreSignals(text: string, words: string[]): number {
   return words.reduce((total, word) => {
     if (text === word) return total + 2;
-    if (text.includes(word)) return total + 1;
+    if (` ${text} `.includes(` ${word} `)) return total + 1;
     return total;
   }, 0);
 }

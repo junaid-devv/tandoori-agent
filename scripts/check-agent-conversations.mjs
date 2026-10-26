@@ -1,0 +1,336 @@
+/** Real pipeline + executor, isolated database and local OpenAI HTTP fixture.
+ * No production credentials, customer messages, external calls or live orders.
+ * Run via npm run check:agent-conversations.
+ */
+import assert from "node:assert/strict";
+import { createServer } from "node:http";
+
+process.env.NEXT_PUBLIC_SUPABASE_URL = "https://offline.example.test";
+process.env.SUPABASE_SERVICE_ROLE_KEY = "offline-test-key";
+delete process.env.GROQ_API_KEY;
+delete process.env.DEEPSEEK_API_KEY;
+delete process.env.MENU_EMBEDDING_API_KEY;
+delete process.env.OPENAI_API_KEY;
+process.env.OPENROUTER_API_KEY = "offline-test-key";
+
+process.env.ORDER_AGENT_NLU_MODEL = "fixture-primary";
+let truncateNext = false;
+let response = null;
+let parserCalls = 0;
+let lastRequest = null;
+const server = createServer(async (req, res) => {
+  let body = "";
+  for await (const chunk of req) body += chunk;
+  const request = JSON.parse(body);
+  const parser = request.response_format?.type === "json_object";
+  if (parser) { parserCalls++; lastRequest = request; }
+  const finishReason = parser && truncateNext ? "length" : "stop";
+  truncateNext = false;
+  res.setHeader("Content-Type", "application/json");
+  res.end(JSON.stringify({ choices: [{ finish_reason: finishReason, message: { role: "assistant",
+    content: parser ? JSON.stringify(response ?? { primary_intent: "unknown", confidence: 0 }) : "Our listed menu prices apply. Staff can verify any unlisted details." } }] }));
+});
+await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+process.env.ORDER_AGENT_NLU_BASE_URL = `http://127.0.0.1:${server.address().port}/v1`;
+
+try {
+  const { runTurn, fastUnderstanding } = await import("../lib/agent/pipeline.ts");
+  const { stateRepo, getDefaultState } = await import("../lib/data/state.repo.ts");
+  const { messageRepo } = await import("../lib/data/message.repo.ts");
+  const { orderRepo } = await import("../lib/data/order.repo.ts");
+  const { getSupabaseAdmin } = await import("../lib/supabase-admin.ts");
+  const { cache } = await import("../lib/core/cache.ts");
+  const { coerceUnderstanding, nluCacheKey } = await import("../lib/agent/nlu.ts");
+  const { addToCart, removeFromCart } = await import("../lib/agent/cart.ts");
+  const { findMatchingDeliveryArea } = await import("../lib/agent/delivery.ts");
+  const { parseCustomerTimeToIso } = await import("../lib/restaurant-time.ts");
+  const { inferLanguagePreference } = await import("../lib/core/lang-detect.ts");
+
+  let checks = 0;
+  const check = (name, fn) => { fn(); checks++; console.log(`PASS: ${name}`); };
+  const states = new Map();
+  const histories = new Map();
+  const placed = [];
+  let failPersistence = false;
+  let failReceipt = false;
+  let previousOrder = null;
+  let cancellations = 0;
+  let sequence = 0;
+  const menu = [
+    { id: "kh", name: "Chicken Karahi (Half)", price: 900, category: "Karahi", is_available: true },
+    { id: "kf", name: "Chicken Karahi (Full)", price: 1600, category: "Karahi", is_available: true },
+    { id: "n", name: "Plain Naan", price: 50, category: "Bread", is_available: true },
+    { id: "t", name: "Chicken Tikka", price: 400, category: "BBQ", is_available: true },
+  ];
+  const settings = { is_accepting_orders: true, opening_time: "12:00 AM", closing_time: "11:59 PM",
+    timezone: "Asia/Karachi", delivery_enabled: true, delivery_fee: 100, min_delivery_amount: 0,
+    delivery_areas: [], estimated_prep_minutes: 25, estimated_delivery_minutes: 40,
+    city: "Lahore", phone_delivery: "", phone_dine_in: "", ai_personality: "Warm" };
+  const seedCaches = async () => {
+    await cache.set("menu:b", structuredClone(menu), 600_000);
+    await cache.set("settings:b", { ...settings }, 600_000);
+  };
+  await seedCaches();
+  const fresh = (id, patch = {}) => {
+    const state = { ...getDefaultState(id), preferred_language: "english", ...patch };
+    states.set(id, state); histories.set(id, []); return state;
+  };
+  const line = (id = "n", qty = 1, notes = null) => {
+    const item = menu.find((m) => m.id === id);
+    return { menu_item_id: item.id, name: item.name, unit_price: item.price, qty, size: null, addons: [], notes };
+  };
+  const mention = (query, qty = 1, notes = null) => ({ query, qty, size: null, addons: [], notes });
+  const u = (intent, patch = {}) => ({ primary_intent: intent, intents: [intent], confidence: 0.98, language: "english", ...patch });
+  stateRepo.ensure = async (id) => structuredClone(states.get(id) ?? fresh(id));
+  stateRepo.patch = async (id, patch) => {
+    if (failPersistence) throw new Error("fixture persistence failed");
+    Object.assign(states.get(id), structuredClone(patch));
+    return structuredClone(states.get(id));
+  };
+  stateRepo.commitTurn = async (id, _messageId, patch) => { await stateRepo.patch(id, patch); };
+  messageRepo.recentHistory = async (id) => structuredClone(histories.get(id) ?? []);
+  getSupabaseAdmin().from = (table) => {
+    assert.ok(["conversations", "agent_turns", "staff_alerts"].includes(table), `Unexpected DB access: ${table}`);
+    const chain = { select: () => chain, eq: () => chain, insert: () => chain,
+      maybeSingle: async () => ({ data: null, error: null }), then: (resolve) => Promise.resolve({ data: null, error: null }).then(resolve) };
+    return chain;
+  };
+  orderRepo.place = async (payload) => { placed.push(structuredClone(payload)); return `order-${placed.length}`; };
+  orderRepo.getById = async () => { if (failReceipt) throw new Error("receipt unavailable"); return { order_number: placed.length, total: 1234 }; };
+  orderRepo.getLatestForConversation = async () => previousOrder;
+  orderRepo.cancelOrder = async () => { cancellations++; return true; };
+  const send = async (id, text, understanding) => {
+    response = understanding ?? null;
+    const messageId = `m-${++sequence}`;
+    histories.get(id).push({ id: messageId, role: "user", content: text });
+    const result = await runTurn({ conversationId: id, branchId: "b", phone: "offline", messageText: text,
+      sourceUserMessageId: messageId, messageId, whatsappMessageId: messageId, appName: "Test Kitchen", currency: "Rs." });
+    histories.get(id).push({ id: `a-${sequence}`, role: "assistant", content: result.replyText });
+    return result;
+  };
+
+  // Understand the real entry path, not just pre-labelled FSM transitions.
+  fresh("delivery");
+  let result = await send("delivery", "2 full chicken karahi aur 3 naan, delivery House 12 Street 4 Lahore", u("add_items", {
+    intents: ["add_items", "set_order_type", "provide_address"], items: [mention("Chicken Karahi (Full)", 2), mention("Plain Naan", 3)],
+    order_type: "delivery", address: "House 12 Street 4 Lahore", language: "roman_urdu" }));
+  check("one message keeps every item, quantity, address and delivery mode; shows one review", () => {
+    assert.equal(states.get("delivery").cart.length, 2); assert.equal(states.get("delivery").cart[0].qty, 2);
+    assert.equal(result.stage, "confirming"); assert.equal((result.replyText.match(/Total:/g) ?? []).length, 1);
+    assert.ok(result.replyText.includes("House 12")); assert.equal(placed.length, 0);
+  });
+  await send("delivery", "confirm:yes");
+  check("a separate confirmation places the complete order once and clears draft confirmation", () => {
+    assert.equal(placed.length, 1); assert.equal(placed[0].items[1].qty, 3);
+    assert.equal(states.get("delivery").stage, "placed"); assert.equal(states.get("delivery").summary_sent_at, null);
+  });
+
+  fresh("variants");
+  await send("variants", "3 naan, 2 chicken karahi less oil, and 4 tikka", u("add_items", {
+    items: [mention("Plain Naan", 3), mention("Chicken Karahi", 2, "less oil"), mention("Chicken Tikka", 4)] }));
+  const variantState = states.get("variants");
+  check("variant clarification retains quantity, preparation and remaining order items", () => {
+    assert.equal(variantState.pending_clarification.remaining_items[0].qty, 2);
+    assert.equal(variantState.pending_clarification.remaining_items[0].notes, "less oil");
+    assert.equal(variantState.cart.length, 1);
+  });
+  await send("variants", "what are your opening hours?", u("ask_hours_or_location"));
+  check("an information interruption preserves unresolved portions and remaining items", () => assert.equal(states.get("variants").pending_clarification.remaining_items.length, 2));
+  await send("variants", "full");
+  check("typing the variant resolves the original request and resumes the remaining order", () => {
+    const cart = states.get("variants").cart;
+    assert.equal(cart.length, 3); assert.equal(cart.find((i) => i.menu_item_id === "kf").qty, 2);
+    assert.equal(cart.find((i) => i.menu_item_id === "kf").notes, "less oil");
+    assert.equal(cart.find((i) => i.menu_item_id === "t").qty, 4);
+  });
+  fresh("numeric", { stage: "building_cart", cart: [line()], last_shown_options: menu.slice(0, 2).map((m) => ({ id: m.id, name: m.name, price: m.price })), last_shown_options_at: new Date().toISOString() });
+  check("numeric 2 selects the shown menu item even when cart already contains food", () => assert.equal(fastUnderstanding("2", states.get("numeric")).items[0].query, "Chicken Karahi (Full)"));
+  states.get("numeric").pending_clarification = { kind: "order_type", options: [{ id: "ordertype:delivery", label: "Delivery" }, { id: "ordertype:pickup", label: "Pickup" }] };
+  check("numeric 2 uses the actual pending order-type choices", () => assert.equal(fastUnderstanding("2", states.get("numeric")).order_type, "pickup"));
+  check("negation, compound changes and item questions never match a button substring", () => {
+    for (const text of ["no delivery please", "pickup and 2 naan", "don't confirm", "remove chicken karahi", "what is in the full karahi?"])
+      assert.equal(fastUnderstanding(text, states.get("numeric")), null, text);
+  });
+  check("unshown item IDs cannot add arbitrary items", () => assert.equal(fastUnderstanding("item:forged", states.get("numeric")), null));
+
+  fresh("notes");
+  await send("notes", "one plain naan without butter and one plain naan extra crispy", u("add_items", { items: [mention("Plain Naan", 1, "without butter"), mention("Plain Naan", 1, "extra crispy")] }));
+  check("two portions with different preparations stay separate", () => {
+    assert.equal(states.get("notes").cart.length, 2); assert.equal(states.get("notes").cart[0].qty, 1);
+    assert.equal(states.get("notes").cart[0].notes, "without butter");
+  });
+  check("null quantity survives coercion for instruction-only edits", () => assert.equal(coerceUnderstanding(u("add_items", { items: [mention("Plain Naan", null, "less oil")] }), "english").items[0].qty, null));
+  check("mixed order and price question preserves the requested food", () => assert.equal(coerceUnderstanding(u("add_items", { intents: ["add_items", "ask_item_info"], items: [mention("Plain Naan", 2)], info_query: "price of karahi" }), "english").items.length, 1));
+  check("cart refuses invalid quantities instead of silently accepting a different order", () => {
+    for (const qty of [0, -1, 60, NaN, 1.5]) assert.throws(() => addToCart([], { ...line(), qty }));
+  });
+
+  fresh("truncated");
+  truncateNext = true;
+  const beforeTruncated = parserCalls;
+  await send("truncated", "please add two naan", u("add_items", { items: [mention("Plain Naan", 2)] }));
+  check("a truncated primary extraction retries the fallback without losing portions", () => {
+    assert.equal(parserCalls - beforeTruncated, 2); assert.equal(states.get("truncated").cart[0].qty, 2);
+  });
+  fresh("resize", { cart: [line("kf", 2)] });
+  await send("resize", "make my karahi half size instead", u("update_quantity", { items: [{ ...mention("Chicken Karahi", null), size: "half" }] }));
+  check("changing size resolves the requested variant and preserves quantity", () => {
+    assert.equal(states.get("resize").cart[0].menu_item_id, "kh"); assert.equal(states.get("resize").cart[0].qty, 2);
+    assert.equal(states.get("resize").cart[0].unit_price, 900);
+  });
+  check("numeric removal strings preserve the amount, invalid removal amounts are rejected", () => {
+    assert.equal(coerceUnderstanding(u("remove_items", { removals: [{ query: "Plain Naan", qty: "2" }] }), "english").removals[0].qty, 2);
+    assert.equal(coerceUnderstanding(u("remove_items", { removals: [{ query: "Plain Naan", qty: 0 }] }), "english"), null);
+  });
+  fresh("note-edit", { cart: [line()] });
+  await send("note-edit", "make the naan crispy", u("add_items", { items: [mention("Plain Naan", null, "extra crispy")] }));
+  check("preparation-only edits to bread keep the ordered quantity", () => {
+    assert.equal(states.get("note-edit").cart.length, 1); assert.equal(states.get("note-edit").cart[0].qty, 1);
+    assert.equal(states.get("note-edit").cart[0].notes, "extra crispy");
+  });
+  await send("notes", "naan less oil", u("add_items", { items: [mention("Plain Naan", null, "less oil")] }));
+  check("ambiguous preparation edits never add an extra portion", () => assert.equal(states.get("notes").cart.reduce((sum, item) => sum + item.qty, 0), 2));
+  check("partial removal consumes the requested total only once across preparation lines", () => {
+    const remaining = removeFromCart([line("n", 2, "crispy"), line("n", 3, "soft")], { menu_item_id: "n", qty: 3 });
+    assert.equal(remaining.reduce((sum, item) => sum + item.qty, 0), 2);
+  });
+  fresh("info-consent", { stage: "confirming", cart: [line()], order_type: "delivery", address: "House 10 Street 4 Lahore",
+    summary_sent_at: new Date().toISOString(), pending_clarification: { kind: "item_disambiguation", options: [{ id: "confirm:yes", label: "Confirm" }] } });
+  await send("info-consent", "when do you close?", u("ask_hours_or_location"));
+  const beforeInfoYes = placed.length;
+  await send("info-consent", "yes");
+  check("yes after an unrelated information answer requires a fresh order review", () => assert.equal(placed.length, beforeInfoYes));
+  fresh("area-only", { cart: [line()], order_type: "delivery" });
+  result = await send("area-only", "delivery to Gulberg Lahore", u("provide_address", { address: "Gulberg Lahore" }));
+  check("an area alone cannot pass as a complete delivery destination", () => assert.equal(result.stage, "collecting_delivery"));
+  fresh("allergy", { cart: [line()] });
+  result = await send("allergy", "I am allergic to peanuts", u("general_question", { info_query: "peanut allergy" }));
+  check("allergy guarantees are handed to staff", () => assert.equal(result.escalate, true));
+  fresh("extras", { cart: [line()] });
+  result = await send("extras", "add naan with extra cheese", u("add_items", { items: [{ ...mention("Plain Naan"), addons: ["extra cheese"] }] }));
+  check("unpriced paid extras require staff verification", () => assert.equal(result.escalate, true));
+  fresh("repeat-unknown", { cart: [line()] });
+  for (let attempt = 0; attempt < 3; attempt++) result = await send("repeat-unknown", `unclear input ${attempt}`, u("unknown", { confidence: 0.1 }));
+  check("repeated understanding failures hand off instead of looping forever", () => assert.equal(result.escalate, true));
+
+  fresh("address", { stage: "collecting_delivery", cart: [line()], order_type: "delivery" });
+  await send("address", "actually add two naan", u("add_items", { items: [mention("Plain Naan", 2)] }));
+  check("a cart edit during address collection never becomes an address", () => {
+    assert.equal(states.get("address").address, null); assert.equal(states.get("address").cart[0].qty, 3);
+    assert.equal(states.get("address").stage, "collecting_delivery");
+  });
+  await send("address", "do you deliver to DHA?", u("ask_delivery_info", { info_query: "do you deliver to DHA?" }));
+  check("asking about an area does not choose a destination", () => assert.equal(states.get("address").address, null));
+  check("NLU receives history, current cart and fulfillment context", () => {
+    const system = lastRequest.messages[0].content;
+    assert.ok(system.includes("FULFILLMENT:")); assert.ok(system.includes("3xPlain Naan"));
+    assert.ok(lastRequest.messages.slice(1, -1).some((m) => m.content === "actually add two naan"));
+  });
+  check("interpretation cache includes conversation, cart and prior assistant question", () => {
+    const base = { messageText: "yes", stage: "confirming", language: "english", cart: [] };
+    assert.notEqual(nluCacheKey({ ...base, conversationId: "a" }), nluCacheKey({ ...base, conversationId: "b" }));
+    assert.notEqual(nluCacheKey(base), nluCacheKey({ ...base, cart: [{ name: "Naan", qty: 3 }] }));
+    assert.notEqual(nluCacheKey(base), nluCacheKey({ ...base, history: [{ role: "assistant", content: "Would you like a menu?" }] }));
+  });
+  fresh("uncertain", { cart: [line()] });
+  await send("uncertain", "something unclear", u("add_items", { confidence: 0.2, items: [mention("Chicken Tikka")] }));
+  check("low-confidence model guesses cannot mutate a cart", () => assert.equal(states.get("uncertain").cart.length, 1));
+
+  fresh("saved", { stage: "collecting_delivery", cart: [line()], order_type: "delivery" });
+  result = await send("saved", "addr:saved:someone-elses-address");
+  check("saved addresses are restricted to this conversation's preloaded owner", () => {
+    assert.equal(states.get("saved").address, null); assert.notEqual(result.stage, "confirming");
+  });
+  const now = new Date("2026-10-25T12:00:00Z");
+  check("invalid and ambiguous times never fabricate a reservation", () => {
+    for (const text of ["later", "99pm", "9:75pm", "25:00", "9", "9 baje", "2020-01-01T00:00:00Z", ""])
+      assert.equal(parseCustomerTimeToIso(text, "Asia/Karachi", now), null, text);
+    assert.equal(parseCustomerTimeToIso("tomorrow 9pm", "Asia/Karachi", now), "2026-10-26T16:00:00.000Z");
+    assert.equal(parseCustomerTimeToIso("in 2 hours", "Asia/Karachi", now), "2026-10-25T14:00:00.000Z");
+  });
+  fresh("pickup", { stage: "collecting_pickup", order_type: "pickup", cart: [line()] });
+  result = await send("pickup", "later", u("provide_pickup_time", { pickup_time: "later" }));
+  check("unparseable pickup time stays at time collection, with no confirm button", () => {
+    assert.equal(result.stage, "collecting_pickup"); assert.equal(states.get("pickup").pickup_time, null);
+    assert.ok(!result.interactive?.payload.buttons?.some((b) => b.id === "confirm:yes"));
+  });
+  result = await send("pickup", "in 30 minutes", u("provide_pickup_time", { pickup_time: "in 30 minutes" }));
+  check("pickup review includes the customer's actual pickup time", () => assert.ok(result.replyText.includes("🕐")));
+  const beforePickup = placed.length;
+  await send("pickup", "confirm:yes");
+  check("pickup places only after review and carries the time to the order service", () => {
+    assert.equal(placed.length, beforePickup + 1); assert.ok(placed.at(-1).pickupTime); assert.equal(placed.at(-1).deliveryFee, 0);
+  });
+  fresh("dinein", { cart: [line()], stage: "building_cart" });
+  result = await send("dinein", "table for 4, in 45 minutes", u("set_order_type", { order_type: "dine-in", guests: 4, reservation_time: "in 45 minutes" }));
+  check("dine-in review includes guest count and time before confirmation", () => {
+    assert.equal(result.stage, "confirming"); assert.ok(result.replyText.includes("👥 4")); assert.ok(result.replyText.includes("🕐"));
+  });
+  await send("dinein", "confirm:yes");
+  check("dine-in carries the complete reservation to placement", () => assert.equal(placed.at(-1).guests, 4));
+
+  fresh("receipt", { stage: "confirming", cart: [line()], order_type: "delivery", address: "House 10 Street 4 Lahore",
+    summary_sent_at: new Date().toISOString(), pending_clarification: { kind: "item_disambiguation", options: [{ id: "confirm:yes", label: "Confirm" }] } });
+  failReceipt = true;
+  result = await send("receipt", "confirm:yes");
+  failReceipt = false;
+  check("a receipt lookup outage preserves committed success and a usable reference", () => {
+    assert.equal(result.placeOrder, true); assert.ok(result.replyText.includes(`order-${placed.length}`));
+    assert.ok(!result.replyText.includes("#0 "));
+  });
+
+  fresh("stale", { stage: "confirming", cart: [line()], order_type: "delivery", address: "House 10 Street 4 Lahore" });
+  const beforeStale = placed.length;
+  result = await send("stale", "confirm:yes");
+  check("a stale confirming stage without a recorded review cannot place an order", () => {
+    assert.equal(placed.length, beforeStale); assert.equal(result.stage, "confirming"); assert.ok(states.get("stale").summary_sent_at);
+  });
+  await send("stale", "confirm but add 2 naan", u("add_items", { intents: ["add_items", "confirm_order"], items: [mention("Plain Naan", 2)] }));
+  check("a confirmation combined with a cart edit requires a new review", () => { assert.equal(placed.length, beforeStale); assert.equal(states.get("stale").cart[0].qty, 3); });
+  await send("stale", "don't ring the bell", u("unknown", { notes: "Do not ring the bell" }));
+  await send("stale", "confirm:yes");
+  await send("stale", "confirm:yes");
+  check("order-level rider instructions reach placement after renewed confirmation", () => assert.equal(placed.at(-1).customerInstructions, "Do not ring the bell"));
+
+  fresh("clear", { stage: "confirming", cart: [line()], order_type: "delivery", address: "Old address", summary_sent_at: new Date().toISOString() });
+  await cache.set("settings:b", { ...settings, delivery_areas: ["Gulberg"] }, 600_000);
+  result = await send("clear", "change address to House 20 DHA Phase 9", u("provide_address", { address: "House 20 DHA Phase 9" }));
+  check("a rejected replacement address clears the old address and cannot show confirm", () => {
+    assert.equal(states.get("clear").address, null); assert.equal(result.address, null); assert.equal(result.stage, "collecting_delivery");
+    assert.ok(!result.interactive?.payload.buttons?.some((b) => b.id === "confirm:yes"));
+  });
+  await seedCaches();
+  check("delivery range checks use the phase number, never the house number", () => {
+    assert.equal(findMatchingDeliveryArea("House 2 DHA Phase 9", { delivery_areas: ["DHA Phase 1-6"] }), null);
+    assert.equal(findMatchingDeliveryArea("House 99 DHA Phase 5", { delivery_areas: ["DHA Phase 1-6"] }), "DHA Phase 1-6");
+    assert.equal(findMatchingDeliveryArea("House 1 Askari 11", { delivery_areas: ["Askari 10"] }), null);
+  });
+
+  fresh("cancel-draft", { stage: "building_cart", cart: [line()] });
+  previousOrder = { id: "old-order", status: "received", created_at: new Date().toISOString() };
+  await send("cancel-draft", "cancel my new draft", u("cancel_order"));
+  check("cancelling a new cart never cancels a previous accepted order", () => assert.equal(cancellations, 0));
+  previousOrder = null;
+  fresh("restart", { cart: [line()], customer_instructions: "old rider instruction", summary_sent_at: new Date().toISOString(),
+    pending_clarification: { kind: "item_disambiguation", options: [{ id: "item:n", label: "Naan" }] } });
+  await send("restart", "start over", u("restart_order"));
+  check("restart clears stale notes, choices and review authorization", () => {
+    for (const key of ["customer_instructions", "summary_sent_at", "pending_clarification"]) assert.equal(states.get("restart")[key], null);
+  });
+  fresh("post-order", { stage: "placed" });
+  result = await send("post-order", "change to pickup in 30 minutes", u("set_order_type", { order_type: "pickup", pickup_time: "in 30 minutes" }));
+  check("changes to accepted orders are handed to staff for dispatch and fee coordination", () => assert.equal(result.escalate, true));
+
+  fresh("persist", { cart: [line()] });
+  failPersistence = true;
+  await assert.rejects(() => send("persist", "add another naan", u("add_items", { items: [mention("Plain Naan")] })), /persistence failed/);
+  failPersistence = false;
+  checks++; console.log("PASS: persistence failure propagates; no success reply can escape with lost state");
+  check("Roman Urdu detection uses whole words instead of English substrings", () => {
+    assert.equal(inferLanguagePreference("please order two noodles", "english"), "english");
+    assert.equal(inferLanguagePreference("do naan aur ek tikka", "english"), "roman_urdu");
+  });
+  console.log(`\nAGENT CONVERSATIONS: ${checks} checks passed; ${parserCalls} actual parser HTTP requests, ${placed.length} isolated test orders.`);
+} finally {
+  await new Promise((resolve) => server.close(resolve));
+}

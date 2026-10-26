@@ -36,6 +36,7 @@ export type IncomingWhatsAppMessage = {
   text?: { body?: string };
   image?: { id?: string; mime_type?: string; caption?: string };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
+  voice?: { id?: string; mime_type?: string };
   interactive?: {
     type?: "button_reply" | "list_reply";
     button_reply?: { id?: string; title?: string };
@@ -155,22 +156,8 @@ export async function processOneMessage(
 
   const createdAt = toIso(message.timestamp);
 
-  // Inactivity reset: clear cart/draft after 2 h idle
-  if (shouldResetForInactivity(state, createdAt)) {
-    const nextLang = incomingContent ? inferLanguagePreference(incomingContent, state.preferred_language) : state.preferred_language;
-    const fresh = getDefaultState(conversation.id);
-    state = await stateRepo.patch(conversation.id, {
-      ...fresh,
-      preferred_language: nextLang,
-      last_user_whatsapp_msg_id: state.last_user_whatsapp_msg_id,
-      last_processed_user_message_id: state.last_processed_user_message_id,
-      last_processed_message_seq: state.last_processed_message_seq,
-      last_processed_user_message_at: state.last_processed_user_message_at,
-    });
-  }
-
   // Human mode: forward to staff, check for bot-resume command
-  if (conversation.mode === "human") {
+  if (conversation.mode === "human" || state.stage === "human" || !state.is_bot_active) {
     if (incomingContent && shouldResumeBotFromMessage(incomingContent)) {
       await handleBotResume(conversation, state, message, incomingContent, detectedLang);
     } else if (incomingContent) {
@@ -179,6 +166,7 @@ export async function processOneMessage(
         messageRepo.insert({ conversationId: conversation.id, role: "user", senderKind: "user", content: incomingContent, whatsappMsgId: message.id }),
         conversationRepo.setUnread(conversation.id, true),
       ]);
+      if (conversation.mode !== "human") await conversationRepo.setMode(conversation.id, "human");
     }
     return;
   }
@@ -210,9 +198,26 @@ export async function processOneMessage(
 
   // Refresh conversation state now that we hold the lock, ensuring we have the latest
   // cart, stage, and order details from any turn that completed while we waited.
-  state = await stateRepo.ensure(conversation.id);
-
   try {
+    state = await stateRepo.ensure(conversation.id);
+    if (state.last_user_whatsapp_msg_id === message.id || await messageRepo.wasProcessed(persistedMsg.id, conversation.id)) return;
+  // Inactivity reset: clear cart/draft after 2 h idle
+  if (shouldResetForInactivity(state, createdAt)) {
+    const nextLang = incomingContent ? inferLanguagePreference(incomingContent, state.preferred_language) : state.preferred_language;
+    const fresh = getDefaultState(conversation.id);
+    state = await stateRepo.patch(conversation.id, {
+      ...fresh,
+      processing_token: state.processing_token,
+      processing_started_at: state.processing_started_at,
+      preferred_language: nextLang,
+      last_user_whatsapp_msg_id: state.last_user_whatsapp_msg_id,
+      last_processed_user_message_id: state.last_processed_user_message_id,
+      last_processed_message_seq: state.last_processed_message_seq,
+      last_processed_user_message_at: state.last_processed_user_message_at,
+    });
+  }
+
+
     const result = await runTurn({
       conversationId: conversation.id,
       branchId: activeBranch.id,
@@ -325,10 +330,10 @@ async function handleNonText(
 ) {
   if (message.type === "reaction") return;
 
-  if (message.type === "audio" || (message as any).type === "voice" || (message as any).voice) {
+  if (message.type === "audio" || message.type === "voice" || message.voice) {
     const lang = stateLang(state);
     const isRomanUrdu = lang === "roman_urdu";
-    const audioObj = message.audio || (message as any).voice;
+    const audioObj = message.audio || message.voice;
     const audioId = audioObj?.id;
 
     // Check Groq or OpenAI credentials for transcription
@@ -338,6 +343,7 @@ async function handleNonText(
 
     // --- Real voice pipeline ---
     if (audioId && apiKey) {
+      let enteringOrderPipeline = false;
       try {
         console.log(`[voice] Processing voice note from ${message.from}, audioId=${audioId}, provider=${isGroq ? "groq" : "openai"}`);
         const audioBuffer = message.mediaBytes
@@ -374,7 +380,7 @@ async function handleNonText(
         const transcript = transcription.text?.trim();
         if (!transcript) throw new Error("Empty transcription");
 
-        console.log(`[voice] Transcribed (${model}): "${transcript}"`);
+        console.log(`[voice] Transcription complete (${model}, ${transcript.length} characters)`);
 
         // Synchronously calculate public storage URL
         const storagePath = `${conversation.id}/${message.id}.${ext}`;
@@ -422,12 +428,20 @@ async function handleNonText(
         }).catch(() => {});
 
         // Feed transcript into same pipeline as text
+        enteringOrderPipeline = true;
         const lockToken = await acquireLock(conversation.id);
         if (!lockToken) {
-          console.warn("[voice] Could not acquire lock:", conversation.id);
-          return;
+          throw new Error("Conversation is busy; retry this voice event");
         }
         try {
+          let lockedState = await stateRepo.ensure(conversation.id);
+          if (lockedState.last_user_whatsapp_msg_id === message.id || await messageRepo.wasProcessed(persistedMsg.id, conversation.id)) return;
+          if (shouldResetForInactivity(lockedState, toIso(message.timestamp))) {
+            lockedState = await stateRepo.patch(conversation.id, {
+              ...getDefaultState(conversation.id), preferred_language: transcriptLang,
+              processing_token: lockedState.processing_token, processing_started_at: lockedState.processing_started_at,
+            });
+          }
           const result = await runTurn({
             conversationId: conversation.id,
             branchId: activeBranch.id,
@@ -466,6 +480,8 @@ async function handleNonText(
         }
         return;
       } catch (err) {
+        // Retry real order/transport failures; never call a committed order a bad transcription.
+        if (enteringOrderPipeline) throw err;
         console.error("[voice] Voice pipeline failed:", err);
         // Graceful degradation — language-consistent, no escalation
         const fallbackMsg =

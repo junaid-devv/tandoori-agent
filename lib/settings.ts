@@ -268,12 +268,12 @@ export async function updateRestaurantSettings(branchId: string, settings: Parti
   invalidateCache(`settings:${branchId}`);
 }
 
-export function isWithinOperatingHours(openingTime: string, closingTime: string, timeZone?: string): boolean {
+export function isWithinOperatingHours(openingTime: string, closingTime: string, timeZone?: string, date = new Date()): boolean {
   const parsedOpening = parseRestaurantClock(openingTime);
   const parsedClosing = parseRestaurantClock(closingTime);
   if (!parsedOpening || !parsedClosing) return false;
 
-  const now = getRestaurantNowParts(timeZone);
+  const now = getRestaurantNowParts(timeZone, date);
   const nowMinutes = now.hour * 60 + now.minute;
 
   if (parsedClosing.totalMinutes < parsedOpening.totalMinutes) {

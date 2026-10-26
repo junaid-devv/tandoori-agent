@@ -68,6 +68,14 @@ export function parseState(raw: Partial<ConversationStateRow> & { conversation_i
 }
 
 export const stateRepo = {
+  /** Commit the draft and inbound receipt together so old webhook replays cannot add food twice. */
+  async commitTurn(conversationId: string, messageId: string, patch: Partial<ConversationStateRow>): Promise<void> {
+    const { data, error } = await supabaseAdmin.rpc("commit_restaurant_agent_turn", {
+      p_conversation_id: conversationId, p_message_id: messageId, p_patch: patch,
+    });
+    if (error) throw error;
+    if (data !== true) throw new Error("Inbound message was already processed");
+  },
   async get(conversationId: string): Promise<ConversationStateRow | null> {
     const { data, error } = await supabaseAdmin
       .from(TABLE)
@@ -90,10 +98,15 @@ export const stateRepo = {
     const row = { ...defaults(conversationId), ...seed, conversation_id: conversationId };
     const { data, error } = await supabaseAdmin
       .from(TABLE)
-      .upsert(row, { onConflict: "conversation_id" })
+      .upsert(row, { onConflict: "conversation_id", ignoreDuplicates: true })
       .select("*")
-      .single();
+      .maybeSingle();
     if (error) throw error;
+    if (!data) {
+      const created = await this.get(conversationId);
+      if (!created) throw new Error("Conversation state could not be created");
+      return created;
+    }
     return parseState(data as Partial<ConversationStateRow> & { conversation_id: string });
   },
 

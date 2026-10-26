@@ -13,6 +13,13 @@ import type { LanguagePreference, OrderType } from "../schema.types.ts";
 // Delivery area matching
 // ---------------------------------------------------------------------------
 
+/** An area establishes coverage; a destination also needs a building/street or landmark. */
+export function isCompleteDeliveryAddress(address: string | null | undefined): boolean {
+  if (!address || address.trim().length < 8) return false;
+  return /\b(?:house|h\s*#|flat|apartment|apt|shop|office|building|street|st\s*\d|gali|makan|makaan|ghar|plot|hostel|room|hotel|hospital|school|gate|near|opposite|samne|qareeb|nazdeek)\b/i.test(address)
+    || /(?:گھر|مکان|گلی|فلیٹ|دکان|گیٹ|قریب|سامنے)/u.test(address);
+}
+
 function buildDeliveryAreasList(settings: RestaurantSettings): string {
   if (!Array.isArray(settings.delivery_areas) || settings.delivery_areas.length === 0) return "";
   const visibleAreas = settings.delivery_areas.map((area) => area.trim()).filter(Boolean).slice(0, 10);
@@ -32,36 +39,21 @@ export function findMatchingDeliveryArea(address: string, settings: RestaurantSe
   if (!normalizedAddress) return null;
 
   for (const area of settings.delivery_areas ?? []) {
-    const normalizedArea = normalizeText(area);
-    if (!normalizedArea) continue;
-    if (normalizedAddress === normalizedArea || normalizedAddress.includes(normalizedArea)) {
-      return area;
+    const range = area.match(/^(.*?)(\d+)\s*[-–]\s*(\d+)(.*)$/);
+    if (range) {
+      const prefix = normalizeText(range[1]);
+      const suffix = normalizeText(range[4]);
+      const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/\s+/g, "\\s+");
+      // Bind the number to its named area/phase. A house number must not satisfy the range.
+      const pattern = new RegExp(`(?:^|\\s)${escape(prefix)}\\s*(\\d+)(?!\\d)${suffix ? `\\s+${escape(suffix)}` : ""}(?:$|\\s)`);
+      const matched = normalizedAddress.match(pattern);
+      if (matched && Number(matched[1]) >= Number(range[2]) && Number(matched[1]) <= Number(range[3])) return area;
+      continue;
     }
-
-    // Extract numeric ranges from the ORIGINAL area string (before normalization splits "1-6" into "1 6")
-    const rangesInArea: Array<[number, number]> = [];
-    for (const m of area.matchAll(/(\d+)\s*[-–]\s*(\d+)/g)) {
-      rangesInArea.push([Number(m[1]), Number(m[2])]);
-    }
-
-    const areaTokens = normalizedArea.split(" ").filter((token) => {
-      // Skip non-numeric tokens shorter than 3 chars (prepositions)
-      if (/^\d+$/.test(token)) return false; // handled separately via range check
-      return token.length >= 3;
-    });
-
-    // Check non-numeric tokens (e.g. "dha", "phase", "model", "town")
-    const nonNumericMatch = areaTokens.length === 0 || areaTokens.every((token) => normalizedAddress.includes(token));
-    
-    if (nonNumericMatch && rangesInArea.length > 0) {
-      // For areas with ranges (e.g. "DHA Phase 1-6"), check if any number in the address falls within any range
-      const addrNumbers = (normalizedAddress.match(/\d+/g) ?? []).map(Number);
-      const rangeMatch = rangesInArea.some(([lo, hi]) => addrNumbers.some((n) => n >= lo && n <= hi));
-      if (rangeMatch) return area;
-    } else if (nonNumericMatch && areaTokens.length > 0) {
-      // For areas without ranges and with named tokens, it's a match
-      return area;
-    }
+    const tokens = normalizeText(area).split(" ").filter(Boolean);
+    if (!tokens.length) continue;
+    const phrase = tokens.join(" ");
+    if (` ${normalizedAddress} `.includes(` ${phrase} `)) return area;
   }
 
   return null;

@@ -33,4 +33,4 @@ mustInclude(sources.whatsapp, "downloadWhatsAppMedia", "Missing WhatsApp media d
 mustInclude(sources.conversationsPage, "Customer Profile", "Missing staff inbox customer profile save action.");
 mustInclude(sources.menuPage, "WEEKDAYS", "Missing menu schedule dashboard controls.");
 mustInclude(sources.analyticsApi, "topItems", "Missing restaurant analytics top-items API.");
-mustInclude(sources.analyticsPage, "Hourly Demand", "Missing restaurant analytics page.");
+mustInclude(sources.analyticsPage, "hourlyDemand", "Missing restaurant hourly-demand analytics.");

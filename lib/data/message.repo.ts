@@ -16,12 +16,18 @@ export interface MessageRow {
   delivery_status: MessageDeliveryStatus | null;
   delivery_error: string | null;
   delivery_status_updated_at: string | null;
-  metadata?: Record<string, any> | null;
+  metadata?: Record<string, unknown> | null;
   created_at: string;
 }
 
 
 export const messageRepo = {
+  async wasProcessed(id: string, conversationId: string): Promise<boolean> {
+    const { data, error } = await supabaseAdmin.from("messages").select("metadata")
+      .eq("id", id).eq("conversation_id", conversationId).maybeSingle();
+    if (error) throw error;
+    return data?.metadata?.agent_processed === true;
+  },
   async insert(input: {
     conversationId: string;
     role: MessageRole;
@@ -29,7 +35,7 @@ export const messageRepo = {
     content: string;
     whatsappMsgId?: string | null;
     deliveryStatus?: MessageDeliveryStatus | null;
-    metadata?: Record<string, any> | null;
+    metadata?: Record<string, unknown> | null;
   }): Promise<MessageRow> {
     const { data, error } = await supabaseAdmin
       .from("messages")

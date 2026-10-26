@@ -51,6 +51,7 @@ export interface StateView {
   has_pickup_time: boolean;
   upsell_offered: boolean;
   awaiting_selection: boolean;
+  can_confirm?: boolean;
 }
 
 export interface Transition {
@@ -79,14 +80,6 @@ function missingSlot(view: StateView): ConversationStage | null {
   if (view.order_type === "delivery" && !view.has_address) return "collecting_delivery";
   if (view.order_type === "dine-in" && !view.has_dinein_details) return "collecting_dinein";
   if (view.order_type === "pickup" && !view.has_pickup_time) return "collecting_pickup";
-  return null;
-}
-
-/** Next missing slot after a newly chosen order type (view not patched yet). */
-function missingSlotForType(orderType: OrderType, view: StateView): ConversationStage | null {
-  if (orderType === "delivery" && !view.has_address) return "collecting_delivery";
-  if (orderType === "dine-in" && !view.has_dinein_details) return "collecting_dinein";
-  if (orderType === "pickup" && !view.has_pickup_time) return "collecting_pickup";
   return null;
 }
 
@@ -138,245 +131,92 @@ function infoActionFor(intent: Intent, u: TurnUnderstanding): AgentAction | null
 }
 
 export function nextTransition(view: StateView, u: TurnUnderstanding): Transition {
-  // 1) Escalation always wins
-  if (
-    u.wants_human ||
-    u.intents.includes("human_request") ||
-    u.sentiment === "angry" ||
-    u.intents.includes("complaint")
-  ) {
-    return {
-      nextStage: "human",
-      actions: [{ kind: "escalate_human", payload: { reason: u.intents.includes("complaint") ? "complaint" : "requested" } }],
-      escalate: true,
-    };
+  if (u.wants_human || u.intents.includes("human_request") || u.sentiment === "angry" || u.intents.includes("complaint")) {
+    return { nextStage: "human", actions: [{ kind: "escalate_human", payload: { reason: u.intents.includes("complaint") ? "complaint" : "requested" } }], escalate: true };
   }
+  if (u.intents.includes("restart_order")) return { nextStage: "browsing", actions: [{ kind: "restart_order" }], escalate: false };
+  if (u.intents.includes("cancel_order")) return { nextStage: "browsing", actions: [{ kind: "cancel_order" }], escalate: false };
+  if (u.intents.includes("reorder_previous")) return { nextStage: "building_cart", actions: [{ kind: "reorder_previous" }], escalate: false };
 
   const actions: AgentAction[] = [];
-  let nextStage: ConversationStage = view.stage;
-
-  // 2) Hard resets
-  if (u.intents.includes("restart_order")) {
-    return { nextStage: "browsing", actions: [{ kind: "restart_order" }], escalate: false };
-  }
-  if (u.intents.includes("cancel_order")) {
-    return { nextStage: "browsing", actions: [{ kind: "cancel_order" }], escalate: false };
-  }
-  if (u.intents.includes("reorder_previous")) {
-    return { nextStage: "confirming", actions: [{ kind: "reorder_previous" }], escalate: false };
-  }
-
-  // 3) Greeting
-  if (u.intents.includes("greeting")) {
-    if (view.cart.length === 0) {
-      actions.push({ kind: "greet" });
-      nextStage = "browsing";
-    } else {
-      actions.push({ kind: "smalltalk" });
-    }
-  }
-
-  // 4) Cart mutations (non-linear — can happen from any stage)
-  const isPureInfo =
-    u.primary_intent === "ask_item_info" ||
-    u.primary_intent === "browse_menu" ||
-    u.primary_intent === "ask_hours_or_location" ||
-    u.primary_intent === "ask_delivery_info" ||
-    u.primary_intent === "ask_payment" ||
-    u.primary_intent === "ask_recommendation" ||
-    u.primary_intent === "general_question";
-  if (u.intents.includes("add_items") && u.items.length > 0 && !isPureInfo) {
+  let nextStage = view.stage;
+  const adding = u.intents.includes("add_items") && u.items.length > 0;
+  const removing = u.intents.includes("remove_items") && u.removals.length > 0;
+  const updating = u.intents.includes("update_quantity") && u.items.length > 0;
+  const changedCart = adding || removing || updating;
+  // Removals first: replacing a dish must not delete the just-added replacement.
+  if (removing) actions.push({ kind: "remove_items", payload: { removals: u.removals } });
+  if (updating) actions.push({ kind: "update_quantity", payload: { items: u.items } });
+  if (adding) {
     actions.push({ kind: "add_items", payload: { items: u.items } });
-    if (!view.upsell_offered) {
-      actions.push({ kind: "offer_upsell" });
-    }
-    const allSlotsReady = Boolean(view.order_type && missingSlot(view) === null);
-    if (allSlotsReady) {
-      actions.push({ kind: "show_summary" });
-      nextStage = "confirming";
-    } else if (view.order_type) {
-      const missing = missingSlot(view);
-      if (missing) {
-        actions.push(promptForStage(missing));
-        nextStage = missing;
-      } else {
-        nextStage = "building_cart";
-      }
-    } else {
-      nextStage = "building_cart";
-    }
+    if (!view.upsell_offered) actions.push({ kind: "offer_upsell" });
   }
-  if (u.intents.includes("remove_items") && u.removals.length > 0) {
-    actions.push({ kind: "remove_items", payload: { removals: u.removals } });
-    nextStage = view.cart.length > 1 ? "building_cart" : "browsing";
-  }
-  if (u.intents.includes("update_quantity") && u.items.length > 0) {
-    actions.push({ kind: "update_quantity", payload: { items: u.items } });
-    nextStage = "building_cart";
-  }
+  if (changedCart) nextStage = "building_cart";
 
-  // 5) Informational intents — always answered, never change checkout stage
-  const inCheckout = CHECKOUT_STAGES.includes(view.stage);
+  if (u.intents.includes("greeting")) {
+    actions.push({ kind: view.cart.length === 0 ? "greet" : "smalltalk" });
+    if (!changedCart && view.cart.length === 0) nextStage = "browsing";
+  }
   for (const intent of u.intents) {
-    const ia = infoActionFor(intent, u);
-    if (ia) {
-      // Avoid duplicate info actions in the same turn
-      if (!actions.some((a) => a.kind === ia.kind)) {
-        actions.push(ia);
-      }
-      if (ia.kind === "show_menu" || (!inCheckout && ia.kind === "answer_info")) {
-        nextStage = view.cart.length > 0 ? "building_cart" : "browsing";
-      }
+    const action = infoActionFor(intent, u);
+    if (action && !actions.some((a) => a.kind === action.kind)) actions.push(action);
+    // Questions and menu interruptions preserve the checkout's missing slot.
+    if (action?.kind === "show_menu" && !CHECKOUT_STAGES.includes(view.stage) && !changedCart) {
+      nextStage = view.cart.length ? "building_cart" : "browsing";
     }
   }
 
-  // 6) Order type selection
-  if (u.intents.includes("set_order_type") || u.order_type) {
-    const chosen = u.order_type;
-    if (chosen) {
-      actions.push({ kind: "ask_order_type", payload: { chosen } });
-      nextStage = stageForOrderType(chosen);
-      const hasSlotInThisTurn =
-        (chosen === "delivery" && Boolean(u.address || view.has_address)) ||
-        (chosen === "pickup" && Boolean(u.pickup_time || view.has_pickup_time)) ||
-        (chosen === "dine-in" &&
-          (Boolean(u.guests) || view.has_guests) &&
-          (Boolean(u.reservation_time) || view.has_reservation_time));
-
-      const missing = missingSlotForType(chosen, view);
-      if (missing && !hasSlotInThisTurn) {
-        actions.push(promptForStage(missing));
-        nextStage = missing;
-      } else if (view.cart.length > 0 && hasSlotInThisTurn) {
-        if (!actions.some((a) => a.kind === "show_summary")) {
-          actions.push({ kind: "show_summary" });
-        }
-        nextStage = "confirming";
-      }
-    } else {
-      actions.push({ kind: "ask_order_type" });
-      nextStage = "choosing_order_type";
-    }
-  }
-
-  // 7) Address / slot collection
-  const orderTypeAlreadySet = Boolean(view.order_type || u.order_type);
+  const chosenType = u.order_type ?? view.order_type ?? (u.address ? "delivery" : null);
+  const effective: StateView = {
+    ...view,
+    order_type: chosenType,
+    has_address: Boolean(u.address) || view.has_address,
+    has_guests: Boolean(u.guests) || view.has_guests,
+    has_reservation_time: Boolean(u.reservation_time) || view.has_reservation_time,
+    has_dinein_details: (Boolean(u.guests) || view.has_guests) && (Boolean(u.reservation_time) || view.has_reservation_time),
+    has_pickup_time: Boolean(u.pickup_time) || view.has_pickup_time,
+  };
+  const hasSlots = Boolean(u.address || u.guests || u.reservation_time || u.pickup_time || u.notes?.startsWith("use_saved_address:"));
+  const changedFulfillment = Boolean(u.order_type || hasSlots || u.intents.includes("provide_address"));
+  if (u.order_type) actions.push({ kind: "ask_order_type", payload: { chosen: u.order_type } });
   if (u.address || u.notes?.startsWith("use_saved_address:")) {
     actions.push({ kind: "collect_delivery_address", payload: { address: u.address } });
-    if (orderTypeAlreadySet && view.cart.length > 0) {
-      if (!actions.some((a) => a.kind === "show_summary")) {
-        actions.push({ kind: "show_summary" });
-      }
-      nextStage = "confirming";
-    }
   } else if (u.intents.includes("provide_address")) {
-    // Tap on "New Address" button or typed "new address" — prompt for new address
     actions.push({ kind: "collect_delivery_address", payload: { isNewAddressRequest: true } });
-    nextStage = "collecting_delivery";
+    effective.has_address = false;
   }
-  if (u.guests || u.reservation_time) {
-    actions.push({ kind: "collect_dinein_details", payload: { guests: u.guests, reservation_time: u.reservation_time } });
-    const hasBothGuestsAndTime =
-      (Boolean(u.guests) || view.has_guests) &&
-      (Boolean(u.reservation_time) || view.has_reservation_time);
+  if (u.guests || u.reservation_time) actions.push({ kind: "collect_dinein_details", payload: { guests: u.guests, reservation_time: u.reservation_time } });
+  if (u.pickup_time) actions.push({ kind: "collect_pickup_time", payload: { pickup_time: u.pickup_time } });
 
-    if (hasBothGuestsAndTime && orderTypeAlreadySet && view.cart.length > 0) {
-      if (!actions.some((a) => a.kind === "show_summary")) {
-        actions.push({ kind: "show_summary" });
-      }
-      nextStage = "confirming";
-    } else {
-      nextStage = "collecting_dinein";
-    }
-  }
-  if (u.pickup_time) {
-    actions.push({ kind: "collect_pickup_time", payload: { pickup_time: u.pickup_time } });
-    if (orderTypeAlreadySet && view.cart.length > 0) {
-      if (!actions.some((a) => a.kind === "show_summary")) {
-        actions.push({ kind: "show_summary" });
-      }
-      nextStage = "confirming";
-    }
-  }
-
-  // 8) Confirm / checkout
-  if (u.intents.includes("confirm_order")) {
-    if (view.cart.length === 0) {
-      if (view.stage === "placed") {
-        actions.push({ kind: "smalltalk" });
-      } else {
-        actions.push({ kind: "ask_clarification", payload: { reason: "empty_cart" } });
-      }
-    } else {
-      const missing = missingSlot(view);
-      if (missing) {
-        nextStage = missing;
-        actions.push(promptForStage(missing));
-      } else if (view.stage !== "confirming" && u.notes !== "fast_path_confirm") {
-        actions.push({ kind: "show_summary" });
-        nextStage = "confirming";
-      } else {
-        actions.push({ kind: "place_order" });
-        nextStage = "placed";
-      }
-    }
-  }
-
-  // 9) Bare affirm — resolve by stage context
-  if (u.primary_intent === "affirm" && actions.length === 0) {
-    if (view.stage === "confirming") {
-      const missing = missingSlot(view);
-      if (missing) {
-        nextStage = missing;
-        actions.push(promptForStage(missing));
-      } else {
-        actions.push({ kind: "place_order" });
-        nextStage = "placed";
-      }
-    } else if (view.stage === "placed") {
-      actions.push({ kind: "smalltalk" });
+  const confirm = u.intents.includes("confirm_order") || u.primary_intent === "affirm";
+  const hasCart = view.cart.length > 0 || adding;
+  // Completion always follows mutations and slot validation; no stale summary can authorize a changed order.
+  if (hasCart && (confirm || changedFulfillment || (changedCart && chosenType))) {
+    const missing = missingSlot(effective);
+    if (missing) {
+      nextStage = missing;
+      const prompt = promptForStage(missing);
+      if (!actions.some((a) => a.kind === prompt.kind)) actions.push(prompt);
+    } else if (confirm && view.stage === "confirming" && view.can_confirm !== false && !changedCart && !changedFulfillment && !u.notes) {
+      actions.push({ kind: "place_order" });
       nextStage = "placed";
-    } else if (view.stage === "building_cart" && view.cart.length > 0 && !view.upsell_offered) {
-      // User says "Ok" / "Confirm" / "Theek hai" while cart has items → treat as confirm_order
-      const missing = missingSlot(view);
-      if (missing) {
-        nextStage = missing;
-        actions.push(promptForStage(missing));
-      } else {
-        actions.push({ kind: "show_summary" });
-        nextStage = "confirming";
-      }
-    } else if (view.stage === "building_cart" && view.upsell_offered) {
-      actions.push({ kind: "add_items", payload: { upsell: true } });
-    } else if (view.awaiting_selection && view.cart.length > 0) {
-      actions.push({ kind: "ask_clarification", payload: { reason: "which_option" } });
+    } else if (confirm && view.stage === "confirming" && view.can_confirm !== false && !changedCart && !changedFulfillment && u.notes?.startsWith("fast_path")) {
+      actions.push({ kind: "place_order" });
+      nextStage = "placed";
     } else {
-      actions.push({ kind: "ask_clarification", payload: { reason: "affirm_no_context" } });
+      actions.push({ kind: "show_summary" });
+      nextStage = "confirming";
     }
+  } else if (confirm && !hasCart && actions.length === 0) {
+    actions.push({ kind: view.stage === "placed" ? "smalltalk" : "ask_clarification", payload: { reason: "empty_cart" } });
+  } else if (changedFulfillment && !hasCart) {
+    nextStage = chosenType ? (missingSlot(effective) ?? "browsing") : "choosing_order_type";
+    if (!hasSlots && chosenType) actions.push(promptForStage(stageForOrderType(chosenType)));
   }
-
-  // 10) Bare deny — go back to cart view
   if (u.primary_intent === "deny" && actions.length === 0) {
-    if (view.stage === "building_cart" && view.upsell_offered) {
-      nextStage = "choosing_order_type";
-      actions.push({ kind: "ask_order_type" });
-    } else if (view.cart.length > 0) {
-      actions.push({ kind: "show_cart" });
-      nextStage = "building_cart";
-    } else {
-      actions.push({ kind: "show_menu" });
-      nextStage = "browsing";
-    }
+    nextStage = view.cart.length ? "building_cart" : "browsing";
+    actions.push({ kind: view.cart.length ? "show_cart" : "show_menu" });
   }
-
-  // 11) Fallback
-  if (actions.length === 0) {
-    if (u.info_query) {
-      actions.push({ kind: "answer_grounded", payload: { query: u.info_query } });
-    } else {
-      actions.push({ kind: "fallback" });
-    }
-  }
-
+  if (actions.length === 0) actions.push(u.info_query ? { kind: "answer_grounded", payload: { query: u.info_query } } : { kind: "fallback" });
   return { nextStage, actions, escalate: false };
 }

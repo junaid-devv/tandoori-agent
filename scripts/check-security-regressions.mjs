@@ -133,7 +133,7 @@ mustInclude(envExample, "RATE_LIMIT_HASH_SECRET=", "Missing rate-limit secret ex
 mustInclude(staffAlertsRoute, "resolveRequestBranch", "Missing branch-scoped staff alerts list API.");
 mustInclude(staffAlertRoute, "isBranchAllowed", "Missing branch access check for staff alert mutation.");
 mustInclude(staffAlertRoute, "ALERT_BODY_LIMIT_BYTES", "Missing staff alert mutation body limit.");
-mustInclude(dashboardPage, "Staff Alerts", "Missing staff alert dashboard panel.");
+mustInclude(dashboardPage, "alerts.map", "Missing staff alert dashboard panel.");
 mustInclude(dashboardPage, "/api/staff-alerts", "Missing staff alert dashboard data fetch.");
 
 failIfAnyApiRouteMatches(/\breq\.json\s*\(/, "raw req.json API body parsing");

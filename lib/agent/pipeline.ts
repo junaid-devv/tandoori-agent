@@ -15,7 +15,9 @@ import type { InteractivePayload } from "./interactive";
 import { loadTurnContext } from "./context";
 import { stateRepo } from "@/lib/data/state.repo";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import { extractBaseItemName } from "@/lib/menu/search";
+import type { ConversationStateRow } from "@/lib/schema.types";
 import type { ConversationStage } from "@/lib/schema.types";
 
 export interface TurnResult {
@@ -159,6 +161,72 @@ export function understandingFromInteractiveId(
   }
 }
 
+/** Exact choices only. Natural-language edits, questions and compound orders go to NLU. */
+export function fastUnderstanding(text: string, state: ConversationStateRow): TurnUnderstanding | null {
+  const raw = text.trim().replace(/^\[voice note\]\s*/i, "").trim();
+  const lang = inferLanguagePreference(raw, state.preferred_language);
+  const options = state.pending_clarification?.options ?? [];
+  const recent = state.last_shown_options_at && Date.now() - Date.parse(state.last_shown_options_at) < 5 * 60_000;
+  const shown = recent ? state.last_shown_options : [];
+  const fromId = (id: string) => {
+    const u = understandingFromInteractiveId(id, lang, shown, options);
+    if (u?.items.length && state.pending_clarification?.remaining_items?.length) {
+      const [pending, ...remaining] = state.pending_clarification.remaining_items;
+      u.items = [{ ...pending, query: u.items[0].query, size: null }, ...remaining];
+    }
+    return u;
+  };
+  if (/^(ordertype|confirm|item|category|action|addr):/.test(raw)) {
+    // Item IDs must belong to the current menu options, not a stale or forged tap.
+    if (raw.startsWith("item:") && !shown.some((o) => `item:${o.id}` === raw)) return null;
+    return fromId(raw);
+  }
+  const normalize = (value: string) => value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const numeric = raw.match(NUMERIC_RE);
+  if (numeric && options.length) {
+    const option = options[Number(numeric[1]) - 1];
+    return option ? fromId(option.id) : { ...makeBase(lang), notes: "fast_path_invalid_selection" };
+  }
+  // Exact label equivalence: "don't confirm" and "no delivery" must never match a button.
+  const matches = options.filter((o) => normalize(o.label) === normalize(raw));
+  if (matches.length === 1) return fromId(matches[0].id);
+  if (state.pending_clarification?.remaining_items?.length && recent) {
+    const variants = shown.filter((o) => normalize(extractBaseItemName(o.name).variant ?? "") === normalize(raw));
+    if (variants.length === 1) return fromId(`item:${variants[0].id}`);
+  }
+  if (numeric && recent && (state.stage === "browsing" || state.stage === "building_cart")) {
+    const option = shown[Number(numeric[1]) - 1];
+    if (option) {
+      const u = fromId(`item:${option.id}`);
+      if (u) u.notes = "fast_path_numeric_selection";
+      return u;
+    }
+  }
+  const base = makeBase(lang);
+  if (/^(?:ass?alam(?:u?\s*(?:o|al)?\s*alaikum)?|aoa|salam|hi|hello|hey|stare?\s*mashay|pa\s*kher)[!.]*$/i.test(raw)) {
+    return { ...base, intents: ["greeting"], primary_intent: "greeting" };
+  }
+  if (/^(?:yes|haan|han|ji|jee|ok|okay|theek hai|done|confirm|confirm order|place order)[!.]*$/i.test(raw)) {
+    return { ...base, intents: ["affirm"], primary_intent: "affirm" };
+  }
+  if (/^(?:checkout|check out|proceed to checkout|bill)$/i.test(raw)) return fromId("action:checkout");
+  if (/^(?:menu|view menu)$/i.test(raw)) return fromId("action:view_menu");
+  if (/^(?:add more|aur add karna hai|kuch aur add karna hai|or kia add krna hai)$/i.test(raw)) return fromId("action:add_more");
+  if (/^(?:back|go back|wapas jao|view cart)$/i.test(raw)) return fromId("action:view_cart");
+  if (/^(?:new address|naya address)$/i.test(raw)) return fromId("addr:new");
+  if (/^(?:delivery|pickup|takeaway|dine[ -]?in)$/i.test(raw)) {
+    return fromId(`ordertype:${/^dine/i.test(raw) ? "dine-in" : /^take/i.test(raw) ? "pickup" : raw.toLowerCase()}`);
+  }
+  return null;
+}
+
+function priorHistory(history: Array<{ id: string; role: "user" | "assistant"; content: string }>, messageId?: string | null) {
+  const current = history.findIndex((m) => m.id === messageId);
+  // If the current message fell outside the window, use no history rather than future turns.
+  return (messageId ? (current >= 0 ? history.slice(0, current) : []) : history)
+    .map(({ role, content }) => ({ role, content }));
+}
+
 export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   const startedAt = Date.now();
   const t = { ctx: 0, nlu: 0, fsm: 0, exec: 0 };
@@ -170,487 +238,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   });
   t.ctx = Date.now() - startedAt;
 
-  let understanding: TurnUnderstanding | null = null;
-
-  // ── 1a) Interactive tap (button / list id) ──────────────────────────────────
-  if (/^(ordertype|confirm|item|category|action|addr):/.test(input.messageText.trim())) {
-    understanding = understandingFromInteractiveId(
-      input.messageText.trim(),
-      ctx.state.preferred_language,
-      ctx.state.last_shown_options,
-      ctx.state.pending_clarification?.options,
-    );
-  }
-
-  // ── 1a.2) Selection from pending clarification / interactive buttons (Evolution API & text replies) ──
-  if (!understanding && ctx.state.pending_clarification?.options?.length) {
-    const rawTrimmed = input.messageText.trim();
-    const cleanLower = rawTrimmed.toLowerCase();
-    const numMatch = rawTrimmed.match(/^[\s#*]*(?:reply\s*|type\s*)?(\d{1,2})[\s*.]*$/i);
-    const opts = ctx.state.pending_clarification.options;
-
-    let selectedId: string | null = null;
-
-    if (numMatch) {
-      const idx = Number(numMatch[1]) - 1;
-      if (idx >= 0 && idx < opts.length) {
-        selectedId = opts[idx].id;
-      }
-    } else {
-      // Check for textual button title matches
-      // e.g. "checkout", "add more", "view menu", "menu", "confirm", "delivery", "pickup", "dine in"
-      const cleanMsg = cleanLower.replace(/[^a-z0-9]/g, "");
-      for (const opt of opts) {
-        const cleanOpt = opt.label.toLowerCase().replace(/[^a-z0-9]/g, "");
-        if (cleanMsg && cleanOpt && (cleanMsg === cleanOpt || cleanMsg.includes(cleanOpt) || cleanOpt.includes(cleanMsg))) {
-          selectedId = opt.id;
-          break;
-        }
-      }
-    }
-
-    if (selectedId) {
-      understanding = understandingFromInteractiveId(
-        selectedId,
-        ctx.state.preferred_language,
-        ctx.state.last_shown_options,
-        opts,
-      );
-    }
-  }
-
-  // ── 1a.3) Contextual shortcuts for Evolution API numbers & common replies ────────
-  if (!understanding) {
-    const rawTrimmed = input.messageText.trim();
-    const cleanLower = rawTrimmed.toLowerCase();
-    const cleanAlpha = cleanLower.replace(/[^a-z0-9]/g, "");
-
-    // A) When cart has items:
-    if (ctx.state.cart.length > 0) {
-      // "2" or "checkout" or "bill" or "check out" -> checkout / confirm order
-      if (rawTrimmed === "2" || /^(checkout|check\s*out|bill|order\s*confirm|confirm\s*order|place\s*order)$/i.test(cleanLower) || cleanAlpha === "checkout") {
-        understanding = understandingFromInteractiveId("action:checkout", ctx.state.preferred_language, ctx.state.last_shown_options);
-      }
-      // "1" when cartActionButtons was likely shown (building_cart) -> add more
-      else if (rawTrimmed === "1" && ctx.view.stage === "building_cart") {
-        understanding = understandingFromInteractiveId("action:add_more", ctx.state.preferred_language, ctx.state.last_shown_options);
-      }
-      // "confirm" / "yes" / "theek hai" when in confirming stage or summary was sent -> confirm order
-      else if ((ctx.view.stage === "confirming" || ctx.state.summary_sent_at !== null) && /^(1|confirm|yes|haan|theek\s*hai|done|ok)$/i.test(cleanLower)) {
-        understanding = understandingFromInteractiveId("confirm:yes", ctx.state.preferred_language, ctx.state.last_shown_options);
-      }
-    }
-    // B) When cart is empty on greeting or browsing:
-    else if (ctx.state.cart.length === 0) {
-      // "1" or "menu" or "view menu" -> show menu
-      if (rawTrimmed === "1" || /^(1|menu|view\s*menu|dekhna\s*hai|kya\s*hai)$/i.test(cleanLower) || cleanAlpha === "viewmenu" || cleanAlpha === "menu") {
-        understanding = understandingFromInteractiveId("action:view_menu", ctx.state.preferred_language, ctx.state.last_shown_options);
-      }
-    }
-
-    // C) Order type shortcuts:
-    if (!understanding && (ctx.view.stage === "choosing_order_type" || ctx.view.stage === "collecting_delivery")) {
-      if (/^(1|delivery|deliver)$/i.test(cleanLower)) {
-        understanding = understandingFromInteractiveId("ordertype:delivery", ctx.state.preferred_language, ctx.state.last_shown_options);
-      } else if (/^(2|pickup|takeaway|take\s*away)$/i.test(cleanLower)) {
-        understanding = understandingFromInteractiveId("ordertype:pickup", ctx.state.preferred_language, ctx.state.last_shown_options);
-      } else if (/^(3|dine\s*in|dinein)$/i.test(cleanLower)) {
-        understanding = understandingFromInteractiveId("ordertype:dine-in", ctx.state.preferred_language, ctx.state.last_shown_options);
-      }
-    }
-  }
-
-  // ── 1b) Pure greeting ──────────────────────────────────────────────────────
-  const GREETING_RE = /^(?:g|ji|jee|haan|hanji|ass?al[a-z\s'-]*|aoa|a\.?o\.?a|salam|slam|hi|hello|hey|hola|good\s*(?:morning|afternoon|evening)|kese\s*ho|kia\s*hal\s*hai|kaise\s*hain|stare?\s*mashay|pa\s*khe[ri]r?|tsanga\s*ye)(?:\s+(?:bhai|janab|sir|dear|team|all|ap|aap|ji|jee|rasha|wrora|saib))?[!.]*$/i;
-  if (
-    !understanding &&
-    GREETING_RE.test(input.messageText.trim())
-  ) {
-    const isPashtoGreeting = /^(?:stare?\s*mashay|pa\s*khe[ri]r?|tsanga\s*ye)/i.test(input.messageText.trim());
-    const isUrduGreeting = /^(?:g|ji|jee|haan|hanji|kese|kia\s*hal|kya\s*hal|kaise|aoa|a\.?o\.?a|salam|slam|ass?al[a-z\s'-]*|adaab)/i.test(input.messageText.trim());
-    // Greet in Pashto if person previously communicated in Pashto OR used a Pashto greeting
-    const langToUse = isPashtoGreeting || ctx.state.preferred_language === "pashto"
-      ? "pashto"
-      : isUrduGreeting || ctx.state.preferred_language === "roman_urdu"
-      ? "roman_urdu"
-      : ctx.state.preferred_language || "roman_urdu";
-    understanding = {
-      ...makeBase(langToUse),
-      intents: ["greeting"],
-      primary_intent: "greeting",
-      notes: "fast_path_greeting",
-    };
-  }
-
-  // ── 1b.2) Neutral acknowledgment when cart is empty ───────────────────────
-  const ACK_RE = /^(?:ok|okay|theek\s*hai|thk\s*hai|thik\s*hai|acha|achha|got\s*it|fine|alright|sahi|sahi\s*hai|ji|jee|haanji|kha|dera\s*manana|manana|ao)[!.]*$/i;
-  if (
-    !understanding &&
-    ctx.state.cart.length === 0 &&
-    ACK_RE.test(input.messageText.trim())
-  ) {
-    understanding = {
-      ...makeBase(ctx.state.preferred_language),
-      intents: ["smalltalk"],
-      primary_intent: "smalltalk",
-      notes: "fast_path_neutral_ack",
-    };
-  }
-
-  // ── 1c) Bare numeric selection of last-shown option ────────────────────────
-  const numeric = input.messageText.match(NUMERIC_RE);
-  const isBrowsingOrBuildingCart = ctx.view.stage === "browsing" || ctx.view.stage === "building_cart";
-  if (!understanding && numeric && isBrowsingOrBuildingCart && ctx.view.awaiting_selection && ctx.state.last_shown_options.length > 0) {
-    const idx = Number(numeric[1]) - 1;
-    const chosen = ctx.state.last_shown_options[idx];
-    if (chosen) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["add_items"],
-        primary_intent: "add_items",
-        items: [{ query: chosen.name, qty: 1, size: null, addons: [], notes: null }],
-        notes: "fast_path_numeric_selection",
-      };
-    }
-  }
-
-  // ── 1d) Name match against last-shown options ──────────────────────────────
-  // When options were recently shown (e.g. after category browse or "Add More" or disambiguation),
-  // a message that closely matches one of them should add it with the requested quantity.
-  // Guard: skip if the message looks like a question — route to NLU for info handling instead.
-  // Also only run when in browsing or building_cart stages to prevent checkout detail hijacking.
-  const QUESTION_SIGNALS =
-    /(\?|kia\s*hai|kya\s*hai|kia\s*h|kya\s*h|\bkia\b|\bkya\b|kaisa|details|batao|bata|what\s*is|how\s*much|kitne|kitnay|kitna|rate|price|cost|bhav|bhao|tsomra|kya\s*rate|kia\s*rate|ka\s*rate|ki\s*hai|mein\s*kya|main\s*kia|mein\s*kia|main\s*kya|ingredients|contains|mila|milta)/i;
-  if (!understanding && isBrowsingOrBuildingCart && ctx.state.last_shown_options.length > 0 && ctx.state.last_shown_options_at) {
-    const ageMs = Date.now() - new Date(ctx.state.last_shown_options_at).getTime();
-    const OPTION_WINDOW_MS = 5 * 60 * 1000; // 5 minutes
-    if (ageMs < OPTION_WINDOW_MS && !QUESTION_SIGNALS.test(input.messageText)) {
-      const rawText = input.messageText.trim().toLowerCase();
-      const cleanText = rawText.replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-      const numMatch = cleanText.match(/\b\d+\b/);
-      const cleanNum = numMatch ? numMatch[0] : null;
-      const match = ctx.state.last_shown_options.find((o) => {
-        const oName = o.name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
-        if (oName === cleanText || cleanText.includes(oName) || oName.split(" ").every((w) => cleanText.includes(w))) {
-          return true;
-        }
-        // Match variant size if multi-variant options were shown (e.g. "13 inch" or "13" -> "Tanduri Pizza 13\"")
-        const oVariant = extractBaseItemName(o.name).variant?.replace(/[^a-z0-9]/g, "");
-        if (oVariant && (cleanText === oVariant || cleanText.includes(oVariant) || (cleanNum && oVariant.includes(cleanNum)))) {
-          return true;
-        }
-        return false;
-      });
-      if (match) {
-        let qty = 1;
-        const { variant } = extractBaseItemName(match.name);
-        const vDigits = variant ? variant.replace(/\D/g, "") : null;
-        const qtyCandidates = [...input.messageText.matchAll(/\b([1-9]\d?)\b(?!\s*(?:inch|"|'|cm|\/))/gi)]
-          .map((m) => ({ val: Number(m[1]), index: m.index ?? 0 }))
-          .filter((c) => {
-            if (vDigits && String(c.val) === vDigits) return false;
-            const prefix = input.messageText.slice(0, c.index).toLowerCase().trim();
-            if (prefix.endsWith("deal") || prefix.endsWith("deal#") || prefix.endsWith("no") || prefix.endsWith("number")) return false;
-            return true;
-          });
-
-        if (qtyCandidates.length > 0) {
-          qty = Math.min(qtyCandidates[0].val, 50);
-        }
-        understanding = {
-          ...makeBase(ctx.state.preferred_language),
-          intents: ["add_items"],
-          primary_intent: "add_items",
-          items: [{ query: match.name, qty, size: null, addons: [], notes: null }],
-          notes: "fast_path_name_match",
-        };
-      }
-    }
-  }
-
-  // ── 1d.5) Pronoun resolution — "is main kia hai?" / "yeh wala" / "iske baare mein" ─────
-  // When the user uses a pronoun to refer to the most recent item in cart or last-shown options,
-  // resolve the pronoun to that item and route as an info query about it.
-  const PRONOUN_QUERY_RE =
-    /^(?:is|yeh|ye|iss|iska|iski|iske|yah|yahi|woh|wala|isi|in)\b.*(?:\?|kia\s*hai|kya\s*hai|batao|bata|details|main\s*kia|mein\s*kya|kya\s*h|kia\s*h|iske|describe|hai\s*kia|hai\s*kya)/i;
-  if (!understanding && PRONOUN_QUERY_RE.test(input.messageText.trim())) {
-    // Resolve: last cart item > last shown option
-    const lastCartItem = ctx.state.cart.length > 0 ? ctx.state.cart[ctx.state.cart.length - 1] : null;
-    const lastOption = ctx.state.last_shown_options.length > 0 ? ctx.state.last_shown_options[0] : null;
-    const referent = lastCartItem?.name ?? lastOption?.name ?? null;
-    if (referent) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["ask_item_info"],
-        primary_intent: "ask_item_info",
-        info_query: referent,
-        notes: "fast_path_pronoun_resolve",
-      };
-    }
-  }
-
-  // ── 1e) Order type, Checkout, Confirm & Navigation button text fast-paths ───
-  if (!understanding) {
-    const trimmed = input.messageText.trim();
-    if (
-      (ctx.view.stage === "confirming" || (ctx.view.stage === "building_cart" && ctx.state.cart.length > 0)) &&
-      /^(confirm\s*✓?|confirm order|place order|order confirm|haan confirm|yes confirm|proceed|ok|okay|done|theek hai|thik hai|thk hai|bilkul|zaroor|haan|haa|ha)$/i.test(trimmed)
-    ) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ctx.view.stage === "confirming" ? ["confirm_order"] : ["affirm"],
-        primary_intent: ctx.view.stage === "confirming" ? "confirm_order" : "affirm",
-        notes: "fast_path_confirm",
-      };
-    } else if (/^(checkout|proceed to checkout|bill)$/i.test(trimmed)) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["confirm_order"],
-        primary_intent: "confirm_order",
-        notes: "fast_path_checkout",
-      };
-    } else if (
-      /^(?:(?:kuch\s+)?(?:aur|or)\s+(?:(?:kya|kia)\s+add\s+k(?:ar|r|a)?na\s+h(?:ai)?|add\s+(?:karein|karen|k(?:ar|r|a)?na\s+h(?:ai)?|k(?:ar|r|a)?na|k(?:ar|r)?do|karo|bhejo|dalein|dalen)|dalein|dalen|daalain|daalo|dalo|kuch(?:\s+add\s+k(?:ar|r|a)?na\s+h(?:ai)?)?|mangwana\s+h(?:ai)?|lena\s+h(?:ai)?|add)|kuch\s+(?:aur|or)\s+add\s+k(?:ar|r|a)?na\s+h(?:ai)?|add\s*more(?:\s+items?)?|want\s+to\s+add\s+more|nor\s+(?:tse\s+)?add(?:\s+kawal(?:\s+ghwaram)?)?)[!.]*$/i.test(trimmed)
-    ) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["browse_menu"],
-        primary_intent: "browse_menu",
-        info_query: "add_more",
-        notes: "fast_path_add_more",
-      };
-    } else if (/^(wapas jao|go back|back|cart dekhein|view cart)$/i.test(trimmed)) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["view_cart"],
-        primary_intent: "view_cart",
-        notes: "fast_path_view_cart",
-      };
-    } else if (
-      ctx.view.stage === "collecting_delivery" &&
-      !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(trimmed) &&
-      !/^(pickup|dine-in|dine in)$/i.test(trimmed) &&
-      trimmed.length >= 2 &&
-      trimmed.length <= 150
-    ) {
-      // Detect "Naya Address" / "New address" button text or typed equivalent → prompt for address, don't capture
-      const isNewAddressRequest = /^(new|naya|naya\s+address|new\s+address)$/i.test(trimmed) || trimmed === "addr:new";
-      // Detect questions — contains ?, or common question words → let NLU handle
-      const isQuestion = /[?]|(?:^|\b)(?:kia|kya|kitna|kitni|kitnay|kab|konsa|konsi|kaisa|hai\s*(?:kia|kya)|time|timing|fee|charges|delivery|menu|deal|mein\s*(?:kia|kya)|main\s*(?:kia|kya)|batao|bata|dikhao|details|available|price|rate|open|close|band|khul)(?:\b|$)/i.test(trimmed);
-      // Detect order type switches
-      const isOrderTypeSwitch = /(?:switch|change|actually|nahi)\s*(?:to\s+)?(?:pickup|dine.?in)/i.test(trimmed) || /^(?:pickup|dine.?in)\s*(?:krdo|kardo|please|chahiye)?$/i.test(trimmed);
-      // Detect human escalation
-      const isEscalation = /(?:insaan|manager|staff|agent|person|banday?\s+se\s+baat)/i.test(trimmed);
-
-      if (isNewAddressRequest) {
-        // Route to FSM's provide_address without an address → it will prompt
-        understanding = {
-          ...makeBase(ctx.state.preferred_language),
-          intents: ["provide_address"],
-          primary_intent: "provide_address",
-          notes: "prompt_new_address",
-        };
-      } else if (!isQuestion && !isOrderTypeSwitch && !isEscalation) {
-        // Treat as actual address
-        understanding = {
-          ...makeBase(ctx.state.preferred_language),
-          intents: ["provide_address"],
-          primary_intent: "provide_address",
-          address: trimmed,
-          notes: "fast_path_collecting_delivery_address",
-        };
-      }
-      // else: falls through to NLU for questions, order type switches, etc.
-    } else if (
-      ctx.view.stage === "collecting_dinein" &&
-      !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(trimmed)
-    ) {
-      const combinedMatch =
-        trimmed.match(/(?:for\s+)?([1-9]\d?)\s*(?:people|persons|guests|members|log|banday|afraad)?\s*(?:at\s+|,\s*)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)?)/i) ||
-        trimmed.match(/(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje)?)\s*(?:for\s+|,)?\s*([1-9]\d?)\s*(?:people|persons|guests|members|log|banday|afraad)?/i);
-
-      if (combinedMatch && /am|pm|baje|:/i.test(trimmed)) {
-        const isTimeFirst = /am|pm|baje|:/i.test(combinedMatch[1]);
-        const guests = Number(isTimeFirst ? combinedMatch[2] : combinedMatch[1]);
-        const timeStr = isTimeFirst ? combinedMatch[1] : combinedMatch[2];
-        understanding = {
-          ...makeBase(ctx.state.preferred_language),
-          intents: ["provide_dinein_details"],
-          primary_intent: "provide_dinein_details",
-          guests: Math.min(guests, 50),
-          reservation_time: timeStr,
-          notes: "fast_path_dinein_combined",
-        };
-      } else {
-        const guestOnlyMatch = trimmed.match(/^(?:for\s+)?([1-9]\d?)\s*(?:people|persons|guests|members|log|banday|afraad|seats|adad)?$/i);
-        const timeOnlyMatch = trimmed.match(/^(?:at\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje|o'?clock)?)$/i);
-
-        if (guestOnlyMatch && !/am|pm|baje/i.test(trimmed)) {
-          const guests = Math.min(Number(guestOnlyMatch[1]), 50);
-          understanding = {
-            ...makeBase(ctx.state.preferred_language),
-            intents: ["provide_dinein_details"],
-            primary_intent: "provide_dinein_details",
-            guests,
-            notes: "fast_path_dinein_guests",
-          };
-        } else if (timeOnlyMatch) {
-          understanding = {
-            ...makeBase(ctx.state.preferred_language),
-            intents: ["provide_dinein_details"],
-            primary_intent: "provide_dinein_details",
-            reservation_time: timeOnlyMatch[1],
-            notes: "fast_path_dinein_time",
-          };
-        }
-      }
-    } else if (
-      ctx.view.stage === "collecting_pickup" &&
-      !/^(cancel|khatam|stop|restart|menu|help|manager|insaan|hi|hello|hey|salam|aoa)$/i.test(trimmed)
-    ) {
-      const pickupTimeMatch = trimmed.match(/^(?:at\s+|in\s+)?(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje|mins?|minutes?|hours?)?)$/i);
-      if (pickupTimeMatch) {
-        understanding = {
-          ...makeBase(ctx.state.preferred_language),
-          intents: ["provide_pickup_time"],
-          primary_intent: "provide_pickup_time",
-          pickup_time: trimmed,
-          notes: "fast_path_pickup_time",
-        };
-      }
-    } else if (
-      ctx.savedAddress &&
-      /^(?:use saved|use saved address|saved address|pichla address|same address|purana address|previous address|wahi address|wahi pe|same)$/i.test(trimmed)
-    ) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["provide_address"],
-        primary_intent: "provide_address",
-        notes: `use_saved_address:${ctx.savedAddress.id}`,
-      };
-    } else if (
-      /^(?:can i (?:change|switch) to |switch to |actually |no |nahi )?(delivery|pickup|dine-in|dine in)(?: is fine| krdo| kardo| please| chahiye| it\.{0,3})?$/i.test(trimmed) ||
-      /^(?:no you deliver it\.{0,3}|deliver it\.{0,3}|deliver please)$/i.test(trimmed)
-    ) {
-      const match = trimmed.match(/\b(delivery|pickup|dine-in|dine in)\b/i);
-      const raw = match ? match[1].toLowerCase().replace(" ", "-") : (trimmed.toLowerCase().includes("deliver") ? "delivery" : "pickup");
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["set_order_type"],
-        primary_intent: "set_order_type",
-        order_type: raw === "delivery" || raw === "pickup" || raw === "dine-in" ? raw : null,
-        notes: "fast_path_order_type_change",
-      };
-    } else if (/(?:table\s+book|dine-?in|table\s+chahiye|dine\s+in)/i.test(trimmed)) {
-      const guestsMatch = trimmed.match(/\b(\d+)\s*(?:log|people|persons|guests|bande|bnde)\b/i);
-      const timeMatch = trimmed.match(/\b(\d{1,2}(?::\d{2})?\s*(?:am|pm|baje))\b/i);
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["set_order_type", "provide_dinein_details"],
-        primary_intent: "set_order_type",
-        order_type: "dine-in",
-        guests: guestsMatch ? Number(guestsMatch[1]) : null,
-        reservation_time: timeMatch ? timeMatch[1] : null,
-        notes: "fast_path_dinein",
-      };
-    } else if (
-      (ctx.view.stage === "placed" || ctx.state.stage === "placed" || /(?:order\s+kahan|kab\s+(?:tak\s+)?ayga|kitna\s+time\s+lag|time\s+kitna\s+lag)/i.test(trimmed)) &&
-      /(?:kab\s+(?:tak\s+)?(?:ayga|aega|aayega|deliver\s+hoga|pohnchega)|time\s+kitna\s+lag(?:ega|y\s*ga)?|kitna\s+time\s+lag(?:ega|y\s*ga)?|kahan\s+pohncha|status\s+(?:kia|kya)\s+hai|order\s+kahan\s+hai)/i.test(trimmed)
-    ) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["order_status"],
-        primary_intent: "order_status",
-        info_query: trimmed,
-        notes: "fast_path_order_status",
-      };
-    } else if (
-      /(?:delivery\s+(?:kis\s+time|kab|timing|time|available\s+hogi|hogi|chal|available)|kab\s+(?:tak\s+)?(?:deliver\s+(?:hoga|hogi)|a(?:ye|jae)ga|milega|pohnchega)|k(?:i|t)n(?:i|a)\s*(?:d(?:e|a)y?r|time|waqt)|delivery\s*time|delivery\s*timing|delivery\s*charges|delivery\s*fee)/i.test(trimmed) &&
-      !/karahi|biryani|burger|tikka|kabab|pizza|bhejo|krdo|kardo/i.test(trimmed)
-    ) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["ask_delivery_info"],
-        primary_intent: "ask_delivery_info",
-        info_query: trimmed,
-        notes: "fast_path_delivery_info",
-      };
-    } else if (
-      /(?:welcome|you'?re welcome|you are welcome|ur welcome|yw|no problem|no prob|np|thank you|thanks|thx|tysm|shukriya|bohat shukriya|bahut shukriya|jazakallah|jazak allah|meharbani|great|awesome|nice|zabardast|good|perfect|super|mashallah|masha allah|subhanallah|allah hafiz|bye|goodbye|cya|take care)/i.test(trimmed) &&
-      !/(?:biryani|karahi|handi|tikka|kabab|burger|pizza|roti|naan|nan|bhejo|krdo|kardo|order|chahiye|mangwana|dal do|daal do|table|book)/i.test(trimmed)
-    ) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["smalltalk"],
-        primary_intent: "smalltalk",
-        notes: "fast_path_smalltalk",
-      };
-    } else if (/(?:restaurant\s+)?(?:kab|kistime|kis\s+time)\s+(?:open|khulta|khula|khul)|(?:kab|kistime|kis\s+time)\s+(?:open|close|khulta|band)|(?:opening|closing)\s+(?:time|hours)|(?:what\s+are\s+your\s+hours|timing\s+kya\s+hai|restaurant\s+timing|timings\s+kya\s+hain)/i.test(trimmed)) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["ask_hours_or_location"],
-        primary_intent: "ask_hours_or_location",
-        info_query: trimmed,
-        notes: "fast_path_hours",
-      };
-    } else if (/^(?:payment|cod|cash\s+on\s+delivery|online\s+payment|card\s+payment|how\s+to\s+pay|payment\s+kese\s+karni\s+hai|payment\s+method)/i.test(trimmed)) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language),
-        intents: ["ask_payment"],
-        primary_intent: "ask_payment",
-        info_query: trimmed,
-        notes: "fast_path_payment",
-      };
-    } else if (
-      /^(?:menu|view\s*menu|show\s*menu|all\s*menu|full\s*menu|deals?|offers?|menu\s*(?:dikhao|dekhna|bhejo|card|list|kya\s*hai|dein|send|plz|please)?|kya\s*(?:hai|milega|milta\s*hai)|what(?:'?s|\s+is)\s+(?:on\s+the\s+)?menu)$/i.test(trimmed)
-    ) {
-      understanding = {
-        ...makeBase(ctx.state.preferred_language || "roman_urdu"),
-        intents: ["browse_menu"],
-        primary_intent: "browse_menu",
-        notes: "fast_path_menu_request",
-      };
-    } else if (ctx.menu && ctx.menu.length > 0) {
-      const lower = trimmed.toLowerCase();
-      const ORDER_SIGNALS = /\b(order|deliver|delivery|bhejo|krdo|kardo|chahiye|mangwana|pack|parcel|add|dal|daal|bhej|de do|dena|rakho)\b/i;
-      const HAS_QTY = /\b(\d+|ek|do|teen|char|one|two|three)\b/i;
-      if (!ORDER_SIGNALS.test(trimmed) && !HAS_QTY.test(trimmed)) {
-        const categories = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
-        const cleanLower = lower.replace(/[^a-z0-9]/g, "");
-        const cleanStem = cleanLower.replace(/s$/, "");
-        const matchedCategory = categories.find((c) => {
-          const cLower = c.toLowerCase().replace(/[^a-z0-9]/g, "");
-          const cStem = cLower.replace(/s$/, "");
-          return (
-            cleanLower === cLower ||
-            cleanStem === cStem ||
-            cStem.endsWith(cleanStem) ||
-            cleanLower === `${cLower}s` ||
-            cLower === `${cleanLower}s` ||
-            cleanLower === `${cLower}menu` ||
-            cleanStem === `${cStem}menu` ||
-            cleanLower === `show${cLower}` ||
-            cleanStem === `show${cStem}` ||
-            cleanLower === `${cLower}dikhao` ||
-            cleanStem === `${cStem}dikhao` ||
-            cleanLower === `${cLower}dekhna` ||
-            cleanStem === `${cStem}dekhna` ||
-            cleanLower === `${cLower}category` ||
-            cleanLower === `${cLower}section`
-          );
-        });
-        if (matchedCategory && lower !== "menu") {
-          understanding = {
-            ...makeBase(ctx.state.preferred_language),
-            intents: ["browse_menu"],
-            primary_intent: "browse_menu",
-            info_query: matchedCategory,
-            notes: "fast_path_category_match",
-          };
-        }
-      }
-    }
-  }
+  let understanding = fastUnderstanding(input.messageText, ctx.state);
 
   // ── 2) NLU ─────────────────────────────────────────────────────────────────
   const nluStart = Date.now();
@@ -660,10 +248,29 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       language: ctx.state.preferred_language,
       stage: ctx.state.stage,
       cart: ctx.state.cart.map((c) => ({ name: c.name, qty: c.qty })),
-      lastShownOptions: ctx.state.last_shown_options.map((o) => o.name),
+      lastShownOptions: ctx.view.awaiting_selection ? ctx.state.last_shown_options.map((o) => o.name) : [],
+      conversationId: input.conversationId,
+      pendingOptions: ctx.state.pending_clarification?.options,
+      pendingItems: ctx.state.pending_clarification?.remaining_items,
+      fulfillment: {
+        order_type: ctx.state.order_type, address: ctx.state.address, guests: ctx.state.guests,
+        reservation_time: ctx.state.reservation_time, pickup_time: ctx.state.pickup_time,
+      },
+      // Only history preceding this inbound message; never consume later queued turns.
+      history: priorHistory(ctx.history ?? [], input.messageId),
     });
   }
   t.nlu = Date.now() - nluStart;
+
+  // Uncertain extractions must not edit a real order. Explicit taps have confidence 1.
+  if (understanding.confidence < 0.55 && !understanding.wants_human) {
+    understanding = { ...makeBase(understanding.language), confidence: understanding.confidence,
+      notes: "fast_path_uncertain_understanding" };
+  }
+  const invalidStepCount = understanding.primary_intent === "unknown" ? ctx.state.invalid_step_count + 1 : 0;
+  if (invalidStepCount >= 3) {
+    understanding = { ...understanding, wants_human: true, intents: ["human_request"], primary_intent: "human_request" };
+  }
 
   // ── 3) FSM ─────────────────────────────────────────────────────────────────
   const fsmStart = Date.now();
@@ -693,15 +300,16 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   // (e.g. confirm button tap arriving within milliseconds) always sees the
   // updated order_type / address / cart. The ~30–50 ms overhead is worth the
   // correctness guarantee.
-  try {
-    await stateRepo.patch(input.conversationId, {
+  {
+    const statePatch = {
       ...exec.statePatch,
+      invalid_step_count: invalidStepCount,
       last_processed_user_message_id: input.whatsappMessageId ?? undefined,
       last_user_whatsapp_msg_id: input.whatsappMessageId ?? undefined,
       last_processed_user_message_at: new Date().toISOString(),
-    });
-  } catch (e) {
-    console.error("[pipeline] state patch failed:", e);
+    };
+    if (input.messageId) await stateRepo.commitTurn(input.conversationId, input.messageId, statePatch);
+    else await stateRepo.patch(input.conversationId, statePatch);
   }
 
   const latencyMs = Date.now() - startedAt;
@@ -727,7 +335,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   return {
     replyText: exec.replyText,
     stage: exec.statePatch.stage ?? ctx.state.stage,
-    address: exec.statePatch.address ?? ctx.state.address,
+    address: exec.statePatch.address !== undefined ? exec.statePatch.address : ctx.state.address,
     placeOrder: exec.placeOrder,
     escalate: exec.escalate,
     intent: understanding.primary_intent,

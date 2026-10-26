@@ -65,7 +65,7 @@ mustInclude(executor, "resolveItem", "Missing resolveItem in executor.");
 mustInclude(executor, "searchMenu", "Missing searchMenu in executor.");
 mustInclude(executor, "addToCart", "Missing addToCart in executor.");
 mustInclude(executor, "removeFromCart", "Missing removeFromCart in executor.");
-mustInclude(executor, "updateQuantity", "Missing updateQuantity in executor.");
+mustInclude(executor, "findCartMatches", "Missing cart-scoped quantity target resolution in executor.");
 
 // 4) Hybrid search with vector & lexical fallbacks
 mustInclude(search, "match_menu_items_by_embedding", "Missing match_menu_items_by_embedding RPC in search.");

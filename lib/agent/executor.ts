@@ -10,13 +10,13 @@
  *   the text and tap-list in sync.
  * - Replies are built as a flat string[] and joined with a single newline.
  *   No \n\n inside individual reply strings.
- * - All interactive payloads are attached once (first writer wins).
+ * - The final action owns the interactive payload shown to the customer.
  */
-import type { AgentAction, Transition } from "./state-machine";
+import type { Transition } from "./state-machine";
 import type { TurnUnderstanding } from "./nlu";
 import { reply } from "./reply";
-import { addToCart, removeFromCart, updateQuantity, cartSubtotal } from "./cart";
-import { searchMenu, resolveItem, resolveItemDetailed, extractBaseItemName, extractSizeFromQuery } from "@/lib/menu/search";
+import { addToCart, removeFromCart, findCartMatches, cartSubtotal } from "./cart";
+import { searchMenu, resolveItemDetailed, extractBaseItemName } from "@/lib/menu/search";
 import { orderRepo } from "@/lib/data/order.repo";
 import { groundedAnswer } from "./answer";
 import {
@@ -30,11 +30,12 @@ import {
 } from "./interactive";
 import type { TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
-import { findMatchingDeliveryArea, buildDeliveryAreaHint } from "./delivery";
+import { findMatchingDeliveryArea, buildDeliveryAreaHint, isCompleteDeliveryAddress } from "./delivery";
 import { parseCustomerTimeToIso } from "@/lib/restaurant-time";
-import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { isValidDeliveryAddress } from "@/lib/customer-crm";
+import { getMenuCatalog, invalidateMenuCache } from "@/lib/menu";
+import { isWithinOperatingHours } from "@/lib/settings";
 
 
 export interface ExecutionResult {
@@ -67,17 +68,29 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   const lang: LanguagePreference = u.language || ctx.state.preferred_language;
   const cur = input.currency || (ctx.settings as unknown as { currency?: string })?.currency || "Rs.";
 
-  let cart: CartItem[] = ctx.state.cart.map((i) => ({ ...i }));
+  let cart: CartItem[] = ctx.state.cart.map((i) => ({ ...i, addons: [...(i.addons ?? [])] }));
   const patch: Partial<ConversationStateRow> = {
     stage: transition.nextStage,
     preferred_language: lang,
     last_intent: u.primary_intent,
   };
 
+  const value = <K extends keyof ConversationStateRow>(key: K): ConversationStateRow[K] =>
+    patch[key] !== undefined ? patch[key] as ConversationStateRow[K] : ctx.state[key];
+  const orderChanged = transition.actions.some((a) => ["add_items", "remove_items", "update_quantity", "restart_order", "reorder_previous"].includes(a.kind))
+    || Boolean(u.order_type || u.address || u.guests || u.pickup_time || u.reservation_time || u.notes?.startsWith("use_saved_address:"));
+  if (orderChanged) patch.summary_sent_at = null;
+  // A follow-up "yes" must answer the latest question, not an older checkout.
+  if (transition.actions.some((a) => ["answer_info", "answer_grounded", "answer_hours_location", "answer_payment", "answer_delivery_info", "smalltalk", "show_menu", "report_order_status", "fallback"].includes(a.kind))) {
+    patch.summary_sent_at = null;
+    if (!ctx.state.pending_clarification?.remaining_items?.length) patch.pending_clarification = null;
+  }
+
   // Persist rider/kitchen notes from NLU (exclude internal markers)
-  const INTERNAL_NOTES = new Set(["add_delta", "coercion_failed", "nlu_error"]);
+  const INTERNAL_NOTES = new Set(["add_delta", "coercion_failed", "nlu_error", "nlu_circuit_open", "prompt_new_address"]);
   if (u.notes && !u.notes.startsWith("fast_path") && !u.notes.startsWith("use_saved_address") && !INTERNAL_NOTES.has(u.notes) && u.notes.length > 5) {
-    patch.customer_instructions = u.notes;
+    patch.customer_instructions = [ctx.state.customer_instructions, u.notes].filter(Boolean).filter((n, i, all) => all.indexOf(n) === i).join("; ").slice(-1000);
+    patch.summary_sent_at = null;
   }
 
   const replies: string[] = [];
@@ -89,7 +102,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
 
   const setInteractive = (p: InteractivePayload | null) => {
-    if (!interactive && p) {
+    if (p) {
       interactive = p;
       if (p.kind === "buttons") {
         const isOrderType = p.payload.buttons.some((b) => b.id.startsWith("ordertype:"));
@@ -208,6 +221,14 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     };
   }
 
+  // Menu data has no priced addon catalog or allergen guarantees. Staff must verify these.
+  if (u.items.some((item) => item.addons.length > 0)
+    || /\ballerg(?:y|ic|ies|en|ens)\b|الرجی/i.test(input.messageTextForFallback ?? "")) {
+    return { replyText: reply.escalated(lang), statePatch: { ...patch, stage: "human", is_bot_active: false,
+      escalation_reason: "preparation_verification", escalated_at: new Date().toISOString() },
+      placeOrder: false, escalate: true, usedSemanticSearch: false };
+  }
+
   // Closed-guard: only block ordering actions
   if (!ctx.isOpenNow) {
     const blockedActions = new Set(["place_order", "ask_order_type", "collect_delivery_address"]);
@@ -216,19 +237,100 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     }
   }
 
-  if (u.guests && !patch.guests) patch.guests = u.guests;
-  if (u.reservation_time && !patch.reservation_time) {
-    patch.reservation_time = parseCustomerTimeToIso(u.reservation_time, ctx.settings.timezone);
+  if (u.guests) patch.guests = u.guests;
+  if (u.reservation_time) patch.reservation_time = parseCustomerTimeToIso(u.reservation_time, ctx.settings.timezone);
+  if (u.pickup_time) patch.pickup_time = parseCustomerTimeToIso(u.pickup_time, ctx.settings.timezone);
+  if (u.order_type) patch.order_type = u.order_type;
+
+  // Placed orders require staff coordination: a fulfillment switch may change fees,
+  // dispatch and kitchen work. Never silently rewrite an already accepted order.
+  if (ctx.state.stage === "placed" && cart.length === 0 && transition.actions.some((a) =>
+    ["collect_delivery_address", "collect_dinein_details", "collect_pickup_time"].includes(a.kind))) {
+    return { replyText: reply.escalated(lang), statePatch: { stage: "human", is_bot_active: false,
+      escalation_reason: "post_order_change", escalated_at: new Date().toISOString(), preferred_language: lang },
+      placeOrder: false, escalate: true, usedSemanticSearch: false };
   }
-  if (u.pickup_time && !patch.pickup_time) {
-    patch.pickup_time = parseCustomerTimeToIso(u.pickup_time, ctx.settings.timezone);
-  }
-  if (u.address && !patch.address) {
-    patch.address = u.address;
-  }
-  if (u.order_type && !patch.order_type) {
-    patch.order_type = u.order_type;
-  }
+  if (transition.actions.some((a) => ["add_items", "remove_items", "update_quantity"].includes(a.kind))) patch.pending_clarification = null;
+
+  const orderSummary = () => reply.summary(lang, cart, value("order_type"), cur, value("address"), ctx.settings, {
+    guests: value("guests"), reservation_time: value("reservation_time"), pickup_time: value("pickup_time"),
+    customer_instructions: value("customer_instructions"),
+  });
+  let repriced = false;
+  const checkoutReady = (): boolean => {
+    if (hasDisambiguation) return false;
+    if (value("pending_clarification")?.remaining_items?.length) {
+      patch.stage = "building_cart";
+      replies.push(reply.clarify(lang, "which_option"));
+      return false;
+    }
+    if (!cart.length) {
+      patch.stage = "browsing";
+      replies.push(reply.emptyCart(lang));
+      return false;
+    }
+    for (const item of cart) {
+      const current = ctx.menu.find((m) => m.id === item.menu_item_id);
+      if (!current || current.is_available === false) {
+        patch.stage = "building_cart";
+        patch.summary_sent_at = null;
+        replies.push(reply.itemUnavailable(lang, item.name));
+        setInteractive(cartActionButtons(lang));
+        return false;
+      }
+      if (item.unit_price !== current.price) {
+        item.unit_price = current.price;
+        repriced = true;
+        patch.summary_sent_at = null;
+      }
+    }
+    const type = value("order_type");
+    if (!type || type === "delivery" && ctx.settings.delivery_enabled === false) {
+      patch.order_type = null;
+      patch.stage = "choosing_order_type";
+      replies.push(type ? reply.deliveryDisabled(lang) : reply.askOrderType(lang));
+      setInteractive(orderTypeButtons(lang, ctx.settings));
+      return false;
+    }
+    if (type === "delivery") {
+      const address = value("address");
+      if (!isValidDeliveryAddress(address) || !isCompleteDeliveryAddress(address) || ctx.settings.delivery_areas?.length && !findMatchingDeliveryArea(address!, ctx.settings)) {
+        patch.stage = "collecting_delivery";
+        patch.address = null;
+        patch.summary_sent_at = null;
+        if (!replies.length) replies.push(isCompleteDeliveryAddress(address) ? reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas) : reply.askAddress(lang));
+        return false;
+      }
+      if (cartSubtotal(cart) < ctx.settings.min_delivery_amount) {
+        patch.stage = "building_cart";
+        patch.summary_sent_at = null;
+        replies.push(reply.minDeliveryNotMet(lang, cartSubtotal(cart), ctx.settings.min_delivery_amount, cur));
+        setInteractive(cartActionButtons(lang));
+        return false;
+      }
+    }
+    if (type === "pickup" && !parseCustomerTimeToIso(value("pickup_time"), ctx.settings.timezone)) {
+      patch.pickup_time = null;
+      patch.stage = "collecting_pickup";
+      if (!replies.length) replies.push(reply.askPickupTime(lang));
+      return false;
+    }
+    if (type === "dine-in" && (!value("guests") || !parseCustomerTimeToIso(value("reservation_time"), ctx.settings.timezone))) {
+      patch.stage = "collecting_dinein";
+      if (!replies.length) replies.push(reply.askDineIn(lang));
+      return false;
+    }
+    const scheduled = type === "pickup" ? value("pickup_time") : type === "dine-in" ? value("reservation_time") : null;
+    if (scheduled && !isWithinOperatingHours(ctx.settings.opening_time, ctx.settings.closing_time, ctx.settings.timezone, new Date(scheduled))) {
+      patch.summary_sent_at = null;
+      patch.stage = type === "pickup" ? "collecting_pickup" : "collecting_dinein";
+      if (type === "pickup") patch.pickup_time = null;
+      else patch.reservation_time = null;
+      replies.push(hoursAnswer(), type === "pickup" ? reply.askPickupTime(lang) : reply.askDineIn(lang));
+      return false;
+    }
+    return true;
+  };
 
   // ── Action dispatch ───────────────────────────────────────────────────────
   for (const action of transition.actions) {
@@ -269,45 +371,24 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const added: Array<{ name: string; newCartQty: number; notes?: string | null }> = [];
         const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
 
-        const INSTRUCTION_PATTERNS = /\b(non\s*spicy|spicy|teekha|kam\s*teekha|mirch|masala|kali\s*mirch|safed\s*mirch|oil|tail|ghee|cheese|sauce|ketchup|mayo|mayonnaise|raita|chutney|chatni|salad|onion|pyaaz|pyaz|pyas|crispy|chilled|thandi|garam|bina|without|extra|less|kam|zyada|ziyada|hona\s*chaye|hona\s*chahiye|rakhna|rakhein|karna|krna|dalna|daalna|bhejna)\b/i;
-        const EXPLICIT_ADD_QTY = /\b(\d+|ek|do|teen|char|one|two|three)\s*(?:aur|more|add|extra\s+piece)\b/i;
-
-        for (const m of mentions) {
+        for (const [mentionIndex, m] of mentions.entries()) {
           let query = m.query || "";
           if (isDelta && query === "__last_item__" && cart.length > 0) {
             query = cart[cart.length - 1].name;
           }
           if (!query.trim()) continue;
 
-          // Check if this mention is an instruction/cooking note update for an item ALREADY in the cart
-          // E.g. Customer says "Pizza non spicy hona chaye" or "kali mirch istemal krna"
-          const rawMsg = input.messageTextForFallback || "";
-          const hasInstruction = Boolean(m.notes || INSTRUCTION_PATTERNS.test(rawMsg) || INSTRUCTION_PATTERNS.test(query));
-          const hasExplicitNewQty = EXPLICIT_ADD_QTY.test(rawMsg) || (typeof m.qty === "number" && m.qty > 1);
-
-          if (cart.length > 0 && hasInstruction && !hasExplicitNewQty) {
-            const qClean = query.replace(INSTRUCTION_PATTERNS, "").trim();
-            const qLower = (qClean || query).toLowerCase().replace(/[^a-z0-9]/g, "");
-            // Guard: if the query is JUST a common food item name, it's a new order, not a note
-            const FOOD_NAMES = /^(raita|salad|naan|nan|roti|rice|chawal|chutney|chatni|fries|sauce|ketchup|mayo|cheese|cold\s*drink|drink|pepsi|coke|dew|7up|sprite|water|pani|lassi|dahi)$/i;
-            const isJustFoodName = FOOD_NAMES.test(query.trim());
-            if (!isJustFoodName) {
-              const existingItem = cart.find((ci) => {
-                const ciLower = ci.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-                return (
-                  (qLower.length >= 3 && ciLower.includes(qLower)) ||
-                  (qLower.length >= 3 && qLower.includes(ciLower)) ||
-                  (qLower.length >= 4 && ciLower.includes(qLower.slice(0, 4)))
-                );
-              });
-              // Only match when query actually references an existing cart item — no blind single-item fallback
-              if (existingItem) {
-                const noteText = m.notes || rawMsg.replace(/^(?:can\s+you\s+|please\s+)?(?:make\s+)?(?:the\s+)?(?:pizza|burger|karahi|deal\s*\d+|it)\s*/i, "").trim();
-                existingItem.notes = noteText;
-                replies.push(reply.itemInstructionUpdated(lang, existingItem.name, noteText));
-                continue;
-              }
+          // Null quantity means an instruction edit, never an implicit extra portion.
+          if (m.qty === null && m.notes) {
+            const matches = findCartMatches(cart, query);
+            if (matches.length === 1) {
+              matches[0].notes = m.notes;
+              replies.push(reply.itemInstructionUpdated(lang, matches[0].name, m.notes));
+            } else {
+              hasDisambiguation = true;
+              replies.push(reply.clarify(lang, "which_option"));
             }
+            continue;
           }
 
           const res = await resolveItemDetailed(branchId, query, m.size, ctx.menu, ctx.state.last_shown_category ?? null);
@@ -318,30 +399,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               replies.push(reply.itemUnavailable(lang, resolved.name));
               continue;
             }
-            // Sibling variant swap check (e.g. Quarter Sajji <-> Quarter Sajji Chawal):
-            const rawMsg = input.messageTextForFallback || "";
-            const isSwapClarification =
-              Boolean(rawMsg && /(?:kh\s*rha\s*h|keh\s*raha|bol\s*raha|change|badal|replace|wali|wala|not|nahi|without|with\s*rice|sath\s*chawal)/i.test(rawMsg)) ||
-              (cart.length === 1 && !/(?:aur|mazeed|ek\s*aur|bhi|also|plus)/i.test(rawMsg));
-
-            const siblingItem = isSwapClarification
-              ? cart.find((ci) => {
-                  if (ci.menu_item_id === resolved.id) return false;
-                  const ciNorm = ci.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-                  const resNorm = resolved.name.toLowerCase().replace(/[^a-z0-9]/g, "");
-                  if (ciNorm.includes("sajji") && resNorm.includes("sajji")) {
-                    const ciSize = extractSizeFromQuery(ci.name);
-                    const resSize = extractSizeFromQuery(resolved.name);
-                    return Boolean(ciSize && resSize && ciSize === resSize);
-                  }
-                  return false;
-                })
-              : null;
-
-            if (siblingItem) {
-              cart = cart.filter((ci) => ci.menu_item_id !== siblingItem.menu_item_id);
-            }
-
             cart = addToCart(cart, {
               menu_item_id: resolved.id,
               name: resolved.name,
@@ -352,16 +409,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               notes: m.notes ?? null,
             });
             const cartItem = cart.find((ci) => ci.menu_item_id === resolved.id);
-            if (siblingItem) {
-              const swapMsg = lang === "pashto"
-                ? `✅ *${siblingItem.name}* badal sho pa *${resolved.name}*. Total: ${cur} ${cartSubtotal(cart)}`
-                : lang === "roman_urdu"
-                ? `✅ *${siblingItem.name}* ko *${resolved.name}* se update kar diya gaya hai. Total: ${cur} ${cartSubtotal(cart)}`
-                : `✅ Updated *${siblingItem.name}* to *${resolved.name}*. Total: ${cur} ${cartSubtotal(cart)}`;
-              replies.push(swapMsg);
-            } else {
-              added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1), notes: m.notes ?? null });
-            }
+            added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1), notes: m.notes ?? null });
           } else if (res.kind === "variants") {
             // Item has multiple sizes (e.g. Half / Full) and user did not specify size
             hasDisambiguation = true;
@@ -396,9 +444,18 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               }
             }
           }
+          if (res.kind !== "exact") {
+            hasDisambiguation = true;
+            patch.pending_clarification = {
+              kind: "item_disambiguation",
+              options: patch.pending_clarification?.options ?? [],
+              remaining_items: mentions.slice(mentionIndex),
+            };
+            break;
+          }
         }
 
-        if (added.length) {
+        if (added.length && !hasDisambiguation) {
           patch.last_shown_options = [];
           patch.last_shown_options_at = null;
           patch.last_shown_category = null;
@@ -417,13 +474,18 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "remove_items": {
         const removals = (action.payload?.removals as TurnUnderstanding["removals"]) ?? u.removals;
         for (const r of removals) {
-          const resolved = await resolveItem(branchId, r.query, ctx.menu);
-          cart = removeFromCart(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? r.query, qty: r.qty });
+          const matches = findCartMatches(cart, r.query);
+          if (!matches.length || matches.length > 1 && r.qty !== "all") {
+            replies.push(reply.clarify(lang, "which_option"));
+            hasDisambiguation = true;
+            continue;
+          }
+          // 'all naan' may remove all preparations; a partial removal must identify one.
+          for (const match of matches) cart = removeFromCart(cart, { menu_item_id: match.menu_item_id, qty: r.qty });
         }
-        const hasAddItems = transition.actions.some((a) => a.kind === "add_items");
-        if (!hasAddItems) {
+        if (!transition.actions.some((a) => a.kind === "add_items")) {
           replies.push(reply.itemsRemoved(lang, cart, cur));
-          if (cart.length > 0) setInteractive(cartActionButtons(lang));
+          if (cart.length > 0 && !hasDisambiguation) setInteractive(cartActionButtons(lang));
         }
         break;
       }
@@ -431,29 +493,30 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "update_quantity": {
         const items = (action.payload?.items as TurnUnderstanding["items"]) ?? u.items;
         for (const m of items) {
-          let query = m.query || "";
-          if ((!query || query === "current_item" || query === "__last_item__" || query === "item" || query === "cart") && cart.length > 0) {
-            query = cart[cart.length - 1].name;
+          const matches = findCartMatches(cart, m.query || "__last_item__");
+          if (matches.length !== 1) {
+            hasDisambiguation = true;
+            replies.push(reply.clarify(lang, "which_option"));
+            continue;
           }
-          if (m.size && cart.length > 0) {
-            const sizeRes = await resolveItemDetailed(branchId, query, m.size, ctx.menu);
-            if (sizeRes.kind === "exact") {
-              const oldItem = cart.find(ci => ci.name.toLowerCase().includes(query.toLowerCase()) || query.toLowerCase().includes(ci.name.toLowerCase())) || cart[cart.length - 1];
-              if (oldItem) {
-                oldItem.menu_item_id = sizeRes.item.id;
-                oldItem.name = sizeRes.item.name;
-                oldItem.unit_price = sizeRes.item.price;
-                oldItem.size = m.size;
-                if (m.qty) oldItem.qty = m.qty;
-                continue;
-              }
+          const target = matches[0];
+          if (m.size) {
+            const resolved = await resolveItemDetailed(branchId, extractBaseItemName(target.name).baseName, m.size, ctx.menu);
+            if (resolved.kind !== "exact" || resolved.item.is_available === false) {
+              hasDisambiguation = true;
+              replies.push(reply.clarify(lang, "which_option"));
+              continue;
             }
+            target.menu_item_id = resolved.item.id;
+            target.name = resolved.item.name;
+            target.unit_price = resolved.item.price;
+            target.size = m.size;
           }
-          const resolved = await resolveItem(branchId, query, ctx.menu);
-          cart = updateQuantity(cart, { menu_item_id: resolved?.id, name: resolved?.name ?? query, qty: m.qty ?? 1 });
+          if (m.qty !== null) target.qty = m.qty;
+          if (m.notes) target.notes = m.notes;
         }
         replies.push(reply.cartUpdated(lang, cart, cur));
-        if (cart.length > 0) setInteractive(cartActionButtons(lang));
+        if (cart.length > 0 && !hasDisambiguation) setInteractive(cartActionButtons(lang));
         break;
       }
 
@@ -501,52 +564,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (question) {
           const ans = await grounded(question);
           if (ans) replies.push(ans);
-          else replies.push(hoursAnswer());
+          else replies.push(reply.clarify(lang, "fallback"));
         }
         break;
       }
 
       case "answer_info": {
         const q = String(action.payload?.info_query ?? u.info_query ?? "").trim();
-        if (/delivery|deliver|ghar/i.test(q) && !/karahi|burger|biryani|tikka|kabab/i.test(q)) {
-          replies.push(deliveryInfoAnswer());
-          break;
-        }
-        if (/hours|timing|open|close|kahan|location|address/i.test(q)) {
-          replies.push(hoursAnswer());
-          break;
-        }
-        if (/payment|cod|cash|card|online/i.test(q)) {
-          replies.push(paymentAnswer());
-          break;
-        }
-
-        // H4 fix: if the queried item is already in the cart, acknowledge it upfront
-        // so the bot doesn't sound confused ("Is it available?" when it's already added)
-        const qClean = q.toLowerCase().replace(/[^a-z0-9\s]/g, " ");
-        const cartMatch = cart.find((ci) => {
-          const ciFull = ci.name.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim();
-          const ciBase = extractBaseItemName(ci.name).baseName.toLowerCase().replace(/[^a-z0-9\s]/g, " ").trim();
-          return (
-            qClean.includes(ciBase) ||
-            qClean.includes(ciFull) ||
-            ciFull.includes(qClean) ||
-            ciBase.includes(qClean) ||
-            ciBase.split(" ").every((w) => w.length >= 3 && qClean.includes(w))
-          );
-        });
-        if (cartMatch) {
-          const alreadyInCart = lang === "pashto"
-            ? `✅ *${cartMatch.name}* mukhey na staso cart ke shta (${cartMatch.qty}x).`
-            : lang === "roman_urdu"
-            ? `✅ *${cartMatch.name}* already aapke cart mein hai (${cartMatch.qty}x).`
-            : `✅ *${cartMatch.name}* is already in your cart (${cartMatch.qty}x).`;
-          replies.push(alreadyInCart);
-          // Also show cart action buttons to guide next step
-          setInteractive(cartActionButtons(lang));
-          break;
-        }
-
         // Menu item / general question:
         const ans = await grounded(q || "what are your popular items?");
         if (ans) {
@@ -561,7 +585,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             const lowerBase = baseName.toLowerCase();
             const lowerFull = item.name.toLowerCase();
 
-            if (lowerAns.includes(lowerFull) || (lowerBase.length >= 4 && lowerAns.includes(lowerBase))) {
+            if (item.is_available !== false && (lowerAns.includes(lowerFull) || (lowerBase.length >= 4 && lowerAns.includes(lowerBase)))) {
               if (!mentionedMap.has(item.id)) {
                 mentionedMap.set(item.id, { id: item.id, name: item.name, price: item.price, category: item.category });
               }
@@ -569,60 +593,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           }
 
           const matchedItems = Array.from(mentionedMap.values());
-          if (matchedItems.length > 0) {
+          if (matchedItems.length > 0 && !value("pending_clarification")?.remaining_items?.length) {
             patch.last_shown_options = matchedItems.slice(0, 10);
             patch.last_shown_options_at = new Date().toISOString();
 
-            const distinctBases = Array.from(
-              new Set(matchedItems.map((m) => extractBaseItemName(m.name).baseName))
-            );
-
-            if (distinctBases.length === 1 && matchedItems.length > 1) {
-              // Single item with multiple sizes (e.g. Chicken Supreme -> Reg, Med, Large, XL)
-              const vb = variantButtons(
-                lang,
-                matchedItems,
-                cur,
-                lang === "pashto"
-                  ? "Kum size ghwaray?"
-                  : lang === "roman_urdu"
-                  ? "Kaunsa size mangwana chahenge?"
-                  : "Which size would you like?"
-              );
-              if (vb) setInteractive(vb);
-            } else if (distinctBases.length >= 2 && distinctBases.length <= 3) {
-              setInteractive({
-                kind: "buttons",
-                payload: {
-                  body:
-                    lang === "pashto"
-                      ? "Le de na sa ghwaray?"
-                      : lang === "roman_urdu"
-                      ? "In mein se kya mangwayein?"
-                      : "Which one would you like to try?",
-                  buttons: distinctBases.slice(0, 3).map((base) => {
-                    const sample = matchedItems.find((m) => extractBaseItemName(m.name).baseName === base);
-                    return {
-                      id: sample ? `item:${sample.id}` : `action:search_${base.slice(0, 10)}`,
-                      title: base.slice(0, 20),
-                    };
-                  }),
-                },
-              });
-            } else {
-              setInteractive(
-                itemPickList(
-                  lang,
-                  matchedItems.slice(0, 10),
-                  cur,
-                  lang === "pashto"
-                    ? "Muntakhab options:"
-                    : lang === "roman_urdu"
-                    ? "Recommended options:"
-                    : "Recommended options:"
-                )
-              );
-            }
+            // Every tap shows a concrete named variant and price; never pick an
+            // arbitrary first size behind a generic dish button.
+            setInteractive(itemPickList(lang, matchedItems.slice(0, 10), cur));
           }
         } else {
           // Fallback to searching the menu (pass category context for better results)
@@ -762,7 +739,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       case "collect_delivery_address": {
         if (hasDisambiguation) break;
         // Clear stale/invalid addresses that leaked from button payloads or previous bugs
-        const currentAddr = patch.address ?? ctx.state.address;
+        const currentAddr = value("address");
         if (currentAddr && /^(addr:(new|saved:.*)|new|naya|naya\s+address|new\s+address)$/i.test(currentAddr.trim())) {
           patch.address = null;
         }
@@ -778,11 +755,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const address = action.payload?.address as string | undefined;
         const savedAddrNote = u.notes?.match(/^use_saved_address:(.+)$/);
         if (savedAddrNote) {
-          const { data: savedRow } = await supabaseAdmin
-            .from("customer_addresses")
-            .select("address")
-            .eq("id", savedAddrNote[1])
-            .maybeSingle();
+          const savedRow = ctx.savedAddress?.id === savedAddrNote[1] ? ctx.savedAddress : null;
           if (savedRow?.address) {
             if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(savedRow.address, ctx.settings)) {
               replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
@@ -795,60 +768,36 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
               if (cart.length > 0 && !hasDisambiguation) {
                 patch.stage = "confirming";
-                replies.push(reply.summary(lang, cart, patch.order_type, cur, savedRow.address, ctx.settings));
-                setInteractive(confirmButtons(lang));
+
               }
             }
           } else {
             replies.push(reply.askAddress(lang));
           }
         } else if (address) {
+          if (!isValidDeliveryAddress(address)) {
+            patch.address = null;
+            patch.stage = "collecting_delivery";
+            replies.push(reply.askAddress(lang));
+            break;
+          }
           if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(address, ctx.settings)) {
             replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
             patch.stage = "collecting_delivery";
             patch.address = null;
           } else {
+            if (!isCompleteDeliveryAddress(address)) {
+              patch.address = null;
+              patch.stage = "collecting_delivery";
+              replies.push(reply.askAddress(lang));
+              break;
+            }
             patch.address = address;
             patch.order_type = patch.order_type ?? "delivery";
 
-            // Check if modifying a recently placed order (within 45 min and cart is empty)
-            const recentPlacedOrder = (ctx.state.stage === "placed" || cart.length === 0)
-              ? await orderRepo.getLatestForConversation(input.conversationId)
-              : null;
-            const isRecent = recentPlacedOrder &&
-              (Date.now() - new Date(recentPlacedOrder.created_at).getTime() < 45 * 60 * 1000);
-
-            if (isRecent && recentPlacedOrder.status === "out_for_delivery") {
-              replies.push(
-                lang === "pashto"
-                  ? `Staso order #${recentPlacedOrder.order_number} delivery dapara rawana shaway day. Da address badlawalo dapara delivery rider ya support sara rabita wokray.`
-                  : lang === "roman_urdu"
-                  ? `Aap ka order #${recentPlacedOrder.order_number} already delivery ke liye nikal chuka hai. Address tabdeeli ke liye hamare delivery rider ya support se rabta karein.`
-                  : `Your order #${recentPlacedOrder.order_number} is already out for delivery. Please contact our support team to adjust the address.`,
-              );
-              break;
-            } else if (isRecent && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
-              await orderRepo.updateFulfillment(recentPlacedOrder.id, {
-                type: "delivery",
-                address,
-                guests: null,
-                reservation_time: null,
-              });
-              patch.stage = "placed";
-              replies.push(
-                lang === "pashto"
-                  ? `✅ Da order #${recentPlacedOrder.order_number} delivery address update sho:\n📍 *${address}*\nZamung rider ta halat walegala sho! 🙏`
-                  : lang === "roman_urdu"
-                  ? `✅ Order #${recentPlacedOrder.order_number} ka delivery address update ho gaya:\n📍 *${address}*\nHamare rider ko notify kar diya gaya hai! 🙏`
-                  : `✅ Delivery address for order #${recentPlacedOrder.order_number} updated to:\n📍 *${address}*\nOur dispatch team has been notified! 🙏`,
-              );
-              break;
-            }
-
             if (cart.length > 0 && !hasDisambiguation) {
               patch.stage = "confirming";
-              replies.push(reply.summary(lang, cart, patch.order_type, cur, address, ctx.settings));
-              setInteractive(confirmButtons(lang));
+
             }
           }
         } else {
@@ -886,47 +835,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (guests) patch.guests = guests;
         if (rtime) patch.reservation_time = parseCustomerTimeToIso(rtime, ctx.settings.timezone);
 
-        const currentGuests = patch.guests ?? ctx.state.guests;
-        const currentRtime = patch.reservation_time ?? ctx.state.reservation_time;
-
-        // Check if modifying a recently placed order (within 45 minutes and cart is empty)
-        const recentPlacedOrder = (ctx.state.stage === "placed" || cart.length === 0)
-          ? await orderRepo.getLatestForConversation(input.conversationId)
-          : null;
-        const isRecent = recentPlacedOrder &&
-          (Date.now() - new Date(recentPlacedOrder.created_at).getTime() < 45 * 60 * 1000);
-
-        if (isRecent && recentPlacedOrder.status === "out_for_delivery") {
-          replies.push(
-            lang === "pashto"
-              ? `Staso order #${recentPlacedOrder.order_number} delivery dapara rawana shaway day ao Dine-in ta na badleegi. Meharbani wokray support sara rabita wokray.`
-              : lang === "roman_urdu"
-              ? `Aap ka order #${recentPlacedOrder.order_number} already delivery ke liye nikal chuka hai aur Dine-in mein switch nahi ho sakta. Baraye meherbani support se rabta karein.`
-              : `Your order #${recentPlacedOrder.order_number} is already out for delivery and cannot be changed to Dine-in. Please contact support.`,
-          );
-          break;
-        }
-
-        if (isRecent && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
-          if (currentGuests && currentRtime) {
-            await orderRepo.updateFulfillment(recentPlacedOrder.id, {
-              type: "dine-in",
-              guests: currentGuests,
-              reservation_time: currentRtime,
-              address: null,
-            });
-            patch.order_type = "dine-in";
-            patch.stage = "placed";
-            replies.push(reply.orderUpdated(lang, recentPlacedOrder.order_number, "dine-in", `${currentGuests} guests, ${u.reservation_time || rtime || "reserved time"}`));
-            break;
-          } else if (currentGuests && !currentRtime) {
-            replies.push(reply.askDineInTime(lang, currentGuests));
-            break;
-          } else if (!currentGuests && currentRtime) {
-            replies.push(reply.askDineInGuests(lang, u.reservation_time || rtime || ""));
-            break;
-          }
-        }
+        const currentGuests = value("guests");
+        const currentRtime = value("reservation_time");
+        if (!currentGuests || !currentRtime) patch.stage = "collecting_dinein";
 
         if (!currentGuests && !currentRtime) {
           replies.push(reply.askDineIn(lang));
@@ -952,34 +863,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         const ptime = (action.payload?.pickup_time as string | undefined) ?? u.pickup_time;
         if (ptime) {
           patch.pickup_time = parseCustomerTimeToIso(ptime, ctx.settings.timezone);
-
-          // Check if modifying a recently placed order (within 45 minutes and cart is empty)
-          const recentPlacedOrder = (ctx.state.stage === "placed" || cart.length === 0)
-            ? await orderRepo.getLatestForConversation(input.conversationId)
-            : null;
-          const isRecent = recentPlacedOrder &&
-            (Date.now() - new Date(recentPlacedOrder.created_at).getTime() < 45 * 60 * 1000);
-
-          if (isRecent && recentPlacedOrder.status === "out_for_delivery") {
-            replies.push(
-              lang === "pashto"
-                ? `Staso order #${recentPlacedOrder.order_number} delivery dapara rawana shaway day ao Pickup ta na badleegi. Support sara rabita wokray.`
-                : lang === "roman_urdu"
-                ? `Aap ka order #${recentPlacedOrder.order_number} already delivery ke liye nikal chuka hai aur Pickup mein switch nahi ho sakta. Support se rabta karein.`
-                : `Your order #${recentPlacedOrder.order_number} is already on its way for delivery. Please contact support.`,
-            );
-            break;
-          }
-
-          if (isRecent && (recentPlacedOrder.status === "received" || recentPlacedOrder.status === "preparing")) {
-            await orderRepo.updateFulfillment(recentPlacedOrder.id, {
-              type: "pickup",
-              pickup_time: patch.pickup_time,
-              address: null,
-            });
-            patch.order_type = "pickup";
-            patch.stage = "placed";
-            replies.push(reply.orderUpdated(lang, recentPlacedOrder.order_number, "pickup", ptime));
+          if (!patch.pickup_time) {
+            patch.stage = "collecting_pickup";
+            replies.push(reply.askPickupTime(lang));
             break;
           }
 
@@ -1000,53 +886,50 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Cart / summary ───────────────────────────────────────────────────
       case "show_cart": {
-        const addr = patch.address ?? ctx.state.address;
+        const addr = value("address");
         if (cart.length === 0) {
           replies.push(reply.emptyCart(lang));
         } else {
-          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null, ctx.settings));
+          replies.push(reply.summary(lang, cart, value("order_type"), cur, addr ?? null, ctx.settings));
           setInteractive(cartActionButtons(lang, { hideViewCart: true }));
         }
         break;
       }
 
       case "show_summary": {
-        if (hasDisambiguation) break;
-        const alreadyHasSummary = replies.some((r) => r.includes("Total:") || r.includes("Aap ka order") || r.includes("Your order"));
-        if (alreadyHasSummary) {
-          setInteractive(confirmButtons(lang));
-          break;
-        }
-        let addr = patch.address ?? ctx.state.address;
-        // Clean stale/invalid address values before displaying
-        if (addr && /^(addr:(new|saved:.*)|new|naya|naya\s+address|new\s+address)$/i.test(addr.trim())) {
-          addr = null;
-          patch.address = null;
-        }
-        if (cart.length === 0) {
-          replies.push(reply.emptyCart(lang));
-        } else {
-          replies.push(reply.summary(lang, cart, patch.order_type ?? ctx.state.order_type, cur, addr ?? null, ctx.settings));
-          setInteractive(confirmButtons(lang));
-        }
+        if (!checkoutReady()) break;
+        patch.stage = "confirming";
+        patch.summary_sent_at = new Date().toISOString();
+        replies.push(orderSummary());
+        setInteractive(confirmButtons(lang));
         break;
       }
 
       // ── Place order ──────────────────────────────────────────────────────
       case "place_order": {
+        if (!checkoutReady()) break;
+        if (!value("summary_sent_at") || repriced || orderChanged) {
+          patch.stage = "confirming";
+          patch.summary_sent_at = new Date().toISOString();
+          replies.push(orderSummary());
+          setInteractive(confirmButtons(lang));
+          break;
+        }
+
         if (!ctx.isOpenNow) {
           replies.push(reply.closed(lang, ctx.settings.opening_time));
+          patch.stage = "confirming";
           break;
         }
         if (cart.length === 0) { replies.push(reply.emptyCart(lang)); break; }
-        const orderType = (patch.order_type ?? ctx.state.order_type) as OrderType | null;
+        const orderType = (value("order_type")) as OrderType | null;
         if (!orderType) {
           replies.push(reply.askOrderType(lang));
           patch.stage = "choosing_order_type";
           setInteractive(orderTypeButtons(lang, ctx.settings));
           break;
         }
-        const deliveryAddr = patch.address ?? ctx.state.address;
+        const deliveryAddr = value("address");
         // Client-side guards:
         if (orderType === "delivery") {
           if (ctx.settings.delivery_enabled === false) {
@@ -1082,9 +965,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               ? Number(ctx.settings.delivery_fee) || 0
               : 0;
 
-          const pTime = patch.pickup_time ?? ctx.state.pickup_time;
+          const pTime = value("pickup_time");
           const finalPickupTime = pTime ? parseCustomerTimeToIso(pTime, ctx.settings.timezone) : null;
-          const rTime = patch.reservation_time ?? ctx.state.reservation_time;
+          const rTime = value("reservation_time");
           const finalReservationTime = rTime ? parseCustomerTimeToIso(rTime, ctx.settings.timezone) : null;
 
           const orderId = await orderRepo.place({
@@ -1101,18 +984,20 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               addons: i.addons,
               item_instructions: i.notes,
             })),
-            customerInstructions: ctx.state.customer_instructions,
+            customerInstructions: value("customer_instructions"),
             address: deliveryAddr,
-            guests: patch.guests ?? ctx.state.guests,
+            guests: value("guests"),
             reservationTime: finalReservationTime,
             pickupTime: finalPickupTime,
             deliveryFee,
           });
-          const placed = await orderRepo.getById(orderId);
+          // Placement already committed. A receipt lookup failure must never report
+          // that the order failed and invite the customer to submit it again.
+          const placed = await orderRepo.getById(orderId).catch(() => null);
           replies.push(
             reply.orderPlaced(
               lang,
-              placed?.order_number ?? 0,
+              placed?.order_number ?? orderId,
               cur,
               placed?.total ?? (cartSubtotal(cart) + deliveryFee),
               orderType,
@@ -1121,13 +1006,37 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           );
           placeOrder = true;
           patch.stage = "placed";
+          patch.summary_sent_at = null;
+          patch.pending_clarification = null;
+          patch.last_shown_options = [];
+          patch.last_shown_options_at = null;
+          interactive = null;
           cart = [];
         } catch (err) {
           const msg =
             (err && typeof err === "object" && "message" in err ? String(err.message) : String(err)) ||
             "order failed";
           console.error("[executor] place_order failed:", msg);
-          if (/min.*delivery|minimum.*delivery/i.test(msg)) {
+          if (/menu price|menu item no longer|reviewed order changed/i.test(msg)) {
+            invalidateMenuCache(branchId);
+            const latest = await getMenuCatalog(branchId);
+            cart = cart.map((item) => {
+              const current = latest.find((m) => m.id === item.menu_item_id);
+              return current ? { ...item, unit_price: current.price } : item;
+            });
+            patch.stage = "building_cart";
+            patch.summary_sent_at = null;
+            replies.push(lang === "roman_urdu" ? "Menu ki qeemat ya availability badal gayi hai. Updated cart check karke checkout karein."
+              : lang === "pashto" ? "Da menu qeemat ya availability badal shaway. Cart bia ogoray ao checkout wokray."
+              : "Menu prices or availability changed. Please review the updated cart and checkout again.");
+            replies.push(reply.cartUpdated(lang, cart, cur));
+            setInteractive(cartActionButtons(lang));
+          } else if (/closed|not accepting orders/i.test(msg)) {
+            patch.stage = "building_cart";
+            patch.summary_sent_at = null;
+            replies.push(reply.closed(lang, ctx.settings.opening_time));
+            setInteractive(cartActionButtons(lang));
+          } else if (/min.*delivery|minimum.*delivery/i.test(msg)) {
             const sub = cartSubtotal(cart);
             replies.push(reply.minDeliveryNotMet(lang, sub, ctx.settings.min_delivery_amount, cur));
             patch.stage = "confirming";
@@ -1168,9 +1077,43 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         break;
       }
 
+      case "reorder_previous": {
+        const recent = await orderRepo.getLatestForConversation(input.conversationId);
+        const previous = recent ? await orderRepo.getWithItems(recent.id) : null;
+        if (!previous?.items.length) {
+          replies.push(reply.noRecentOrder(lang));
+          patch.stage = "browsing";
+          break;
+        }
+        cart = [];
+        for (const old of previous.items) {
+          const item = ctx.menu.find((m) => m.name.toLowerCase() === old.name.toLowerCase());
+          if (!item || item.is_available === false) {
+            replies.push(reply.itemUnavailable(lang, old.name));
+            continue;
+          }
+          cart = addToCart(cart, { menu_item_id: item.id, name: item.name, unit_price: item.price,
+            qty: old.qty, size: old.size, addons: old.addons ?? [], notes: old.item_instructions });
+        }
+        // Reuse the food choices at today's prices. Re-collect fulfillment and confirmation.
+        patch.order_type = null;
+        patch.address = null;
+        patch.guests = null;
+        patch.pickup_time = null;
+        patch.reservation_time = null;
+        patch.summary_sent_at = null;
+        patch.pending_clarification = null;
+        patch.stage = cart.length ? "building_cart" : "browsing";
+        if (cart.length) {
+          replies.push(reply.cartUpdated(lang, cart, cur));
+          setInteractive(cartActionButtons(lang));
+        }
+        break;
+      }
+
       // ── Cancel / restart ─────────────────────────────────────────────────
       case "cancel_order": {
-        const recent = await orderRepo.getLatestForConversation(input.conversationId);
+        const recent = cart.length === 0 ? await orderRepo.getLatestForConversation(input.conversationId) : null;
         if (recent) {
           const createdAtMs = new Date(recent.created_at).getTime();
           const withinWindow = Number.isFinite(createdAtMs) && Date.now() - createdAtMs <= 10 * 60 * 1000;
@@ -1191,8 +1134,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
                 ? `Maaf kijiyega, Order #${recent.order_number} deliver hone ke liye nikal chuka hai aur ab cancel nahi ho sakta. Madad ke liye hamare staff se rabta karein.`
                 : `Sorry, Order #${recent.order_number} is already on its way or delivered and cannot be cancelled. Please contact our support for help.`,
             );
-          } else if (recent.status === "received" || withinWindow) {
-            await orderRepo.cancelOrder(recent.id);
+          } else if (recent.status === "received" && withinWindow && await orderRepo.cancelOrder(recent.id)) {
             await createStaffAlert({
               conversationId: input.conversationId,
               branchId: recent.branch_id || branchId,
@@ -1242,6 +1184,14 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       }
 
       case "restart_order":
+        patch.customer_instructions = null;
+        patch.pending_clarification = null;
+        patch.last_shown_options = [];
+        patch.last_shown_options_at = null;
+        patch.last_shown_category = null;
+        patch.summary_sent_at = null;
+        patch.upsell_item_name = null;
+        patch.upsell_item_price = null;
         cart = [];
         patch.order_type = null;
         patch.address = null;
@@ -1291,6 +1241,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       // ── Fallback ─────────────────────────────────────────────────────────
       case "fallback":
       default:
+        if (replies.length === 0 && patch.customer_instructions) {
+          replies.push(reply.itemInstructionUpdated(lang, lang === "english" ? "Order" : "Order", patch.customer_instructions));
+          if (cart.length) setInteractive(cartActionButtons(lang));
+        }
         if (replies.length === 0) {
           replies.push(reply.clarify(lang, "fallback"));
           if (cart.length > 0) {
@@ -1304,6 +1258,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     }
   }
 
+  if (!cart.length && patch.stage !== "placed" && patch.stage !== "human" && !u.order_type && !u.address && !u.guests && !u.pickup_time && !u.reservation_time) patch.stage = "browsing";
   patch.cart = cart;
 
   // Filter replies: If size disambiguation is active (variantButtons), do not ask for delivery address or pickup time in the same message

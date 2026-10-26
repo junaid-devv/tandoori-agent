@@ -26,7 +26,7 @@ The app is designed for COD-first restaurant workflows. It does not require onli
 |---|---|
 | Framework | Next.js App Router |
 | Database | Supabase Postgres + Realtime |
-| AI | OpenRouter and optional Google AI Studio |
+| AI | Groq or a configured OpenAI-compatible provider (DeepSeek gateway / OpenRouter) |
 | Styling | Tailwind CSS |
 | Deployment | Vercel or any Node-compatible Next.js host |
 
@@ -44,9 +44,8 @@ Fill `.env.local` with real Supabase, WhatsApp, and AI credentials. The most imp
 | `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Dashboard client key |
 | `SUPABASE_SERVICE_ROLE_KEY` | Server-only database access |
-| `OPENROUTER_API_KEY` or `GOOGLE_AI_API_KEY` | AI interpretation/support |
-| `WHATSAPP_PHONE_NUMBER_ID` | Meta WhatsApp phone number ID |
-| `WHATSAPP_ACCESS_TOKEN` | Meta Graph API token |
+| `GROQ_API_KEY`, `DEEPSEEK_API_KEY`, or `OPENROUTER_API_KEY` | AI interpretation/support; choose a matching model and endpoint |
+| Tenant WhatsApp credentials | Connect each restaurant through the dashboard; IDs/tokens are stored server-side |
 | `WHATSAPP_APP_SECRET` or `META_APP_SECRET` | Webhook and Flow signature validation |
 | `WHATSAPP_VERIFY_TOKEN` | Secret used by Meta webhook verification |
 | `RATE_LIMIT_HASH_SECRET` | HMAC secret for rate-limit identifiers |
@@ -118,7 +117,7 @@ npm run check:production-readiness
 
 ## Production Deployment Notes
 
-- Apply `migrations.sql` before routing live WhatsApp traffic.
+- Apply the baseline `migrations.sql` and the ordered files in `supabase/migrations/` before routing live WhatsApp traffic. The new `20261025124633_restaurant_order_integrity.sql` is required by the agent; apply it before deploying this version. `/api/health` reports a failed order-integrity check when it is missing.
 - Keep `WHATSAPP_ALLOW_UNSIGNED_FLOW_ENDPOINT=false` in production.
 - Keep `WEBHOOK_STORE_RAW_BODY=false` and `WEBHOOK_RETAIN_PROCESSED_PAYLOAD=false` unless temporarily debugging an incident.
 - Keep `ADMIN_RESET_ENABLED=false` unless production admins explicitly need destructive reset controls.
@@ -170,3 +169,18 @@ The codebase builds and passes local guards. Production launch is still gated on
 - Supabase migrations must be applied.
 - Meta webhook and optional Flow endpoints must be configured with matching secrets.
 - A live WhatsApp smoke test must pass against the production URL.
+
+
+## Restaurant Agent Verification
+
+The inspection, behavioral changes, evidence, and remaining deployment gates are documented in [docs/RESTAURANT_AGENT_AUDIT.md](docs/RESTAURANT_AGENT_AUDIT.md).
+
+```bash
+npm run check:agent-conversations   # Real pipeline/executor with local parser HTTP fixture
+npm run check:order-integrity       # Real migration/RPC in isolated PostgreSQL via PGlite
+npm run check:live-order-understanding # Synthetic NLU cases using your configured AI provider
+```
+
+The first two checks never contact production services. The live check uses AI credits and intentionally pauses between requests; it never accesses the database or sends WhatsApp messages. Set `LIVE_NLU_PAUSE_MS` to pace it for your provider quota.
+
+`ORDER_AGENT_NLU_MAX_TOKENS` controls the extraction/fallback allowance (default 1600). Groq primary requests default to at most 900 tokens; override with `ORDER_AGENT_NLU_PRIMARY_MAX_TOKENS` after verifying the account quota. A truncated or invalid primary extraction retries the fallback. Set `AI_REQUEST_TIMEOUT_MS` for the request timeout. Override `ORDER_AGENT_NLU_FALLBACK_MODEL` to select a compatible fallback. Groq uses its own endpoint; other credentials use `ORDER_AGENT_NLU_BASE_URL` when configured. Model and endpoint must belong to the selected provider. A Google AI key alone does not configure this agent's OpenAI-compatible client.

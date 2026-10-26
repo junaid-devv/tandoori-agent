@@ -9,23 +9,38 @@ export function cartSubtotal(cart: CartItem[]): number {
   return cart.reduce((sum, i) => sum + i.unit_price * i.qty, 0);
 }
 
-function sameLine(a: CartItem, b: { menu_item_id: string; size: string | null }): boolean {
-  return a.menu_item_id === b.menu_item_id && (a.size ?? null) === (b.size ?? null);
+/** Resolve edits against the cart, never a different menu dish. */
+export function findCartMatches(cart: CartItem[], query: string): CartItem[] {
+  if (["item", "cart", "current_item", "__last_item__"].includes(query.trim().toLowerCase())) return cart.slice(-1);
+  const norm = (text: string) => text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const q = norm(query);
+  if (!q) return [];
+  const exact = cart.filter((i) => norm(i.name) === q);
+  if (exact.length) return exact;
+  return cart.filter((i) => ` ${norm(i.name)} `.includes(` ${q} `));
+}
+
+function sameLine(a: CartItem, b: CartItem): boolean {
+  return a.menu_item_id === b.menu_item_id && (a.size ?? null) === (b.size ?? null)
+    && (a.notes?.trim() ?? "") === (b.notes?.trim() ?? "")
+    && JSON.stringify([...(a.addons ?? [])].sort()) === JSON.stringify([...(b.addons ?? [])].sort());
 }
 
 export function addToCart(
   cart: CartItem[],
   item: Omit<CartItem, "qty"> & { qty: number },
 ): CartItem[] {
+  if (!Number.isInteger(item.qty) || item.qty < 1 || item.qty > 50 || !Number.isFinite(item.unit_price) || item.unit_price < 0) {
+    throw new Error("Invalid cart quantity or price");
+  }
   const next = cart.map((i) => ({ ...i }));
   const existing = next.find((i) => sameLine(i, item));
   if (existing) {
-    existing.qty = Math.min(existing.qty + item.qty, 50);
-    if (item.notes) existing.notes = item.notes;
-    if (item.addons?.length) existing.addons = item.addons;
+    if (existing.qty + item.qty > 50) throw new Error("Maximum quantity per preparation is 50");
+    existing.qty += item.qty;
     return next;
   }
-  next.push({ ...item, qty: Math.min(item.qty, 50) });
+  next.push({ ...item, addons: [...(item.addons ?? [])] });
   return next;
 }
 
@@ -35,20 +50,23 @@ export function removeFromCart(
 ): CartItem[] {
   const targetLower = target.name?.trim().toLowerCase();
   const match = (i: CartItem) => {
-    if (target.menu_item_id && i.menu_item_id === target.menu_item_id) return true;
+    if (target.menu_item_id) return i.menu_item_id === target.menu_item_id;
     if (!targetLower) return false;
     const itemNameLower = i.name.toLowerCase();
     return itemNameLower === targetLower || itemNameLower.includes(targetLower) || targetLower.includes(itemNameLower);
   };
 
   const next: CartItem[] = [];
+  let remainingToRemove = target.qty;
   for (const i of cart) {
     if (!match(i)) {
       next.push(i);
       continue;
     }
     if (target.qty === "all") continue;
-    const remaining = i.qty - target.qty;
+    const removed = Math.min(i.qty, Number(remainingToRemove));
+    remainingToRemove = Number(remainingToRemove) - removed;
+    const remaining = i.qty - removed;
     if (remaining > 0) next.push({ ...i, qty: remaining });
   }
   return next;

@@ -74,7 +74,7 @@ console.log("\n== state-machine FSM tests ==");
   );
   check(hasAction(t, "add_items"), "multi-intent: add_items action present");
   check(hasAction(t, "collect_delivery_address"), "multi-intent: address captured");
-  check(t.nextStage === "collecting_delivery", "multi-intent: advanced to delivery collection");
+  check(t.nextStage === "confirming" && hasAction(t, "show_summary"), "multi-intent: all supplied slots advance to validated review");
 }
 
 // 3) NON-LINEAR: price question during address collection stays in stage.
@@ -127,7 +127,7 @@ console.log("\n== state-machine FSM tests ==");
     view({ stage: "building_cart", cart: [cartItem("Burger")], upsell_offered: true }),
     u({ intents: ["affirm"], primary_intent: "affirm" }),
   );
-  check(hasAction(t, "add_items"), "affirm after upsell offer adds item");
+  check(!hasAction(t, "add_items") && hasAction(t, "ask_order_type"), "affirm cannot add an unseen upsell; asks for fulfillment");
 }
 
 // 9) Deny upsell → move toward checkout.
@@ -136,7 +136,7 @@ console.log("\n== state-machine FSM tests ==");
     view({ stage: "building_cart", cart: [cartItem("Burger")], upsell_offered: true }),
     u({ intents: ["deny"], primary_intent: "deny" }),
   );
-  check(t.nextStage === "choosing_order_type", "deny upsell advances toward order type");
+  check(t.nextStage === "building_cart" && hasAction(t, "show_cart"), "deny preserves cart without assuming checkout");
 }
 
 // 10) Mind change: remove pizza + add fries in one message.

@@ -224,8 +224,8 @@ export const reply = {
       return "📍 Da delivery address rawalegay (kosa, area, city).";
     }
     return ur(l)
-      ? "📍 Delivery address bhej dein (gali, area, city)."
-      : "📍 Please send your delivery address (street, area, city).";
+      ? "📍 Mukammal delivery address bhej dein (ghar/building, gali, area, city ya qareebi landmark)."
+      : "📍 Please send your full delivery address (house/building, street, area, city or a nearby landmark).";
   },
 
   askAddressWithSaved(l: Lang, savedLabel: string): string {
@@ -297,10 +297,11 @@ export const reply = {
     currency: string,
     address?: string | null,
     settings?: RestaurantSettings | null,
+    details?: { guests?: number | null; reservation_time?: string | null; pickup_time?: string | null; customer_instructions?: string | null },
   ): string {
     const itemLines = cart.map((i) => {
-      const note = i.notes ? ` (${i.notes})` : "";
-      return `• ${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}${note}`;
+      const note = [i.notes, ...(i.addons ?? [])].filter(Boolean).join("; ");
+      return `• ${i.qty}x ${i.name} — ${currency} ${i.unit_price * i.qty}${note ? ` (${note})` : ""}`;
     });
     const subtotal = cartSubtotal(cart);
     const head = pa(l) ? "🛒 Staso order:" : ur(l) ? "🛒 Aap ka order:" : "🛒 Your order:";
@@ -342,12 +343,19 @@ export const reply = {
       lines.push(`💰 Total: ${currency} ${subtotal}`);
     }
 
+    const time = details?.pickup_time ?? details?.reservation_time;
+    if (time) {
+      const date = new Date(time);
+      if (Number.isFinite(date.getTime())) lines.push(`🕐 ${new Intl.DateTimeFormat("en-PK", { timeZone: settings?.timezone || "Asia/Karachi", dateStyle: "medium", timeStyle: "short" }).format(date)}`);
+    }
+    if (orderType === "dine-in" && details?.guests) lines.push(`👥 ${details.guests}`);
+    if (details?.customer_instructions) lines.push(`📝 ${details.customer_instructions}`);
     return lines.join("\n");
   },
 
   orderPlaced(
     l: Lang,
-    orderNumber: number,
+    orderNumber: number | string,
     currency: string,
     total: number,
     orderType?: OrderType | null,

@@ -55,14 +55,20 @@ function mustInclude(file, needle, description) {
 requireEnv("NEXT_PUBLIC_SUPABASE_URL", "Set the Supabase project URL.");
 requireEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "Set the public anon key used by the dashboard client.");
 requireEnv("SUPABASE_SERVICE_ROLE_KEY", "Set the server-only service role key.");
-requireEither(["OPENROUTER_API_KEY", "GOOGLE_AI_API_KEY"], "At least one AI provider key is needed for NLU/support.");
+requireEither(["GROQ_API_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY"], "At least one supported AI provider key is needed for NLU/support.");
 if (isPlaceholder(value("GROQ_API_KEY"))) {
-  warnings.push("GROQ_API_KEY is not configured. WhatsApp voice notes will be handed to staff instead of transcribed.");
+  if (isPlaceholder(value("OPENAI_API_KEY"))) warnings.push("Voice transcription is unavailable without GROQ_API_KEY or OPENAI_API_KEY; customers will be asked to type.");
 }
-requireEnv("WHATSAPP_PHONE_NUMBER_ID", "Set the Meta WhatsApp phone number ID.");
-requireEnv("WHATSAPP_ACCESS_TOKEN", "Set a production Meta access token.");
-requireEither(["WHATSAPP_APP_SECRET", "META_APP_SECRET"], "Webhook and Flow signature validation require an app secret.");
-requireLongSecret("WHATSAPP_VERIFY_TOKEN", 24);
+// Tenant phone IDs/tokens live in whatsapp_configs, not shared environment fallbacks.
+const metaConfigured = !isPlaceholder(value("WHATSAPP_APP_SECRET")) || !isPlaceholder(value("META_APP_SECRET"));
+const evolutionConfigured = !isPlaceholder(value("EVOLUTION_API_BASE_URL"));
+if (!metaConfigured && !evolutionConfigured) failures.push("Configure at least one WhatsApp provider (Meta or Evolution).");
+if (metaConfigured) requireLongSecret("WHATSAPP_VERIFY_TOKEN", 24);
+if (evolutionConfigured) {
+  requireEnv("EVOLUTION_API_KEY", "Set the shared Evolution server credential.");
+  requireLongSecret("EVOLUTION_WEBHOOK_SECRET", 32);
+  requireEnv("APP_URL", "Set the public application URL for Evolution webhooks.");
+}
 requireLongSecret("RATE_LIMIT_HASH_SECRET", 32);
 
 if (value("WHATSAPP_ALLOW_UNSIGNED_FLOW_ENDPOINT") === "true" && value("NODE_ENV") === "production") {
@@ -99,6 +105,8 @@ mustInclude("migrations.sql", "create table if not exists restaurant_profiles", 
 mustInclude("migrations.sql", "branch_mode text", "Restaurant branch mode migration");
 mustInclude("migrations.sql", "delivery_areas jsonb", "Delivery area settings migration");
 mustInclude("migrations.sql", "delivery_status_updated_at", "WhatsApp delivery status timestamp migration");
+mustInclude("supabase/migrations/20261025124633_restaurant_order_integrity.sql", "commit_restaurant_agent_turn", "Atomic conversation receipt RPC");
+mustInclude("supabase/migrations/20261025124633_restaurant_order_integrity.sql", "create constraint trigger finalize_restaurant_order", "Reviewed-order integrity trigger");
 
 for (const warning of warnings) {
   console.warn(`WARN: ${warning}`);

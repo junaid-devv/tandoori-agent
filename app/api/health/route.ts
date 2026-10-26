@@ -62,6 +62,7 @@ async function checkDatabaseShape(): Promise<HealthCheck> {
     checkTableColumns("conversations", "id, whatsapp_provider, whatsapp_phone_number_id, evolution_instance_name"),
     checkTableColumns("customer_addresses", "id, contact_id, branch_id, address_key, last_used_at"),
     checkTableColumns("menu_items", "id, available_days, available_start_time, available_end_time"),
+    checkTableColumns("conversation_states", "conversation_id, stage, cart, pending_clarification, summary_sent_at, processing_token"),
   ]);
 
   const failed = checks.find((check) => !check.ok);
@@ -70,6 +71,15 @@ async function checkDatabaseShape(): Promise<HealthCheck> {
   }
 
   return { ok: true };
+}
+
+async function checkOrderIntegrity(): Promise<HealthCheck> {
+  try {
+    const { data, error } = await supabaseAdmin.rpc("restaurant_agent_integrity_version");
+    return { ok: !error && data === "20261025124633", message: error || data !== "20261025124633" ? "restaurant order-integrity migration is required" : undefined };
+  } catch {
+    return { ok: false, message: "restaurant order-integrity migration check failed" };
+  }
 }
 
 export async function GET(req: NextRequest) {
@@ -83,16 +93,20 @@ export async function GET(req: NextRequest) {
     supabaseServiceKey: { ok: hasConfiguredSecret("SUPABASE_SERVICE_ROLE_KEY") },
     whatsappCredentials: {
       ok:
-        hasConfiguredSecret("WHATSAPP_ACCESS_TOKEN") &&
-        (hasConfiguredSecret("WHATSAPP_APP_SECRET") || hasConfiguredSecret("META_APP_SECRET")) &&
-        hasConfiguredSecret("WHATSAPP_VERIFY_TOKEN"),
+        (
+          (hasConfiguredSecret("WHATSAPP_APP_SECRET") || hasConfiguredSecret("META_APP_SECRET")) &&
+          hasConfiguredSecret("WHATSAPP_VERIFY_TOKEN")
+        ) || (
+          hasConfiguredSecret("EVOLUTION_API_BASE_URL") && hasConfiguredSecret("EVOLUTION_API_KEY") && hasConfiguredSecret("EVOLUTION_WEBHOOK_SECRET")
+        ),
     },
     aiProvider: {
-      ok: hasConfiguredSecret("OPENROUTER_API_KEY") || hasConfiguredSecret("GOOGLE_AI_API_KEY"),
+      ok: hasConfiguredSecret("GROQ_API_KEY") || hasConfiguredSecret("DEEPSEEK_API_KEY") || hasConfiguredSecret("OPENROUTER_API_KEY"),
     },
     rateLimitSecret: { ok: hasConfiguredSecret("RATE_LIMIT_HASH_SECRET") },
     database: await checkDatabase(),
     databaseSchema: await checkDatabaseShape(),
+    orderIntegrity: await checkOrderIntegrity(),
   };
 
   const ok = Object.values(checks).every((check) => check.ok);

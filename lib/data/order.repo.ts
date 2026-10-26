@@ -131,9 +131,9 @@ export const orderRepo = {
     if (error) throw error;
   },
 
-  async cancelOrder(id: string): Promise<void> {
+  async cancelOrder(id: string): Promise<boolean> {
     const now = new Date().toISOString();
-    const { error } = await supabaseAdmin
+    const { data, error } = await supabaseAdmin
       .from("orders")
       .update({
         status: "cancelled",
@@ -141,8 +141,13 @@ export const orderRepo = {
         cancellation_requested_at: now,
         updated_at: now,
       })
-      .eq("id", id);
+      .eq("id", id)
+      .eq("status", "received")
+      .gte("created_at", new Date(Date.now() - 10 * 60 * 1000).toISOString())
+      .select("id")
+      .maybeSingle();
     if (error) throw error;
+    return Boolean(data);
   },
 
   async requestCancellation(id: string): Promise<void> {
