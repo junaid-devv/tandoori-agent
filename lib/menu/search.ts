@@ -80,7 +80,7 @@ export function assertSearchReady(): void {
 function normalize(value: string): string {
   let v = value
     .toLowerCase()
-    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/[^a-z0-9.\s-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   // Common Pakistani phonetic variations / transliterations
@@ -160,8 +160,8 @@ export function queryTokensCoveredByName(query: string, name: string): boolean {
     .split(" ")
     .filter((t) => (t.length >= 3 || /^\d+$/.test(t)) && !/^(special|pure|desi)$/i.test(t));
   if (qTokens.length === 0) return false;
-  const nameNorm = normalize(name);
-  return qTokens.every((t) => nameNorm.includes(t));
+  const nameTokens = new Set(normalize(name).split(" "));
+  return qTokens.every((t) => nameTokens.has(t));
 }
 
 function toVectorLiteral(embedding: number[]): string {
@@ -276,7 +276,7 @@ export async function searchMenu(
   if (!trimmed) return { matches: [], method: "none", usedEmbedding: false };
 
   const lexicalFallback = async (): Promise<ResolvedMenuItem[]> => {
-    if (inMemoryMenu && inMemoryMenu.length > 0) {
+    if (inMemoryMenu) {
       return lexicalSearchInMemory(trimmed, inMemoryMenu as MenuRow[], limit);
     }
     return lexicalSearchFromDb(branchId, trimmed, limit);
@@ -315,7 +315,7 @@ export async function searchMenu(
     return { matches, method: matches.length ? "lexical" : "none", usedEmbedding: true };
   }
 
-  const matches: ResolvedMenuItem[] = rows.map((row) => {
+  const matches: ResolvedMenuItem[] = rows.flatMap((row) => {
     const r = row as {
       id: string;
       name: string;
@@ -325,16 +325,19 @@ export async function searchMenu(
       is_available: boolean;
       similarity: number;
     };
-    return {
+    const current = inMemoryMenu?.find((item) => item.id === r.id);
+    if (inMemoryMenu && (!current || !current.is_available)) return [];
+    return [{
       id: r.id,
       name: r.name,
       price: Number(r.price),
       category: r.category,
-      description: r.description,
       is_available: r.is_available,
       similarity: r.similarity,
-      method: "vector",
-    };
+      method: "vector" as const,
+      ...current,
+      description: current ? current.description ?? null : r.description,
+    }];
   });
 
   return { matches, method: "vector", usedEmbedding: true };
@@ -344,7 +347,7 @@ export async function searchMenu(
 // Variant & Disambiguation Helpers
 // ---------------------------------------------------------------------
 const VARIANT_WORDS =
-  "full|half|quarter|single|double|small|medium|large|extra\\s*large|xl|reg(?:ular)?|med(?:ium)?|lar(?:ge)?|\\d+[\"']|\\w+\\s*\\d+[\"']|1\\s*kg|0?\\.5\\s*kg|half\\s*kg|\\d+\\s*pcs?|tin|glass|bottle|boneless|b\\/l|with\\s*cheese|1\\.5\\s*l(?:itre|iter)?|half\\s*l(?:itre|iter)?";
+  "\\d+(?:\\.\\d+)?\\s*(?:ml|l(?:itre|iter)?s?|kg|g)|half\\s*(?:kg|l(?:itre|iter)?)|full|half|quarter|single|double|small|medium|extra\\s*large|large|xl|reg(?:ular)?|med(?:ium)?|lar(?:ge)?|\\d+[\"']|\\w+\\s*\\d+[\"']|\\d+\\s*pcs?|tin|glass|bottle|boneless|b\\/l|with\\s*cheese";
 
 const VARIANT_SUFFIX_PATTERN = new RegExp(
   `(?:\\s*(?:[\\(\\[\\{]|\\s+-\\s+|\\s+\\/\\s+)(${VARIANT_WORDS})[\\)\\]\\}]?|\\s+(${VARIANT_WORDS}))\\s*$`,
@@ -376,17 +379,22 @@ export function extractBaseItemName(fullName: string): { baseName: string; varia
 }
 
 const SIZE_WORDS_PATTERN =
-  /\b(full|half|quarter|single|double|small|medium|large|extra\s*large|xl|reg(?:ular)?|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle|derh|dedh|dehr|aadha|half\s*l(?:itre|iter)?|1\.5\s*l(?:itre|iter)?|1\.5|0?\.5|1\s*kg|half\s*kg)\b/i;
+  /\b(\d+(?:\.\d+)?\s*(?:ml|l(?:itre|iter)?s?|kg|g)|half\s*(?:kg|l(?:itre|iter)?)|full|half|quarter|single|double|small|medium|extra\s*large|large|xl|reg(?:ular)?|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle|derh|dedh|dehr|aadha|1\.5|0?\.5)\b/i;
 
 export function extractSizeFromQuery(query: string, explicitSize?: string | null): string | null {
   const q = (explicitSize || query).toLowerCase();
-  if (/\b(1\.5|derh|dedh|dehr|1\.5\s*l(?:itre|iter)?)\b/i.test(q)) return "1.5 litre";
-  if (/\b(half\s*l(?:itre|iter)?|aadha\s*l(?:itre|iter)?|0\.5\s*l(?:itre|iter)?)\b/i.test(q)) return "half litre";
+  const volume = q.match(/\b(\d+(?:\.\d+)?)\s*(ml|l(?:itre|iter)?s?)\b/);
+  if (volume) return `${Number(volume[1]) * (volume[2] === "ml" ? 1 : 1000)} ml`;
+  if (/\b(half\s*l(?:itre|iter)?|aadha\s*l(?:itre|iter)?)\b/i.test(q)) return "500 ml";
+  if (/\b(1\.5|derh|dedh|dehr)\b/i.test(q)) return "1500 ml";
   if (/\b(1\s*kg|aik\s*kilo|ek\s*kilo|1\s*kilo)\b/i.test(q)) return "1 kg";
   if (/\b(half\s*kg|aadha\s*kilo|0\.5\s*kg)\b/i.test(q)) return "0.5 kg";
   if (/\b(half|aadha|aadhi)\b/i.test(q)) return "half";
   if (/\b(quarter|chauthai|pao|paao)\b/i.test(q)) return "quarter";
   if (/\b(full|poori|poora)\b/i.test(q)) return "full";
+  if (/\b(reg|regular)\b/i.test(q)) return "regular";
+  if (/\b(med|medium)\b/i.test(q)) return "medium";
+  if (/\b(xl|extra\s*large)\b/i.test(q)) return "xl";
   const match = q.match(SIZE_WORDS_PATTERN);
   return match ? match[1].toLowerCase() : null;
 }
@@ -471,6 +479,16 @@ export async function resolveItemDetailed(
     }
   }
 
+  // Ranking must never hide choices that match the customer's words.
+  if (inMemoryMenu) {
+    const seen = new Set(combined.map((item) => item.id));
+    for (const item of inMemoryMenu) {
+      if (!seen.has(item.id) && item.is_available && queryTokensCoveredByName(baseQuery || trimmed, extractBaseItemName(item.name).baseName)) {
+        combined.push({ ...item, description: item.description ?? null, similarity: lexicalScore(trimmed, item as MenuRow), method: "lexical" });
+      }
+    }
+  }
+
   // If we have a category context, boost candidates from that category
   if (lastCategory) {
     const catNorm = lastCategory.toLowerCase().trim();
@@ -508,7 +526,9 @@ export async function resolveItemDetailed(
   const normCombinedQ1 = normalize(combinedQ1);
   const normCombinedQ2 = normalize(combinedQ2);
 
+  const matchesSize = (c: ResolvedMenuItem) => extractSizeFromQuery(c.name) === requestedSize;
   const exactMatch = relevantCandidates.find((c) => {
+    if (requestedSize && !matchesSize(c)) return false;
     const normCand = normalize(c.name);
     const normBaseCand = normalize(extractBaseItemName(c.name).baseName);
     const normQ = normalize(trimmed);
@@ -541,35 +561,8 @@ export async function resolveItemDetailed(
 
   // 2) If user specified a size (e.g. "half", "full", "large", "reg", "medium", "xl", "1.5 litre"), find ALL candidates matching that size
   if (requestedSize) {
-    const s = requestedSize.toLowerCase();
-    const isSizeMatch = (c: ResolvedMenuItem): boolean => {
-      const { variant } = extractBaseItemName(c.name);
-      const v = variant ? variant.toLowerCase() : "";
-      const n = c.name.toLowerCase();
-      const sDigits = s.replace(/\D/g, "");
-      const vDigits = v.replace(/\D/g, "");
-      const digitMatch = Boolean(sDigits && vDigits && sDigits === vDigits);
-      return (
-        digitMatch ||
-        v === s ||
-        v.includes(s) ||
-        s.includes(v) ||
-        n.startsWith(`${s} `) ||
-        n.startsWith(s) ||
-        n.includes(`(${s}`) ||
-        n.includes(` ${s} `) ||
-        n.endsWith(` ${s}`) ||
-        n.endsWith(` ${s}"`) ||
-        (s === "regular" && (v.includes("reg") || n.includes("reg"))) ||
-        (s === "reg" && (v.includes("reg") || n.includes("reg"))) ||
-        (s === "medium" && (v.includes("med") || n.includes("med"))) ||
-        (s === "med" && (v.includes("med") || n.includes("med"))) ||
-        (s === "large" && (v.includes("large") || v.includes("lar") || n.includes("large"))) ||
-        (s === "xl" && (v.includes("xl") || v.includes("extra large") || n.includes("xl"))) ||
-        (s === "extra large" && (v.includes("xl") || v.includes("extra large") || n.includes("xl")))
-      );
-    };
-    let sizeMatches = relevantCandidates.filter(isSizeMatch);
+    let sizeMatches = relevantCandidates.filter(matchesSize);
+    if (!sizeMatches.length) return { kind: "not_found", query: trimmed, suggestions: relevantCandidates.slice(0, 5) };
     if (sizeMatches.length === 1) {
       return { kind: "exact", item: sizeMatches[0], confidence: sizeMatches[0].similarity ?? 0.9 };
     }

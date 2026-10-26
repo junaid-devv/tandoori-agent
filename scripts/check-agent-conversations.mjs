@@ -50,6 +50,7 @@ try {
   const check = (name, fn) => { fn(); checks++; console.log(`PASS: ${name}`); };
   const states = new Map();
   const histories = new Map();
+  const savedAddresses = new Map();
   const placed = [];
   let failPersistence = false;
   let failReceipt = false;
@@ -90,9 +91,12 @@ try {
   stateRepo.commitTurn = async (id, _messageId, patch) => { await stateRepo.patch(id, patch); };
   messageRepo.recentHistory = async (id) => structuredClone(histories.get(id) ?? []);
   getSupabaseAdmin().from = (table) => {
-    assert.ok(["conversations", "agent_turns", "staff_alerts"].includes(table), `Unexpected DB access: ${table}`);
-    const chain = { select: () => chain, eq: () => chain, insert: () => chain,
-      maybeSingle: async () => ({ data: null, error: null }), then: (resolve) => Promise.resolve({ data: null, error: null }).then(resolve) };
+    assert.ok(["conversations", "customer_addresses", "agent_turns", "staff_alerts"].includes(table), `Unexpected DB access: ${table}`);
+    let owner;
+    const chain = { select: () => chain, eq: (key, value) => { if (key === "id" || key === "contact_id") owner = value; return chain; }, insert: () => chain,
+      not: () => chain, order: () => chain, limit: () => chain,
+      maybeSingle: async () => ({ data: savedAddresses.has(owner) ? { contact_id: owner, branch_id: "b" } : null, error: null }),
+      then: (resolve) => Promise.resolve({ data: table === "customer_addresses" ? [savedAddresses.get(owner)].filter(Boolean) : null, error: null }).then(resolve) };
     return chain;
   };
   orderRepo.place = async (payload) => { placed.push(structuredClone(payload)); return `order-${placed.length}`; };
@@ -329,6 +333,106 @@ try {
   check("Roman Urdu detection uses whole words instead of English substrings", () => {
     assert.equal(inferLanguagePreference("please order two noodles", "english"), "english");
     assert.equal(inferLanguagePreference("do naan aur ek tikka", "english"), "roman_urdu");
+  });
+
+  // Anonymized replay of the production incident, using the stored menu formats.
+  menu.push(
+    { id: "egg", name: "Lapeta Egg Burger", price: 179, category: "Burger", is_available: true },
+    { id: "d15", name: "1.5 Liter Drink", price: 199, category: "Soda Section", is_available: true },
+    { id: "d1", name: "1 Liter Drink", price: 150, category: "Soda Section", is_available: true },
+    { id: "d500", name: "500ml Drink", price: 99, category: "Soda Section", is_available: true },
+    { id: "shawarma", name: "Chicken Shawarma", price: 169, category: "Shawarma", is_available: true },
+    { id: "cheese-shawarma", name: "Chicken Cheese Shawarma", price: 199, category: "Shawarma", is_available: true },
+  );
+  const saved = { id: "saved-owner", address: "Sector A st 26", label: "Sector A st 26", use_count: 1 };
+  await seedCaches();
+  await cache.set("settings:b", { ...settings, min_delivery_amount: 500, delivery_fee: 150 }, 600_000);
+  fresh("incident", { preferred_language: "roman_urdu" }); savedAddresses.set("incident", saved);
+  result = await send("incident", "Ek egg burger or aik drink deliver krdo", u("add_items", { language: "roman_urdu", order_type: "delivery",
+    intents: ["add_items", "set_order_type"], items: [mention("egg burger"), mention("drink")] }));
+  check("unspecified drink asks all three stored sizes, adds only the burger and keeps delivery", () => {
+    const state = states.get("incident");
+    assert.equal(state.cart.length, 1); assert.equal(state.cart[0].menu_item_id, "egg");
+    assert.equal(state.order_type, "delivery"); assert.equal(state.pending_clarification.remaining_items.length, 1);
+    for (const name of ["500ml Drink", "1 Liter Drink", "1.5 Liter Drink", "Lapeta Egg Burger"]) assert.ok(result.replyText.includes(name), name);
+  });
+  result = await send("incident", "?");
+  check("question mark repeats the current sizes without adding items or losing the unresolved order", () => {
+    assert.equal(states.get("incident").cart.length, 1); assert.equal(states.get("incident").pending_clarification.remaining_items.length, 1);
+    assert.ok(result.replyText.includes("500ml Drink")); assert.equal(states.get("incident").invalid_step_count, 0);
+  });
+  result = await send("incident", "1.5 litre");
+  check("typed litre spelling selects only the chosen drink and then offers the saved address", () => {
+    assert.equal(states.get("incident").cart.length, 2); assert.equal(states.get("incident").cart[1].menu_item_id, "d15");
+    assert.equal(result.stage, "collecting_delivery"); assert.ok(result.interactive.payload.buttons.some((b) => b.id === "addr:saved:saved-owner"));
+  });
+  result = await send("incident", "Pichla Address");
+  check("saved multi-digit street address is accepted consistently and the real delivery minimum is explained", () => {
+    assert.equal(states.get("incident").address, saved.address); assert.equal(result.stage, "building_cart");
+    assert.ok(result.replyText.includes("500")); assert.equal(states.get("incident").summary_sent_at, null);
+    assert.ok(!result.interactive?.payload.buttons?.some((b) => b.id === "confirm:yes"));
+  });
+  result = await send("incident", "Ek chicken shawarma. Bhi add krdain", u("add_items", { language: "roman_urdu", items: [mention("chicken shawarma")] }));
+  check("adding shawarma preserves the saved destination and reviews one of each, with delivery fee", () => {
+    assert.equal(result.stage, "confirming"); assert.equal(states.get("incident").cart.length, 3);
+    assert.ok(states.get("incident").cart.every((item) => item.qty === 1)); assert.ok(result.replyText.includes("697"));
+    assert.ok(result.replyText.includes("Chicken Shawarma")); assert.ok(result.interactive.payload.buttons.some((b) => b.id === "confirm:yes"));
+  });
+  const beforeResume = placed.length;
+  result = await send("incident", "?");
+  check("question mark at review shows the complete review and never confirms the order", () => {
+    assert.equal(result.stage, "confirming"); assert.equal(placed.length, beforeResume); assert.ok(result.replyText.includes("697"));
+  });
+  const callsBeforeAddress = parserCalls;
+  result = await send("incident", "Old address", u("add_items", { items: [mention("Lapeta Egg Burger"), mention("1.5 Liter Drink"), mention("Chicken Shawarma")] }));
+  check("Old address bypasses a history-echoing model and never duplicates food", () => {
+    assert.equal(parserCalls, callsBeforeAddress); assert.equal(states.get("incident").cart.length, 3);
+    assert.ok(states.get("incident").cart.every((item) => item.qty === 1)); assert.equal(result.stage, "confirming");
+  });
+  result = await send("incident", "Please use the address from my previous delivery", u("use_saved_address", { language: "roman_urdu" }));
+  check("natural saved-address references use only the owned saved address and do not add portions", () => {
+    assert.equal(result.stage, "confirming"); assert.equal(states.get("incident").address, saved.address);
+    assert.ok(states.get("incident").cart.every((item) => item.qty === 1));
+  });
+  fresh("blocked-ack", { stage: "confirming", cart: [line("egg")], order_type: "delivery", address: "Sector A" });
+  result = await send("blocked-ack", "add a chicken shawarma", u("add_items", { items: [mention("Chicken Shawarma")] }));
+  check("a blocked checkout acknowledges the new food as well as the missing address", () => {
+    assert.equal(result.stage, "collecting_delivery"); assert.ok(result.replyText.includes("Chicken Shawarma"));
+    assert.ok(/address/i.test(result.replyText)); assert.equal(states.get("blocked-ack").cart.length, 2);
+  });
+  fresh("bad-saved", { cart: [line("kf")], order_type: "delivery", stage: "collecting_delivery" });
+  savedAddresses.set("bad-saved", { ...saved, address: "Sector A", label: "Sector A" });
+  result = await send("bad-saved", "Old address");
+  check("an incomplete saved address cannot leave confirming stage or a confirm button behind", () => {
+    assert.equal(result.stage, "collecting_delivery"); assert.equal(states.get("bad-saved").address, null);
+    assert.ok(!result.interactive?.payload.buttons?.some((b) => b.id === "confirm:yes"));
+  });
+  fresh("no-saved", { stage: "collecting_delivery", cart: [line("kf")], order_type: "delivery" });
+  result = await send("no-saved", "Old address");
+  check("missing saved address asks for a destination without replaying any order", () => {
+    assert.equal(states.get("no-saved").cart[0].qty, 1); assert.equal(result.stage, "collecting_delivery");
+  });
+  fresh("pending-edit", { preferred_language: "roman_urdu" }); savedAddresses.set("pending-edit", saved);
+  await send("pending-edit", "egg burger aur drink delivery", u("add_items", { order_type: "delivery", items: [mention("egg burger"), mention("drink")] }));
+  result = await send("pending-edit", "also add chicken shawarma", u("add_items", { items: [mention("Chicken Shawarma")] }));
+  check("a new food request while choosing a drink preserves the unresolved drink", () => {
+    assert.equal(states.get("pending-edit").cart.length, 2); assert.equal(states.get("pending-edit").pending_clarification.remaining_items[0].query, "drink");
+    assert.ok(result.replyText.includes("Chicken Shawarma")); assert.ok(result.replyText.includes("500ml Drink")); assert.equal(result.stage, "building_cart");
+  });
+  result = await send("pending-edit", "show burgers", u("browse_menu", { info_query: "Burger" }));
+  check("menu browsing cannot overwrite an unresolved order's drink choices", () => {
+    assert.equal(states.get("pending-edit").pending_clarification.remaining_items[0].query, "drink");
+    assert.deepEqual(states.get("pending-edit").last_shown_options.map((o) => o.id).sort(), ["d1", "d15", "d500"]);
+  });
+  result = await send("pending-edit", "Old address");
+  check("an address given before the drink choice is saved without losing food or prematurely confirming", () => {
+    assert.equal(states.get("pending-edit").address, saved.address); assert.equal(result.stage, "building_cart");
+    assert.equal(states.get("pending-edit").pending_clarification.remaining_items.length, 1);
+  });
+  result = await send("pending-edit", "item:d15");
+  check("resolving the drink after interruptions completes the full order once", () => {
+    assert.equal(result.stage, "confirming"); assert.equal(states.get("pending-edit").cart.length, 3);
+    assert.ok(states.get("pending-edit").cart.every((item) => item.qty === 1)); assert.ok(result.replyText.includes("697"));
   });
   console.log(`\nAGENT CONVERSATIONS: ${checks} checks passed; ${parserCalls} actual parser HTTP requests, ${placed.length} isolated test orders.`);
 } finally {

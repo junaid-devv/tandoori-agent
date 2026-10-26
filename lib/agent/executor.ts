@@ -78,7 +78,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   const value = <K extends keyof ConversationStateRow>(key: K): ConversationStateRow[K] =>
     patch[key] !== undefined ? patch[key] as ConversationStateRow[K] : ctx.state[key];
   const orderChanged = transition.actions.some((a) => ["add_items", "remove_items", "update_quantity", "restart_order", "reorder_previous"].includes(a.kind))
-    || Boolean(u.order_type || u.address || u.guests || u.pickup_time || u.reservation_time || u.notes?.startsWith("use_saved_address:"));
+    || Boolean(u.order_type || u.address || u.guests || u.pickup_time || u.reservation_time || u.notes?.startsWith("use_saved_address:") || u.intents.includes("use_saved_address"));
   if (orderChanged) patch.summary_sent_at = null;
   // A follow-up "yes" must answer the latest question, not an older checkout.
   if (transition.actions.some((a) => ["answer_info", "answer_grounded", "answer_hours_location", "answer_payment", "answer_delivery_info", "smalltalk", "show_menu", "report_order_status", "fallback"].includes(a.kind))) {
@@ -99,6 +99,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   let hasDisambiguation = false;
   let interactive: InteractivePayload | null = null;
   let mediaUrls: string[] | undefined = undefined;
+  const addedInTurn: Array<{ name: string; newCartQty: number; notes?: string | null }> = [];
+  let carriedPending = ctx.state.pending_clarification?.remaining_items?.length
+    ? ctx.state.pending_clarification : null;
 
 
   const setInteractive = (p: InteractivePayload | null) => {
@@ -124,7 +127,22 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           options: p.payload.rows.map((r) => ({ id: r.id, label: r.title })),
         };
       }
+      if (carriedPending) patch.pending_clarification = { ...patch.pending_clarification!, remaining_items: carriedPending.remaining_items };
     }
+  };
+
+  const presentPending = (pending: NonNullable<ConversationStateRow["pending_clarification"]>) => {
+    if (!pending.remaining_items?.length) return;
+    const choices = ctx.state.last_shown_options.flatMap((o) => {
+      const current = ctx.menu.find((m) => m.id === o.id && m.is_available);
+      return current ? [{ id: current.id, name: current.name, price: current.price }] : [];
+    });
+    patch.last_shown_options = choices;
+    patch.last_shown_options_at = new Date().toISOString();
+    replies.push(choices.length ? reply.itemVariants(lang, pending.remaining_items[0].query, choices, cur) : reply.clarify(lang, "which_option"));
+    if (choices.length) setInteractive(itemPickList(lang, choices, cur));
+    patch.pending_clarification = { ...pending, options: choices.length ? patch.pending_clarification?.options ?? pending.options : [] };
+    hasDisambiguation = true;
   };
 
   /** Deterministic hours/location answer — never calls LLM. */
@@ -250,7 +268,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       escalation_reason: "post_order_change", escalated_at: new Date().toISOString(), preferred_language: lang },
       placeOrder: false, escalate: true, usedSemanticSearch: false };
   }
-  if (transition.actions.some((a) => ["add_items", "remove_items", "update_quantity"].includes(a.kind))) patch.pending_clarification = null;
+  if (!carriedPending && transition.actions.some((a) => ["add_items", "remove_items", "update_quantity"].includes(a.kind))) patch.pending_clarification = null;
 
   const orderSummary = () => reply.summary(lang, cart, value("order_type"), cur, value("address"), ctx.settings, {
     guests: value("guests"), reservation_time: value("reservation_time"), pickup_time: value("pickup_time"),
@@ -261,7 +279,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     if (hasDisambiguation) return false;
     if (value("pending_clarification")?.remaining_items?.length) {
       patch.stage = "building_cart";
-      replies.push(reply.clarify(lang, "which_option"));
       return false;
     }
     if (!cart.length) {
@@ -298,7 +315,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         patch.stage = "collecting_delivery";
         patch.address = null;
         patch.summary_sent_at = null;
-        if (!replies.length) replies.push(isCompleteDeliveryAddress(address) ? reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas) : reply.askAddress(lang));
+        const prompt = isCompleteDeliveryAddress(address) ? reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas) : reply.askAddress(lang);
+        if (!replies.includes(prompt)) replies.push(prompt);
         return false;
       }
       if (cartSubtotal(cart) < ctx.settings.min_delivery_amount) {
@@ -312,12 +330,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     if (type === "pickup" && !parseCustomerTimeToIso(value("pickup_time"), ctx.settings.timezone)) {
       patch.pickup_time = null;
       patch.stage = "collecting_pickup";
-      if (!replies.length) replies.push(reply.askPickupTime(lang));
+      if (!replies.includes(reply.askPickupTime(lang))) replies.push(reply.askPickupTime(lang));
       return false;
     }
     if (type === "dine-in" && (!value("guests") || !parseCustomerTimeToIso(value("reservation_time"), ctx.settings.timezone))) {
       patch.stage = "collecting_dinein";
-      if (!replies.length) replies.push(reply.askDineIn(lang));
+      if (!replies.includes(reply.askDineIn(lang))) replies.push(reply.askDineIn(lang));
       return false;
     }
     const scheduled = type === "pickup" ? value("pickup_time") : type === "dine-in" ? value("reservation_time") : null;
@@ -394,6 +412,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           const res = await resolveItemDetailed(branchId, query, m.size, ctx.menu, ctx.state.last_shown_category ?? null);
           if (res.kind === "exact") {
             const resolved = res.item;
+            if (carriedPending?.options.some((o) => o.id === `item:${resolved.id}`)) {
+              carriedPending = null;
+              patch.pending_clarification = null;
+            }
             if (resolved.method === "vector") usedSemantic = true;
             if (resolved.is_available === false) {
               replies.push(reply.itemUnavailable(lang, resolved.name));
@@ -449,12 +471,14 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             patch.pending_clarification = {
               kind: "item_disambiguation",
               options: patch.pending_clarification?.options ?? [],
-              remaining_items: mentions.slice(mentionIndex),
+              remaining_items: [...mentions.slice(mentionIndex), ...(carriedPending?.remaining_items ?? [])],
             };
+            carriedPending = null;
             break;
           }
         }
 
+        addedInTurn.push(...added);
         if (added.length && !hasDisambiguation) {
           patch.last_shown_options = [];
           patch.last_shown_options_at = null;
@@ -462,7 +486,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
           const willShowSummary = transition.actions.some((a) => a.kind === "show_summary");
           if (!willShowSummary) {
-            replies.push(reply.itemsAdded(lang, added, cart, cur));
             setInteractive(cartActionButtons(lang));
           }
         } else if (replies.length > 0 && cart.length > 0 && !hasDisambiguation) {
@@ -754,10 +777,14 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         }
         const address = action.payload?.address as string | undefined;
         const savedAddrNote = u.notes?.match(/^use_saved_address:(.+)$/);
-        if (savedAddrNote) {
-          const savedRow = ctx.savedAddress?.id === savedAddrNote[1] ? ctx.savedAddress : null;
+        if (savedAddrNote || u.intents.includes("use_saved_address")) {
+          const savedRow = !savedAddrNote || ctx.savedAddress?.id === savedAddrNote[1] ? ctx.savedAddress : null;
           if (savedRow?.address) {
-            if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(savedRow.address, ctx.settings)) {
+            if (!isValidDeliveryAddress(savedRow.address) || !isCompleteDeliveryAddress(savedRow.address)) {
+              replies.push(reply.askAddress(lang));
+              patch.stage = "collecting_delivery";
+              patch.address = null;
+            } else if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(savedRow.address, ctx.settings)) {
               replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
               patch.stage = "collecting_delivery";
               patch.address = null;
@@ -766,13 +793,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               patch.order_type = patch.order_type ?? "delivery";
               replies.push(reply.savedAddressConfirmed(lang, savedRow.address));
 
-              if (cart.length > 0 && !hasDisambiguation) {
-                patch.stage = "confirming";
-
-              }
             }
           } else {
             replies.push(reply.askAddress(lang));
+            patch.stage = "collecting_delivery";
+            patch.address = null;
           }
         } else if (address) {
           if (!isValidDeliveryAddress(address)) {
@@ -795,10 +820,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             patch.address = address;
             patch.order_type = patch.order_type ?? "delivery";
 
-            if (cart.length > 0 && !hasDisambiguation) {
-              patch.stage = "confirming";
-
-            }
           }
         } else {
           const isNewAddressRequest = Boolean(
@@ -806,7 +827,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             u.notes === "prompt_new_address" ||
             u.notes === "fast_path_new_address_request"
           );
-          const saved = !isNewAddressRequest && ctx.savedAddress && isValidDeliveryAddress(ctx.savedAddress.address) && isValidDeliveryAddress(ctx.savedAddress.label) ? ctx.savedAddress : null;
+          const saved = !isNewAddressRequest && ctx.savedAddress && isValidDeliveryAddress(ctx.savedAddress.address) && isCompleteDeliveryAddress(ctx.savedAddress.address)
+            && (!ctx.settings.delivery_areas?.length || findMatchingDeliveryArea(ctx.savedAddress.address, ctx.settings)) ? ctx.savedAddress : null;
           if (saved) {
             replies.push(reply.askAddressWithSaved(lang, saved.label));
             setInteractive({
@@ -1241,6 +1263,17 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       // ── Fallback ─────────────────────────────────────────────────────────
       case "fallback":
       default:
+        if (u.notes === "fast_path_resume") {
+          const pending = ctx.state.pending_clarification;
+          if (pending?.remaining_items?.length) {
+            presentPending(pending);
+          } else if (cart.length && checkoutReady()) {
+            patch.stage = "confirming";
+            patch.summary_sent_at = new Date().toISOString();
+            replies.push(orderSummary());
+            setInteractive(confirmButtons(lang));
+          }
+        }
         if (replies.length === 0 && patch.customer_instructions) {
           replies.push(reply.itemInstructionUpdated(lang, lang === "english" ? "Order" : "Order", patch.customer_instructions));
           if (cart.length) setInteractive(cartActionButtons(lang));
@@ -1258,6 +1291,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     }
   }
 
+  // An unrelated addition, address reply or menu question must not discard an
+  // earlier requested portion that is still waiting for a size/flavor choice.
+  if (carriedPending && !hasDisambiguation && !transition.actions.some((a) => ["cancel_order", "restart_order", "reorder_previous"].includes(a.kind))) {
+    presentPending(carriedPending);
+  }
+
   if (!cart.length && patch.stage !== "placed" && patch.stage !== "human" && !u.order_type && !u.address && !u.guests && !u.pickup_time && !u.reservation_time) patch.stage = "browsing";
   patch.cart = cart;
 
@@ -1273,6 +1312,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     // Override stage to building_cart so next turn's fast-paths (numeric selection, name matching) work
     patch.stage = "building_cart";
   }
+
+  // A scheduled review can fail validation. Acknowledge actual additions even
+  // when checkout is blocked, and acknowledge resolved portions before choices.
+  if (addedInTurn.length && !placeOrder && !patch.summary_sent_at) finalReplies.unshift(reply.itemsAdded(lang, addedInTurn, cart, cur));
 
   // De-duplicate identical consecutive lines
   finalReplies = finalReplies.filter((line, idx, arr) => idx === 0 || line !== arr[idx - 1]);

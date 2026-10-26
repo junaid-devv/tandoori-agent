@@ -16,7 +16,7 @@ import type { LanguagePreference, OrderType } from "../schema.types.ts";
 /** An area establishes coverage; a destination also needs a building/street or landmark. */
 export function isCompleteDeliveryAddress(address: string | null | undefined): boolean {
   if (!address || address.trim().length < 8) return false;
-  return /\b(?:house|h\s*#|flat|apartment|apt|shop|office|building|street|st\s*\d|gali|makan|makaan|ghar|plot|hostel|room|hotel|hospital|school|gate|near|opposite|samne|qareeb|nazdeek)\b/i.test(address)
+  return /\b(?:house|h\s*#|flat|apartment|apt|shop|office|building|street|st\.?\s*\d+|gali|makan|makaan|ghar|plot|hostel|room|hotel|hospital|school|gate|near|opposite|samne|qareeb|nazdeek)\b/i.test(address)
     || /(?:گھر|مکان|گلی|فلیٹ|دکان|گیٹ|قریب|سامنے)/u.test(address);
 }
 

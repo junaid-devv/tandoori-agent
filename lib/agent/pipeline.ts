@@ -16,7 +16,7 @@ import { loadTurnContext } from "./context";
 import { stateRepo } from "@/lib/data/state.repo";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { inferLanguagePreference } from "@/lib/core/lang-detect";
-import { extractBaseItemName } from "@/lib/menu/search";
+import { extractBaseItemName, extractSizeFromQuery } from "@/lib/menu/search";
 import type { ConversationStateRow } from "@/lib/schema.types";
 import type { ConversationStage } from "@/lib/schema.types";
 
@@ -162,7 +162,7 @@ export function understandingFromInteractiveId(
 }
 
 /** Exact choices only. Natural-language edits, questions and compound orders go to NLU. */
-export function fastUnderstanding(text: string, state: ConversationStateRow): TurnUnderstanding | null {
+export function fastUnderstanding(text: string, state: ConversationStateRow, savedAddressId?: string | null): TurnUnderstanding | null {
   const raw = text.trim().replace(/^\[voice note\]\s*/i, "").trim();
   const lang = inferLanguagePreference(raw, state.preferred_language);
   const options = state.pending_clarification?.options ?? [];
@@ -191,7 +191,9 @@ export function fastUnderstanding(text: string, state: ConversationStateRow): Tu
   const matches = options.filter((o) => normalize(o.label) === normalize(raw));
   if (matches.length === 1) return fromId(matches[0].id);
   if (state.pending_clarification?.remaining_items?.length && recent) {
-    const variants = shown.filter((o) => normalize(extractBaseItemName(o.name).variant ?? "") === normalize(raw));
+    const volumeOnly = /^\d+(?:\.\d+)?\s*(?:ml|l(?:itre|iter)?s?)$/i.test(raw);
+    const variants = shown.filter((o) => normalize(extractBaseItemName(o.name).variant ?? "") === normalize(raw)
+      || volumeOnly && extractSizeFromQuery(o.name) === extractSizeFromQuery(raw));
     if (variants.length === 1) return fromId(`item:${variants[0].id}`);
   }
   if (numeric && recent && (state.stage === "browsing" || state.stage === "building_cart")) {
@@ -214,6 +216,12 @@ export function fastUnderstanding(text: string, state: ConversationStateRow): Tu
   if (/^(?:add more|aur add karna hai|kuch aur add karna hai|or kia add krna hai)$/i.test(raw)) return fromId("action:add_more");
   if (/^(?:back|go back|wapas jao|view cart)$/i.test(raw)) return fromId("action:view_cart");
   if (/^(?:new address|naya address)$/i.test(raw)) return fromId("addr:new");
+  // Exact address references are slot changes, never a replay of previous food.
+  if (/^(?:old address|previous address|same address|use saved(?: address)?|pichla address|purana address|wahi address|pakhwanay address)[!.]*$/i.test(raw)) {
+    return savedAddressId ? fromId(`addr:saved:${savedAddressId}`)
+      : { ...base, intents: ["provide_address"], primary_intent: "provide_address", notes: "prompt_new_address" };
+  }
+  if (/^(?:[?؟]+|what next|next step|ab kya|aage kya)[!.?؟]*$/i.test(raw)) return { ...base, notes: "fast_path_resume" };
   if (/^(?:delivery|pickup|takeaway|dine[ -]?in)$/i.test(raw)) {
     return fromId(`ordertype:${/^dine/i.test(raw) ? "dine-in" : /^take/i.test(raw) ? "pickup" : raw.toLowerCase()}`);
   }
@@ -238,7 +246,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   });
   t.ctx = Date.now() - startedAt;
 
-  let understanding = fastUnderstanding(input.messageText, ctx.state);
+  let understanding = fastUnderstanding(input.messageText, ctx.state, ctx.savedAddress?.id);
 
   // ── 2) NLU ─────────────────────────────────────────────────────────────────
   const nluStart = Date.now();
@@ -267,7 +275,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     understanding = { ...makeBase(understanding.language), confidence: understanding.confidence,
       notes: "fast_path_uncertain_understanding" };
   }
-  const invalidStepCount = understanding.primary_intent === "unknown" ? ctx.state.invalid_step_count + 1 : 0;
+  const invalidStepCount = understanding.primary_intent === "unknown" && understanding.notes !== "fast_path_resume" ? ctx.state.invalid_step_count + 1 : 0;
   if (invalidStepCount >= 3) {
     understanding = { ...understanding, wants_human: true, intents: ["human_request"], primary_intent: "human_request" };
   }

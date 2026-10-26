@@ -137,6 +137,7 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
   if (u.intents.includes("restart_order")) return { nextStage: "browsing", actions: [{ kind: "restart_order" }], escalate: false };
   if (u.intents.includes("cancel_order")) return { nextStage: "browsing", actions: [{ kind: "cancel_order" }], escalate: false };
   if (u.intents.includes("reorder_previous")) return { nextStage: "building_cart", actions: [{ kind: "reorder_previous" }], escalate: false };
+  if (u.notes === "fast_path_resume") return { nextStage: view.stage, actions: [{ kind: "fallback" }], escalate: false };
 
   const actions: AgentAction[] = [];
   let nextStage = view.stage;
@@ -166,20 +167,22 @@ export function nextTransition(view: StateView, u: TurnUnderstanding): Transitio
     }
   }
 
-  const chosenType = u.order_type ?? view.order_type ?? (u.address ? "delivery" : null);
+  const savedAddressRequested = u.intents.includes("use_saved_address") || Boolean(u.notes?.startsWith("use_saved_address:"));
+  const chosenType = u.order_type ?? view.order_type ?? (u.address || savedAddressRequested ? "delivery" : null);
   const effective: StateView = {
     ...view,
     order_type: chosenType,
-    has_address: Boolean(u.address) || view.has_address,
+    // The executor resolves ownership and validates the saved address before review.
+    has_address: Boolean(u.address || savedAddressRequested) || view.has_address,
     has_guests: Boolean(u.guests) || view.has_guests,
     has_reservation_time: Boolean(u.reservation_time) || view.has_reservation_time,
     has_dinein_details: (Boolean(u.guests) || view.has_guests) && (Boolean(u.reservation_time) || view.has_reservation_time),
     has_pickup_time: Boolean(u.pickup_time) || view.has_pickup_time,
   };
-  const hasSlots = Boolean(u.address || u.guests || u.reservation_time || u.pickup_time || u.notes?.startsWith("use_saved_address:"));
+  const hasSlots = Boolean(u.address || u.guests || u.reservation_time || u.pickup_time || savedAddressRequested);
   const changedFulfillment = Boolean(u.order_type || hasSlots || u.intents.includes("provide_address"));
   if (u.order_type) actions.push({ kind: "ask_order_type", payload: { chosen: u.order_type } });
-  if (u.address || u.notes?.startsWith("use_saved_address:")) {
+  if (u.address || savedAddressRequested) {
     actions.push({ kind: "collect_delivery_address", payload: { address: u.address } });
   } else if (u.intents.includes("provide_address")) {
     actions.push({ kind: "collect_delivery_address", payload: { isNewAddressRequest: true } });

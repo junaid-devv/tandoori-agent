@@ -4,6 +4,13 @@ import dotenv from "dotenv";
 dotenv.config({ path: ".env.local", quiet: true });
 const { understandTurn } = await import("../lib/agent/nlu.ts");
 const item = (name, qty = 1) => ({ name, qty });
+const deliveryHistory = [
+  { role: "user", content: "Ek egg burger or aik drink deliver krdo" },
+  { role: "assistant", content: "1x Lapeta Egg Burger and 1x 1.5 Liter Drink added. Use saved address or new address?" },
+  { role: "user", content: "Pichla Address" },
+  { role: "assistant", content: "Saved address selected: Sector A st 26." },
+];
+const fulfillment = { order_type: "delivery", address: "Sector A st 26", guests: null, reservation_time: null, pickup_time: null };
 const cases = [
   { name: "English multi-item order", text: "Please add 2 chicken biryani and 3 plain naan", test: (u) => u.intents.includes("add_items") && u.items.length === 2 && u.items.some((i) => i.qty === 3) },
   { name: "Roman Urdu complete delivery", text: "2 zinger burger aur ek naan, delivery karwa do House 12 Street 4 Gulberg Lahore, rider gate pe call kare", language: "roman_urdu", test: (u) => u.items.length === 2 && u.order_type === "delivery" && !!u.address && !!u.notes },
@@ -17,6 +24,18 @@ const cases = [
   { name: "acknowledgment uses the last assistant question", text: "haan", stage: "building_cart", cart: [item("Plain Naan", 2)], history: [{ role: "assistant", content: "Would you like to see our drinks menu?" }], test: (u) => u.primary_intent === "affirm" && !u.items.length && !u.intents.includes("confirm_order") },
   { name: "dine-in details preserve guests and time", text: "Dine in for 4 people tomorrow at 8pm", test: (u) => u.order_type === "dine-in" && u.guests === 4 && /tomorrow|2026|2027/i.test(u.reservation_time ?? "") },
   { name: "explicit staff handoff", text: "kisi insaan se baat karwao please", test: (u) => u.wants_human && u.intents.includes("human_request") },
+  { name: "generic drink must remain unsized", text: "Ek egg burger or aik drink deliver krdo", language: "roman_urdu", test: (u) => u.items.length === 2 && u.items.some((i) => /drink/i.test(i.query) && !i.size && !/\d|liter|litre|ml/i.test(i.query)) && u.order_type === "delivery" },
+  { name: "shawarma addition cannot copy historical food or fulfillment", text: "Ek chicken shawarma. Bhi add krdain", language: "roman_urdu", stage: "confirming", cart: [item("Lapeta Egg Burger"), item("1.5 Liter Drink")], history: deliveryHistory, fulfillment,
+    test: (u) => u.items.length === 1 && /chicken.*shawarma/i.test(u.items[0].query) && u.items[0].qty === 1 && !u.address && !u.order_type },
+  { name: "old address cannot replay the historical cart", text: "Old address", language: "roman_urdu", stage: "collecting_delivery", cart: [item("Lapeta Egg Burger"), item("1.5 Liter Drink"), item("Chicken Shawarma")], fulfillment,
+    history: [...deliveryHistory, { role: "user", content: "Ek chicken shawarma. Bhi add krdain" }, { role: "assistant", content: "Please send your complete delivery address." }],
+    test: (u) => u.intents.includes("use_saved_address") && !u.items.length && !u.removals.length && !u.address },
+  { name: "polite saved-address reference is a slot request only", text: "Please use the address from my previous delivery", language: "english", stage: "collecting_delivery", cart: [item("Lapeta Egg Burger")], history: deliveryHistory,
+    test: (u) => u.intents.includes("use_saved_address") && !u.items.length && !u.address },
+  { name: "a new typed destination cannot re-add historical food", text: "House 80 Street 12 Sector B", language: "roman_urdu", stage: "collecting_delivery", cart: [item("Lapeta Egg Burger"), item("1.5 Liter Drink")], history: deliveryHistory, fulfillment,
+    test: (u) => u.intents.includes("provide_address") && !!u.address && !u.items.length && !u.removals.length },
+  { name: "explicit extra portion remains an addition despite history", text: "Ek aur egg burger bhi add krdo", language: "roman_urdu", stage: "confirming", cart: [item("Lapeta Egg Burger"), item("1.5 Liter Drink")], history: deliveryHistory, fulfillment,
+    test: (u) => u.intents.includes("add_items") && u.items.length === 1 && /egg.*burger/i.test(u.items[0].query) && u.items[0].qty === 1 && !u.address && !u.order_type },
 ];
 let failures = 0;
 const times = [];
@@ -24,7 +43,7 @@ for (const [index, c] of cases.entries()) {
   if (index) await new Promise((resolve) => setTimeout(resolve, Number(process.env.LIVE_NLU_PAUSE_MS) || 15_000));
   const started = Date.now();
   const u = await understandTurn({ conversationId: `synthetic-${index}`, messageText: c.text,
-    language: c.language ?? "english", stage: c.stage ?? "browsing", cart: c.cart ?? [], history: c.history ?? [] });
+    language: c.language ?? "english", stage: c.stage ?? "browsing", cart: c.cart ?? [], history: c.history ?? [], fulfillment: c.fulfillment });
   const elapsed = Date.now() - started;
   times.push(elapsed);
   const passed = c.test(u);

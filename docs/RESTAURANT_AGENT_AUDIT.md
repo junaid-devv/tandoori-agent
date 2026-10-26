@@ -75,3 +75,29 @@ Some old guards inspect source strings rather than behavior. Two were updated to
 - Free-form answers use grounding instructions and can still be wrong. Maintain accurate descriptions and review live transcripts; the model cannot directly execute order mutations.
 - Processing failures and outbound failures create staff alerts, but this change does not add an exactly-once transactional WhatsApp outbox. A crash after a database commit or an uncertain provider send may require staff to confirm/recover the reply. Duplicate orders are prevented by the database safeguards.
 - Remote schema, permissions and the read-only service-role health RPC were verified on 26 October 2026. No production load test, live voice transcription quality study or end-to-end customer-channel smoke test was performed.
+
+## Follow-up: production conversation on 26 October 2026
+
+The earlier synthetic tests missed a real failure. Reviewing today's production conversation and stored menu confirmed these linked problems:
+
+- The customer requested an egg burger and an unspecified drink for delivery. NLU correctly left the drink unsized, but menu resolution automatically chose the 1.5-litre drink. Only that volume format was recognised as a variant; 1-litre and 500-ml names were treated as unrelated base dishes.
+- Selecting the owned saved address advanced to `confirming` without a summary or confirmation buttons. The executor and checkout also disagreed about an abbreviated street address containing multiple digits.
+- A question mark produced a generic misunderstanding response instead of the pending choices or checkout step.
+- The model copied previous fulfillment fields when another dish was requested. On a later saved-address reference it replayed all three earlier items, doubling the draft quantities. No order had been placed today at inspection time.
+- An unrelated addition or menu-browsing interruption could erase an unresolved size choice. Additions could also go unacknowledged when a scheduled review failed validation.
+
+The follow-up repairs recognise numeric drink volumes consistently, compare equivalent ml/litre sizes, reject unavailable requested sizes rather than substituting, and include all matching catalog siblings before deciding a request is unambiguous. Current catalog prices, availability and membership override vector metadata, including when the loaded catalog is empty. Whole-token matching avoids accidental name fragments.
+
+Saved-address taps now pass through the same checkout validation and review as typed addresses. Saved-address references have a dedicated NLU intent; exact phrases use only the conversation's owned saved address and bypass the model. The extraction contract explicitly returns only changes requested in the current message. Its cache version changed so an older extraction is not reused. A question mark re-presents choices or a fresh review without placing an order. Unresolved portions survive additions, browsing and address replies, and actual additions are acknowledged even when checkout is blocked.
+
+Stored menu inspection found 128 items, no duplicate normalised names, and no populated descriptions. The three drink SKUs are `500ml Drink` (Rs. 99), `1 Liter Drink` (Rs. 150), and `1.5 Liter Drink` (Rs. 199). Brand, ingredient and deal-content facts are absent and must be supplied by the restaurant; none were invented or written to the menu. Stored delivery settings require a Rs. 500 food subtotal and charge Rs. 150 delivery. An initial burger/drink draft below that minimum must request more food rather than offer confirmation.
+
+Verification after the follow-up:
+
+- 62 isolated pipeline/conversation checks, including an anonymised replay of the incident and interruptions before choosing a drink.
+- 23 resolver checks exercising both lexical fallback and a real local embedding endpoint with deliberately incomplete vector RPC results.
+- 18/18 live NLU cases, including historical cart/address context, saved-address references and an explicit extra portion. One primary provider request failed with HTTP 400 and the configured fallback returned the correct extraction.
+- Production build and TypeScript passed; scoped lint had zero errors and one existing unused-parameter warning.
+- Existing PostgreSQL integrity tests still cover 24 commit/replay/fulfillment cases. No additional schema migration is needed for this application-only repair.
+
+The original customer draft was inspected, not rewritten, and no customer-channel replies or orders were sent during this follow-up. Its previously duplicated quantities need a fresh review/reset before that draft is used again. Repaired code does not retroactively infer a customer's unchosen drink size.
