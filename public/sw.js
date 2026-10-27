@@ -1,4 +1,4 @@
-const CACHE_NAME = "dogar-sajji-v1";
+const CACHE_NAME = "orderiq-workspace-v3";
 const STATIC_ASSETS = [
   "/",
   "/dashboard",

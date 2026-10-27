@@ -296,13 +296,13 @@ export default function SettingsPage() {
   ];
 
   return (
-    <div className="space-y-7 pb-6">
+    <div className="space-y-5 pb-2">
       <PageHeader title="Settings" description="Make the workspace work the way your restaurant does." actions={!["database", "notifications"].includes(activeTab) && <button onClick={() => void save()} disabled={saving || loading || !!settingsError} className="ui-button ui-button-primary">{saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}{saving ? "Saving..." : "Save changes"}</button>} />
       {settingsError && <ErrorNotice message="We couldn’t load your saved settings. Please try again." retry={revalidateSettings} />}
       <div className="grid items-start gap-6 lg:grid-cols-[220px_minmax(0,1fr)]">
         <aside className="min-w-0 lg:sticky lg:top-0">
           <p className="ui-eyebrow mb-3 hidden px-3 lg:block">Preferences</p>
-          <nav aria-label="Settings sections" className="no-scrollbar flex gap-1 overflow-x-auto pb-2 lg:flex-col lg:overflow-visible">
+          <nav aria-label="Settings sections" className="settings-navigation no-scrollbar flex gap-1 overflow-x-auto lg:flex-col lg:overflow-visible">
             {tabs.map(({key, label, icon}) => <button key={key} onClick={() => { setActiveTab(key); window.history.replaceState(null, "", `#${key}`); }} aria-current={activeTab === key ? "page" : undefined} className={clsx("flex min-h-11 shrink-0 items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-xs font-medium transition", activeTab === key ? "border border-slate-200 bg-white text-slate-800 shadow-xs" : "border border-transparent text-slate-500 hover:bg-slate-100")}><span className={activeTab === key ? "text-brand" : "text-slate-400"}>{icon}</span><span>{label}</span></button>)}
           </nav>
           {session.role !== "branch_staff" && <div className="mt-5 hidden border-t border-slate-200 px-3 pt-5 lg:block"><p className="text-[11px] leading-relaxed text-slate-400">Need to change the business profile or team access?</p><Link href="/dashboard/admin" className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-slate-600 hover:text-brand">Open Administration <span aria-hidden="true">→</span></Link></div>}
@@ -338,7 +338,7 @@ export default function SettingsPage() {
               className={clsx(
                 "inline-flex items-center justify-center gap-1.5 rounded-lg h-8 px-3 text-xs font-bold transition shrink-0",
                 settings.is_accepting_orders
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  ? "bg-brand text-white hover:bg-brand-hover"
                   : "bg-slate-800 text-white hover:bg-slate-900"
               )}
             >
@@ -461,7 +461,7 @@ export default function SettingsPage() {
               className={clsx(
                 "inline-flex items-center justify-center gap-1.5 rounded-lg h-8 px-3 text-xs font-bold transition shrink-0",
                 settings.delivery_enabled
-                  ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                  ? "bg-brand text-white hover:bg-brand-hover"
                   : "bg-slate-800 text-white hover:bg-slate-900"
               )}
             >
@@ -837,7 +837,7 @@ export default function SettingsPage() {
                 className={clsx(
                   "inline-flex items-center gap-1.5 h-8 rounded-lg px-3 text-xs font-bold transition",
                   isSoundEnabled
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    ? "bg-brand text-white hover:bg-brand-hover"
                     : "bg-slate-800 text-white hover:bg-slate-900"
                 )}
               >
@@ -880,7 +880,7 @@ export default function SettingsPage() {
                 className={clsx(
                   "inline-flex items-center gap-1.5 h-8 rounded-lg px-3 text-xs font-bold transition",
                   isAutoPrintEnabled
-                    ? "bg-emerald-600 text-white hover:bg-emerald-700"
+                    ? "bg-brand text-white hover:bg-brand-hover"
                     : "bg-slate-800 text-white hover:bg-slate-900"
                 )}
               >

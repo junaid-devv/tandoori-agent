@@ -1,13 +1,13 @@
 {
-  "name": "iQLaunch — Management Hub",
-  "short_name": "iQLaunch",
-  "description": "Real-time AI WhatsApp ordering and management hub for iQLaunch",
+  "name": "OrderIQ — Restaurant workspace",
+  "short_name": "OrderIQ",
+  "description": "Orders, customer conversations and restaurant operations in one workspace.",
   "start_url": "/dashboard",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "background_color": "#09090b",
-  "theme_color": "#E59819",
+  "background_color": "#fff8f3",
+  "theme_color": "#ff6200",
   "icons": [
     {
       "src": "/icons/icon-192.png",

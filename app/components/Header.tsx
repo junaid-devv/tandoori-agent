@@ -49,7 +49,7 @@ export function Header() {
   }
 
   const results = items.filter(item => `${item.label} ${item.description}`.toLowerCase().includes(search.toLowerCase()));
-  return <header className="relative z-30 flex h-[76px] shrink-0 items-center justify-between gap-3 border-b border-slate-200/80 bg-white px-5 pl-16 sm:px-7 sm:pl-16 lg:pl-7 xl:px-10">
+  return <header className="workspace-header relative z-30 flex h-[64px] shrink-0 items-center justify-between gap-3 border-b px-4 pl-16 sm:px-6 sm:pl-16 lg:pl-7 xl:px-7">
     <div className="flex min-w-0 items-center gap-2 text-xs"><span className="hidden text-slate-500 sm:inline">Workspace</span><ChevronRight size={13} className="hidden text-slate-300 sm:block" /><span className="truncate font-medium text-slate-700">{currentPage?.label || "Dashboard"}</span>{pathname.endsWith("/new") && <><ChevronRight size={13} className="text-slate-300" /><span className="text-slate-500">New client</span></>}</div>
     <div className="flex min-w-0 items-center gap-2 sm:gap-4">
       <button onClick={() => { setSearch(""); command.current?.showModal(); }} aria-label="Search pages" className="flex h-9 items-center gap-2 rounded-lg px-2 text-slate-500 transition hover:bg-slate-50 sm:border sm:border-slate-200 sm:pr-2.5"><Search size={16} /><span className="hidden text-xs xl:inline">Go to a page...</span><kbd className="ml-5 hidden rounded border border-slate-200 px-1 py-0.5 text-[10px] sm:block">Ctrl K</kbd></button>

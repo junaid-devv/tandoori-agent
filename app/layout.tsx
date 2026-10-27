@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import type { CSSProperties } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { Toaster } from "sonner";
 import { getRestaurantProfile } from "@/lib/restaurant-profile";
@@ -17,9 +16,8 @@ const geistMono = Geist_Mono({
 });
 
 export async function generateViewport(): Promise<Viewport> {
-  const profile = await getRestaurantProfile();
   return {
-    themeColor: profile.brand_color || "#EA580C",
+    themeColor: "#ff6200",
     width: "device-width",
     initialScale: 1,
     viewportFit: "cover",
@@ -29,7 +27,7 @@ export async function generateViewport(): Promise<Viewport> {
 export async function generateMetadata(): Promise<Metadata> {
   const profile = await getRestaurantProfile();
   return {
-    title: `${profile.app_name} - Agent Dashboard`,
+    title: `${profile.app_name} · OrderIQ`,
     description: `WhatsApp AI ordering agent dashboard for ${profile.app_name}`,
     manifest: "/manifest.webmanifest",
     appleWebApp: {
@@ -54,14 +52,8 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const profile = await getRestaurantProfile();
-  const rootStyle = {
-    "--brand": profile.brand_color,
-    "--brand-hover": profile.brand_hover_color,
-  } as CSSProperties & Record<"--brand" | "--brand-hover", string>;
-
   return (
-    <html lang="en" suppressHydrationWarning style={rootStyle}>
+    <html lang="en" suppressHydrationWarning>
       <head>
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />

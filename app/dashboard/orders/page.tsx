@@ -295,7 +295,7 @@ export default function OrdersPage() {
   }, [orders, activeTab, searchTerm]);
 
   return (
-    <div className="orders-page space-y-6 pb-6">
+    <div className="orders-page space-y-5 pb-2">
       <PageHeader title="Orders" description="A clear path from a new order to a happy customer." meta={<span className="status-pill bg-orange-50 text-brand">{counts.active} active</span>} actions={<>
         <div className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white p-1">
           <button aria-pressed={viewMode === "cards"} onClick={() => setViewMode("cards")} className={clsx("flex h-8 items-center gap-1.5 rounded-md px-3 text-xs font-medium", viewMode === "cards" ? "bg-slate-100 text-slate-800" : "text-slate-400")}><LayoutGrid size={14} />List</button>
@@ -331,7 +331,7 @@ export default function OrdersPage() {
       )}
 
       {/* ── Filter Bar & Search Controls ─────────────────────────────── */}
-      <div className="flex flex-col-reverse gap-4 rounded-xl border border-slate-200 bg-white p-4 xl:flex-row xl:items-center xl:justify-between">
+      <div className="ui-card flex flex-col-reverse gap-3 p-3 xl:flex-row xl:items-center xl:justify-between">
         {/* Navigation Tabs */}
         <div className="no-scrollbar flex items-center gap-1 overflow-x-auto p-0.5">
           {[
@@ -348,8 +348,9 @@ export default function OrdersPage() {
               <button
                 key={tab.key}
                 onClick={() => setActiveTab(tab.key as FilterTab)}
+                aria-pressed={isCurrent}
                 className={clsx(
-                  "flex shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all whitespace-nowrap",
+                  "flex min-h-9 shrink-0 items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all whitespace-nowrap",
                   isCurrent
                     ? "bg-slate-900 text-white shadow-xs"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
@@ -467,11 +468,11 @@ export default function OrdersPage() {
 
                   {/* Main Card Body */}
                   <div
-                    className="p-5 cursor-pointer"
+                    className="p-4 cursor-pointer"
                     onClick={() => setExpandedId(expanded ? null : order.id)}
                   >
                     {/* Row 1: Order Identity, Customer, Status, Amount & Actions */}
-                    <div className="flex flex-col gap-4 2xl:flex-row 2xl:items-center 2xl:justify-between">
+                    <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                       {/* Left: Info */}
                       <div className="flex flex-wrap items-center gap-2">
                         {/* Order Number */}
@@ -643,7 +644,7 @@ export default function OrdersPage() {
                     </div>
 
                     {/* Row 2: Clean Items Summary & Special Instruction Callout */}
-                    <div className="mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-t border-slate-100 pt-4">
+                    <div className="mt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
                       <div className="flex flex-wrap items-center gap-1">
                         <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1">
                           <UtensilsCrossed size={11} /> Items:
@@ -935,7 +936,7 @@ function KitchenBoardView({
             </div>
 
             {/* Orders Lane */}
-            <div className="space-y-3 flex-1 overflow-y-auto max-h-[750px] pr-0.5">
+            <div className="space-y-3 flex-1 overflow-y-auto md:max-h-[calc(100dvh-310px)] pr-0.5">
               {colOrders.length === 0 ? (
                 <div className="rounded-xl border border-dashed border-slate-200 bg-white/60 p-8 text-center text-xs text-slate-400">
                   No orders in this stage

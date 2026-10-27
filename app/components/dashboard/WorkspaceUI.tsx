@@ -4,10 +4,10 @@ import { AlertCircle, ArrowRight, Inbox } from "lucide-react";
 import { clsx } from "clsx";
 
 export function MetricCard({ label, value, detail, icon: Icon, loading, accent = false, testId }: { label: string; value: ReactNode; detail?: ReactNode; icon: LucideIcon; loading?: boolean; accent?: boolean; testId?: string }) {
-  return <div data-testid={testId} className={clsx("ui-card min-w-0 p-4 sm:p-6", accent && "border-orange-200/70")}>
-    <div className="mb-4 flex items-center justify-between gap-2"><p className="text-xs font-medium text-slate-500">{label}</p><span className={clsx("rounded-lg p-2", accent ? "bg-orange-50 text-brand" : "bg-slate-50 text-slate-500")}><Icon size={17} strokeWidth={1.7} /></span></div>
+  return <div data-testid={testId} className={clsx("ui-card metric-card min-w-0 p-4 sm:p-5", accent && "metric-card-accent")}>
+    <div className="mb-3 flex items-center justify-between gap-2"><p className="metric-label text-xs font-medium text-slate-500">{label}</p><span className="metric-icon rounded-lg bg-[#fff0e4] p-2 text-[#b43e00]"><Icon size={16} strokeWidth={1.7} /></span></div>
     {loading ? <div className="h-9 w-24 animate-pulse rounded bg-slate-100" /> : <p className="metric-value break-words text-[clamp(16px,4.5vw,24px)] sm:text-[28px] font-semibold leading-tight text-slate-900">{value}</p>}
-    {detail && <p className="mt-2 text-[11px] leading-relaxed text-slate-500">{detail}</p>}
+    {detail && <p className="metric-detail mt-2 text-[11px] leading-relaxed text-slate-500">{detail}</p>}
   </div>;
 }
 

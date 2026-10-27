@@ -754,19 +754,19 @@ export default function ConversationsPage() {
   };
 
   return (
-    <div className="inbox-shell flex h-full w-full min-h-0 flex-1 overflow-hidden bg-white font-sans text-slate-900">
+    <div className="inbox-shell flex h-full w-full min-h-0 flex-1 overflow-hidden font-sans text-slate-900">
       
       {/* ─────────────────────────────────────────────────────────────
           PANE 1: INBOX LIST (w-72 sm:w-80 lg:w-[310px])
          ───────────────────────────────────────────────────────────── */}
       <aside
         className={clsx(
-          "flex min-w-0 shrink-0 flex-col border-r border-slate-200 bg-white transition-all duration-200 ease-in-out",
+          "inbox-list flex min-w-0 shrink-0 flex-col border-r border-slate-200 bg-[#fffbf7] transition-all duration-200 ease-in-out",
           selectedId ? "hidden w-full md:flex md:w-[280px] 2xl:w-[320px]" : "flex w-full md:w-[280px] 2xl:w-[320px]"
         )}
       >
         {/* Inbox Header & Search */}
-        <div className="flex-shrink-0 border-b border-slate-200 bg-white p-4 space-y-4">
+        <div className="flex-shrink-0 border-b border-slate-200 bg-[#fffbf7] p-4 space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5">
               <h1 className="text-lg font-semibold tracking-tight text-slate-900">Inbox</h1>
@@ -990,7 +990,7 @@ export default function ConversationsPage() {
       {/* ─────────────────────────────────────────────────────────────
           PANE 2: ACTIVE CHAT STREAM (Center)
          ───────────────────────────────────────────────────────────── */}
-      <section aria-label="Conversation" className={clsx("flex min-w-0 flex-1 flex-col bg-[#fafbfc]", !selectedId ? "hidden md:flex" : "flex")}>
+      <section aria-label="Conversation" className={clsx("flex min-w-0 flex-1 flex-col bg-[#f9f5f1]", !selectedId ? "hidden md:flex" : "flex")}>
         {!activeConversation ? (
           <div className="flex h-full flex-col items-center justify-center bg-slate-50/50 p-6 text-center text-slate-400">
             <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white border border-slate-200 shadow-sm mb-4">
@@ -1091,7 +1091,7 @@ export default function ConversationsPage() {
                           {isTargetLoading ? (
                             <Loader2 size={12} className="animate-spin text-brand" />
                           ) : mode === "agent" ? (
-                            <Bot size={12} className={isActive ? "text-emerald-600" : "text-slate-400"} />
+                            <Bot size={12} className={isActive ? "text-brand" : "text-slate-400"} />
                           ) : (
                             <UserRound size={12} className={isActive ? "text-amber-600" : "text-slate-400"} />
                           )}
@@ -1199,7 +1199,7 @@ export default function ConversationsPage() {
                   <Loader2 size={24} className="animate-spin text-brand" />
                 </div>
               ) : (
-                <div className="mx-auto max-w-3xl space-y-2.5 sm:space-y-3">
+                <div className="mx-auto w-full max-w-5xl space-y-2.5 sm:space-y-3">
                   {displayMessages.map((message, index) => {
                     const currentDate = new Date(message.created_at);
                     const previousDate = index > 0 ? new Date(displayMessages[index - 1].created_at) : null;
@@ -1463,16 +1463,16 @@ export default function ConversationsPage() {
 
             {/* Bottom Floating Composer & Takeover Controls */}
             <div className="flex-shrink-0 border-t border-slate-200 bg-white p-2 sm:p-2.5">
-              <div className="mx-auto max-w-3xl">
+              <div className="mx-auto w-full max-w-5xl">
                 {activeConversation.mode === "agent" ? (
-                  <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-200 bg-emerald-50/80 px-3 py-1.5 shadow-2xs">
+                  <div className="flex items-center justify-between gap-2 rounded-xl border border-orange-200 bg-orange-50/80 px-3 py-1.5 shadow-2xs">
                     <div className="flex items-center gap-2 min-w-0">
-                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500 text-white shadow-2xs">
+                      <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand text-white shadow-2xs">
                         <Bot size={13} />
                       </div>
                       <div className="min-w-0 flex items-center gap-1.5">
-                        <span className="text-xs font-bold text-emerald-950 truncate">AI Agent Active</span>
-                        <span className="hidden sm:inline text-xs text-emerald-700 truncate">&bull; Responding automatically</span>
+                        <span className="text-xs font-bold text-orange-950 truncate">AI Agent Active</span>
+                        <span className="hidden sm:inline text-xs text-orange-700 truncate">&bull; Responding automatically</span>
                       </div>
                     </div>
                     <button

@@ -428,13 +428,13 @@ function WhatsAppIntegration() {
         crossOrigin="anonymous"
       />
 
-      <div className="space-y-6">
+      <div className="whatsapp-page space-y-5 pb-2">
         <PageHeader title="WhatsApp" description="Connect your business number and keep customer conversations flowing." meta={<span className={clsx("status-pill", isLoading ? "bg-slate-100 text-slate-500" : isActiveConnected ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500")}>{isLoading ? "Checking status" : statusError ? "Status unavailable" : isActiveConnected ? "Connected" : "Not connected"}</span>} actions={<button onClick={() => void fetchStatus(false)} disabled={isLoading || isActionLoading} className="ui-button"><RefreshCw size={14} className={clsx(isLoading && "animate-spin")} />Refresh status</button>} />
         {statusError && <ErrorNotice message={statusError} retry={() => void fetchStatus(false)} />}
         <section className="ui-card overflow-hidden">
-          <div className="border-b border-slate-100 p-5 sm:px-6"><h2 className="ui-section-title">Connection method</h2><p className="mt-1.5 text-xs text-slate-400">Choose a method to view setup and connection details.</p></div>
-          <div className="grid gap-3 p-5 sm:grid-cols-2 sm:p-6">{[{key: "meta" as const, title: "WhatsApp Business Platform", subtitle: "Official Meta connection", icon: ShieldCheck}, {key: "evolution" as const, title: "Link a WhatsApp device", subtitle: "Scan a QR code or use a pairing code", icon: QrCode}].map(({key,title,subtitle,icon: Icon}) => <button key={key} type="button" aria-pressed={providerTab === key} onClick={() => setProviderTab(key)} className={clsx("flex items-center gap-3 rounded-xl border p-4 text-left transition", providerTab === key ? "border-orange-200 bg-orange-50/40 ring-1 ring-orange-100" : "border-slate-200 hover:bg-slate-50")}><span className={clsx("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-white", providerTab === key ? "border-orange-200 text-brand" : "border-slate-200 text-slate-400")}><Icon size={19} /></span><div className="min-w-0"><p className="text-xs font-semibold text-slate-700">{title}</p><p className="mt-1 text-[11px] text-slate-400">{subtitle}</p></div>{data?.activeProvider === key && <span className="status-pill ml-auto hidden bg-emerald-50 text-emerald-700 sm:inline-flex">In use</span>}</button>)}</div>
-          <div className="flex flex-col justify-between gap-3 border-t border-slate-100 bg-slate-50/40 px-6 py-4 sm:flex-row sm:items-center"><p className="max-w-xl text-xs leading-relaxed text-slate-500">{providerTab === "meta" ? "Connect through Facebook to use the official WhatsApp Business Platform." : "Connect a business number from WhatsApp’s Linked devices screen. Powered by Evolution."}</p>{data && data.activeProvider !== providerTab && <button disabled={isActionLoading || !!statusError} onClick={() => void handleSwitchProvider(providerTab)} className="ui-button shrink-0">{isActionLoading ? "Updating..." : "Use this method"}<Link2 size={14} /></button>}{data?.activeProvider === providerTab && <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-emerald-600"><Check size={14} />Current connection method</span>}</div>
+          <div className="border-b border-slate-100 p-4"><h2 className="ui-section-title">Connection method</h2><p className="mt-1.5 text-xs text-slate-400">Choose a method to view setup and connection details.</p></div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2">{[{key: "meta" as const, title: "WhatsApp Business Platform", subtitle: "Official Meta connection", icon: ShieldCheck}, {key: "evolution" as const, title: "Link a WhatsApp device", subtitle: "Scan a QR code or use a pairing code", icon: QrCode}].map(({key,title,subtitle,icon: Icon}) => <button key={key} type="button" aria-pressed={providerTab === key} onClick={() => setProviderTab(key)} className={clsx("flex items-center gap-3 rounded-xl border p-4 text-left transition", providerTab === key ? "border-orange-200 bg-orange-50/40 ring-1 ring-orange-100" : "border-slate-200 hover:bg-slate-50")}><span className={clsx("flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border bg-white", providerTab === key ? "border-orange-200 text-brand" : "border-slate-200 text-slate-400")}><Icon size={19} /></span><div className="min-w-0"><p className="text-xs font-semibold text-slate-700">{title}</p><p className="mt-1 text-[11px] text-slate-400">{subtitle}</p></div>{data?.activeProvider === key && <span className="status-pill ml-auto hidden bg-emerald-50 text-emerald-700 sm:inline-flex">In use</span>}</button>)}</div>
+          <div className="flex flex-col justify-between gap-3 border-t border-slate-100 bg-slate-50/40 px-4 py-3 sm:flex-row sm:items-center"><p className="max-w-xl text-xs leading-relaxed text-slate-500">{providerTab === "meta" ? "Connect through Facebook to use the official WhatsApp Business Platform." : "Connect a business number from WhatsApp’s Linked devices screen. Powered by Evolution."}</p>{data && data.activeProvider !== providerTab && <button disabled={isActionLoading || !!statusError} onClick={() => void handleSwitchProvider(providerTab)} className="ui-button shrink-0">{isActionLoading ? "Updating..." : "Use this method"}<Link2 size={14} /></button>}{data?.activeProvider === providerTab && <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-medium text-emerald-600"><Check size={14} />Current connection method</span>}</div>
         </section>
 
         {/* ========================================================================= */}
@@ -443,7 +443,7 @@ function WhatsAppIntegration() {
         {providerTab === "meta" && (
           <div className="space-y-6">
             {/* Meta Hero Card */}
-            <div className="rounded-2xl border border-slate-200/90 bg-white p-6 sm:p-7 shadow-xs">
+            <div className="ui-card p-5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-6 border-b border-slate-100">
                 <div className="flex items-center gap-4">
                   <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-600 text-white shadow-md shadow-emerald-600/20">
@@ -452,7 +452,7 @@ function WhatsAppIntegration() {
                   <div>
                     <div className="flex items-center gap-2">
                       <h2 className="text-lg font-semibold text-slate-900">
-                        {data?.metaConfig?.verifiedName || "Meta Cloud API Connection"}
+                        {data?.metaConfig?.verifiedName || "WhatsApp Business connection"}
                       </h2>
                       <span className="rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-bold text-blue-700">
                         Coexistence
@@ -538,12 +538,12 @@ function WhatsAppIntegration() {
             </div>
 
             {/* Live Test & Credentials */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Credentials Summary */}
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+              <div className="ui-card p-5 space-y-4">
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <ShieldCheck className="h-4 w-4 text-slate-600" />
-                  Meta Cloud API Credentials
+                  Connection details
                 </h3>
 
                 <div className="space-y-3">
@@ -585,8 +585,8 @@ function WhatsAppIntegration() {
                 </div>
               </div>
 
-              {/* Test Live Messaging */}
-              <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+              {/* Test your connection */}
+              <div className="ui-card p-5 space-y-4">
                 <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                   <Send className="h-4 w-4 text-slate-600" />
                   Test Live Messaging

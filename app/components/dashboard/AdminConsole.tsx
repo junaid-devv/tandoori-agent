@@ -245,8 +245,6 @@ export default function AdminConsole() {
       if (updated.branch_mode !== "multiple" && selectedBranchId === "all") {
         setSelectedBranchId(updated.default_branch_id ?? branches.find((branch) => branch.is_active)?.id ?? "all");
       }
-      document.documentElement.style.setProperty("--brand", updated.brand_color);
-      document.documentElement.style.setProperty("--brand-hover", updated.brand_hover_color);
       invalidateCache("/api/admin/restaurant-profile");
       toast.success("Restaurant profile saved.");
     } catch (error) {
@@ -335,7 +333,7 @@ export default function AdminConsole() {
   ];
 
   return (
-    <div className="admin-body space-y-7 pb-6">
+    <div className="admin-body space-y-5 pb-2">
       <PageHeader title="Administration" description="Business identity, locations, team access and system tools." actions={<Link href="/dashboard/settings" className="ui-button">Business settings<ChevronRight size={14} /></Link>} />
       {(branchesError || staffError || profileError) && <ErrorNotice message="Some administration data could not be loaded." retry={reloadData} />}
       <SectionNav items={tabs} value={tab} onChange={key => { setTab(key); window.history.replaceState(null, "", `#${key}`); }} label="Administration sections" />
@@ -345,7 +343,7 @@ export default function AdminConsole() {
           <div className="ui-card p-5 sm:p-6">
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div>
-                <h2 className="text-base font-bold text-slate-900">Restaurant Profile</h2>
+                <h2 className="ui-section-title">Restaurant Profile</h2>
                 <p className="mt-1 text-xs text-slate-400">
                   Controls the dashboard brand, WhatsApp identity, and whether customers see branch selection.
                 </p>
@@ -353,14 +351,14 @@ export default function AdminConsole() {
               <button
                 onClick={() => void saveProfile()}
                 disabled={savingProfile}
-                className="inline-flex items-center gap-2 rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-brand-hover disabled:opacity-50"
+                className="ui-button ui-button-primary"
               >
                 {savingProfile ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
                 Save Profile
               </button>
             </div>
 
-            <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="mt-5 grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
               <Field label="Restaurant Name">
                 <input value={profileDraft.app_name} onChange={(event) => updateProfileDraft("app_name", event.target.value)} className={inputCls} placeholder="Restaurant name" />
               </Field>
@@ -394,7 +392,7 @@ export default function AdminConsole() {
             </div>
           </div>
 
-          <div className="grid gap-5 lg:grid-cols-2">
+          <div className="grid gap-4 lg:grid-cols-2">
             <div className="ui-card p-5 sm:p-6">
               <div className="flex items-start gap-3">
                 <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white">
