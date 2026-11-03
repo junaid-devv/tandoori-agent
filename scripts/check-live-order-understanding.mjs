@@ -12,6 +12,11 @@ const deliveryHistory = [
 ];
 const fulfillment = { order_type: "delivery", address: "Sector A st 26", guests: null, reservation_time: null, pickup_time: null };
 const cases = [
+  { name: "numbered deal keeps identifier separate from quantity and flavours", text: "Ek Shahana Special Ultra Long Pizza Deal 2 chahiye, flavours Tikka aur Fajita rakhna", language: "roman_urdu",
+    test: (u) => u.intents.includes("add_items") && u.items.length === 1 && /deal\s*2\b/i.test(u.items[0].query) && u.items[0].qty === 1 && /tikka/i.test(u.items[0].notes ?? "") && /fajita/i.test(u.items[0].notes ?? "") && !u.items[0].addons.length },
+  { name: "numbered deal allows multiple portions of a different deal number", text: "Please add 2 Deal 3", test: (u) => u.items.length === 1 && /deal\s*3\b/i.test(u.items[0].query) && u.items[0].qty === 2 },
+  { name: "numbered deal defaults to one portion without a quantity", text: "Deal 1 order karna hai", language: "roman_urdu", test: (u) => u.items.length === 1 && /deal\s*1\b/i.test(u.items[0].query) && u.items[0].qty === 1 },
+  { name: "numbered deal flavour count describes one pizza", text: "Add one two flavor long pizza with BBQ and Pepperoni", test: (u) => u.items.length === 1 && /two[ -]?flavou?r|2[ -]?flavou?r/i.test(u.items[0].query) && u.items[0].qty === 1 && /bbq/i.test(u.items[0].notes ?? "") && /pepperoni/i.test(u.items[0].notes ?? "") },
   { name: "incident fries availability after cancellation", text: "Fries hain?", language: "roman_urdu", stage: "browsing",
     history: [{ role: "user", content: "Cancel krdo" }, { role: "assistant", content: "Order cancel ho gaya." }],
     test: (u) => u.intents.includes("ask_item_info") && !u.items.length && !u.removals.length },
