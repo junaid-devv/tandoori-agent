@@ -54,7 +54,7 @@ function RestaurantOverview() {
     {summary.error && <ErrorNotice message="We couldn’t load your overview. Please try again." retry={refresh} />}
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
       <MetricCard label="Orders today" value={data?.today ?? "—"} detail="Orders placed today" icon={ShoppingBag} loading={summary.isLoading} testId="kpi-orders-today" />
-      <MetricCard label="Revenue · 30 days" value={data ? `Rs. ${data.revenue.toLocaleString()}` : "—"} detail="Delivered orders · latest 500" icon={TrendingUp} loading={summary.isLoading} accent testId="kpi-gross-revenue" />
+      <MetricCard label="Revenue · 30 days" value={data ? `Rs. ${data.revenue.toLocaleString()}` : "—"} detail="Confirmed orders · cancellations excluded" icon={TrendingUp} loading={summary.isLoading} accent testId="kpi-gross-revenue" />
       <MetricCard label="Active orders" value={data?.active ?? "—"} detail="In the kitchen or on the way" icon={Activity} loading={summary.isLoading} testId="kpi-active-orders" />
       <MetricCard label="Conversations" value={data?.chats ?? "—"} detail="Across this workspace" icon={MessageSquare} loading={summary.isLoading} testId="kpi-ai-interactions" />
     </div>

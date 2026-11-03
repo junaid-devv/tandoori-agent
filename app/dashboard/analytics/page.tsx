@@ -1,19 +1,23 @@
 "use client";
 
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { BarChart3, CalendarDays, Clock3, RefreshCw, ShoppingBag, TrendingUp, Users } from "lucide-react";
 import { clsx } from "clsx";
 import { useDataCache } from "@/lib/useDataCache";
 import { PageHeader } from "@/app/components/dashboard/PageHeader";
 import { EmptyState, ErrorNotice, MetricCard } from "@/app/components/dashboard/WorkspaceUI";
 
-type AnalyticsPayload = { generatedAt: string; rangeDays: number; totals: { orders: number; activeOrders: number; deliveredOrders: number; cancelledOrders: number; revenue: number; conversations: number; unreadConversations: number; humanConversations: number; repeatCustomers: number }; typeBreakdown: Record<string, number>; statusBreakdown: Record<string, number>; hourlyDemand: { hour: string; count: number }[]; topItems: { name: string; qty: number; revenue: number }[] };
+type AnalyticsPayload = { generatedAt: string; rangeDays: number; totals: { orders: number; activeOrders: number; deliveredOrders: number; confirmedOrders: number; cancelledOrders: number; revenue: number; conversations: number; unreadConversations: number; humanConversations: number; repeatCustomers: number }; typeBreakdown: Record<string, number>; statusBreakdown: Record<string, number>; hourlyDemand: { hour: string; count: number }[]; topItems: { name: string; qty: number; revenue: number }[] };
 const money = (value: number) => `Rs. ${Math.round(value).toLocaleString()}`;
 const label = (value: string) => value.replaceAll("_", " ").replaceAll("-", " ");
 const statusColors: Record<string, string> = { received: "bg-blue-500", preparing: "bg-orange-400", out_for_delivery: "bg-violet-400", delivered: "bg-emerald-500", cancelled: "bg-slate-300" };
 
 export default function AnalyticsPage() {
   const { data, isLoading, error, isRevalidating, revalidate } = useDataCache<AnalyticsPayload>("/api/dashboard/analytics");
+  useEffect(() => {
+    const timer = window.setInterval(() => { if (document.visibilityState === "visible") revalidate(); }, 12000);
+    return () => window.clearInterval(timer);
+  }, [revalidate]);
   const hourly = useMemo(() => Array.from({ length: 24 }, (_, hour) => { const key = `${String(hour).padStart(2, "0")}:00`; return { hour: key, count: data?.hourlyDemand.find(item => item.hour === key)?.count || 0 }; }), [data]);
   const maxDemand = Math.max(1, ...hourly.map(item => item.count));
   const completedRate = data?.totals.orders ? Math.round(data.totals.deliveredOrders / data.totals.orders * 100) : 0;
@@ -21,9 +25,9 @@ export default function AnalyticsPage() {
     <PageHeader title="Analytics" description="Understand what’s working, what’s popular, and when customers order." actions={<><span className="ui-button cursor-default text-slate-500"><CalendarDays size={14} />Last {data?.rangeDays || 30} days</span><button className="ui-button" onClick={revalidate} disabled={isRevalidating} aria-label="Refresh analytics"><RefreshCw size={14} className={clsx(isRevalidating && "animate-spin")} />Refresh</button></>} />
     {error && <ErrorNotice message="We couldn’t load analytics. Please try again." retry={revalidate} />}
     <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <MetricCard label="Total revenue" value={data ? money(data.totals.revenue) : "—"} detail="From delivered orders" icon={TrendingUp} loading={isLoading} accent />
+      <MetricCard label="Total revenue" value={data ? money(data.totals.revenue) : "—"} detail="Confirmed orders, including delivery" icon={TrendingUp} loading={isLoading} accent />
       <MetricCard label="Total orders" value={data?.totals.orders ?? "—"} detail={data ? `${data.totals.deliveredOrders} delivered · ${data.totals.activeOrders} active` : "Orders in this period"} icon={ShoppingBag} loading={isLoading} />
-      <MetricCard label="Average order value" value={data ? money(data.totals.deliveredOrders ? data.totals.revenue / data.totals.deliveredOrders : 0) : "—"} detail="Average revenue per delivered order" icon={BarChart3} loading={isLoading} />
+      <MetricCard label="Average order value" value={data ? money(data.totals.confirmedOrders ? data.totals.revenue / data.totals.confirmedOrders : 0) : "—"} detail="Average per confirmed order" icon={BarChart3} loading={isLoading} />
       <MetricCard label="Returning customers" value={data?.totals.repeatCustomers ?? "—"} detail="Customers with more than one order" icon={Users} loading={isLoading} />
     </div>
     <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_290px]">

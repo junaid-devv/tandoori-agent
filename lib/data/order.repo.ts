@@ -156,7 +156,7 @@ export const orderRepo = {
         updated_at: now,
       })
       .eq("id", id)
-      .eq("status", "received")
+      .in("status", ["received", "preparing"])
       .gte("created_at", new Date(Date.now() - 10 * 60 * 1000).toISOString())
       .select("id")
       .maybeSingle();

@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { confirmedOrderRevenue, countsTowardRevenue } from "@/lib/order-revenue";
 
 function getRangeStart(days: number) {
   const date = new Date();
@@ -42,12 +43,17 @@ export async function GET(req: NextRequest) {
       `)
       .gte("created_at", since)
       .order("created_at", { ascending: false })
-      .limit(1000);
+      .order("id", { ascending: false });
 
     ordersQuery = scopeBranchQuery(ordersQuery, auth);
 
-    const { data: orders, error: ordersError } = await ordersQuery;
-    if (ordersError) throw ordersError;
+    const orders = [];
+    for (let offset = 0; ; offset += 1000) {
+      const { data, error } = await ordersQuery.range(offset, offset + 999);
+      if (error) throw error;
+      orders.push(...(data ?? []));
+      if (!data || data.length < 1000) break;
+    }
 
     let conversationsQuery = supabaseAdmin
       .from("conversations")
@@ -70,8 +76,9 @@ export async function GET(req: NextRequest) {
 
     const orderRows = orders ?? [];
     const deliveredOrders = orderRows.filter((order) => order.status === "delivered");
+    const confirmedOrders = orderRows.filter((order) => countsTowardRevenue(String(order.status)));
     const activeOrders = orderRows.filter((order) => ["received", "preparing", "out_for_delivery"].includes(String(order.status)));
-    const revenue = deliveredOrders.reduce((sum, order) => sum + Number(order.total ?? order.subtotal ?? 0), 0);
+    const revenue = confirmedOrderRevenue(orderRows);
     const cancelled = orderRows.filter((order) => order.status === "cancelled").length;
 
     const typeBreakdown: Record<string, number> = {};
@@ -85,7 +92,7 @@ export async function GET(req: NextRequest) {
       const hour = getHourKey(String(order.created_at));
       hourlyDemand[hour] = (hourlyDemand[hour] ?? 0) + 1;
 
-      const items = Array.isArray(order.order_items) ? order.order_items : [];
+      const items = countsTowardRevenue(String(order.status)) && Array.isArray(order.order_items) ? order.order_items : [];
       for (const item of items) {
         const name = String(item.name ?? "").trim();
         if (!name) continue;
@@ -107,6 +114,7 @@ export async function GET(req: NextRequest) {
         orders: orderRows.length,
         activeOrders: activeOrders.length,
         deliveredOrders: deliveredOrders.length,
+        confirmedOrders: confirmedOrders.length,
         cancelledOrders: cancelled,
         revenue,
         conversations: conversations?.length ?? 0,

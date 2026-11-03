@@ -26,7 +26,7 @@ import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import type { LanguagePreference } from "@/lib/schema.types";
 
 import { getWhatsAppTransport } from "./whatsapp-context";
-const ORDER_FRESH_START_AFTER_INACTIVITY_MS = 2 * 60 * 60 * 1000;
+import { orderSessionExpired } from "./order-session";
 export type IncomingWhatsAppMessage = {
   id: string;
   from: string;
@@ -442,6 +442,10 @@ async function handleNonText(
             lockedState = await stateRepo.patch(conversation.id, {
               ...getDefaultState(conversation.id), preferred_language: transcriptLang,
               processing_token: lockedState.processing_token, processing_started_at: lockedState.processing_started_at,
+              last_user_whatsapp_msg_id: lockedState.last_user_whatsapp_msg_id,
+              last_processed_user_message_id: lockedState.last_processed_user_message_id,
+              last_processed_message_seq: lockedState.last_processed_message_seq,
+              last_processed_user_message_at: lockedState.last_processed_user_message_at,
             });
           }
           const result = await runTurn({
@@ -569,10 +573,7 @@ function resolveDisplayContent(message: IncomingWhatsAppMessage, content: string
 // ---------------------------------------------------------------------------
 
 function shouldResetForInactivity(state: Awaited<ReturnType<typeof stateRepo.ensure>>, incomingAt: string): boolean {
-  if (!state.last_processed_user_message_at) return false;
-  const last = new Date(state.last_processed_user_message_at).getTime();
-  const now = new Date(incomingAt).getTime();
-  return Number.isFinite(last) && Number.isFinite(now) && now - last >= ORDER_FRESH_START_AFTER_INACTIVITY_MS;
+  return orderSessionExpired(state.last_processed_user_message_at, incomingAt);
 }
 
 // Trivial = greeting/ack that needs no menu. Skips menu load in loadTurnContext.

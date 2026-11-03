@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { apiErrorResponse } from "@/lib/api-utils";
 import { resolveRequestBranch } from "@/lib/branch-request";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { confirmedOrderRevenue, REVENUE_ORDER_STATUSES } from "@/lib/order-revenue";
 
 const ACTIVE_STATUSES = ["received", "preparing", "out_for_delivery"] as const;
 const ALL_STATUSES = ["received", "preparing", "out_for_delivery", "delivered", "cancelled"] as const;
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest) {
       outForDelivery,
       delivered,
       cancelled,
-      deliveredRows,
+      revenueRows,
       recentOrdersRes,
     ] = await Promise.all([
       countRows("orders", { session: auth.session, branchId: auth.branchId, statuses: ACTIVE_STATUSES }),
@@ -71,16 +72,23 @@ export async function GET(req: NextRequest) {
       countRows("orders", { session: auth.session, branchId: auth.branchId, status: "out_for_delivery" }),
       countRows("orders", { session: auth.session, branchId: auth.branchId, status: "delivered" }),
       countRows("orders", { session: auth.session, branchId: auth.branchId, status: "cancelled" }),
-      (() => {
-        let query = supabaseAdmin
+      (async () => {
+        const rows = [];
+        for (let offset = 0; ; offset += 1000) {
+          let query = supabaseAdmin
           .from("orders")
-          .select("subtotal")
-          .eq("status", "delivered")
+          .select("status, subtotal, delivery_fee, total")
+          .in("status", [...REVENUE_ORDER_STATUSES])
           .gte("created_at", thirtyDaysStartIso)
           .order("created_at", { ascending: false })
-          .limit(500);
-        query = scopeBranchQuery(query, auth);
-        return query;
+          .order("id", { ascending: false })
+          .range(offset, offset + 999);
+          query = scopeBranchQuery(query, auth);
+          const { data, error } = await query;
+          if (error) throw error;
+          rows.push(...(data ?? []));
+          if (!data || data.length < 1000) return rows;
+        }
       })(),
       (() => {
         let query = supabaseAdmin
@@ -102,10 +110,9 @@ export async function GET(req: NextRequest) {
       })(),
     ]);
 
-    if (deliveredRows.error) throw deliveredRows.error;
     if (recentOrdersRes.error) throw recentOrdersRes.error;
 
-    const revenue = (deliveredRows.data ?? []).reduce((sum, row) => sum + Number(row.subtotal ?? 0), 0);
+    const revenue = confirmedOrderRevenue(revenueRows);
     const breakdown: Record<string, number> = {
       received,
       preparing,

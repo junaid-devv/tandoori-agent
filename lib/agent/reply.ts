@@ -440,19 +440,17 @@ export const reply = {
       : "Connecting you with our staff — someone will reply shortly.";
   },
 
-  orderStatus(l: Lang, orderNumber: number, status: string, estimatedDeliveryMinutes?: number | null): string {
+  orderStatus(l: Lang, orderNumber: number, status: string, _estimatedDeliveryMinutes?: number | null): string {
     const s = (status || "").toLowerCase();
     const isUr = ur(l);
-
-    const est = Math.round(Number(estimatedDeliveryMinutes) || 45);
 
     if (s === "pending" || s === "received") {
 
       return isUr
-        ? `Aap ka Order #${orderNumber} receive ho chuka hai aur kitchen mein tayyar ho raha hai. Aam tor par ~${est} minutes mein deliver hota hai! 🍳🛵`
-        : `Your Order #${orderNumber} has been received and is being prepared in the kitchen. Usually takes ~${est} mins! 🍳🛵`;
+        ? `Order #${orderNumber} confirm hai. Staff ne abhi preparation ya delivery ka naya status nahi diya.`
+        : `Order #${orderNumber} is confirmed. Staff have not posted a preparation or delivery update yet.`;
     }
-    if (s === "in_prep" || s === "cooking" || s === "confirmed") {
+    if (s === "preparing" || s === "in_prep" || s === "cooking" || s === "confirmed") {
 
       return isUr
         ? `Aap ka Order #${orderNumber} kitchen mein ban raha hai. Jald deliver hoga! 🍳`
@@ -478,8 +476,8 @@ export const reply = {
     }
 
     return isUr
-      ? `Aap ke Order #${orderNumber} ka status: *${status}*. Delivery jald pohnch rahi hai! 🛵`
-      : `Order #${orderNumber} status: *${status}*. On its way soon! 🛵`;
+      ? `Order #${orderNumber} ka recorded status: *${status}*. Naya update staff se check kar lein.`
+      : `Order #${orderNumber} has recorded status: *${status}*. Please check with staff for an update.`;
   },
 
   noRecentOrder(l: Lang): string {

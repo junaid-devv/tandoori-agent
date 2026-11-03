@@ -24,6 +24,7 @@ import { extractBaseItemName, extractSizeFromQuery, menuNameCoversQuery } from "
 import { normalizeFoodScript } from "@/lib/pakistani-language";
 import { sharedLocationPin } from "@/lib/location-pin";
 import { outsideAreaDeliveryRate } from "@/lib/delivery-pricing";
+import { currentOrderHistory } from "@/lib/order-session";
 import type { ConversationStateRow } from "@/lib/schema.types";
 import type { ConversationStage } from "@/lib/schema.types";
 
@@ -238,10 +239,8 @@ export function fastUnderstanding(text: string, state: ConversationStateRow, sav
   return null;
 }
 
-function priorHistory(history: Array<{ id: string; role: "user" | "assistant"; content: string }>, messageId?: string | null) {
-  const current = history.findIndex((m) => m.id === messageId);
-  // If the current message fell outside the window, use no history rather than future turns.
-  return (messageId ? (current >= 0 ? history.slice(0, current) : []) : history)
+function priorHistory(history: Array<{ id: string; role: "user" | "assistant"; content: string; created_at?: string }>, messageId?: string | null) {
+  return currentOrderHistory(history, messageId)
     .map(({ role, content }) => ({ role, content }));
 }
 

@@ -1274,7 +1274,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
                 ? `Maaf kijiyega, Order #${recent.order_number} deliver hone ke liye nikal chuka hai aur ab cancel nahi ho sakta. Madad ke liye hamare staff se rabta karein.`
                 : `Sorry, Order #${recent.order_number} is already on its way or delivered and cannot be cancelled. Please contact our support for help.`,
             );
-          } else if (recent.status === "received" && withinWindow && await orderRepo.cancelOrder(recent.id)) {
+          } else if (["received", "preparing"].includes(recent.status) && withinWindow && await orderRepo.cancelOrder(recent.id)) {
             await createStaffAlert({
               conversationId: input.conversationId,
               branchId: recent.branch_id || branchId,

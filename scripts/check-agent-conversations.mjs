@@ -125,7 +125,7 @@ try {
   const send = async (id, text, understanding, channel = {}) => {
     response = understanding ?? null;
     const messageId = `m-${++sequence}`;
-    histories.get(id).push({ id: messageId, role: "user", content: text });
+    histories.get(id).push({ id: messageId, role: "user", content: text, created_at: new Date().toISOString() });
     const result = await runTurn({ conversationId: id, branchId: "b", phone: "offline", messageText: text,
       sourceUserMessageId: messageId, messageId, whatsappMessageId: messageId, appName: "Test Kitchen", currency: "Rs.", ...channel });
     histories.get(id).push({ id: `a-${sequence}`, role: "assistant", content: result.replyText });
@@ -967,6 +967,43 @@ try {
     assert.equal(locationPinUrl(100, 73), null); assert.equal(locationPinUrl(undefined, 73), null);
     assert.equal(sharedLocationPin("change delivery instead\nhttps://maps.google.com/?q=33,73"), null);
   });
+  fresh("tomorrow-order"); // Same reset state used by both inbound text and voice after two idle hours.
+  const yesterday = new Date(Date.now() - 24 * 60 * 60_000).toISOString();
+  histories.get("tomorrow-order").push(
+    { id: "yesterday-user", role: "user", content: "Deliver to YESTERDAY-ADDRESS-ONLY", created_at: yesterday },
+    { id: "yesterday-assistant", role: "assistant", content: "Your previous order is confirmed", created_at: yesterday });
+  previousOrder = { id: "yesterday-order", order_number: 100, status: "received", created_at: yesterday };
+  const beforeTomorrowOrders = placed.length;
+  const beforeTomorrowParsers = parserCalls;
+  result = await send("tomorrow-order", "ek chicken tikka zyada spicy bana dein", u("add_items", {
+    language: "roman_urdu", items: [mention("Chicken Tikka", 1, "extra spicy")] }));
+  check("tomorrow's items start a new draft even if yesterday is still received, without sending yesterday's chat to the model", () => {
+    assert.equal(parserCalls, beforeTomorrowParsers + 1);
+    assert.ok(!JSON.stringify(lastRequest).includes("YESTERDAY-ADDRESS-ONLY"));
+    assert.equal(states.get("tomorrow-order").cart.length, 1);
+    assert.equal(states.get("tomorrow-order").cart[0].menu_item_id, "t");
+    assert.equal(states.get("tomorrow-order").address, null);
+    assert.equal(placed.length, beforeTomorrowOrders);
+    assert.equal(previousOrder.status, "received");
+  });
+  result = await send("tomorrow-order", "cancel my draft", u("cancel_order"));
+  const { reply } = await import("../lib/agent/reply.ts");
+  check("recorded receipt alone never claims preparation or promises a fresh delivery ETA", () => {
+    assert.match(reply.orderStatus("english", 100, "received"), /not posted/);
+    assert.doesNotMatch(reply.orderStatus("roman_urdu", 100, "received"), /tayyar ho raha|minutes/);
+  });
+  fresh("cancel-preparing", { stage: "placed" });
+  previousOrder = { id: "preparing-order", order_number: 101, branch_id: "b", status: "preparing", subtotal: 400,
+    created_at: new Date(Date.now() - 9 * 60_000).toISOString() };
+  const beforePrepCancel = cancellations;
+  result = await send("cancel-preparing", "cancel my order", u("cancel_order"));
+  check("a customer can cancel during preparation inside the ten-minute window", () => {
+    assert.equal(cancellations, beforePrepCancel + 1);
+    assert.equal(result.stage, "browsing");
+    assert.match(result.replyText, /cancelled/i);
+  });
+  previousOrder = null;
+
   console.log(`\nAGENT CONVERSATIONS: ${checks} checks passed; ${parserCalls} actual parser HTTP requests, ${placed.length} isolated test orders.`);
 } finally {
   await new Promise((resolve) => server.close(resolve));
