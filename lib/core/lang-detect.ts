@@ -16,6 +16,8 @@ import type { LanguagePreference } from "../schema.types.ts";
 // ---------------------------------------------------------------------------
 const ROMAN_URDU_SIGNAL_WORDS = [
   "aoa",
+  "aslamoalikum", "assalamualaikum", "assalamualikum", "aik", "ji", "jee",
+  "main", "mein", "krna", "karna", "chahon", "chahoon", "chahunga", "mangwana", "krdain",
   "assalam",
   "walaikum",
   "kya",
@@ -188,6 +190,10 @@ export function inferLanguagePreference(
 ): LanguagePreference {
   // Pashto-specific script characters or vocabulary — highest priority
   if (containsPashtoScript(text)) return "pashto";
+
+  // Whisper sometimes renders spoken Pakistani Urdu in Devanagari. This is
+  // a transcription artifact, never a request to switch the reply to Hindi.
+  if (/[\u0900-\u097f]/u.test(text)) return "roman_urdu";
 
   // General Arabic/Urdu-range script — could be Pashto or Urdu.
   // If already detected as pashto via previous turns, keep it; otherwise treat as roman_urdu.

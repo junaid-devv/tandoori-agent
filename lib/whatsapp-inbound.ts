@@ -13,6 +13,9 @@ import type { getRestaurantProfile } from "@/lib/restaurant-profile";
 import { saveCustomerAddressFromOrder, updateCustomerOrderStats } from "@/lib/customer-crm";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createStaffAlert } from "./staff-alerts";
+import { getMenuCatalog } from "./menu";
+import { voiceTranscriptionOptions } from "./voice-transcription";
+import { locationPinUrl } from "./location-pin";
 
 import {
   downloadWhatsAppMedia,
@@ -38,6 +41,7 @@ export type IncomingWhatsAppMessage = {
   image?: { id?: string; mime_type?: string; caption?: string };
   audio?: { id?: string; mime_type?: string; voice?: boolean };
   voice?: { id?: string; mime_type?: string };
+  location?: { latitude?: number; longitude?: number; name?: string; address?: string };
   interactive?: {
     type?: "button_reply" | "list_reply";
     button_reply?: { id?: string; title?: string };
@@ -359,6 +363,8 @@ async function handleNonText(
         const client = new OpenAI({
           apiKey,
           baseURL: isGroq ? "https://api.groq.com/openai/v1" : undefined,
+          timeout: 20_000,
+          maxRetries: 0,
         });
 
         const rawMime = audioObj?.mime_type || "audio/ogg";
@@ -372,15 +378,21 @@ async function handleNonText(
           ? (process.env.GROQ_AUDIO_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo")
           : "whisper-1";
 
-        // Multi-lingual prompt guiding Whisper towards Roman Pashto, Roman Urdu, and English
-        const prompt = "Customer ordering food at a Pakistani restaurant. Pashto, Roman Pashto, Urdu, Roman Urdu, English. Stare mashay, pa kher, menu wakhaya, delivery fee tsomra da, raka, dwa, dre, karahi, naan, deal, pizza, burger, address, shukriya.";
+        const menu = await getMenuCatalog(activeBranch.id).catch(() => []);
+        const options = voiceTranscriptionOptions(lang, menu.map((item) => item.name));
 
-        const transcription = await client.audio.transcriptions.create({
+        let transcription = await client.audio.transcriptions.create({
           model,
           file: audioFile,
-          ...(lang === "pashto" ? { language: "ps" } : {}),
-          prompt,
+          ...options,
         });
+
+        // Auto-detection can mistake Urdu for Hindi on the first voice note.
+        // Retry that artifact once using the same audio, explicitly as Urdu.
+        if (/[\u0900-\u097f]/u.test(transcription.text ?? "") && lang !== "pashto") {
+          transcription = await client.audio.transcriptions.create({ model, file: audioFile,
+            ...options, language: "ur" });
+        }
 
         const transcript = transcription.text?.trim();
         if (!transcript) throw new Error("Empty transcription");
@@ -557,6 +569,10 @@ async function upsertContact(phone: string, name: string | null, restaurantId: s
 // Envelope parsing
 // ---------------------------------------------------------------------------
 async function extractContent(message: IncomingWhatsAppMessage): Promise<string | null> {
+  if (message.type === "location" && message.location) {
+    const pin = locationPinUrl(message.location.latitude, message.location.longitude);
+    return pin ? [message.location.name, message.location.address, pin].filter(Boolean).join("\n") : null;
+  }
   if (message.type === "text") return message.text?.body?.trim() || null;
   if (message.type === "interactive") {
     const ir = message.interactive;

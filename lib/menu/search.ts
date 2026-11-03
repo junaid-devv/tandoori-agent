@@ -9,6 +9,7 @@
 import OpenAI from "openai";
 import { cache } from "@/lib/core/cache";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { normalizeFoodScript } from "@/lib/pakistani-language";
 
 export type ResolutionMethod = "vector" | "lexical" | "none";
 
@@ -72,7 +73,7 @@ export function assertSearchReady(): void {
 // Text utils (lexical fallback only)
 // ---------------------------------------------------------------------
 function normalize(value: string): string {
-  let v = value
+  let v = normalizeFoodScript(value)
     .toLowerCase()
     .replace(/[^a-z0-9.\s-]/g, " ")
     .replace(/\s+/g, " ")
@@ -111,10 +112,18 @@ function normalize(value: string): string {
     .replace(/\b(milk\s*shakes?|shakes?)\b/g, "milkshake")
     .replace(/\b(pizzas)\b/g, "pizza")
     .replace(/\b(burgers)\b/g, "burger")
+    .replace(/\b(partha|pratha|parantha|parontha|parathay|parathe)\b/g, "paratha")
+    .replace(/\b(kebabish|kababesh|kebabeesh)\b/g, "kababish")
+    .replace(/\b(mid|med)\b/g, "medium")
     .replace(/\bwith\b/g, "")
     .replace(/\s+/g, " ")
     .trim();
   return v;
+}
+
+/** Shared food aliases for grounding model extractions in the current text. */
+export function normalizeMenuQuery(value: string): string {
+  return normalize(value);
 }
 
 function editDistance(a: string, b: string): number {
@@ -165,11 +174,24 @@ export function queryTokensCoveredByName(query: string, name: string): boolean {
 /** All meaningful words must identify the dish. One shared word (e.g. BBQ)
  * cannot turn a requested BBQ pizza into a chicken tikka. Short tokens and
  * numbers require exact identity; longer spelling mistakes allow a small edit. */
-export function menuNameCoversQuery(query: string, name: string, allowTypos = true): boolean {
+export function menuNameCoversQuery(query: string, name: string, allowTypos = true, category?: string | null): boolean {
+  if (/[\u0600-\u06ff\u0900-\u097f]/u.test(normalizeFoodScript(query))) return false;
   const tokens = normalize(query).split(" ").filter(Boolean);
-  const names = normalize(name).split(" ").filter(Boolean);
+  const names = normalize(`${name} ${searchCategory(category)}`).split(" ").filter(Boolean);
   return tokens.length > 0 && tokens.every((token) => names.some((word) => token === word
     || allowTypos && token.length >= 6 && word.length >= 5 && editDistance(token, word) <= (token.length >= 8 ? 2 : 1)));
+}
+
+function searchCategory(category?: string | null): string {
+  // A combined heading such as "Pasta, Lasagne & Pizza Fries" does not
+  // describe every dish under it. Pasta must never become a fries match.
+  return category && !/[,/&|;+]/.test(category) ? category : "";
+}
+
+/** Some menus store Chicken Paratha under Paratha Roll. The category supplies
+ * the missing word, while the item's own name still distinguishes cheese etc. */
+function categoryQualifiedName(name: string, category?: string | null): string {
+  return [...new Set(normalize(`${name} ${searchCategory(category)}`).split(" "))].join(" ");
 }
 
 function toVectorLiteral(embedding: number[]): string {
@@ -295,8 +317,8 @@ export async function searchMenu(
   // Keep every matching sibling for downstream size/flavor clarification.
   if (inMemoryMenu) {
     const baseQuery = trimmed.replace(SIZE_WORDS_PATTERN, " ").replace(/\s+/g, " ").trim();
-    const matching = (allowTypos: boolean) => inMemoryMenu.filter((item) => item.is_available && (menuNameCoversQuery(trimmed, item.name, allowTypos)
-      || extractSizeFromQuery(trimmed) && menuNameCoversQuery(baseQuery, extractBaseItemName(item.name).baseName, allowTypos)));
+    const matching = (allowTypos: boolean) => inMemoryMenu.filter((item) => item.is_available && (menuNameCoversQuery(trimmed, item.name, allowTypos, item.category)
+      || extractSizeFromQuery(trimmed) && menuNameCoversQuery(baseQuery, extractBaseItemName(item.name).baseName, allowTypos, item.category)));
     const literal = matching(false);
     const direct = literal.length ? literal : matching(true);
     if (direct.length) {
@@ -380,7 +402,7 @@ export async function searchMenu(
 // Variant & Disambiguation Helpers
 // ---------------------------------------------------------------------
 const VARIANT_WORDS =
-  "\\d+(?:\\.\\d+)?\\s*(?:ml|l(?:itre|iter)?s?|kg|g)|half\\s*(?:kg|l(?:itre|iter)?)|full|half|quarter|single|double|small|medium|extra\\s*large|large|xl|reg(?:ular)?|med(?:ium)?|lar(?:ge)?|\\d+[\"']|\\w+\\s*\\d+[\"']|\\d+\\s*pcs?|tin|glass|bottle|boneless|b\\/l|with\\s*cheese";
+  "\\d+(?:\\.\\d+)?\\s*(?:ml|l(?:itre|iter)?s?|kg|g)|half\\s*(?:kg|l(?:itre|iter)?)|full|half|quarter|single|double|small|medium|extra\\s*large|large|xl|reg(?:ular)?|mid|med(?:ium)?|lar(?:ge)?|\\d+[\"']|\\w+\\s*\\d+[\"']|\\d+\\s*pcs?|tin|glass|bottle|boneless|b\\/l|with\\s*cheese";
 
 const VARIANT_SUFFIX_PATTERN = new RegExp(
   `(?:\\s*(?:[\\(\\[\\{]|\\s+-\\s+|\\s+\\/\\s+)(${VARIANT_WORDS})[\\)\\]\\}]?|\\s+(${VARIANT_WORDS}))\\s*$`,
@@ -412,10 +434,10 @@ export function extractBaseItemName(fullName: string): { baseName: string; varia
 }
 
 const SIZE_WORDS_PATTERN =
-  /\b(\d+(?:\.\d+)?\s*(?:ml|l(?:itre|iter)?s?|kg|g)|half\s*(?:kg|l(?:itre|iter)?)|full|half|quarter|single|double|small|medium|extra\s*large|large|xl|reg(?:ular)?|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle|derh|dedh|dehr|aadha|1\.5|0?\.5)\b/i;
+  /\b(\d+(?:\.\d+)?\s*(?:ml|l(?:itre|iter)?s?|kg|g)|half\s*(?:kg|l(?:itre|iter)?)|full|half|quarter|single|double|small|medium|extra\s*large|large|xl|reg(?:ular)?|mid|med|\d+["']|\d+\s*inch|\d+\s*pcs?|tin|glass|bottle|derh|dedh|dehr|aadha|1\.5|0?\.5)\b/i;
 
 export function extractSizeFromQuery(query: string, explicitSize?: string | null): string | null {
-  const q = (explicitSize || query).toLowerCase();
+  const q = normalize(explicitSize || query);
   const volume = q.match(/\b(\d+(?:\.\d+)?)\s*(ml|l(?:itre|iter)?s?)\b/);
   if (volume) return `${Number(volume[1]) * (volume[2] === "ml" ? 1 : 1000)} ml`;
   if (/\b(half\s*l(?:itre|iter)?|aadha\s*l(?:itre|iter)?)\b/i.test(q)) return "500 ml";
@@ -496,6 +518,14 @@ export async function resolveItemDetailed(
   const requestedSize = extractSizeFromQuery(trimmed, explicitSize);
   const baseQuery = trimmed.replace(SIZE_WORDS_PATTERN, " ").replace(/\s+/g, " ").trim();
 
+  // A fully named SKU such as "Burger with Cheese" already chooses that
+  // variant. Do not strip Cheese before testing its exact catalog identity.
+  const namedVariant = inMemoryMenu?.find((item) => item.is_available && normalize(item.name) === normalize(trimmed)
+    && extractBaseItemName(item.name).variant !== null
+    && (!explicitSize || extractSizeFromQuery(item.name) === requestedSize));
+  if (namedVariant) return { kind: "exact", item: { ...namedVariant,
+    description: namedVariant.description ?? null, similarity: 1, method: "lexical" }, confidence: 1 };
+
   // Search with original query
   const { matches: directMatches } = await searchMenu(branchId, trimmed, 8, inMemoryMenu);
 
@@ -516,7 +546,7 @@ export async function resolveItemDetailed(
   if (inMemoryMenu) {
     const seen = new Set(combined.map((item) => item.id));
     for (const item of inMemoryMenu) {
-      if (!seen.has(item.id) && item.is_available && queryTokensCoveredByName(baseQuery || trimmed, extractBaseItemName(item.name).baseName)) {
+      if (!seen.has(item.id) && item.is_available && menuNameCoversQuery(baseQuery || trimmed, extractBaseItemName(item.name).baseName, true, item.category)) {
         combined.push({ ...item, description: item.description ?? null, similarity: lexicalScore(trimmed, item as MenuRow), method: "lexical" });
       }
     }
@@ -542,8 +572,8 @@ export async function resolveItemDetailed(
   }
 
   // Filter available candidates by semantic relevance to prevent unrelated suggestions
-  const literalNames = available.filter((m) => menuNameCoversQuery(baseQuery || trimmed, extractBaseItemName(m.name).baseName, false));
-  const nameMatches = literalNames.length ? literalNames : available.filter((m) => menuNameCoversQuery(baseQuery || trimmed, extractBaseItemName(m.name).baseName));
+  const literalNames = available.filter((m) => menuNameCoversQuery(baseQuery || trimmed, extractBaseItemName(m.name).baseName, false, m.category));
+  const nameMatches = literalNames.length ? literalNames : available.filter((m) => menuNameCoversQuery(baseQuery || trimmed, extractBaseItemName(m.name).baseName, true, m.category));
   const relevantCandidates = nameMatches.length ? nameMatches : available.filter((m) => isCandidateRelevant(trimmed, m));
   if (relevantCandidates.length === 0) {
     return { kind: "not_found", query: trimmed, suggestions: [] };
@@ -574,10 +604,11 @@ export async function resolveItemDetailed(
     const normBaseQ = normalize(baseQuery);
     return (
       normCand === normQ ||
+      categoryQualifiedName(c.name, c.category) === normQ ||
       normCand === normBaseQ ||
       normCand === normCombinedQ1 ||
       normCand === normCombinedQ2 ||
-      (!requestedSize && (normBaseCand === normQ || normBaseCand === normBaseQ))
+      (!requestedSize && (normBaseCand === normQ || normBaseCand === normBaseQ || categoryQualifiedName(extractBaseItemName(c.name).baseName, c.category) === normQ))
     );
   });
 

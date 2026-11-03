@@ -19,6 +19,7 @@ import { deliveryAreaNames } from "./delivery";
 import OpenAI from "openai";
 import { cache } from "@/lib/core/cache";
 import { createHash } from "node:crypto";
+import { isPakistaniReply, PAKISTANI_LANGUAGE_RULE } from "@/lib/pakistani-language";
 import type { LanguagePreference } from "@/lib/schema.types";
 import type { RestaurantSettings } from "@/lib/settings";
 import type { MenuCatalogItem } from "@/lib/menu";
@@ -148,6 +149,7 @@ function buildSystemPrompt(personality?: string): string {
     `Adopt this personality/tone: ${tone}.`,
     "",
     "HARD RULES:",
+    PAKISTANI_LANGUAGE_RULE,
     "- Use ONLY the given facts. NEVER invent prices, items, discounts, timings, delivery areas, or policies.",
     "- Do not greet or introduce yourself in informational replies. Do not claim bestseller, most popular, customer favourite, halal certification or dietary safety unless that exact fact is supplied. Recommendations are suggestions, never invented popularity rankings.",
     "- You cannot edit carts, place/cancel orders, reserve tables, or notify staff. Never claim any of these actions happened in an informational reply. Never guarantee allergen safety or no cross-contamination; unknown ingredient/allergy questions need staff verification. Unavailable items cannot be recommended as available.",
@@ -156,8 +158,8 @@ function buildSystemPrompt(personality?: string): string {
     "- The supplied MENU is the only authority for dishes and categories. Never infer cuisine or specialties from the restaurant name. Never claim a listed item is missing. Missing or incomplete menu facts mean you cannot verify availability; say that clearly instead of inventing categories or denying a dish. A temporarily unavailable item is different from a dish absent from the catalog.",
     "- If the customer asks about social media, facebook, instagram, website, or other unlisted info: politely state that you will connect them with staff.",
     "- If the answer is not in the facts, say honestly you're not sure and offer to connect them to staff — do NOT guess or make up facts.",
-    "- Keep replies to 1-3 SHORT lines maximum. Do NOT provide extra information that wasn't asked for.",
-    "- For simple availability questions (e.g. 'koi sandwich hai?'), just confirm YES or list 2-3 items — do NOT mention phone numbers or give a full speech.",
+    "- Usually use 1-3 SHORT lines. A requested list of dish sizes may use one short line per size so no size is omitted. Do NOT provide extra information that wasn't asked for.",
+    "- For a specific dish with sizes/options, show EVERY listed size and its price, including Mid/Medium. Keep each option to one short line. For broader category questions, show a few relevant suggestions and offer the category menu.",
     "- For menu/item questions: just confirm/list items with prices. Skip contact numbers unless the customer specifically asked for them.",
     "- Use the currency exactly as given. Prices only from the facts.",
     "- Only add 'kuch order karna ho to batayein' or similar CTA at the END, once, very briefly.",
@@ -189,7 +191,7 @@ export async function groundedAnswer(input: GroundedAnswerInput): Promise<string
   if (!q) return null;
 
   const facts = buildFacts(input);
-  const cacheKey = `answer:v2:${input.language}:${q.toLowerCase()}:${hash(facts + input.settings.ai_personality)}`;
+  const cacheKey = `answer:v3:${input.language}:${q.toLowerCase()}:${hash(facts + input.settings.ai_personality)}`;
   const cached = await cache.get<string>(cacheKey);
   if (cached) return cached;
 
@@ -224,6 +226,7 @@ export async function groundedAnswer(input: GroundedAnswerInput): Promise<string
       const choice = completion.choices[0];
       const text = choice?.message?.content?.trim();
       if (!text || choice.finish_reason === "length") throw new Error("Incomplete answer");
+      if (!isPakistaniReply(text)) throw new Error("Non-Pakistani reply language");
       await cache.set(cacheKey, text, CACHE_TTL_MS);
       return text;
     } catch (error) {

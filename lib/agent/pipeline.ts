@@ -12,14 +12,17 @@ import { understandTurn, type TurnUnderstanding } from "./nlu";
 import { nextTransition } from "./state-machine";
 import { executeTurn } from "./executor";
 import type { InteractivePayload } from "./interactive";
-import { loadTurnContext } from "./context";
+import { loadTurnContext, buildStateView } from "./context";
 import { stateRepo } from "@/lib/data/state.repo";
 import { orderRepo } from "@/lib/data/order.repo";
 import { reply } from "./reply";
 import { isSimpleCatalogQuestion } from "./questions";
+import { simpleCatalogOrder, catalogSpellingHints } from "./catalog-order";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { inferLanguagePreference } from "@/lib/core/lang-detect";
-import { extractBaseItemName, extractSizeFromQuery } from "@/lib/menu/search";
+import { extractBaseItemName, extractSizeFromQuery, menuNameCoversQuery } from "@/lib/menu/search";
+import { normalizeFoodScript } from "@/lib/pakistani-language";
+import { sharedLocationPin } from "@/lib/location-pin";
 import type { ConversationStateRow } from "@/lib/schema.types";
 import type { ConversationStage } from "@/lib/schema.types";
 
@@ -195,9 +198,9 @@ export function fastUnderstanding(text: string, state: ConversationStateRow, sav
   const matches = options.filter((o) => normalize(o.label) === normalize(raw));
   if (matches.length === 1) return fromId(matches[0].id);
   if (state.pending_clarification?.remaining_items?.length && recent) {
-    const volumeOnly = /^\d+(?:\.\d+)?\s*(?:ml|l(?:itre|iter)?s?)$/i.test(raw);
+    const sizeOnly = /^(?:\d+(?:\.\d+)?\s*(?:ml|l(?:itre|iter)?s?)|small|mid|med|medium|large|xl|extra\s*large|half|full|quarter|regular|reg)$/i.test(raw);
     const variants = shown.filter((o) => normalize(extractBaseItemName(o.name).variant ?? "") === normalize(raw)
-      || volumeOnly && extractSizeFromQuery(o.name) === extractSizeFromQuery(raw));
+      || sizeOnly && extractSizeFromQuery(o.name) === extractSizeFromQuery(raw));
     if (variants.length === 1) return fromId(`item:${variants[0].id}`);
   }
   if (numeric && recent && (state.stage === "browsing" || state.stage === "building_cart")) {
@@ -209,7 +212,7 @@ export function fastUnderstanding(text: string, state: ConversationStateRow, sav
     }
   }
   const base = makeBase(lang);
-  if (/^(?:ass?alam(?:u?\s*(?:o|al)?\s*alaikum)?|aoa|salam|hi|hello|hey|stare?\s*mashay|pa\s*kher)[!.]*$/i.test(raw)) {
+  if (/^(?:ass?alam(?:u?\s*(?:o|al)?\s*alaikum)?|aslamoalikum|assalamualaikum|assalamualikum|assalamoalaikum|aoa|salam|hi|hello|hey|stare?\s*mashay|pa\s*kher)[!.]*$/i.test(raw)) {
     return { ...base, intents: ["greeting"], primary_intent: "greeting" };
   }
   if (/^(?:yes|haan|han|ji|jee|ok|okay|theek hai|done|confirm|confirm order|place order)[!.]*$/i.test(raw)) {
@@ -250,6 +253,36 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   });
   t.ctx = Date.now() - startedAt;
 
+  // Repair stale queues left by earlier releases without silently adding any
+  // food. Only requests which can still produce real catalog choices survive.
+  const pending = ctx.state.pending_clarification;
+  if (pending?.remaining_items?.length) {
+    const remaining = pending.remaining_items.map((item) => ({ ...item, query: normalizeFoodScript(item.query) }))
+      .filter((item) => ctx.menu.some((food) => food.is_available && menuNameCoversQuery(item.query, food.name, true, food.category)))
+      .filter((item, index, all) => all.findIndex((other) => JSON.stringify(other) === JSON.stringify(item)) === index);
+    // An empty choice list from the previous missing-item failure is stale,
+    // even when a newer matcher can recognize its words. Ask for food afresh.
+    ctx.state.pending_clarification = remaining.length && pending.options.length ? { ...pending, remaining_items: remaining } : null;
+    ctx.view = buildStateView(ctx.state);
+  }
+
+  const pin = sharedLocationPin(input.messageText);
+  if (pin && ctx.state.stage === "placed" && !ctx.state.cart.length) {
+    const order = await orderRepo.getLatestForConversation(input.conversationId);
+    if (order && order.branch_id === input.branchId && await orderRepo.saveDeliveryPin(order, pin)) {
+      const lang = ctx.state.preferred_language;
+      const text = lang === "roman_urdu" ? `📍 Shukriya! Location order #${order.order_number} ke saath save ho gayi.`
+        : lang === "pashto" ? `📍 Manana! Location da order #${order.order_number} sara save sho.`
+        : `📍 Thank you! Your location is saved with order #${order.order_number}.`;
+      const patch = { last_intent: "delivery_location", last_user_whatsapp_msg_id: input.whatsappMessageId ?? undefined,
+        last_processed_user_message_at: new Date().toISOString() };
+      if (input.messageId) await stateRepo.commitTurn(input.conversationId, input.messageId, patch, { replyText: text });
+      else await stateRepo.patch(input.conversationId, patch);
+      return { replyText: text, stage: "placed", placeOrder: false, escalate: false,
+        intent: "delivery_location", usedSemanticSearch: false, latencyMs: Date.now() - startedAt };
+    }
+  }
+
   // Placement consumes the reviewed cart in its own DB transaction. If the
   // process crashed before committing the reply receipt, recover that same
   // order's acknowledgment instead of reinterpreting an empty-cart confirm.
@@ -273,6 +306,11 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       intents: ["ask_item_info"], primary_intent: "ask_item_info", info_query: input.messageText,
       notes: "fast_path_catalog_question" };
   }
+  if (!understanding && !ctx.state.pending_clarification?.remaining_items?.length) {
+    const items = simpleCatalogOrder(input.messageText, ctx.menu);
+    if (items) understanding = { ...makeBase(inferLanguagePreference(input.messageText, ctx.state.preferred_language)),
+      intents: ["add_items"], primary_intent: "add_items", items, notes: "fast_path_catalog_order" };
+  }
 
   // ── 2) NLU ─────────────────────────────────────────────────────────────────
   const nluStart = Date.now();
@@ -292,9 +330,16 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
       },
       // Only history preceding this inbound message; never consume later queued turns.
       history: priorHistory(ctx.history ?? [], input.messageId),
+      menuHints: catalogSpellingHints(input.messageText, ctx.menu),
     });
   }
   t.nlu = Date.now() - nluStart;
+
+  // A neutral dish name or service selection keeps the customer's language.
+  // Models must not switch to English/Hindi because of a transcription artifact.
+  if (!/\b(?:reply|respond|speak|baat|jawab)\b.*\b(?:english|urdu|pashto)\b|\b(?:english|urdu|pashto)\b.*\b(?:please|mein|me|bolo|likho)\b/i.test(input.messageText)) {
+    understanding.language = inferLanguagePreference(input.messageText, ctx.state.preferred_language);
+  }
 
   // Uncertain extractions must not edit a real order. Explicit taps have confidence 1.
   if (understanding.confidence < 0.55 && !understanding.wants_human) {
@@ -336,6 +381,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   // correctness guarantee.
   {
     const statePatch = {
+      pending_clarification: ctx.state.pending_clarification,
       ...exec.statePatch,
       invalid_step_count: invalidStepCount,
       last_processed_user_message_id: input.whatsappMessageId ?? undefined,

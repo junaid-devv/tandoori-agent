@@ -186,7 +186,7 @@ try {
   fresh("truncated");
   truncateNext = true;
   const beforeTruncated = parserCalls;
-  await send("truncated", "please add two naan", u("add_items", { items: [mention("Plain Naan", 2)] }));
+  await send("truncated", "could you send me two naan", u("add_items", { items: [mention("Plain Naan", 2)] }));
   check("a truncated primary extraction retries the fallback without losing portions", () => {
     assert.equal(parserCalls - beforeTruncated, 2); assert.equal(states.get("truncated").cart[0].qty, 2);
   });
@@ -505,7 +505,7 @@ try {
   result = await send("unknown-first", "2 sushi and 3 naan", u("add_items", { items: [mention("sushi", 2), mention("naan", 3)] }));
   check("an unsupported first dish cannot discard valid later portions or permit a partial checkout", () => {
     assert.equal(states.get("unknown-first").cart[0].qty, 3);
-    assert.equal(states.get("unknown-first").pending_clarification.remaining_items[0].query, "sushi");
+    assert.ok(!states.get("unknown-first").pending_clarification?.remaining_items?.length, "A rejected dish must not become a repeated pending order");
     assert.ok(result.replyText.includes("sushi")); assert.ok(!states.get("unknown-first").summary_sent_at);
   });
   await send("unknown-first", "remove sushi", u("remove_items", { removals: [{ query: "sushi", qty: "all" }] }));
@@ -697,6 +697,108 @@ try {
     assert.equal(areaMatches("House 12 DHA Phase 6", "DHA Phase 1-6"), true);
     assert.equal(areaMatches("House 2 DHA Phase 9", "DHA Phase 1-6"), false);
     assert.equal(areaMatches("House 1 گلبرگ", "گلبرگ"), true);
+  });
+  // Foods Carnival incidents: use the actual catalog names, category and prices.
+  Object.assign(settings, { delivery_pricing_mode: "flat", delivery_zones: [], delivery_areas: [], min_delivery_amount: 0 });
+  menu.push(
+    { id: "paratha", name: "Chicken Paratha", category: "Paratha Roll", price: 199, is_available: true },
+    { id: "cheese-paratha", name: "Chicken Cheese Paratha", category: "Paratha Roll", price: 249, is_available: true },
+    { id: "pizza-burger", name: "Pizza Burger", category: "Burger", price: 449, is_available: true },
+    ...[["ks", "Small", 449], ["km", "Mid", 799], ["kl", "Large", 1199]].map(([id, size, price]) =>
+      ({ id, name: `Kababish Pizza ${size}`, category: "Special Pizza", price, is_available: true })),
+  );
+  await seedCaches();
+  fresh("luqman-salam");
+  result = await send("luqman-salam", "aslamoalikum");
+  check("Luqman's greeting gets Walaikum Assalam and establishes Roman Urdu", () => {
+    assert.match(result.replyText, /Walaikum Assalam/); assert.equal(states.get("luqman-salam").preferred_language, "roman_urdu");
+  });
+  fresh("luqman-typo", { preferred_language: "roman_urdu" });
+  const beforeRoll = parserCalls;
+  result = await send("luqman-typo", "chicken Partha roll");
+  check("Luqman's exact typed request matches Chicken Paratha in Paratha Roll without a model", () => {
+    assert.equal(parserCalls, beforeRoll); assert.equal(states.get("luqman-typo").cart[0].menu_item_id, "paratha");
+    assert.equal(states.get("luqman-typo").cart[0].qty, 1); assert.match(result.replyText, /add ho gaya/);
+    assert.doesNotMatch(result.replyText, /not found|nahi mila|available nahi|[\u0900-\u097f]/u);
+  });
+  fresh("luqman-polite", { preferred_language: "roman_urdu" });
+  await send("luqman-polite", "main chicken paratha roll order krna chahon ga");
+  check("the reported Roman Urdu voice wording orders one roll", () => {
+    assert.equal(states.get("luqman-polite").cart[0].menu_item_id, "paratha");
+    assert.equal(states.get("luqman-polite").cart[0].qty, 1);
+  });
+  fresh("luqman-voice", { preferred_language: "roman_urdu" });
+  result = await send("luqman-voice", "मैं पराठा रोल, चिकन पराठा रोल आदर करना चाहूँगा.", u("add_items", {
+    language: "english", items: [mention("चिकन पराठा रोल")] }));
+  check("the stored Hindi-script voice artifact resolves the real roll and replies in Pakistani Roman Urdu", () => {
+    assert.equal(states.get("luqman-voice").cart[0].menu_item_id, "paratha");
+    assert.equal(states.get("luqman-voice").cart.length, 1); assert.match(result.replyText, /add ho gaya/);
+    assert.doesNotMatch(result.replyText, /[\u0900-\u097f]/u);
+  });
+  await send("luqman-voice", "meter pizza", u("add_items", { items: [mention("meter pizza")] }));
+  check("a missing named dish cannot be replaced with a generic pizza or become a perpetual pending item", () => {
+    assert.equal(states.get("luqman-voice").cart.length, 1);
+    assert.ok(!states.get("luqman-voice").pending_clarification?.remaining_items?.length);
+  });
+  await send("luqman-voice", "pizza burger");
+  result = await send("luqman-voice", "Delivery");
+  check("delivery asks only for the destination without replaying failed item matches", () => {
+    assert.equal(result.stage, "collecting_delivery"); assert.match(result.replyText, /address/i);
+    assert.doesNotMatch(result.replyText, /meter pizza|not found|match nahi|[\u0900-\u097f]/u);
+  });
+  result = await send("luqman-voice", "House 3 Street 4 near Anwar Chowk", u("provide_address", {
+    intents: ["provide_address", "add_items"], address: "House 3 Street 4 near Anwar Chowk",
+    items: [mention("Chicken Paratha Roll")] }));
+  check("even a history-echoing model cannot re-add a roll while receiving the delivery address", () => {
+    assert.equal(states.get("luqman-voice").cart.find((item) => item.menu_item_id === "paratha").qty, 1);
+    assert.equal(result.stage, "confirming"); assert.match(result.replyText, /House 3/);
+  });
+  result = await send("luqman-voice", "confirm:yes");
+  check("successful delivery confirmation asks for a current WhatsApp location pin", () => {
+    assert.equal(result.stage, "placed"); assert.match(result.replyText, /current location/);
+  });
+  const staleQueue = { kind: "item_disambiguation", options: [], remaining_items: [mention("चिकन पराठा रोल"), mention("पराठा रोल")] };
+  fresh("luqman-legacy", { preferred_language: "roman_urdu", cart: [line()], pending_clarification: staleQueue });
+  result = await send("luqman-legacy", "Delivery");
+  check("old broken queues are repaired on the next turn without adding old food", () => {
+    assert.equal(result.stage, "collecting_delivery"); assert.equal(states.get("luqman-legacy").cart.length, 1);
+    assert.ok(!states.get("luqman-legacy").pending_clarification?.remaining_items?.length);
+    assert.doesNotMatch(result.replyText, /paratha|[\u0900-\u097f]/iu);
+  });
+  fresh("kababish", { preferred_language: "roman_urdu" });
+  result = await send("kababish", "2 kababish pizza");
+  check("Kababish offers Small, Mid and Large with their real prices", () => {
+    assert.deepEqual(states.get("kababish").last_shown_options.map((item) => item.id), ["ks", "km", "kl"]);
+    assert.match(result.replyText, /Mid.*799/); assert.equal(result.interactive.payload.buttons.length, 3);
+  });
+  result = await send("kababish", "medium");
+  check("medium selects the catalog's Mid size and retains the original quantity", () => {
+    assert.equal(states.get("kababish").cart[0].menu_item_id, "km"); assert.equal(states.get("kababish").cart[0].qty, 2);
+  });
+  fresh("pakistani-botal", { preferred_language: "roman_urdu" });
+  await send("pakistani-botal", "ek botal deliver kar dein", u("add_items", { items: [mention("drink")], order_type: "delivery" }));
+  check("current-turn grounding accepts the Pakistani botal/drink alias without choosing a size", () => {
+    assert.equal(states.get("pakistani-botal").pending_clarification.remaining_items[0].query, "drink");
+    assert.equal(states.get("pakistani-botal").cart.length, 0);
+  });
+  previousOrder = { id: "pin-order", order_number: 99, branch_id: "b", conversation_id: "luqman-voice", type: "delivery", status: "received" };
+  const savedPins = [];
+  orderRepo.saveDeliveryPin = async (order, pin) => { savedPins.push({ id: order.id, pin }); return true; };
+  const beforePin = parserCalls;
+  result = await send("luqman-voice", "https://maps.google.com/?q=33.7,73.1");
+  check("a post-confirmation pin is saved against the owned order with no new order or model call", () => {
+    assert.equal(parserCalls, beforePin); assert.equal(savedPins[0].id, "pin-order");
+    assert.equal(result.stage, "placed"); assert.match(result.replyText, /Location.*99/);
+    assert.equal(result.placeOrder, false);
+  });
+  const { voiceTranscriptionOptions } = await import("../lib/voice-transcription.ts");
+  const { sharedLocationPin, locationPinUrl } = await import("../lib/location-pin.ts");
+  check("Pakistani voice hints preserve Urdu/Pashto and location parsing rejects invalid coordinates or edits", () => {
+    assert.equal(voiceTranscriptionOptions("roman_urdu", ["Chicken Paratha"]).language, "ur");
+    assert.equal(voiceTranscriptionOptions("pashto", []).language, "ps");
+    assert.match(voiceTranscriptionOptions("roman_urdu", ["Chicken Paratha"]).prompt, /Chicken Paratha/);
+    assert.equal(locationPinUrl(100, 73), null); assert.equal(locationPinUrl(undefined, 73), null);
+    assert.equal(sharedLocationPin("change delivery instead\nhttps://maps.google.com/?q=33,73"), null);
   });
   console.log(`\nAGENT CONVERSATIONS: ${checks} checks passed; ${parserCalls} actual parser HTTP requests, ${placed.length} isolated test orders.`);
 } finally {

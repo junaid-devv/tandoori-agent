@@ -21,7 +21,10 @@ const server = createServer(async (req, res) => {
   }
   if (primary && mode === "slow") await new Promise((resolve) => setTimeout(resolve, 950));
   res.end(JSON.stringify({ choices: [{ finish_reason: primary && mode === "truncated" ? "length" : "stop",
-    message: { role: "assistant", content: primary && mode === "empty" ? "" : "Staff can verify unlisted information." } }] }));
+    message: { role: "assistant", content: primary && mode === "empty" ? ""
+      : primary && mode === "hindi-script" ? "कृपया अपना ऑर्डर बताएं।"
+      : primary && mode === "hindi-words" ? "Kripya apna order batayein. Dhanyavaad."
+      : "Staff can verify unlisted information." } }] }));
 });
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 process.env.ORDER_AGENT_NLU_BASE_URL = `http://127.0.0.1:${server.address().port}/v1`;
@@ -30,7 +33,7 @@ const input = { language: "english", appName: "Fixture", currency: "Rs.", menu: 
   settings: { city: "", opening_time: "11:00", closing_time: "23:00", timezone: "Asia/Karachi", is_accepting_orders: true,
     delivery_enabled: true, delivery_areas: [], delivery_fee: 0, estimated_delivery_minutes: 40, estimated_prep_minutes: 20, ai_personality: "Warm" } };
 try {
-  for (mode of ["rejected", "empty", "truncated", "slow"]) {
+  for (mode of ["rejected", "empty", "truncated", "slow", "hindi-script", "hindi-words"]) {
     requests = [];
     const started = Date.now();
     assert.equal(await groundedAnswer({ ...input, question: `Question ${mode}` }), "Staff can verify unlisted information.");

@@ -1,5 +1,6 @@
 import type { IncomingWhatsAppMessage } from "./whatsapp-inbound";
 import type { EvolutionEventData } from "./evolution-types";
+import { locationPinUrl } from "./location-pin";
 
 export function evolutionMessageId(instance: string, id: string) { return `evolution:${instance}:${id}`; }
 
@@ -52,7 +53,9 @@ export function normalizeEvolutionMessage(instance: string, data: EvolutionEvent
     result.type = "text";
     const location = content.locationMessage || content.liveLocationMessage;
     if (!location) return null;
-    result.text = { body: [location.name, location.address, `https://maps.google.com/?q=${location.degreesLatitude},${location.degreesLongitude}`].filter(Boolean).join("\n") };
+    const pin = locationPinUrl(location.degreesLatitude, location.degreesLongitude);
+    if (!pin) return null;
+    result.text = { body: [location.name, location.address, pin].filter(Boolean).join("\n") };
   } else {
     const text = content.conversation || content.extendedTextMessage?.text;
     if (typeof text !== "string" || !text.trim()) return null;

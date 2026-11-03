@@ -1,15 +1,16 @@
 import type { MenuCatalogItem } from "@/lib/menu";
 import { menuNameCoversQuery } from "@/lib/menu/search";
+import { normalizeFoodScript } from "@/lib/pakistani-language";
 
 /** Match the food phrase, retaining meaningful constraints and negations. A
  * question about dietary safety must not become a plain availability answer. */
 export function catalogQuestionMatches(question: string, menu: MenuCatalogItem[]): MenuCatalogItem[] {
-  const lookup = question.toLowerCase().replace(/[^\p{L}\p{N}.\s-]/gu, " ")
+  const lookup = normalizeFoodScript(question).toLowerCase().replace(/[^\p{L}\p{N}.\s-]/gu, " ")
     .replace(/\b(?:what|whats|is|are|the|a|an|of|for|do|does|you|your|have|how|much|please|tell|me|about|price|prices|cost|rate|available|availability|include|includes|contain|contains|contents|ingredients|in|kya|kia|hai|hain|ka|ki|ke|mein|me|kitna|kitne|kitni|batao|batayein|milta|milti)\b/g, " ")
     .replace(/\s+/g, " ").trim();
   if (!lookup) return [];
-  const literal = menu.filter((item) => menuNameCoversQuery(lookup, item.name, false));
-  return literal.length ? literal : menu.filter((item) => menuNameCoversQuery(lookup, item.name));
+  const literal = menu.filter((item) => menuNameCoversQuery(lookup, item.name, false, item.category));
+  return literal.length ? literal : menu.filter((item) => menuNameCoversQuery(lookup, item.name, true, item.category));
 }
 
 /** Only complete, catalog-grounded questions can bypass interpretation. Bare

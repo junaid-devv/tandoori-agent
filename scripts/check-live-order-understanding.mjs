@@ -12,6 +12,19 @@ const deliveryHistory = [
 ];
 const fulfillment = { order_type: "delivery", address: "Sector A st 26", guests: null, reservation_time: null, pickup_time: null };
 const cases = [
+  { name: "Pakistan: Luqman voice transcription artifact is one corrected roll", text: "मैं पराठा रोल, चिकन पराठा रोल आदर करना चाहूँगा.", language: "roman_urdu",
+    test: (u) => u.items.length === 1 && /chicken.*paratha.*roll/i.test(u.items[0].query) && u.items[0].qty === 1 && u.language === "roman_urdu" },
+  { name: "Pakistan: Luqman typed correction does not copy Hindi wording or duplicate old food", text: "chicken Partha roll", language: "roman_urdu",
+    history: [{ role: "user", content: "मैं पराठा रोल, चिकन पराठा रोल आदर करना चाहूँगा." }, { role: "assistant", content: "Paratha roll not found." }],
+    test: (u) => u.items.length === 1 && /chicken.*par(?:a)?tha.*roll/i.test(u.items[0].query) && !/[\u0900-\u097f]/u.test(u.items[0].query) },
+  { name: "Pakistan: unsupported specific pizza is never broadened into another pizza", text: "meter pizza", language: "roman_urdu",
+    test: (u) => u.items.length === 1 && /meter/i.test(u.items[0].query) && /pizza/i.test(u.items[0].query) },
+  { name: "Pakistan: address after a rejected dish cannot replay it", text: "3g near Anwar chowk", language: "roman_urdu", stage: "collecting_delivery",
+    cart: [item("Pizza Burger")], pendingItems: [{ query: "चिकन पराठा रोल", qty: 1, size: null, addons: [], notes: null }],
+    history: [{ role: "user", content: "chicken Partha roll" }, { role: "assistant", content: "Item not found." }, { role: "user", content: "pizza burger" }, { role: "assistant", content: "Pizza Burger added. Please send your full delivery address." }],
+    test: (u) => !u.items.length && !!u.address && u.intents.includes("provide_address") },
+  { name: "Pakistan: kababish pizza and wings keep both items unsized", text: "Ek kababish pizza or fried wings", language: "roman_urdu",
+    test: (u) => u.items.length === 2 && u.items.some((i) => /kababish.*pizza/i.test(i.query) && !i.size) && u.items.some((i) => /fried.*wings/i.test(i.query) && !i.size) },
   { name: "numbered deal keeps identifier separate from quantity and flavours", text: "Ek Shahana Special Ultra Long Pizza Deal 2 chahiye, flavours Tikka aur Fajita rakhna", language: "roman_urdu",
     test: (u) => u.intents.includes("add_items") && u.items.length === 1 && /deal\s*2\b/i.test(u.items[0].query) && u.items[0].qty === 1 && /tikka/i.test(u.items[0].notes ?? "") && /fajita/i.test(u.items[0].notes ?? "") && !u.items[0].addons.length },
   { name: "numbered deal allows multiple portions of a different deal number", text: "Please add 2 Deal 3", test: (u) => u.items.length === 1 && /deal\s*3\b/i.test(u.items[0].query) && u.items[0].qty === 2 },
@@ -62,7 +75,7 @@ for (const [index, c] of selectedCases.entries()) {
   if (index) await new Promise((resolve) => setTimeout(resolve, Number(process.env.LIVE_NLU_PAUSE_MS) || 15_000));
   const started = Date.now();
   const u = await understandTurn({ conversationId: `synthetic-${index}`, messageText: c.text,
-    language: c.language ?? "english", stage: c.stage ?? "browsing", cart: c.cart ?? [], history: c.history ?? [], fulfillment: c.fulfillment });
+    language: c.language ?? "english", stage: c.stage ?? "browsing", cart: c.cart ?? [], history: c.history ?? [], fulfillment: c.fulfillment, pendingItems: c.pendingItems });
   const elapsed = Date.now() - started;
   times.push(elapsed);
   const passed = c.test(u);

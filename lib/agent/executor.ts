@@ -251,9 +251,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     if (!direct.length) return false;
     replies.push(reply.itemList(lang, direct, cur));
     if (/include|contain|content|ingredient|what.*in|kya.*(?:hai|milta)|mein.*kya/i.test(q)) {
-      for (const item of direct.slice(0, 10)) replies.push(item.description
-        ? `${item.name}: ${item.description}`
-        : `${item.name}: ${lang === "roman_urdu" ? "Ingredients ki tafseel listed nahi hai; staff se verify karwa sakte hain." : "Ingredient details are not listed; staff can verify them."}`);
+      for (const item of direct.slice(0, 10).filter((item) => !item.description)) replies.push(
+        `${item.name}: ${lang === "roman_urdu" ? "Ingredients ki tafseel listed nahi hai; staff se verify karwa sakte hain." : "Ingredient details are not listed; staff can verify them."}`);
     }
     if (!hasDisambiguation && !value("pending_clarification")?.remaining_items?.length) {
       const available = direct.filter((item) => item.is_available);
@@ -408,7 +407,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
       // ── Greet ────────────────────────────────────────────────────────────
       case "greet": {
-        const wasSalam = /^(aoa|a\.?o\.?a|assalam|salam|سلام|ستړې|ستړی)\b/i.test(input.messageTextForFallback?.trim() ?? "");
+        const wasSalam = /^(?:aoa\b|a\.?o\.?a\b|ass?alam|aslam|salam\b|سلام|ستړې|ستړی)/i.test(input.messageTextForFallback?.trim() ?? "");
         replies.push(reply.greeting(lang, input.appName, input.customerName ?? null, wasSalam));
         const willAddItems = transition.actions.some((a) => a.kind === "add_items");
         if (!willAddItems) {
@@ -471,7 +470,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
           const res = resolutions[mentionIndex];
           if (res.kind !== "exact") {
-            unresolved.push(m);
+            // Missing dishes are declined in this reply, never queued as a
+            // perpetual choice that replays during delivery/address replies.
+            if (res.kind === "variants" || res.kind === "ambiguous") unresolved.push(m);
             if (presentedChoice) continue;
             presentedChoice = true;
             patch.last_shown_options = [];
@@ -539,9 +540,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         }
 
         if (unresolved.length) {
+          const pendingItems = [...unresolved, ...(carriedPending?.remaining_items ?? [])];
           patch.pending_clarification = { kind: "item_disambiguation",
             options: patch.pending_clarification?.options ?? [],
-            remaining_items: [...unresolved, ...(carriedPending?.remaining_items ?? [])] };
+            remaining_items: pendingItems.filter((item, index) => pendingItems.findIndex((other) =>
+              other.query.toLowerCase() === item.query.toLowerCase() && other.size === item.size
+              && other.qty === item.qty && other.notes === item.notes) === index) };
           carriedPending = null;
         }
 
@@ -1400,10 +1404,22 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           if (cart.length) setInteractive(cartActionButtons(lang));
         }
         if (replies.length === 0) {
-          replies.push(reply.clarify(lang, "fallback"));
-          if (cart.length > 0) {
+          // Help with the missing step instead of sending a generic fallback
+          // while the customer is already answering a delivery/pickup question.
+          if (ctx.state.stage === "collecting_delivery") {
+            replies.push(reply.askAddress(lang));
+          } else if (ctx.state.stage === "collecting_pickup") {
+            replies.push(reply.askPickupTime(lang));
+          } else if (ctx.state.stage === "collecting_dinein") {
+            replies.push(reply.askDineIn(lang));
+          } else if (ctx.state.stage === "choosing_order_type") {
+            replies.push(reply.askOrderType(lang));
+            setInteractive(orderTypeButtons(lang, ctx.settings));
+          } else if (cart.length > 0) {
+            replies.push(reply.clarify(lang, "fallback"));
             setInteractive(cartActionButtons(lang, { hideViewCart: true }));
           } else {
+            replies.push(reply.clarify(lang, "fallback"));
             const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
             if (cats.length) setInteractive(categoryList(lang, cats));
           }
@@ -1414,7 +1430,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
   // An unrelated addition, address reply or menu question must not discard an
   // earlier requested portion that is still waiting for a size/flavor choice.
-  if (carriedPending && !hasDisambiguation && !transition.actions.some((a) => ["cancel_order", "restart_order", "reorder_previous"].includes(a.kind))) {
+  if (carriedPending && !hasDisambiguation && !transition.actions.some((a) => ["cancel_order", "restart_order", "reorder_previous"].includes(a.kind))
+    && (u.notes === "fast_path_resume" || transition.actions.some((a) => ["add_items", "remove_items", "show_menu", "show_summary", "place_order"].includes(a.kind)))) {
     await presentPending(carriedPending);
   }
 

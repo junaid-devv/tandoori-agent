@@ -56,6 +56,15 @@ try {
     const result = await resolve("chicken shawarma", null, [food("s", "Chicken Shawarma"), food("c", "Chicken Cheese Shawarma")]);
     assert.equal(result.kind, "exact"); assert.equal(result.item.id, "s");
   });
+  await test("fully named cheese variants retain their catalog SKU", async () => {
+    const menu = [food("plain", "Beef Jumbo Burger", 300), food("cheese", "Beef Jumbo Burger with Cheese", 350)];
+    const result = await resolve("Beef Jumbo Burger with Cheese", null, menu);
+    assert.equal(result.kind, "exact"); assert.equal(result.item.id, "cheese");
+  });
+  await test("combined category headings cannot turn pasta or lasagne into fries", async () => {
+    const menu = [food("fries", "Pizza Fries"), { ...food("pasta", "Pasta (Large)"), category: "Pasta, Lasagne & Pizza Fries" }];
+    assert.deepEqual((await searchMenu("offline", "fries", 8, menu)).matches.map((item) => item.id), ["fries"]);
+  });
   await test("unknown brand at an explicit volume still requires a choice", async () => {
     const result = await resolve("500ml drink", null, [food("c", "Cola Drink 500ml"), food("o", "Orange Drink 500ml")]);
     assert.equal(result.kind, "ambiguous"); assert.equal(result.matches.length, 2);

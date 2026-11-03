@@ -9,6 +9,7 @@ import type { CartItem, LanguagePreference, OrderType } from "@/lib/schema.types
 import type { RestaurantSettings } from "@/lib/settings";
 import type { OrderRow } from "@/lib/data/order.repo";
 import { cartSubtotal } from "./cart";
+import { normalizeFoodScript, isPakistaniReply } from "@/lib/pakistani-language";
 
 type Lang = LanguagePreference;
 const ur = (l: Lang) => l === "roman_urdu";
@@ -134,12 +135,14 @@ export const reply = {
   },
 
   notFound(l: Lang, query: string, suggestions: string[], categories?: string[]): string {
+    query = normalizeFoodScript(query);
+    if (!isPakistaniReply(query)) query = ur(l) ? "Yeh item" : pa(l) ? "Da item" : "That item";
     if (suggestions.length > 0) {
       const opts = suggestions.slice(0, 3).join(", ");
       if (pa(l)) return `"${query}" wane-munde sho. Da koshish kra: ${opts}`;
       return ur(l)
-        ? `"${query}" nahi mila. Ye try karein: ${opts}`
-        : `"${query}" not found. Try: ${opts}`;
+        ? `"${query}" ka exact match nahi mila. Kya ${opts} mein se koi chahiye?`
+        : `I couldn't match "${query}". Would you like ${opts}?`;
     }
     if (categories && categories.length > 0) {
       const catList = categories.slice(0, 5).join(", ");
@@ -147,13 +150,13 @@ export const reply = {
         return `"${query}" zmong menu ke nishta. Zmong sara da ${catList} items shta.\nTse order kawal ghwaaray?`;
       }
       return ur(l)
-        ? `"${query}" hamare menu mein available nahi hai. Hamare pas ${catList} items available hain.\nAap kya mangwana chahenge?`
-        : `"${query}" is not available on our menu. We specialize in ${catList}.\nWhat would you like to order?`;
+        ? `"${query}" ka match nahi mila. Item ka naam dobara bhej dein ya menu dekh lein.`
+        : `I couldn't match "${query}". Please check the item name or view the menu.`;
     }
     if (pa(l)) return `"${query}" zmong menu ke nishta. Menu leedal ghwaaray?`;
     return ur(l)
-      ? `"${query}" hamare menu mein available nahi hai. Aap menu dekhna chahenge?`
-      : `"${query}" isn't on our menu. Would you like to view the menu?`;
+      ? `"${query}" ka match nahi mila. Naam dobara bhej dein ya menu dekh lein.`
+      : `I couldn't match "${query}". Please check the name or view the menu.`;
   },
 
   itemUnavailable(l: Lang, name: string): string {
@@ -408,11 +411,11 @@ export const reply = {
 
     if (orderType === "delivery") {
       if (pa(l)) {
-        return `✅ Order #${orderNumber} confirm sho!\n💰 Total: ${currency} ${total} (COD)\n🛵 Delivery: takreeban ${estDelivery} min\nManana! 🙏`;
+        return `✅ Order #${orderNumber} confirm sho!\n💰 Total: ${currency} ${total} (COD)\n🛵 Delivery: takreeban ${estDelivery} min\n📍 Da rider dapara WhatsApp ke khpal current location pin rawalegay.`;
       }
       return ur(l)
-        ? `✅ Order #${orderNumber} confirm ho gaya!\n💰 Total: ${currency} ${total} (COD)\n🛵 Delivery: takreeban ${estDelivery} min\nShukriya! 🙏`
-        : `✅ Order #${orderNumber} confirmed!\n💰 Total: ${currency} ${total} (Cash on Delivery)\n🛵 Estimated delivery: ~${estDelivery} mins\nThank you! 🙏`;
+        ? `✅ Order #${orderNumber} confirm ho gaya!\n💰 Total: ${currency} ${total} (COD)\n🛵 Delivery: takreeban ${estDelivery} min\n📍 Rider ki asani ke liye WhatsApp par apni current location ka pin bhej dein.`
+        : `✅ Order #${orderNumber} confirmed!\n💰 Total: ${currency} ${total} (Cash on Delivery)\n🛵 Estimated delivery: ~${estDelivery} mins\n📍 Please share your current location pin on WhatsApp to help the rider.`;
     }
 
     if (orderType === "pickup") {
@@ -475,8 +478,8 @@ export const reply = {
     }
     if (pa(l)) return "Poh na shom — thora wazahat sara ba owast?";
     return ur(l)
-      ? "Samajh nahi paya — thora aur wazahat se bata dein?"
-      : "I didn't quite catch that — could you rephrase?";
+      ? "Aap kya mangwana chahenge? Item ka naam aur quantity bhej dein, ya menu dekh lein."
+      : "What would you like to order? Send the item name and quantity, or view the menu.";
   },
 
   closed(l: Lang, opening: string): string {

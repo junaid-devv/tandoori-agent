@@ -27,6 +27,23 @@ for (const branch of branches) {
     verified++;
   }
   console.log(`PASS: branch catalog has ${catalog.length} priced items; every available full name resolves to its own SKU/price locally.`);
+  const paratha = catalog.find((item) => item.name === "Chicken Paratha" && item.category === "Paratha Roll");
+  if (paratha?.is_available) {
+    for (const query of ["chicken paratha roll", "chicken Partha roll", "چکن پراٹھا رول", "चिकन पराठा रोल"]) {
+      const result = await resolveItemDetailed(branch.id, query, null, catalog);
+      assert.equal(result.kind, "exact"); assert.equal(result.item.id, paratha.id); assert.equal(result.item.price, paratha.price);
+    }
+    console.log("PASS: the real Chicken Paratha SKU resolves typed, Urdu and voice-script roll requests.");
+  }
+  const kababish = catalog.filter((item) => /^Kababish Pizza /i.test(item.name) && item.is_available);
+  if (kababish.length) {
+    const result = await resolveItemDetailed(branch.id, "kababish pizza", null, catalog);
+    assert.equal(result.kind, "variants");
+    assert.deepEqual(result.variants.map((item) => item.id).sort(), kababish.map((item) => item.id).sort());
+    const mid = kababish.find((item) => / Mid$/i.test(item.name));
+    if (mid) assert.equal((await resolveItemDetailed(branch.id, "kababish pizza", "medium", catalog)).item.id, mid.id);
+    console.log(`PASS: Kababish Pizza retains all ${kababish.length} real sizes; Medium selects the Mid SKU.`);
+  }
   const fries = catalog.filter((item) => /\bfries\b/i.test(item.name));
   if (fries.length) {
     assert.deepEqual(catalogQuestionMatches("Fries hain?", catalog).map((item) => item.id).sort(), fries.map((item) => item.id).sort());

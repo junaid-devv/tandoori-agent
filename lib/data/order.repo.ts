@@ -131,6 +131,20 @@ export const orderRepo = {
     if (error) throw error;
   },
 
+  /** Add a rider pin without changing the reviewed address, fee or total.
+   * Compare the version read under the conversation lock to preserve staff edits. */
+  async saveDeliveryPin(order: OrderRow, pin: string): Promise<boolean> {
+    if (order.type !== "delivery" || !["received", "preparing", "out_for_delivery"].includes(order.status)) return false;
+    if (order.customer_instructions?.includes(pin)) return true;
+    const { data, error } = await supabaseAdmin.from("orders").update({
+      customer_instructions: [order.customer_instructions, `Delivery location: ${pin}`].filter(Boolean).join("\n"),
+      updated_at: new Date().toISOString(),
+    }).eq("id", order.id).eq("conversation_id", order.conversation_id).eq("branch_id", order.branch_id)
+      .eq("updated_at", order.updated_at).in("status", ["received", "preparing", "out_for_delivery"]).select("id").maybeSingle();
+    if (error) throw error;
+    return Boolean(data);
+  },
+
   async cancelOrder(id: string): Promise<boolean> {
     const now = new Date().toISOString();
     const { data, error } = await supabaseAdmin
