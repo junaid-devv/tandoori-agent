@@ -1,3 +1,4 @@
+import { validateDeliveryZones, type DeliveryZone } from "./delivery-pricing";
 import { invalidateCache } from "./cache";
 import { cache } from "./core/cache";
 import { getRestaurantProfile, getRestaurantProfileForBranch } from "./restaurant-profile";
@@ -19,6 +20,8 @@ export interface RestaurantSettings {
   min_delivery_amount: number;
   delivery_enabled: boolean;
   delivery_fee: number;
+  delivery_pricing_mode?: "flat" | "area";
+  delivery_zones?: DeliveryZone[];
   delivery_areas: string[];
   estimated_prep_minutes: number;
   estimated_delivery_minutes: number;
@@ -36,6 +39,8 @@ const DEFAULT_SETTINGS = {
   min_delivery_amount: 0,
   delivery_enabled: false,
   delivery_fee: 0,
+  delivery_pricing_mode: "flat" as const,
+  delivery_zones: [] as DeliveryZone[],
   delivery_areas: [] as string[],
   estimated_prep_minutes: 30,
   estimated_delivery_minutes: 45,
@@ -83,6 +88,15 @@ export function validateRestaurantSettingsInput(settings: Partial<RestaurantSett
       throw new Error("Delivery fee must be a non-negative number.");
     }
     normalized.delivery_fee = deliveryFee;
+  }
+
+  if (settings.delivery_pricing_mode !== undefined) {
+    if (!["flat", "area"].includes(settings.delivery_pricing_mode)) throw new Error("Delivery pricing mode must be flat or area.");
+    normalized.delivery_pricing_mode = settings.delivery_pricing_mode;
+  }
+  if (settings.delivery_zones !== undefined) normalized.delivery_zones = validateDeliveryZones(settings.delivery_zones);
+  if (settings.delivery_pricing_mode === "area" && normalized.delivery_zones?.length === 0) {
+    throw new Error("Area pricing must include at least one delivery area.");
   }
 
   if (settings.min_delivery_amount !== undefined) {
@@ -208,6 +222,8 @@ export async function getRestaurantSettings(branchId: string): Promise<Restauran
     min_delivery_amount: Number(data.min_delivery_amount ?? 0),
     delivery_enabled: Boolean(data.delivery_enabled),
     delivery_fee: Number(data.delivery_fee ?? 0),
+    delivery_pricing_mode: data.delivery_pricing_mode === "area" ? "area" : "flat",
+    delivery_zones: Array.isArray(data.delivery_zones) ? data.delivery_zones : [],
     delivery_areas: normalizeDeliveryAreas(data.delivery_areas),
     estimated_prep_minutes: normalizeEstimate(data.estimated_prep_minutes, defaultSettings.estimated_prep_minutes),
     estimated_delivery_minutes: normalizeEstimate(data.estimated_delivery_minutes, defaultSettings.estimated_delivery_minutes),
@@ -237,13 +253,17 @@ export async function updateRestaurantSettings(branchId: string, settings: Parti
   const defaultSettings = await getDefaultSettings(undefined, branchId);
   const { data: existing, error: existingError } = await supabaseAdmin
     .from("restaurant_settings")
-    .select("id")
+    .select("id, delivery_pricing_mode, delivery_zones")
     .eq("branch_id", branchId)
     .maybeSingle();
 
   if (existingError) {
     console.error("[updateRestaurantSettings] Lookup failed:", existingError);
     throw new Error("Failed to update settings");
+  }
+
+  if ((validated.delivery_pricing_mode ?? existing?.delivery_pricing_mode) === "area" && !(validated.delivery_zones ?? existing?.delivery_zones ?? []).length) {
+    throw new Error("Area pricing must include at least one delivery area.");
   }
 
   const operation = existing

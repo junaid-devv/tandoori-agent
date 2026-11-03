@@ -1,5 +1,6 @@
 "use client";
 
+import type { DeliveryZone } from "@/lib/delivery-pricing";
 import { useEffect, useMemo, useState, useCallback } from "react";
 import Link from "next/link";
 import {
@@ -36,6 +37,8 @@ type SettingsState = {
   closing_time: string;
   delivery_enabled: boolean;
   delivery_fee: number;
+  delivery_pricing_mode: "flat" | "area";
+  delivery_zones: DeliveryZone[];
   min_delivery_amount: number;
   delivery_areas: string[];
   estimated_prep_minutes: number;
@@ -149,6 +152,8 @@ export default function SettingsPage() {
     closing_time: "11:00 PM",
     delivery_enabled: false,
     delivery_fee: 0,
+    delivery_pricing_mode: "flat",
+    delivery_zones: [],
     min_delivery_amount: 0,
     delivery_areas: [],
     estimated_prep_minutes: 30,
@@ -204,7 +209,7 @@ export default function SettingsPage() {
       const response = await fetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
+        body: JSON.stringify({ ...settings, delivery_zones: settings.delivery_pricing_mode === "area" ? settings.delivery_zones : undefined }),
       });
 
       if (!response.ok) {
@@ -469,20 +474,63 @@ export default function SettingsPage() {
             </button>
           </div>
 
+          <div className="space-y-2">
+            <label htmlFor="delivery-pricing-mode" className="ui-label">Delivery pricing</label>
+            <select id="delivery-pricing-mode" value={settings.delivery_pricing_mode}
+              onChange={e => setSettings(curr => ({ ...curr, delivery_pricing_mode: e.target.value as "flat" | "area" }))}
+              className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm">
+              <option value="flat">Flat fee — same charge for all served areas</option>
+              <option value="area">By area — different charges for each location</option>
+            </select>
+          </div>
+          {settings.delivery_pricing_mode === "area" && (
+            <div className="space-y-3 rounded-xl border border-slate-200 p-4">
+              <h3 className="ui-section-title">Area delivery charges</h3>
+              <p className="text-xs text-slate-500">Only the areas listed here are served. Add alternate spellings when needed. Customers must confirm a single matching area before checkout. Set a charge to 0 for free delivery.</p>
+              {settings.delivery_zones.map((zone, index) => (
+                <div key={index} className="grid gap-3 rounded-lg bg-slate-50 p-3 sm:grid-cols-[1fr_110px_auto]">
+                  <div className="min-w-0 space-y-1">
+                    <label htmlFor={`zone-name-${index}`} className="ui-label">Area name</label>
+                    <input id={`zone-name-${index}`} value={zone.name} maxLength={100} placeholder="e.g. Hayatabad Phase 1"
+                      onChange={e => setSettings(curr => ({ ...curr, delivery_zones: curr.delivery_zones.map((z, i) => i === index ? { ...z, name: e.target.value } : z) }))}
+                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs" />
+                  </div>
+                  <div className="space-y-1">
+                    <label htmlFor={`zone-fee-${index}`} className="ui-label">Charge (Rs.)</label>
+                    <input id={`zone-fee-${index}`} type="number" min={0} max={100000} step="0.01" value={zone.fee}
+                      onChange={e => setSettings(curr => ({ ...curr, delivery_zones: curr.delivery_zones.map((z, i) => i === index ? { ...z, fee: Number(e.target.value) } : z) }))}
+                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs" />
+                  </div>
+                  <button type="button" aria-label={`Remove area ${index + 1}`} onClick={() => setSettings(curr => ({ ...curr, delivery_zones: curr.delivery_zones.filter((_, i) => i !== index) }))}
+                    className="ui-button self-end text-red-600"><Trash2 size={14} /></button>
+                  <div className="space-y-1 sm:col-span-3">
+                    <label htmlFor={`zone-aliases-${index}`} className="ui-label">Alternate spellings (separate with commas)</label>
+                    <input id={`zone-aliases-${index}`} value={zone.aliases.join(",")}
+                      placeholder="e.g. University Twn, یونیورسٹی ٹاؤن"
+                      onChange={e => setSettings(curr => ({ ...curr, delivery_zones: curr.delivery_zones.map((z, i) => i === index ? { ...z, aliases: e.target.value.split(",") } : z) }))}
+                      className="w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs" />
+                  </div>
+                </div>
+              ))}
+              <button type="button" className="ui-button" disabled={settings.delivery_zones.length >= 40}
+                onClick={() => setSettings(curr => ({ ...curr, delivery_zones: [...curr.delivery_zones, { name: "", fee: curr.delivery_fee, aliases: [] }] }))}>+ Add delivery area</button>
+            </div>
+          )}
           {/* Pricing & Minimums */}
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
-              <label htmlFor="settings-field-2" className="ui-label">Delivery Fee (Rs.)</label>
+              <label htmlFor="settings-field-2" className="ui-label">{settings.delivery_pricing_mode === "area" ? "Saved flat fee (Rs.)" : "Delivery Fee (Rs.)"}</label>
               <input id="settings-field-2"
                 type="number"
                 min={0}
                 step={50}
+                disabled={settings.delivery_pricing_mode === "area"}
                 value={settings.delivery_fee}
                 onChange={(e) => setSettings((curr) => ({ ...curr, delivery_fee: Math.max(0, Number(e.target.value) || 0) }))}
                 className="w-full rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-bold text-slate-900 outline-none focus:border-brand"
                 placeholder="0 for Free Delivery"
               />
-              <p className="text-[11px] text-slate-400">Set 0 for free delivery</p>
+              <p className="text-[11px] text-slate-400">{settings.delivery_pricing_mode === "area" ? "Used only when flat fee pricing is selected" : "Set 0 for free delivery"}</p>
             </div>
 
             <div className="rounded-xl border border-slate-200/70 bg-slate-50/40 p-4 space-y-1.5">
@@ -501,7 +549,7 @@ export default function SettingsPage() {
           </div>
 
           {/* Delivery Area Restrictions */}
-          <div className="border-t border-slate-100 pt-3 space-y-2">
+          {settings.delivery_pricing_mode === "flat" && <div className="border-t border-slate-100 pt-3 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <p className="text-xs font-semibold text-slate-700">Delivery Areas</p>
@@ -598,7 +646,7 @@ export default function SettingsPage() {
                 })}
               </div>
             </div>
-          </div>
+          </div>}
         </div>
       )}
 

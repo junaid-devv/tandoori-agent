@@ -116,7 +116,7 @@ npm run check:production-readiness
 
 ## Production Deployment Notes
 
-- Apply the baseline `migrations.sql` and the ordered files in `supabase/migrations/` before routing live WhatsApp traffic. Both `20261025124633_restaurant_order_integrity.sql` and `20261026124645_restaurant_agent_reply_recovery.sql` are required before deploying this version. `/api/health` checks both migration versions and that ordering branches have priced catalogs.
+- Apply the baseline `migrations.sql` and the ordered files in `supabase/migrations/` before routing live WhatsApp traffic. `20261025124633_restaurant_order_integrity.sql`, `20261026124645_restaurant_agent_reply_recovery.sql`, and `20261103110240_area_delivery_pricing.sql` are required before deploying this version. `/api/health` checks all three migration versions and that ordering branches have priced catalogs.
 - Keep `WHATSAPP_ALLOW_UNSIGNED_FLOW_ENDPOINT=false` in production.
 - Keep `WEBHOOK_STORE_RAW_BODY=false` and `WEBHOOK_RETAIN_PROCESSED_PAYLOAD=false` unless temporarily debugging an incident.
 - Operational reset is available to authenticated admins in all environments and requires the exact typed confirmation phrase.
@@ -186,3 +186,12 @@ npm run check:live-menu-catalog     # Read-only live catalog SKU/price resolutio
 The first four checks never contact production services. The live NLU check uses AI credits and intentionally pauses between requests; it never accesses the database or sends WhatsApp messages. Set `LIVE_NLU_PAUSE_MS` to pace it for your provider quota; `LIVE_NLU_FILTER=incident` selects the latest screenshot cases. The live catalog check reads the configured database without writing any data or sending messages. `ORDER_AGENT_ANSWER_FALLBACK_MODEL` optionally selects a compatible free-form answer fallback; otherwise it uses the configured NLU fallback or the default Groq fallback, within the existing answer timeout.
 
 `ORDER_AGENT_NLU_MAX_TOKENS` controls the extraction/fallback allowance (default 1600). Groq primary requests default to at most 900 tokens; override with `ORDER_AGENT_NLU_PRIMARY_MAX_TOKENS` after verifying the account quota. A truncated or invalid primary extraction retries the fallback. `ORDER_AGENT_NLU_TIMEOUT_MS` bounds each attempt (default 6000), and `ORDER_AGENT_NLU_TOTAL_TIMEOUT_MS` bounds primary plus fallback together (default 10000). `ORDER_AGENT_ANSWER_TIMEOUT_MS` is the shared free-form answer budget per turn (default 6000). Named catalog questions and ordinary item resolution do not need a second model or an embedding request. Override `ORDER_AGENT_NLU_FALLBACK_MODEL` to select a compatible fallback. Groq uses its own endpoint; other credentials use `ORDER_AGENT_NLU_BASE_URL` when configured. Model and endpoint must belong to the selected provider. A Google AI key alone does not configure this agent's OpenAI-compatible client.
+
+
+## Area delivery pricing
+
+Apply `supabase/migrations/20261103110240_area_delivery_pricing.sql` after the existing ordered migrations, before deploying the new app. Health checks verify the new columns and pricing function version. Existing branches keep their flat fee.
+
+In **Dashboard → Settings → Delivery**, choose **By area**, then add each area, its charge, and optional alternate spellings (comma-separated). A zero charge means free delivery for that area. Only listed areas are served in this mode; the old flat-fee coverage list is used only in Flat fee mode. Avoid overlapping area definitions: an address matching multiple zones requires clarification.
+
+The assistant shows the matched charge and total before confirmation. The database independently resolves and checks that price against the reviewed quote. A changed charge requires a new review. Each order stores its own delivery fee, so later settings edits leave historical totals intact.

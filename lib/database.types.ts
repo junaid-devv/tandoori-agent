@@ -278,6 +278,8 @@ export interface Database {
           min_delivery_amount: number;
           delivery_enabled: boolean;
           delivery_fee: number;
+          delivery_pricing_mode: "flat" | "area";
+          delivery_zones: Json;
           delivery_areas: Json;
           estimated_prep_minutes: number;
           estimated_delivery_minutes: number;
@@ -296,6 +298,8 @@ export interface Database {
           min_delivery_amount?: number;
           delivery_enabled?: boolean;
           delivery_fee?: number;
+          delivery_pricing_mode?: "flat" | "area";
+          delivery_zones?: Json;
           delivery_areas?: Json;
           estimated_prep_minutes?: number;
           estimated_delivery_minutes?: number;
@@ -403,6 +407,7 @@ export interface Database {
           upsell_offered: boolean;
           declined_upsells: Json;
           summary_sent_at: string | null;
+          delivery_fee_quote: number | null;
           last_user_whatsapp_msg_id: string | null;
           last_processed_user_message_id: string | null;
           last_processed_message_seq: number | null;
@@ -435,6 +440,7 @@ export interface Database {
           upsell_offered?: boolean;
           declined_upsells?: Json;
           summary_sent_at?: string | null;
+          delivery_fee_quote?: number | null;
           last_user_whatsapp_msg_id?: string | null;
           last_processed_user_message_id?: string | null;
           last_processed_message_seq?: number | null;

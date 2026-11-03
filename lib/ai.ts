@@ -1,3 +1,5 @@
+import { deliveryFeeInfo } from "./delivery-pricing";
+import { deliveryAreaNames } from "./agent/delivery";
 import OpenAI from "openai";
 import { z } from "zod";
 import type { BranchSummary } from "./branches";
@@ -332,7 +334,7 @@ function buildSupportPrompt(
   const city = settings.city?.trim() || "";
   const phone = settings.phone_delivery?.trim() || "our support line";
   const aiPersonality = settings.ai_personality?.trim() || "Warm & Professional";
-  const deliveryAreas = settings.delivery_areas.length > 0 ? settings.delivery_areas.join(", ") : "not restricted in settings";
+  const deliveryAreas = deliveryAreaNames(settings).length > 0 ? deliveryAreaNames(settings).join(", ") : "not restricted in settings";
   const languageInstruction =
     preferredLanguage === "pashto"
       ? "Reply only in natural Roman Pashto written in English letters (e.g. 'Za ghwaarom', 'Manana', 'Dera manana'). The customer may write in Pashto script (پښتو) or Roman Pashto — understand both and always reply in Roman Pashto that a Pashtun WhatsApp user would easily read."
@@ -350,6 +352,7 @@ function buildSupportPrompt(
     `Support phone: ${phone}.`,
     `Delivery enabled: ${settings.delivery_enabled ? "yes" : "no"}.`,
     `Delivery areas: ${deliveryAreas}.`,
+    deliveryFeeInfo(settings, "Rs."),
     `Minimum delivery amount: Rs. ${Number(settings.min_delivery_amount) || 0}.`,
     `Estimated prep time: ${Number(settings.estimated_prep_minutes) || 30} minutes.`,
     `Estimated delivery time: ${Number(settings.estimated_delivery_minutes) || 45} minutes.`,

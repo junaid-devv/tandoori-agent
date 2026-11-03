@@ -5,6 +5,7 @@
  * No IO, no side effects. Used by the executor and checked by
  * check-operational-regressions.
  */
+import { resolveDeliveryQuote } from "../delivery-pricing.ts";
 import { normalizeText } from "../order-text-utils.ts";
 import type { RestaurantSettings } from "../settings.ts";
 import type { LanguagePreference, OrderType } from "../schema.types.ts";
@@ -20,7 +21,16 @@ export function isCompleteDeliveryAddress(address: string | null | undefined): b
     || /(?:گھر|مکان|گلی|فلیٹ|دکان|گیٹ|قریب|سامنے)/u.test(address);
 }
 
+export function deliveryAreaNames(settings: RestaurantSettings): string[] {
+  return settings.delivery_pricing_mode === "area" ? (settings.delivery_zones ?? []).map(z => z.name) : settings.delivery_areas ?? [];
+}
+
+export function hasDeliveryRestrictions(settings: RestaurantSettings): boolean {
+  return settings.delivery_pricing_mode === "area" || Boolean(settings.delivery_areas?.length);
+}
+
 function buildDeliveryAreasList(settings: RestaurantSettings): string {
+  settings = { ...settings, delivery_areas: deliveryAreaNames(settings) };
   if (!Array.isArray(settings.delivery_areas) || settings.delivery_areas.length === 0) return "";
   const visibleAreas = settings.delivery_areas.map((area) => area.trim()).filter(Boolean).slice(0, 10);
   if (visibleAreas.length === 0) return "";
@@ -35,6 +45,10 @@ export function buildDeliveryAreaHint(settings: RestaurantSettings, _langOrRoman
 }
 
 export function findMatchingDeliveryArea(address: string, settings: RestaurantSettings): string | null {
+  if (settings.delivery_pricing_mode === "area") {
+    const quote = resolveDeliveryQuote(address, settings);
+    return quote.status === "matched" ? quote.area : null;
+  }
   const normalizedAddress = normalizeText(address);
   if (!normalizedAddress) return null;
 

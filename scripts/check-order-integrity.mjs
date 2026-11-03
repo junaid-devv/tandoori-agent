@@ -34,18 +34,19 @@ try {
   await db.exec(schema.slice(stateStart, schema.indexOf("\n);", stateStart) + 3));
   await db.exec(fs.readFileSync(migrationPath, "utf8"));
   await db.exec(fs.readFileSync("supabase/migrations/20261026124645_restaurant_agent_reply_recovery.sql", "utf8"));
+  await db.exec(fs.readFileSync("supabase/migrations/20261103110240_area_delivery_pricing.sql", "utf8"));
   pass("migration creates functions and deferred trigger in PostgreSQL");
   await db.query("insert into conversations values ($1,$2)", [conversation, branch]);
   await db.query("insert into restaurant_settings(branch_id) values ($1),($2)", [branch, otherBranch]);
   await db.query("insert into menu_items(id,branch_id,name,price) values ($1,$2,'Plain Naan',50)", [menuId, branch]);
   const reset = async () => {
-    await db.exec("truncate order_items, orders; delete from conversation_states; update menu_items set price=50,is_available=true,available_days='[]',available_start_time=null,available_end_time=null; update restaurant_settings set is_accepting_orders=true,delivery_enabled=true,delivery_fee=100,min_delivery_amount=0,delivery_areas='[]';");
+    await db.exec("truncate order_items, orders; delete from conversation_states; update menu_items set price=50,is_available=true,available_days='[]',available_start_time=null,available_end_time=null; update restaurant_settings set is_accepting_orders=true,delivery_enabled=true,delivery_fee=100,min_delivery_amount=0,delivery_areas='[]',delivery_pricing_mode='flat',delivery_zones='[]';");
     await db.query(`insert into conversation_states(conversation_id,stage,summary_sent_at,cart,order_type,address)
       values ($1,'confirming',now(),$2::jsonb,'delivery','House 12 Street 4 Gulberg')`, [conversation, JSON.stringify(items.map(({ item_instructions, ...i }) => ({ ...i, notes: item_instructions })))]);
   };
-  const place = async ({ source = "wamid.test", targetBranch = branch, payload = items, type = "delivery", address = "House 12 Street 4 Gulberg", pickupTime = null, guests = null, reservationTime = null } = {}) =>
-    db.query("select * from place_order_from_payload($1::uuid,$2::uuid,$3::text,$4::text,$5::jsonb,null,$6::text,$7::integer,$8::timestamptz,$9::timestamptz,999::numeric)",
-      [conversation, targetBranch, source, type, JSON.stringify(payload), address, guests, reservationTime, pickupTime]);
+  const place = async ({ source = "wamid.test", targetBranch = branch, payload = items, type = "delivery", address = "House 12 Street 4 Gulberg", pickupTime = null, guests = null, reservationTime = null, quotedFee = 999 } = {}) =>
+    db.query("select * from place_order_from_payload($1::uuid,$2::uuid,$3::text,$4::text,$5::jsonb,null,$6::text,$7::integer,$8::timestamptz,$9::timestamptz,$10::numeric)",
+      [conversation, targetBranch, source, type, JSON.stringify(payload), address, guests, reservationTime, pickupTime, quotedFee]);
   const count = async () => Number((await db.query("select count(*)::integer n from orders")).rows[0].n);
   const rollsBack = async (name, setup, options = {}) => {
     await reset(); if (setup) await setup();
@@ -140,5 +141,52 @@ try {
   await db.exec("set role anon");
   try { await assert.rejects(() => claim(), /permission denied/); } finally { await db.exec("reset role"); }
   pass("anonymous clients cannot claim or overwrite privileged replies");
+  // Exercise area prices through the real RPC and deferred trigger.
+  const zones = [{ name: "Gulberg", fee: 175, aliases: ["Gulbrg", "گلبرگ"] },
+    { name: "DHA Phase 1", fee: 0, aliases: [] }, { name: "DHA Phase 6", fee: 250, aliases: [] }];
+  const configureAreas = async (configured = zones) => {
+    await db.query("update restaurant_settings set delivery_pricing_mode='area', delivery_zones=$1 where branch_id=$2", [JSON.stringify(configured), branch]);
+    await db.exec("update conversation_states set delivery_fee_quote=175");
+  };
+  await reset(); await configureAreas();
+  const areaOrder = await place({ quotedFee: 175 });
+  const saved = (await db.query("select delivery_fee,total from orders where id=$1", [areaOrder.rows[0].id])).rows[0];
+  assert.deepEqual(saved, { delivery_fee: "175", total: "275" });
+  pass("area fee overrides flat fee and is stored in the order total");
+  await db.query("update restaurant_settings set delivery_zones=$1 where branch_id=$2", [JSON.stringify([{ ...zones[0], fee: 225 }]), branch]);
+  assert.equal((await db.query("select delivery_fee from orders")).rows[0].delivery_fee, "175");
+  pass("later area price changes do not alter existing orders");
+  await reset(); await configureAreas();
+  for (const [address, fee] of [["House 12 Gulbrg", 175], ["House 12 گلبرگ", 175], ["House 12 DHA Phase 1", 0]]) {
+    assert.equal((await db.query("select restaurant_delivery_quote($1,$2) fee", [branch, address])).rows[0].fee, String(fee));
+  }
+  assert.equal((await db.query("select restaurant_delivery_quote($1,'House 12 Gulberg') fee", [otherBranch])).rows[0].fee, "100");
+  pass("aliases, Urdu area names, free zones and branch isolation resolve correctly");
+  await rollsBack("unknown areas never fall back to the flat fee", configureAreas, { address: "House 12 Unserved Town", quotedFee: 175 });
+  await rollsBack("ambiguous areas cannot be charged", configureAreas, { address: "House 12 Gulberg DHA Phase 6", quotedFee: 175 });
+  await rollsBack("phase 10 cannot match phase 1", configureAreas, { address: "House 12 DHA Phase 10", quotedFee: 0 });
+  await rollsBack("forged caller fee cannot bypass area pricing", configureAreas, { quotedFee: 1 });
+  await rollsBack("changed area fee requires renewed review", async () => {
+    await configureAreas([{ ...zones[0], fee: 225 }]);
+  }, { quotedFee: 225 });
+  await rollsBack("an old summary without a stored area quote cannot authorize an order", async () => {
+    await configureAreas(); await db.exec("update conversation_states set delivery_fee_quote=null");
+  }, { quotedFee: 175 });
+  await reset(); await configureAreas();
+  await db.exec("update conversation_states set address='House 12 DHA Phase 1',delivery_fee_quote=0");
+  await place({ address: "House 12 DHA Phase 1", quotedFee: 0 });
+  assert.equal((await db.query("select delivery_fee from orders")).rows[0].delivery_fee, "0");
+  pass("free area orders pass finalization with a zero fee");
+  await reset();
+  for (const invalid of [[], [{ name: "Town", fee: -1, aliases: [] }], [{ name: "Town", fee: 1.234, aliases: [] }],
+    [{ name: "Town", fee: 1, aliases: ["Town"] }], [{ name: "Town", fee: "10", aliases: [] }]]) {
+    await assert.rejects(() => db.query("update restaurant_settings set delivery_pricing_mode='area', delivery_zones=$1 where branch_id=$2", [JSON.stringify(invalid), branch]));
+  }
+  pass("database rejects empty area mode, negative or malformed fees and duplicate aliases");
+  const persistMessage = "44444444-4444-4444-8444-444444444499";
+  await db.query("insert into messages(id,conversation_id,role) values ($1,$2,'user')", [persistMessage, conversation]);
+  await commit(persistMessage, { summary_sent_at: new Date().toISOString(), delivery_fee_quote: 175 });
+  assert.equal((await db.query("select delivery_fee_quote from conversation_states")).rows[0].delivery_fee_quote, "175");
+  pass("atomic inbound commit persists the reviewed delivery quote");
   console.log(`\nORDER INTEGRITY: ${checks} PostgreSQL checks passed.`);
 } finally { await db.close(); }

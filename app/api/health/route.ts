@@ -52,7 +52,7 @@ async function checkDatabaseShape(): Promise<HealthCheck> {
   const checks = await Promise.all([
     checkTableColumns("restaurant_profiles", "id, name, brand_color, branch_mode"),
     checkTableColumns("branches", "id, city, address"),
-    checkTableColumns("restaurant_settings", "branch_id, delivery_areas, estimated_prep_minutes, estimated_delivery_minutes"),
+    checkTableColumns("restaurant_settings", "branch_id, delivery_pricing_mode, delivery_zones, delivery_areas, estimated_prep_minutes, estimated_delivery_minutes"),
     checkTableColumns("messages", "id, whatsapp_msg_id, delivery_status, delivery_status_updated_at, delivery_error"),
     checkTableColumns("webhook_events", "id, status, payload, processed_at, processing_started_at, attempt_count, received_count"),
     checkTableColumns("rate_limits", "scope, identifier_hash, window_start, request_count, blocked_until"),
@@ -62,7 +62,7 @@ async function checkDatabaseShape(): Promise<HealthCheck> {
     checkTableColumns("conversations", "id, whatsapp_provider, whatsapp_phone_number_id, evolution_instance_name"),
     checkTableColumns("customer_addresses", "id, contact_id, branch_id, address_key, last_used_at"),
     checkTableColumns("menu_items", "id, available_days, available_start_time, available_end_time"),
-    checkTableColumns("conversation_states", "conversation_id, stage, cart, pending_clarification, summary_sent_at, processing_token"),
+    checkTableColumns("conversation_states", "conversation_id, stage, cart, pending_clarification, summary_sent_at, delivery_fee_quote, processing_token"),
   ]);
 
   const failed = checks.find((check) => !check.ok);
@@ -77,6 +77,8 @@ async function checkOrderIntegrity(): Promise<HealthCheck> {
   try {
     const { data, error } = await supabaseAdmin.rpc("restaurant_agent_integrity_version");
     if (error || data !== "20261025124633") return { ok: false, message: "restaurant order-integrity migration is required" };
+    const pricing = await supabaseAdmin.rpc("restaurant_delivery_pricing_version");
+    if (pricing.error || pricing.data !== "20261103110240") return { ok: false, message: "area delivery-pricing migration is required" };
     const reply = await supabaseAdmin.rpc("restaurant_agent_reply_version");
     return { ok: !reply.error && reply.data === "20261026124645", message: reply.error || reply.data !== "20261026124645" ? "restaurant reply-recovery migration is required" : undefined };
   } catch {

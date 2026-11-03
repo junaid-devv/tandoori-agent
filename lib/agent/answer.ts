@@ -1,3 +1,5 @@
+import { deliveryFeeInfo } from "../delivery-pricing";
+import { deliveryAreaNames } from "./delivery";
 /**
  * lib/agent/answer.ts — Grounded free-form answering
  *
@@ -85,8 +87,8 @@ function buildFacts(input: GroundedAnswerInput): string {
   lines.push(
     `DELIVERY: ${
       s.delivery_enabled
-        ? `available${s.delivery_areas.length ? ` in: ${s.delivery_areas.join(", ")}` : ""}` +
-          `${s.delivery_fee ? `; delivery fee ${cur} ${s.delivery_fee}` : "; no delivery fee"}` +
+        ? `available${deliveryAreaNames(s).length ? ` in: ${deliveryAreaNames(s).join(", ")}` : ""}` +
+          `; ${deliveryFeeInfo(s, cur)}` +
           `${s.min_delivery_amount ? `; minimum order ${cur} ${s.min_delivery_amount}` : ""}` +
           `${s.estimated_delivery_minutes ? `; approx ${s.estimated_delivery_minutes} min` : ""}`
         : "NOT available (pickup / dine-in only)"

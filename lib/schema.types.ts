@@ -110,6 +110,7 @@ export interface ConversationStateRow {
   declined_upsells: string[];
 
   summary_sent_at: string | null;
+  delivery_fee_quote?: number | null;
   last_user_whatsapp_msg_id: string | null;
   last_processed_user_message_id: string | null;
   last_processed_message_seq: number | null;

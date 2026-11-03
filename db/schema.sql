@@ -98,6 +98,8 @@ create table restaurant_settings (
   min_delivery_amount numeric not null default 0,
   delivery_enabled boolean not null default false,
   delivery_fee numeric not null default 0,
+  delivery_pricing_mode text not null default 'flat',
+  delivery_zones jsonb not null default '[]'::jsonb,
   delivery_areas jsonb not null default '[]'::jsonb check (jsonb_typeof(delivery_areas) = 'array'),
   estimated_prep_minutes integer not null default 30 check (estimated_prep_minutes between 5 and 240),
   estimated_delivery_minutes integer not null default 45 check (estimated_delivery_minutes between 5 and 240),
@@ -284,6 +286,7 @@ create table conversation_states (
   declined_upsells jsonb not null default '[]'::jsonb check (jsonb_typeof(declined_upsells) = 'array'),
 
   -- idempotency / processing guard
+  delivery_fee_quote numeric,
   summary_sent_at timestamptz,
   last_user_whatsapp_msg_id text,
   last_processed_user_message_id text,

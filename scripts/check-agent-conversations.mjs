@@ -619,6 +619,85 @@ try {
     assert.match(result.replyText, /cancelled/); assert.ok(!result.replyText.includes("40"));
   });
   previousOrder = null;
+  await seedCaches();
+  const areaSettings = { ...settings, delivery_pricing_mode: "area", delivery_zones: [
+    { name: "Gulberg", fee: 175, aliases: ["Gulbrg"] }, { name: "DHA Phase 6", fee: 250, aliases: [] },
+    { name: "Model Town", fee: 0, aliases: [] }] };
+  await cache.set("settings:b", areaSettings, 600_000);
+  fresh("area-order");
+  result = await send("area-order", "2 naan delivery House 12 Gulbrg", u("add_items", {
+    intents: ["add_items", "set_order_type", "provide_address"], items: [mention("Plain Naan", 2)],
+    order_type: "delivery", address: "House 12 Gulbrg" }));
+  check("area alias resolves before review and the quote is persisted", () => {
+    assert.equal(result.stage, "confirming"); assert.match(result.replyText, /Delivery Fee: Rs. 175/);
+    assert.match(result.replyText, /Total: Rs. 275/); assert.equal(states.get("area-order").delivery_fee_quote, 175);
+  });
+  const beforeArea = placed.length;
+  await cache.set("settings:b", { ...areaSettings, delivery_zones: [{ ...areaSettings.delivery_zones[0], fee: 225 }, ...areaSettings.delivery_zones.slice(1)] }, 600_000);
+  result = await send("area-order", "confirm:yes");
+  check("a fee change after review shows the new total and requires another confirmation", () => {
+    assert.equal(placed.length, beforeArea); assert.match(result.replyText, /Total: Rs. 325/);
+    assert.equal(states.get("area-order").delivery_fee_quote, 225);
+  });
+  await send("area-order", "confirm:yes");
+  check("the second confirmation sends the reviewed area fee to placement", () => {
+    assert.equal(placed.length, beforeArea + 1); assert.equal(placed.at(-1).deliveryFee, 225);
+  });
+  await cache.set("settings:b", areaSettings, 600_000);
+  fresh("area-unknown");
+  result = await send("area-unknown", "2 naan delivery House 12 Unknown Town", u("add_items", {
+    intents: ["add_items", "set_order_type", "provide_address"], items: [mention("Plain Naan", 2)],
+    order_type: "delivery", address: "House 12 Unknown Town" }));
+  check("unserved area requests clarification and cannot show a confirmable total", () => {
+    assert.equal(states.get("area-unknown").summary_sent_at, null); assert.equal(states.get("area-unknown").address, null);
+    assert.match(result.replyText, /exact area/); assert.ok(!/Total:/.test(result.replyText));
+  });
+  fresh("area-ambiguous");
+  result = await send("area-ambiguous", "2 naan delivery House 12 Gulberg DHA Phase 6", u("add_items", {
+    intents: ["add_items", "set_order_type", "provide_address"], items: [mention("Plain Naan", 2)],
+    order_type: "delivery", address: "House 12 Gulberg DHA Phase 6" }));
+  check("multiple matching areas cannot silently choose the cheaper charge", () => {
+    assert.equal(states.get("area-ambiguous").summary_sent_at, null); assert.match(result.replyText, /exact area/);
+  });
+  fresh("area-info");
+  result = await send("area-info", "Delivery fee?", u("ask_delivery_info", { info_query: "delivery fee?" }));
+  check("delivery questions explain area prices instead of advertising the old flat fee", () => {
+    assert.match(result.replyText, /Gulberg: Rs. 175/); assert.match(result.replyText, /confirm your delivery area/);
+    assert.ok(!/Delivery is FREE|Delivery Fee: Rs. 100/.test(result.replyText));
+  });
+  fresh("area-free");
+  result = await send("area-free", "2 naan delivery House 12 Model Town", u("add_items", {
+    intents: ["add_items", "set_order_type", "provide_address"], items: [mention("Plain Naan", 2)],
+    order_type: "delivery", address: "House 12 Model Town" }));
+  check("a configured free area quotes a zero delivery charge", () => {
+    assert.match(result.replyText, /Delivery: Free/); assert.match(result.replyText, /Total: Rs. 100/);
+    assert.equal(states.get("area-free").delivery_fee_quote, 0);
+  });
+  fresh("area-saved", { stage: "building_cart", cart: [line("n", 2)], order_type: "delivery" });
+  savedAddresses.set("area-saved", { id: "saved-area", address: "House 14 Gulbrg", label: "Home", use_count: 1 });
+  result = await send("area-saved", "Use my saved address", u("use_saved_address"));
+  check("saved addresses receive the same area fee as newly entered addresses", () => {
+    assert.equal(states.get("area-saved").address, "House 14 Gulbrg");
+    assert.equal(states.get("area-saved").delivery_fee_quote, 175); assert.match(result.replyText, /Total: Rs. 275/);
+  });
+  result = await send("area-saved", "show my cart", u("show_cart"));
+  check("viewing a cart preserves the delivery-inclusive total label", () => {
+    assert.match(result.replyText, /💰 Total: Rs. 275/);
+  });
+  const { validateRestaurantSettingsInput } = await import("../lib/settings.ts");
+  const { resolveDeliveryQuote, areaMatches } = await import("../lib/delivery-pricing.ts");
+  check("settings validate and normalize area names, aliases and decimal fees", () => {
+    const valid = validateRestaurantSettingsInput({ delivery_pricing_mode: "area", delivery_zones: [{ name: " Town ", fee: 10.99, aliases: [" Twn ", ""] }] });
+    assert.deepEqual(valid.delivery_zones, [{ name: "Town", fee: 10.99, aliases: ["Twn"] }]);
+    for (const invalid of [[], [{ name: "Town", fee: -1, aliases: [] }], [{ name: "Town", fee: 1.234, aliases: [] }],
+      [{ name: "Town", fee: 1, aliases: ["Town"] }], [{ name: "Town", fee: "10", aliases: [] }]]) {
+      assert.throws(() => validateRestaurantSettingsInput({ delivery_pricing_mode: "area", delivery_zones: invalid }));
+    }
+    assert.equal(resolveDeliveryQuote("House 12 DHA Phase 60", areaSettings).status, "unserved");
+    assert.equal(areaMatches("House 12 DHA Phase 6", "DHA Phase 1-6"), true);
+    assert.equal(areaMatches("House 2 DHA Phase 9", "DHA Phase 1-6"), false);
+    assert.equal(areaMatches("House 1 گلبرگ", "گلبرگ"), true);
+  });
   console.log(`\nAGENT CONVERSATIONS: ${checks} checks passed; ${parserCalls} actual parser HTTP requests, ${placed.length} isolated test orders.`);
 } finally {
   await new Promise((resolve) => server.close(resolve));

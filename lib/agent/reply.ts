@@ -1,3 +1,4 @@
+import { resolveDeliveryQuote } from "../delivery-pricing";
 /**
  * lib/agent/reply.ts
  *
@@ -346,7 +347,12 @@ export const reply = {
 
     if (orderType === "delivery") {
       if (address?.trim()) lines.push(`📍 ${address.trim()}`);
-      const deliveryFee = settings && settings.delivery_enabled !== false ? Number(settings.delivery_fee) || 0 : 0;
+      const quote = settings ? resolveDeliveryQuote(address, settings) : null;
+      const deliveryFee = settings && settings.delivery_enabled !== false ? quote?.fee ?? null : 0;
+      if (deliveryFee === null) {
+        lines.push(`🛵 Delivery fee: pending area confirmation`, `Subtotal: ${currency} ${subtotal}`);
+        return lines.join("\n");
+      }
       const total = subtotal + deliveryFee;
 
       if (deliveryFee > 0) {

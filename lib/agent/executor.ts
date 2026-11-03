@@ -29,9 +29,10 @@ import {
   variantButtons,
   type InteractivePayload,
 } from "./interactive";
-import type { TurnContext } from "./context";
+import { invalidateSettingsContext, type TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
-import { findMatchingDeliveryArea, buildDeliveryAreaHint, isCompleteDeliveryAddress } from "./delivery";
+import { resolveDeliveryQuote, deliveryFeeInfo } from "@/lib/delivery-pricing";
+import { deliveryAreaNames, hasDeliveryRestrictions, findMatchingDeliveryArea, buildDeliveryAreaHint, isCompleteDeliveryAddress } from "./delivery";
 import { parseCustomerTimeToIso } from "@/lib/restaurant-time";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { isValidDeliveryAddress } from "@/lib/customer-crm";
@@ -170,6 +171,22 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       : "💵 We only accept *Cash on Delivery (COD)* at this time.";
   };
 
+  const deliveryAddressPrompt = (address?: string | null): string => {
+    if (ctx.settings.delivery_pricing_mode !== "area") return reply.deliveryAreaNotCovered(lang, deliveryAreaNames(ctx.settings));
+    const areas = deliveryAreaNames(ctx.settings).join(", ");
+    const status = resolveDeliveryQuote(address, ctx.settings).status;
+    const explanation = status === "unserved"
+      ? (lang === "roman_urdu" ? "Is area mein delivery available nahi hai. " : lang === "pashto" ? "Da area ke delivery nishta. " : "That area is not served. ")
+      : status === "ambiguous"
+      ? (lang === "roman_urdu" ? "Is address se aik se zyada areas match ho rahe hain. " : lang === "pashto" ? "Da address sara yaw na zyat areas match keegi. " : "That address matches more than one delivery area. ")
+      : "";
+    return explanation + (lang === "roman_urdu"
+      ? `📍 Delivery charges confirm karne ke liye apna exact area aur mukammal address bhejein. Supported areas: ${areas}. Ya Pickup choose karein.`
+      : lang === "pashto"
+      ? `📍 Da delivery fee dapara khpal exact area aw mukammal address rawalega. Areas: ${areas}. Ya Pickup select kra.`
+      : `📍 Please confirm your exact area and full address so we can determine the delivery fee. Supported areas: ${areas}. You can also choose Pickup.`);
+  };
+
   /** Deterministic delivery info answer — never calls LLM. */
   const deliveryInfoAnswer = (): string => {
     const s = ctx.settings;
@@ -185,22 +202,22 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     if (lang === "pashto") {
       parts.push("✅ Delivery shta");
       parts.push(`🕐 Delivery Wakht: ${s.opening_time} – ${s.closing_time}`);
-      if (s.delivery_areas.length) parts.push(`📍 Ilaqay: ${s.delivery_areas.join(", ")}`);
-      parts.push(s.delivery_fee === 0 ? "💰 Delivery Fee: FREE (Muft)" : `💰 Fee: ${cur} ${s.delivery_fee}`);
+      if (deliveryAreaNames(s).length) parts.push(`📍 Ilaqay: ${deliveryAreaNames(s).join(", ")}`);
+      parts.push(`💰 ${deliveryFeeInfo(s, cur, value("address"))}`);
       if (s.min_delivery_amount) parts.push(`🛒 Kam az kam order: ${cur} ${s.min_delivery_amount}`);
       if (s.estimated_delivery_minutes) parts.push(`⏱ Delivery Wakht: ~${s.estimated_delivery_minutes} min`);
     } else if (lang === "roman_urdu") {
       parts.push("✅ Delivery available hai");
       parts.push(`🕐 Delivery Timings: ${s.opening_time} – ${s.closing_time}`);
-      if (s.delivery_areas.length) parts.push(`📍 Areas: ${s.delivery_areas.join(", ")}`);
-      parts.push(s.delivery_fee === 0 ? "💰 Delivery Fee: FREE" : `💰 Fee: ${cur} ${s.delivery_fee}`);
+      if (deliveryAreaNames(s).length) parts.push(`📍 Areas: ${deliveryAreaNames(s).join(", ")}`);
+      parts.push(`💰 ${deliveryFeeInfo(s, cur, value("address"))}`);
       if (s.min_delivery_amount) parts.push(`🛒 Min order: ${cur} ${s.min_delivery_amount}`);
       if (s.estimated_delivery_minutes) parts.push(`⏱ Delivery Time: ~${s.estimated_delivery_minutes} min`);
     } else {
       parts.push("✅ Delivery is available");
       parts.push(`🕐 Delivery Hours: ${s.opening_time} – ${s.closing_time}`);
-      if (s.delivery_areas.length) parts.push(`📍 Areas: ${s.delivery_areas.join(", ")}`);
-      parts.push(s.delivery_fee === 0 ? "💰 Delivery Fee: FREE" : `💰 Fee: ${cur} ${s.delivery_fee}`);
+      if (deliveryAreaNames(s).length) parts.push(`📍 Areas: ${deliveryAreaNames(s).join(", ")}`);
+      parts.push(`💰 ${deliveryFeeInfo(s, cur, value("address"))}`);
       if (s.min_delivery_amount) parts.push(`🛒 Min order: ${cur} ${s.min_delivery_amount}`);
       if (s.estimated_delivery_minutes) parts.push(`⏱ ETA: ~${s.estimated_delivery_minutes} min`);
     }
@@ -346,11 +363,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     }
     if (type === "delivery") {
       const address = value("address");
-      if (!isValidDeliveryAddress(address) || !isCompleteDeliveryAddress(address) || ctx.settings.delivery_areas?.length && !findMatchingDeliveryArea(address!, ctx.settings)) {
+      if (!isValidDeliveryAddress(address) || !isCompleteDeliveryAddress(address) || hasDeliveryRestrictions(ctx.settings) && !findMatchingDeliveryArea(address!, ctx.settings)) {
         patch.stage = "collecting_delivery";
         patch.address = null;
         patch.summary_sent_at = null;
-        const prompt = isCompleteDeliveryAddress(address) ? reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas) : reply.askAddress(lang);
+        const prompt = isCompleteDeliveryAddress(address) ? deliveryAddressPrompt(address) : reply.askAddress(lang);
         if (!replies.includes(prompt)) replies.push(prompt);
         return false;
       }
@@ -653,13 +670,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         }
         if (topics.fee) {
           answered = true;
-          replies.push(
-            lang === "pashto"
-              ? (ctx.settings.delivery_fee === 0 ? "💰 Delivery bilkul muft (free) da!" : `💰 Delivery Fee: ${cur} ${ctx.settings.delivery_fee}`)
-              : lang === "roman_urdu"
-              ? (ctx.settings.delivery_fee === 0 ? "💰 Delivery bilkul free hai!" : `💰 Delivery Fee: ${cur} ${ctx.settings.delivery_fee}`)
-              : (ctx.settings.delivery_fee === 0 ? "💰 Delivery is FREE!" : `💰 Delivery Fee: ${cur} ${ctx.settings.delivery_fee}`)
-          );
+          replies.push(`💰 ${deliveryFeeInfo(ctx.settings, cur, u.address ?? value("address") ?? queryStr)}`);
         }
         if (!answered) {
           replies.push(deliveryInfoAnswer());
@@ -878,8 +889,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               replies.push(reply.askAddress(lang));
               patch.stage = "collecting_delivery";
               patch.address = null;
-            } else if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(savedRow.address, ctx.settings)) {
-              replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
+            } else if (hasDeliveryRestrictions(ctx.settings) && !findMatchingDeliveryArea(savedRow.address, ctx.settings)) {
+              replies.push(deliveryAddressPrompt(savedRow.address));
               patch.stage = "collecting_delivery";
               patch.address = null;
             } else {
@@ -900,8 +911,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             replies.push(reply.askAddress(lang));
             break;
           }
-          if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(address, ctx.settings)) {
-            replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
+          if (hasDeliveryRestrictions(ctx.settings) && !findMatchingDeliveryArea(address, ctx.settings)) {
+            replies.push(deliveryAddressPrompt(address));
             patch.stage = "collecting_delivery";
             patch.address = null;
           } else {
@@ -922,7 +933,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             u.notes === "fast_path_new_address_request"
           );
           const saved = !isNewAddressRequest && ctx.savedAddress && isValidDeliveryAddress(ctx.savedAddress.address) && isCompleteDeliveryAddress(ctx.savedAddress.address)
-            && (!ctx.settings.delivery_areas?.length || findMatchingDeliveryArea(ctx.savedAddress.address, ctx.settings)) ? ctx.savedAddress : null;
+            && (!hasDeliveryRestrictions(ctx.settings) || findMatchingDeliveryArea(ctx.savedAddress.address, ctx.settings)) ? ctx.savedAddress : null;
           if (saved) {
             replies.push(reply.askAddressWithSaved(lang, saved.label));
             setInteractive({
@@ -1016,6 +1027,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         if (!checkoutReady()) break;
         patch.stage = "confirming";
         patch.summary_sent_at = new Date().toISOString();
+        patch.delivery_fee_quote = value("order_type") === "delivery" ? resolveDeliveryQuote(value("address"), ctx.settings).fee : 0;
         replies.push(orderSummary());
         setInteractive(confirmButtons(lang));
         break;
@@ -1024,9 +1036,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       // ── Place order ──────────────────────────────────────────────────────
       case "place_order": {
         if (!checkoutReady()) break;
-        if (!value("summary_sent_at") || repriced || orderChanged) {
+        const feeNeedsReview = value("order_type") === "delivery"
+          && (ctx.settings.delivery_pricing_mode === "area" || value("delivery_fee_quote") != null)
+          && value("delivery_fee_quote") !== resolveDeliveryQuote(value("address"), ctx.settings).fee;
+        if (!value("summary_sent_at") || repriced || orderChanged || feeNeedsReview) {
           patch.stage = "confirming";
           patch.summary_sent_at = new Date().toISOString();
+          patch.delivery_fee_quote = value("order_type") === "delivery" ? resolveDeliveryQuote(value("address"), ctx.settings).fee : 0;
           replies.push(orderSummary());
           setInteractive(confirmButtons(lang));
           break;
@@ -1060,8 +1076,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             patch.stage = "collecting_delivery";
             break;
           }
-          if (ctx.settings.delivery_areas?.length > 0 && !findMatchingDeliveryArea(deliveryAddr, ctx.settings)) {
-            replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
+          if (hasDeliveryRestrictions(ctx.settings) && !findMatchingDeliveryArea(deliveryAddr, ctx.settings)) {
+            replies.push(deliveryAddressPrompt(deliveryAddr));
             patch.stage = "collecting_delivery";
             patch.address = null;
             break;
@@ -1078,7 +1094,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         try {
           const deliveryFee =
             orderType === "delivery" && ctx.settings.delivery_enabled !== false
-              ? Number(ctx.settings.delivery_fee) || 0
+              ? resolveDeliveryQuote(deliveryAddr, ctx.settings).fee ?? 0
               : 0;
 
           const pTime = value("pickup_time");
@@ -1158,8 +1174,14 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             patch.stage = "confirming";
             replies.push(reply.summary(lang, cart, orderType, cur, deliveryAddr ?? null, ctx.settings));
             setInteractive(cartActionButtons(lang));
+          } else if (/delivery fee changed/i.test(msg)) {
+            await invalidateSettingsContext(branchId);
+            patch.summary_sent_at = null;
+            patch.stage = "confirming";
+            replies.push("Delivery charges changed. Please review your order again before confirming.");
+            setInteractive(cartActionButtons(lang));
           } else if (/delivery.*area|outside.*area|area.*outside/i.test(msg)) {
-            replies.push(reply.deliveryAreaNotCovered(lang, ctx.settings.delivery_areas));
+            replies.push(deliveryAddressPrompt(deliveryAddr));
             patch.stage = "collecting_delivery";
             patch.address = null;
           } else if (/delivery.*not available|not.*available.*delivery/i.test(msg)) {
@@ -1368,6 +1390,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           } else if (cart.length && checkoutReady()) {
             patch.stage = "confirming";
             patch.summary_sent_at = new Date().toISOString();
+            patch.delivery_fee_quote = value("order_type") === "delivery" ? resolveDeliveryQuote(value("address"), ctx.settings).fee : 0;
             replies.push(orderSummary());
             setInteractive(confirmButtons(lang));
           }
@@ -1413,7 +1436,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
   // A scheduled review can fail validation. Acknowledge actual additions even
   // when checkout is blocked, and acknowledge resolved portions before choices.
-  if (addedInTurn.length && !placeOrder && !patch.summary_sent_at) finalReplies.unshift(reply.itemsAdded(lang, addedInTurn, cart, cur));
+  if (addedInTurn.length && !placeOrder && !patch.summary_sent_at) {
+    const acknowledgement = reply.itemsAdded(lang, addedInTurn, cart, cur);
+    finalReplies.unshift(ctx.settings.delivery_pricing_mode === "area" && value("order_type") === "delivery"
+      ? acknowledgement.replace(/\bTotal:/g, "Subtotal:") : acknowledgement);
+  }
+
+  if (patch.summary_sent_at === null) patch.delivery_fee_quote = null;
 
   // De-duplicate identical consecutive lines
   finalReplies = finalReplies.filter((line, idx, arr) => idx === 0 || line !== arr[idx - 1]);

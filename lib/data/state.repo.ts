@@ -40,6 +40,7 @@ function defaults(conversationId: string): ConversationStateRow {
     upsell_offered: false,
     declined_upsells: [],
     summary_sent_at: null,
+    delivery_fee_quote: null,
     last_user_whatsapp_msg_id: null,
     last_processed_user_message_id: null,
     last_processed_message_seq: null,
