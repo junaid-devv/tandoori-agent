@@ -522,7 +522,7 @@ export default function SettingsPage() {
                   value={settings.delivery_outside_area_per_km}
                   onChange={e => setSettings(curr => ({ ...curr, delivery_outside_area_per_km: Number(e.target.value) }))}
                   className="w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs" />
-                <p className="text-xs text-slate-500">Set 0 to serve only the fixed areas. With a rate, the agent collects other destinations and passes the request to staff to confirm the distance and final charge.</p>
+                <p className="text-xs text-slate-500">Set 0 to serve only the fixed areas. With a rate, the agent collects other destinations and stays active while staff confirm the distance and final charge in the chat.</p>
               </div>
             </div>
           )}

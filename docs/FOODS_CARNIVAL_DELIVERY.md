@@ -30,10 +30,12 @@ require clarification. Existing range labels retain their original behavior.
 
 Outside fixed-price zones, the agent advertises Rs 40 per km (kilometre) and asks
 for a full address or WhatsApp pin. Once supplied, the draft cart and destination
-are retained and the request is handed to staff to confirm the distance, quote
-the final delivery fee, and obtain customer approval. A location pin alone is not
+are retained and the bot stays active. Staff can see the conversation and reply
+directly to confirm the distance, final delivery fee and customer approval.
+There is no automatic human-mode switch or handoff alert for an outside-area quote.
+A location pin alone is not
 treated as a verified road distance, and the rate is never used as a flat fee.
-Deploy the updated application to activate this message and handoff flow.
+Deploy the updated application to activate this message and pending-quote flow.
 The rate is editable in Delivery settings; 0 disables the outside-area option.
 
 Choosing Delivery now asks only "Apna delivery address bhej dein." (or the short
@@ -66,9 +68,10 @@ npm run check:agent-conversations
 ```
 
 Verification completed: 175 TypeScript/PostgreSQL spelling and fee checks,
-43 PostgreSQL order-integrity checks and 120 agent-conversation checks, including
+43 PostgreSQL order-integrity checks and 122 agent-conversation checks, including
 outside-area information, full address, saved address, pin, pending-fee checkout,
-fixed-fee precedence and ambiguity behavior. TypeScript and targeted backend/script
+fixed-fee precedence, ambiguity behavior and continued bot replies/cart edits while
+an outside-area quote is pending. TypeScript and targeted backend/script
 ESLint checks passed. The settings page retains two existing React effect lint
 errors and two warnings, verified against HEAD; this change adds no lint findings.
 Live verification confirmed the 22 saved fees, removed zones and Rs 40/km setting,

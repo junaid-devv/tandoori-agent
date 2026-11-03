@@ -200,17 +200,15 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     patch.order_type = "delivery";
     patch.summary_sent_at = null;
     patch.delivery_fee_quote = null;
-    patch.stage = "human";
-    patch.is_bot_active = false;
-    patch.escalation_reason = "outside_area_delivery_quote";
-    patch.escalated_at = new Date().toISOString();
+    patch.stage = "collecting_delivery";
     outsideAreaQuoteRequested = true;
     interactive = null;
-    replies.push(outsideAreaDeliveryInfo(ctx.settings, cur, lang), lang === "roman_urdu"
-      ? "Aap ka address aur order request team ko de diya hai. Final delivery fee abhi confirm honi hai; order abhi place nahi hua."
+    const rate = outsideAreaDeliveryRate(ctx.settings);
+    replies.push(lang === "roman_urdu"
+      ? `📍 Address mil gaya. Is area ki delivery ${cur} ${rate} per km hai. Team distance aur final delivery charges yahin confirm kar degi. Order abhi place nahi hua.`
       : lang === "pashto"
-      ? "Staso address aw order request team ta warkar sho. Final delivery fee la na da confirm; order la na day place shway."
-      : "I've passed your destination and order request to our team. The final delivery fee is pending confirmation; your order has not been placed yet.");
+      ? `📍 Address milaw sho. Da area delivery ${cur} ${rate} per km da. Team ba distance aw final delivery fee dalta confirm kri. Order la na day place shway.`
+      : `📍 Destination received. Delivery to this area is ${cur} ${rate} per km. Our team will confirm the distance and final delivery charge here. Your order has not been placed yet.`);
     return true;
   };
 
@@ -1499,7 +1497,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     replyText: finalReplies.map((r) => r.trim()).filter(Boolean).join("\n\n") || reply.clarify(lang, "fallback"),
     statePatch: patch,
     placeOrder,
-    escalate: outsideAreaQuoteRequested,
+    escalate: false,
     usedSemanticSearch: usedSemantic,
     interactive,
     mediaUrls,

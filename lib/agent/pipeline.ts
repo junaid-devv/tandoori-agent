@@ -427,7 +427,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     address: exec.statePatch.address !== undefined ? exec.statePatch.address : ctx.state.address,
     placeOrder: exec.placeOrder,
     escalate: exec.escalate,
-    intent: exec.statePatch.escalation_reason === "outside_area_delivery_quote" ? "outside_area_delivery_quote" : understanding.primary_intent,
+    intent: understanding.primary_intent,
     usedSemanticSearch: exec.usedSemanticSearch,
     latencyMs,
     interactive: exec.interactive ?? null,

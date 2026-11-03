@@ -711,28 +711,49 @@ try {
   result = await send("outside-order", "2 naan delivery House 12 Unknown Town", u("add_items", {
     intents: ["add_items", "set_order_type", "provide_address"], items: [mention("Plain Naan", 2)],
     order_type: "delivery", address: "House 12 Unknown Town" }));
-  check("outside-area orders retain the cart and destination for staff without inventing a final fee", () => {
-    assert.equal(result.stage, "human"); assert.equal(result.escalate, true);
+  check("outside-area orders retain the cart and destination while the bot stays active", () => {
+    assert.equal(result.stage, "collecting_delivery"); assert.equal(result.escalate, false);
+    assert.equal(states.get("outside-order").is_bot_active, true);
     assert.equal(states.get("outside-order").address, "House 12 Unknown Town");
     assert.equal(states.get("outside-order").cart[0].qty, 2);
     assert.equal(states.get("outside-order").delivery_fee_quote, null);
     assert.equal(states.get("outside-order").summary_sent_at, null);
-    assert.equal(states.get("outside-order").escalation_reason, "outside_area_delivery_quote");
+    assert.equal(states.get("outside-order").escalation_reason, null);
+    assert.equal(states.get("outside-order").escalated_at, null);
     assert.equal(placed.length, beforeOutside); assert.equal(result.interactive, null);
     assert.match(result.replyText, /Rs\. 40 per km/); assert.match(result.replyText, /not been placed/);
     assert.ok(!/not served|not available|Total:/.test(result.replyText));
   });
+  result = await send("outside-order", "What are your opening hours?", u("ask_hours_or_location"));
+  check("the bot still answers questions while an outside-area delivery fee is pending", () => {
+    assert.equal(result.escalate, false); assert.notEqual(result.stage, "human");
+    assert.match(result.replyText, /Hours:/);
+    assert.equal(states.get("outside-order").is_bot_active, true);
+    assert.equal(states.get("outside-order").address, "House 12 Unknown Town");
+    assert.equal(states.get("outside-order").cart[0].qty, 2);
+  });
+  result = await send("outside-order", "add one more naan", u("add_items", {
+    items: [mention("Plain Naan", 1)], notes: "add_delta" }));
+  check("the customer can edit the outside-area cart without switching to human mode or placing an unpriced order", () => {
+    assert.equal(result.escalate, false); assert.notEqual(result.stage, "human");
+    assert.equal(states.get("outside-order").is_bot_active, true);
+    assert.equal(states.get("outside-order").address, "House 12 Unknown Town");
+    assert.equal(states.get("outside-order").cart[0].qty, 3);
+    assert.equal(placed.length, beforeOutside);
+    assert.equal(states.get("outside-order").delivery_fee_quote, null);
+  });
   fresh("outside-incomplete", { stage: "collecting_delivery", cart: [line()], order_type: "delivery" });
   result = await send("outside-incomplete", "Unknown Town", u("provide_address", { address: "Unknown Town" }));
-  check("an outside area alone asks for the full address or pin before handoff", () => {
+  check("an outside area alone asks for the full address or pin", () => {
     assert.equal(result.stage, "collecting_delivery"); assert.equal(result.escalate, false);
     assert.match(result.replyText, /Rs\. 40 per km/); assert.match(result.replyText, /full address/);
   });
   fresh("outside-pin", { stage: "collecting_delivery", cart: [line()], order_type: "delivery" });
   const beforePinParser = parserCalls;
   result = await send("outside-pin", "https://maps.google.com/?q=33.7,72.7");
-  check("a pre-order location pin reaches the distance-quote team without model extraction or order placement", () => {
-    assert.equal(result.stage, "human"); assert.equal(result.escalate, true);
+  check("a pre-order location pin is retained without switching to human mode or placing an order", () => {
+    assert.equal(result.stage, "collecting_delivery"); assert.equal(result.escalate, false);
+    assert.equal(states.get("outside-pin").is_bot_active, true);
     assert.equal(parserCalls, beforePinParser); assert.equal(placed.length, beforeOutside);
     assert.equal(states.get("outside-pin").address, "https://maps.google.com/?q=33.7,72.7");
     assert.equal(states.get("outside-pin").cart.length, 1);
@@ -741,13 +762,15 @@ try {
   savedAddresses.set("outside-saved", { id: "saved-outside", address: "House 14 Unknown Town", label: "Home", use_count: 1 });
   result = await send("outside-saved", "Use my saved address", u("use_saved_address"));
   check("saved outside-area addresses also retain the destination for a staff quote", () => {
-    assert.equal(result.stage, "human"); assert.equal(result.escalate, true);
+    assert.equal(result.stage, "collecting_delivery"); assert.equal(result.escalate, false);
+    assert.equal(states.get("outside-saved").is_bot_active, true);
     assert.equal(states.get("outside-saved").address, "House 14 Unknown Town");
   });
   fresh("outside-existing", { stage: "confirming", cart: [line()], order_type: "delivery", address: "House 14 Unknown Town" });
   result = await send("outside-existing", "confirm:yes");
   check("checkout cannot place an outside-area order before its distance fee is verified", () => {
-    assert.equal(result.stage, "human"); assert.equal(result.escalate, true);
+    assert.equal(result.stage, "collecting_delivery"); assert.equal(result.escalate, false);
+    assert.equal(states.get("outside-existing").is_bot_active, true);
     assert.equal(placed.length, beforeOutside); assert.equal(states.get("outside-existing").delivery_fee_quote, null);
   });
   fresh("outside-fixed");
