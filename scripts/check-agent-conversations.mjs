@@ -117,12 +117,12 @@ try {
   orderRepo.getById = async () => { if (failReceipt) throw new Error("receipt unavailable"); return { order_number: placed.length, total: 1234 }; };
   orderRepo.getLatestForConversation = async () => previousOrder;
   orderRepo.cancelOrder = async () => { cancellations++; return true; };
-  const send = async (id, text, understanding) => {
+  const send = async (id, text, understanding, channel = {}) => {
     response = understanding ?? null;
     const messageId = `m-${++sequence}`;
     histories.get(id).push({ id: messageId, role: "user", content: text });
     const result = await runTurn({ conversationId: id, branchId: "b", phone: "offline", messageText: text,
-      sourceUserMessageId: messageId, messageId, whatsappMessageId: messageId, appName: "Test Kitchen", currency: "Rs." });
+      sourceUserMessageId: messageId, messageId, whatsappMessageId: messageId, appName: "Test Kitchen", currency: "Rs.", ...channel });
     histories.get(id).push({ id: `a-${sequence}`, role: "assistant", content: result.replyText });
     return result;
   };
@@ -338,6 +338,21 @@ try {
   fresh("post-order", { stage: "placed" });
   result = await send("post-order", "change to pickup in 30 minutes", u("set_order_type", { order_type: "pickup", pickup_time: "in 30 minutes" }));
   check("changes to accepted orders are handed to staff for dispatch and fee coordination", () => assert.equal(result.escalate, true));
+  fresh("urdu-voice-handoff", { stage: "placed", preferred_language: "roman_urdu" });
+  result = await send("urdu-voice-handoff", "ایک مسالہ فرائز اور ایک فرینڈ فرائز۔", u("add_items", {
+    language: "pashto", wants_human: true, items: [mention("Masala Fries"), mention("French Fries")] }), { replyLanguage: "roman_urdu" });
+  check("the exact Urdu fries voice incident hands off in Roman Urdu despite a Pashto model classification", () => {
+    assert.equal(result.escalate, true);
+    assert.equal(states.get("urdu-voice-handoff").preferred_language, "roman_urdu");
+    assert.match(result.replyText, /staff.*connect|manager.*forward/);
+    assert.doesNotMatch(result.replyText, /Taso|kawom|darshi/);
+  });
+  fresh("urdu-channel-lock", { preferred_language: "pashto" });
+  result = await send("urdu-channel-lock", "2 naan", undefined, { replyLanguage: "roman_urdu" });
+  check("Urdu audio overrides a stale Pashto preference even on a direct catalog order", () => {
+    assert.equal(states.get("urdu-channel-lock").preferred_language, "roman_urdu");
+    assert.match(result.replyText, /add ho gay/);
+  });
 
   fresh("persist", { cart: [line()] });
   failPersistence = true;

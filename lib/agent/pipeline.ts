@@ -45,6 +45,8 @@ export interface RunTurnInput {
   branchId: string;
   phone: string;
   messageText: string;
+  /** Trusted channel language, e.g. Urdu audio must reply in Roman Urdu. */
+  replyLanguage?: TurnUnderstanding["language"];
   sourceUserMessageId: string;
   whatsappMessageId?: string | null;
   messageId?: string | null;
@@ -344,7 +346,9 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
 
   // A neutral dish name or service selection keeps the customer's language.
   // Models must not switch to English/Hindi because of a transcription artifact.
-  if (!/\b(?:reply|respond|speak|baat|jawab)\b.*\b(?:english|urdu|pashto)\b|\b(?:english|urdu|pashto)\b.*\b(?:please|mein|me|bolo|likho)\b/i.test(input.messageText)) {
+  if (input.replyLanguage) {
+    understanding.language = input.replyLanguage;
+  } else if (!/\b(?:reply|respond|speak|baat|jawab)\b.*\b(?:english|urdu|pashto)\b|\b(?:english|urdu|pashto)\b.*\b(?:please|mein|me|bolo|likho)\b/i.test(input.messageText)) {
     understanding.language = inferLanguagePreference(input.messageText, ctx.state.preferred_language);
   }
 

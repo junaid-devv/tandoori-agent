@@ -455,6 +455,7 @@ async function handleNonText(
             branchId: activeBranch.id,
             phone: message.from,
             messageText: transcript,
+            replyLanguage: "roman_urdu",
             sourceUserMessageId: message.id,
             whatsappMessageId: message.id,
             messageId: persistedMsg.id,

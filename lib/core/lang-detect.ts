@@ -174,11 +174,12 @@ export function containsUrduScript(text: string): boolean {
 /**
  * Detect if text contains Pashto-specific Unicode characters or distinct Pashto script words.
  * Pashto uses several characters not found in Arabic or Urdu:
- *   ځ (U+0681), څ (U+0685), ږ (U+0696), ټ (U+067C), ډ (U+0688),
+ *   ځ (U+0681), څ (U+0685), ږ (U+0696), ټ (U+067C), ډ (U+0689),
  *   ړ (U+0693), ښ (U+069A), ڼ (U+06BC), ۍ (U+06CD), ې (U+06D0)
  */
 export function containsPashtoScript(text: string): boolean {
-  if (/[\u0681\u0685\u0696\u067C\u0688\u0693\u069A\u06BC\u06CD\u06D0]/.test(text)) {
+  // Urdu ڈ is U+0688; Pashto ډ is U+0689. The Urdu letter proves nothing here.
+  if (/[\u0681\u0685\u0696\u067C\u0689\u0693\u069A\u06BC\u06CD\u06D0]/.test(text)) {
     return true;
   }
   return PASHTO_SCRIPT_WORDS.some((word) => text.includes(word));

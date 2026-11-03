@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import { normalizeText, stripVoiceNotePrefix } from "../lib/order-text-utils.ts";
-import { containsUrduScript, inferLanguagePreference } from "../lib/core/lang-detect.ts";
+import { containsUrduScript, containsPashtoScript, inferLanguagePreference } from "../lib/core/lang-detect.ts";
 
 const root = process.cwd();
 const langDetectTarget = path.join(root, "lib", "core", "lang-detect.ts");
@@ -41,6 +41,14 @@ function testNormalization() {
   assert.equal(inferLanguagePreference("ایک ہاف چکن کڑاہی کر دو"), "roman_urdu");
   assert.equal(inferLanguagePreference("kya haal hai bhai"), "roman_urdu");
   assert.equal(inferLanguagePreference("hello please deliver"), "english");
+  assert.equal(inferLanguagePreference("ایک مسالہ فرائز اور ایک فرینڈ فرائز۔", "roman_urdu"), "roman_urdu");
+  assert.equal(inferLanguagePreference("ٹماٹر اور ٹھنڈی بوتل", "english"), "roman_urdu");
+  assert.equal(inferLanguagePreference("ڈلیوری کر دیں", "english"), "roman_urdu");
+  assert.equal(inferLanguagePreference("څومره غواړم"), "pashto");
+  assert.equal(containsPashtoScript("ڈ"), false);
+  assert.equal(containsPashtoScript("ٹ"), false);
+  assert.equal(containsPashtoScript("ډ"), true);
+  assert.equal(containsPashtoScript("ټ"), true);
   pass("Urdu voice-note and script normalization functions verified.");
 }
 
