@@ -39,6 +39,7 @@ type SettingsState = {
   delivery_fee: number;
   delivery_pricing_mode: "flat" | "area";
   delivery_zones: DeliveryZone[];
+  delivery_outside_area_per_km: number;
   min_delivery_amount: number;
   delivery_areas: string[];
   estimated_prep_minutes: number;
@@ -154,6 +155,7 @@ export default function SettingsPage() {
     delivery_fee: 0,
     delivery_pricing_mode: "flat",
     delivery_zones: [],
+    delivery_outside_area_per_km: 0,
     min_delivery_amount: 0,
     delivery_areas: [],
     estimated_prep_minutes: 30,
@@ -486,7 +488,7 @@ export default function SettingsPage() {
           {settings.delivery_pricing_mode === "area" && (
             <div className="space-y-3 rounded-xl border border-slate-200 p-4">
               <h3 className="ui-section-title">Area delivery charges</h3>
-              <p className="text-xs text-slate-500">Only the areas listed here are served. Add alternate spellings when needed. Customers must confirm a single matching area before checkout. Set a charge to 0 for free delivery.</p>
+              <p className="text-xs text-slate-500">These areas have fixed delivery charges. Add alternate spellings when needed. Set a charge to 0 for free delivery.</p>
               {settings.delivery_zones.map((zone, index) => (
                 <div key={index} className="grid gap-3 rounded-lg bg-slate-50 p-3 sm:grid-cols-[1fr_110px_auto]">
                   <div className="min-w-0 space-y-1">
@@ -514,6 +516,14 @@ export default function SettingsPage() {
               ))}
               <button type="button" className="ui-button" disabled={settings.delivery_zones.length >= 40}
                 onClick={() => setSettings(curr => ({ ...curr, delivery_zones: [...curr.delivery_zones, { name: "", fee: curr.delivery_fee, aliases: [] }] }))}>+ Add delivery area</button>
+              <div className="space-y-1 border-t border-slate-200 pt-3">
+                <label htmlFor="outside-area-rate" className="ui-label">Other areas: delivery rate (Rs. per km)</label>
+                <input id="outside-area-rate" type="number" min={0} max={100000} step="0.01"
+                  value={settings.delivery_outside_area_per_km}
+                  onChange={e => setSettings(curr => ({ ...curr, delivery_outside_area_per_km: Number(e.target.value) }))}
+                  className="w-full rounded-md border border-slate-200 bg-white px-2 py-2 text-xs" />
+                <p className="text-xs text-slate-500">Set 0 to serve only the fixed areas. With a rate, the agent collects other destinations and passes the request to staff to confirm the distance and final charge.</p>
+              </div>
             </div>
           )}
           {/* Pricing & Minimums */}

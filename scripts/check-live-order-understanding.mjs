@@ -12,6 +12,8 @@ const deliveryHistory = [
 ];
 const fulfillment = { order_type: "delivery", address: "Sector A st 26", guests: null, reservation_time: null, pickup_time: null };
 const cases = [
+  { name: "Pakistan: Urdu voice wrap and paratha roll retain both portions", text: "ایک افغانی ریپ اور ایک چکن پراٹھا رول۔", language: "roman_urdu", menuHints: ["Afghani Wrap [Wraps]", "Chicken Paratha [Paratha Roll]"],
+    test: (u) => u.items.length === 2 && u.items.some((i) => /afghani.*wrap/i.test(i.query) && i.qty === 1) && u.items.some((i) => /chicken.*paratha/i.test(i.query) && i.qty === 1) && u.language === "roman_urdu" },
   { name: "Pakistan: Luqman voice transcription artifact is one corrected roll", text: "मैं पराठा रोल, चिकन पराठा रोल आदर करना चाहूँगा.", language: "roman_urdu",
     test: (u) => u.items.length === 1 && /chicken.*paratha.*roll/i.test(u.items[0].query) && u.items[0].qty === 1 && u.language === "roman_urdu" },
   { name: "Pakistan: Luqman typed correction does not copy Hindi wording or duplicate old food", text: "chicken Partha roll", language: "roman_urdu",
@@ -75,7 +77,7 @@ for (const [index, c] of selectedCases.entries()) {
   if (index) await new Promise((resolve) => setTimeout(resolve, Number(process.env.LIVE_NLU_PAUSE_MS) || 15_000));
   const started = Date.now();
   const u = await understandTurn({ conversationId: `synthetic-${index}`, messageText: c.text,
-    language: c.language ?? "english", stage: c.stage ?? "browsing", cart: c.cart ?? [], history: c.history ?? [], fulfillment: c.fulfillment, pendingItems: c.pendingItems });
+    language: c.language ?? "english", stage: c.stage ?? "browsing", cart: c.cart ?? [], history: c.history ?? [], fulfillment: c.fulfillment, pendingItems: c.pendingItems, menuHints: c.menuHints });
   const elapsed = Date.now() - started;
   times.push(elapsed);
   const passed = c.test(u);

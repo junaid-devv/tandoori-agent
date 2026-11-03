@@ -14,7 +14,7 @@ import { saveCustomerAddressFromOrder, updateCustomerOrderStats } from "@/lib/cu
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { createStaffAlert } from "./staff-alerts";
 import { getMenuCatalog } from "./menu";
-import { voiceTranscriptionOptions } from "./voice-transcription";
+import { transcribeUrduVoice, URDU_VOICE_FALLBACK, UrduVoiceTranscriptionError, type VoiceTranscriber } from "./voice-transcription";
 import { locationPinUrl } from "./location-pin";
 
 import {
@@ -340,8 +340,11 @@ async function handleNonText(
   if (message.type === "reaction") return;
 
   if (message.type === "audio" || message.type === "voice" || message.voice) {
-    const lang = stateLang(state);
-    const isRomanUrdu = lang === "roman_urdu";
+    // Audio is Urdu even when an earlier typed greeting established English.
+    const lang = "roman_urdu";
+    if (state.preferred_language !== lang) {
+      await stateRepo.patch(conversation.id, { preferred_language: lang });
+    }
     const audioObj = message.audio || message.voice;
     const audioId = audioObj?.id;
 
@@ -359,14 +362,6 @@ async function handleNonText(
           ? await message.mediaBytes()
           : await downloadWhatsAppMedia(await getWhatsAppMediaUrl(audioId));
 
-        // Transcribe via Groq (whisper-large-v3-turbo) or OpenAI Whisper
-        const client = new OpenAI({
-          apiKey,
-          baseURL: isGroq ? "https://api.groq.com/openai/v1" : undefined,
-          timeout: 20_000,
-          maxRetries: 0,
-        });
-
         const rawMime = audioObj?.mime_type || "audio/ogg";
         const cleanMime = rawMime.split(";")[0]?.trim() || "audio/ogg";
         const ext = cleanMime.includes("mp4") || cleanMime.includes("m4a") ? "m4a" : "ogg";
@@ -374,28 +369,18 @@ async function handleNonText(
         const audioBlob = new Blob([audioBuffer], { type: cleanMime });
         const audioFile = new File([audioBlob], `voice.${ext}`, { type: cleanMime });
 
-        const model = isGroq
-          ? (process.env.GROQ_AUDIO_TRANSCRIPTION_MODEL || "whisper-large-v3-turbo")
-          : "whisper-1";
-
         const menu = await getMenuCatalog(activeBranch.id).catch(() => []);
-        const options = voiceTranscriptionOptions(lang, menu.map((item) => item.name));
-
-        let transcription = await client.audio.transcriptions.create({
-          model,
-          file: audioFile,
-          ...options,
-        });
-
-        // Auto-detection can mistake Urdu for Hindi on the first voice note.
-        // Retry that artifact once using the same audio, explicitly as Urdu.
-        if (/[\u0900-\u097f]/u.test(transcription.text ?? "") && lang !== "pashto") {
-          transcription = await client.audio.transcriptions.create({ model, file: audioFile,
-            ...options, language: "ur" });
+        const providers: VoiceTranscriber[] = [];
+        if (groqApiKey) {
+          const client = new OpenAI({ apiKey: groqApiKey, baseURL: "https://api.groq.com/openai/v1", timeout: 12_000, maxRetries: 0 });
+          providers.push({ provider: "groq", model: "whisper-large-v3", transcribe: (request) => client.audio.transcriptions.create(request) });
         }
-
-        const transcript = transcription.text?.trim();
-        if (!transcript) throw new Error("Empty transcription");
+        if (process.env.OPENAI_API_KEY) {
+          const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, timeout: 12_000, maxRetries: 0 });
+          providers.push({ provider: "openai", model: "whisper-1", transcribe: (request) => client.audio.transcriptions.create(request) });
+        }
+        const transcription = await transcribeUrduVoice(audioFile, menu.map((item) => item.name), providers);
+        const { text: transcript, model } = transcription;
 
         console.log(`[voice] Transcription complete (${model}, ${transcript.length} characters)`);
 
@@ -432,11 +417,14 @@ async function handleNonText(
             mediaId: audioId,
             mimeType: cleanMime,
             transcript,
+            transcriptionProvider: transcription.provider,
+            transcriptionModel: model,
+            transcriptionAttempts: transcription.attempts,
           },
         });
 
         // Update language from transcript
-        const transcriptLang = inferLanguagePreference(transcript, state.preferred_language);
+        const transcriptLang = lang;
         if (transcriptLang !== state.preferred_language) {
           await stateRepo.patch(conversation.id, { preferred_language: transcriptLang });
         }
@@ -497,12 +485,7 @@ async function handleNonText(
         if (enteringOrderPipeline) throw err;
         console.error("[voice] Voice pipeline failed:", err);
         // Graceful degradation — language-consistent, no escalation
-        const fallbackMsg =
-          lang === "pashto"
-            ? "Voice note raghay, kho pohaidal ke mushkil sho. Khpal order text ke rawalegay!"
-            : isRomanUrdu
-            ? "Voice note mil gaya, lekin samajhne mein mushkil hua. Apna order text mein bhej dein!"
-            : "Got your voice note, but had trouble understanding it. Please type your order!";
+        const fallbackMsg = URDU_VOICE_FALLBACK;
         await messageRepo.insert({
           conversationId: conversation.id,
           role: "user",
@@ -515,6 +498,7 @@ async function handleNonText(
             isVoiceNote: true,
             audioUrl: audioId ? `/api/media/${audioId}` : null,
             mediaId: audioId,
+            voiceFailure: err instanceof UrduVoiceTranscriptionError ? { stage: "transcription", attempts: err.attempts } : { stage: "media_or_persistence" },
           },
         });
         await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: fallbackMsg, phoneNumberId });
@@ -523,12 +507,7 @@ async function handleNonText(
     }
 
     // No API key — graceful degradation / voice_note fallback, language-consistent
-    const voiceFallback =
-      lang === "pashto"
-        ? "Voice note raghay! Khpal order text ke rawalegay, za ba darsara madad kawa."
-        : isRomanUrdu
-        ? "Voice note mil gaya! Apna order text mein bhej dein, main turant help karunga."
-        : "Got your voice note! Please type your order and I'll help right away.";
+    const voiceFallback = URDU_VOICE_FALLBACK;
     await messageRepo.insert({
       conversationId: conversation.id,
       role: "user",

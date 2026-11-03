@@ -22,6 +22,7 @@ export interface RestaurantSettings {
   delivery_fee: number;
   delivery_pricing_mode?: "flat" | "area";
   delivery_zones?: DeliveryZone[];
+  delivery_outside_area_per_km?: number;
   delivery_areas: string[];
   estimated_prep_minutes: number;
   estimated_delivery_minutes: number;
@@ -41,6 +42,7 @@ const DEFAULT_SETTINGS = {
   delivery_fee: 0,
   delivery_pricing_mode: "flat" as const,
   delivery_zones: [] as DeliveryZone[],
+  delivery_outside_area_per_km: 0,
   delivery_areas: [] as string[],
   estimated_prep_minutes: 30,
   estimated_delivery_minutes: 45,
@@ -95,6 +97,13 @@ export function validateRestaurantSettingsInput(settings: Partial<RestaurantSett
     normalized.delivery_pricing_mode = settings.delivery_pricing_mode;
   }
   if (settings.delivery_zones !== undefined) normalized.delivery_zones = validateDeliveryZones(settings.delivery_zones);
+  if (settings.delivery_outside_area_per_km !== undefined) {
+    const rate = Number(settings.delivery_outside_area_per_km);
+    if (!Number.isFinite(rate) || rate < 0 || rate > 100000 || Math.abs(Math.round(rate * 100) - rate * 100) > 0.000001) {
+      throw new Error("Outside-area delivery rate must be between 0 and 100000 with at most two decimal places.");
+    }
+    normalized.delivery_outside_area_per_km = rate;
+  }
   if (settings.delivery_pricing_mode === "area" && normalized.delivery_zones?.length === 0) {
     throw new Error("Area pricing must include at least one delivery area.");
   }
@@ -224,6 +233,7 @@ export async function getRestaurantSettings(branchId: string): Promise<Restauran
     delivery_fee: Number(data.delivery_fee ?? 0),
     delivery_pricing_mode: data.delivery_pricing_mode === "area" ? "area" : "flat",
     delivery_zones: Array.isArray(data.delivery_zones) ? data.delivery_zones : [],
+    delivery_outside_area_per_km: Number(data.delivery_outside_area_per_km ?? 0),
     delivery_areas: normalizeDeliveryAreas(data.delivery_areas),
     estimated_prep_minutes: normalizeEstimate(data.estimated_prep_minutes, defaultSettings.estimated_prep_minutes),
     estimated_delivery_minutes: normalizeEstimate(data.estimated_delivery_minutes, defaultSettings.estimated_delivery_minutes),

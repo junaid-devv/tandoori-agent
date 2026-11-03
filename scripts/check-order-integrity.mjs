@@ -35,6 +35,8 @@ try {
   await db.exec(fs.readFileSync(migrationPath, "utf8"));
   await db.exec(fs.readFileSync("supabase/migrations/20261026124645_restaurant_agent_reply_recovery.sql", "utf8"));
   await db.exec(fs.readFileSync("supabase/migrations/20261103110240_area_delivery_pricing.sql", "utf8"));
+  await db.exec(fs.readFileSync("supabase/migrations/20261103130505_delivery_area_spelling_tolerance.sql", "utf8"));
+  await db.exec(fs.readFileSync("supabase/migrations/20261103131714_outside_area_delivery_rate.sql", "utf8"));
   pass("migration creates functions and deferred trigger in PostgreSQL");
   await db.query("insert into conversations values ($1,$2)", [conversation, branch]);
   await db.query("insert into restaurant_settings(branch_id) values ($1),($2)", [branch, otherBranch]);
@@ -188,5 +190,13 @@ try {
   await commit(persistMessage, { summary_sent_at: new Date().toISOString(), delivery_fee_quote: 175 });
   assert.equal((await db.query("select delivery_fee_quote from conversation_states")).rows[0].delivery_fee_quote, "175");
   pass("atomic inbound commit persists the reviewed delivery quote");
+  await reset(); await configureAreas();
+  await db.exec("update restaurant_settings set delivery_outside_area_per_km=40");
+  await assert.rejects(() => db.query("select restaurant_delivery_quote($1,'House 12 Unknown Town')", [branch]), /not served/);
+  pass("a per-km policy cannot become an unverified final fee at checkout");
+  for (const rate of [-1, 1.234, 100001]) {
+    await assert.rejects(() => db.query("update restaurant_settings set delivery_outside_area_per_km=$1", [rate]));
+  }
+  pass("database validates the outside-area rate without changing fixed zone fees");
   console.log(`\nORDER INTEGRITY: ${checks} PostgreSQL checks passed.`);
 } finally { await db.close(); }

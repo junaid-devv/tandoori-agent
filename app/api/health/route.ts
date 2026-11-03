@@ -52,7 +52,7 @@ async function checkDatabaseShape(): Promise<HealthCheck> {
   const checks = await Promise.all([
     checkTableColumns("restaurant_profiles", "id, name, brand_color, branch_mode"),
     checkTableColumns("branches", "id, city, address"),
-    checkTableColumns("restaurant_settings", "branch_id, delivery_pricing_mode, delivery_zones, delivery_areas, estimated_prep_minutes, estimated_delivery_minutes"),
+    checkTableColumns("restaurant_settings", "branch_id, delivery_pricing_mode, delivery_zones, delivery_areas, delivery_outside_area_per_km, estimated_prep_minutes, estimated_delivery_minutes"),
     checkTableColumns("messages", "id, whatsapp_msg_id, delivery_status, delivery_status_updated_at, delivery_error"),
     checkTableColumns("webhook_events", "id, status, payload, processed_at, processing_started_at, attempt_count, received_count"),
     checkTableColumns("rate_limits", "scope, identifier_hash, window_start, request_count, blocked_until"),

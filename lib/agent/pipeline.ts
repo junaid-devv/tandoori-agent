@@ -23,6 +23,7 @@ import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import { extractBaseItemName, extractSizeFromQuery, menuNameCoversQuery } from "@/lib/menu/search";
 import { normalizeFoodScript } from "@/lib/pakistani-language";
 import { sharedLocationPin } from "@/lib/location-pin";
+import { outsideAreaDeliveryRate } from "@/lib/delivery-pricing";
 import type { ConversationStateRow } from "@/lib/schema.types";
 import type { ConversationStage } from "@/lib/schema.types";
 
@@ -301,6 +302,12 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   }
 
   let understanding = fastUnderstanding(input.messageText, ctx.state, ctx.savedAddress?.id);
+  if (!understanding && pin && ctx.settings.delivery_enabled && outsideAreaDeliveryRate(ctx.settings)
+    && (ctx.state.stage === "collecting_delivery" || ctx.state.order_type === "delivery" && ctx.state.cart.length > 0)) {
+    understanding = { ...makeBase(ctx.state.preferred_language),
+      intents: ["provide_address"], primary_intent: "provide_address", address: input.messageText,
+      notes: "fast_path_delivery_quote_pin" };
+  }
   if (!understanding && isSimpleCatalogQuestion(input.messageText, ctx.menu)) {
     understanding = { ...makeBase(inferLanguagePreference(input.messageText, ctx.state.preferred_language)),
       intents: ["ask_item_info"], primary_intent: "ask_item_info", info_query: input.messageText,
@@ -420,7 +427,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     address: exec.statePatch.address !== undefined ? exec.statePatch.address : ctx.state.address,
     placeOrder: exec.placeOrder,
     escalate: exec.escalate,
-    intent: understanding.primary_intent,
+    intent: exec.statePatch.escalation_reason === "outside_area_delivery_quote" ? "outside_area_delivery_quote" : understanding.primary_intent,
     usedSemanticSearch: exec.usedSemanticSearch,
     latencyMs,
     interactive: exec.interactive ?? null,

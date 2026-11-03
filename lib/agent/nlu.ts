@@ -507,7 +507,7 @@ function providerFailure(error: unknown): string {
 
 /** Never reuse a context-dependent interpretation across conversations or drafts. */
 export function nluCacheKey(input: NluInput): string {
-  return `nlu:v6:${createHash("sha256").update(JSON.stringify(input)).digest("hex")}`;
+  return `nlu:v7:${createHash("sha256").update(JSON.stringify(input)).digest("hex")}`;
 }
 
 /** History helps resolve references; it cannot independently request food.
@@ -527,7 +527,7 @@ export function groundCurrentTurnItems(result: TurnUnderstanding, input: NluInpu
 }
 
 export async function understandTurn(input: NluInput): Promise<TurnUnderstanding> {
-  const messageText = stripVoiceNotePrefix(input.messageText);
+  const messageText = normalizeFoodScript(stripVoiceNotePrefix(input.messageText));
   const cleaned: NluInput = { ...input, messageText };
 
   const cacheKey = nluCacheKey(cleaned);

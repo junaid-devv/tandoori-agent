@@ -698,16 +698,108 @@ try {
     assert.equal(areaMatches("House 2 DHA Phase 9", "DHA Phase 1-6"), false);
     assert.equal(areaMatches("House 1 گلبرگ", "گلبرگ"), true);
   });
+  const outsideSettings = { ...areaSettings, delivery_outside_area_per_km: 40 };
+  await cache.set("settings:b", outsideSettings, 600_000);
+  fresh("outside-info");
+  result = await send("outside-info", "Delivery charges for other areas?", u("ask_delivery_info", { info_query: "delivery charges for other areas?" }));
+  check("delivery information advertises the configured per-kilometre rate and asks for a destination", () => {
+    assert.match(result.replyText, /Rs\. 40 per km/); assert.match(result.replyText, /location pin/);
+    assert.match(result.replyText, /final delivery charge/);
+  });
+  const beforeOutside = placed.length;
+  fresh("outside-order");
+  result = await send("outside-order", "2 naan delivery House 12 Unknown Town", u("add_items", {
+    intents: ["add_items", "set_order_type", "provide_address"], items: [mention("Plain Naan", 2)],
+    order_type: "delivery", address: "House 12 Unknown Town" }));
+  check("outside-area orders retain the cart and destination for staff without inventing a final fee", () => {
+    assert.equal(result.stage, "human"); assert.equal(result.escalate, true);
+    assert.equal(states.get("outside-order").address, "House 12 Unknown Town");
+    assert.equal(states.get("outside-order").cart[0].qty, 2);
+    assert.equal(states.get("outside-order").delivery_fee_quote, null);
+    assert.equal(states.get("outside-order").summary_sent_at, null);
+    assert.equal(states.get("outside-order").escalation_reason, "outside_area_delivery_quote");
+    assert.equal(placed.length, beforeOutside); assert.equal(result.interactive, null);
+    assert.match(result.replyText, /Rs\. 40 per km/); assert.match(result.replyText, /not been placed/);
+    assert.ok(!/not served|not available|Total:/.test(result.replyText));
+  });
+  fresh("outside-incomplete", { stage: "collecting_delivery", cart: [line()], order_type: "delivery" });
+  result = await send("outside-incomplete", "Unknown Town", u("provide_address", { address: "Unknown Town" }));
+  check("an outside area alone asks for the full address or pin before handoff", () => {
+    assert.equal(result.stage, "collecting_delivery"); assert.equal(result.escalate, false);
+    assert.match(result.replyText, /Rs\. 40 per km/); assert.match(result.replyText, /full address/);
+  });
+  fresh("outside-pin", { stage: "collecting_delivery", cart: [line()], order_type: "delivery" });
+  const beforePinParser = parserCalls;
+  result = await send("outside-pin", "https://maps.google.com/?q=33.7,72.7");
+  check("a pre-order location pin reaches the distance-quote team without model extraction or order placement", () => {
+    assert.equal(result.stage, "human"); assert.equal(result.escalate, true);
+    assert.equal(parserCalls, beforePinParser); assert.equal(placed.length, beforeOutside);
+    assert.equal(states.get("outside-pin").address, "https://maps.google.com/?q=33.7,72.7");
+    assert.equal(states.get("outside-pin").cart.length, 1);
+  });
+  fresh("outside-saved", { stage: "building_cart", cart: [line()], order_type: "delivery" });
+  savedAddresses.set("outside-saved", { id: "saved-outside", address: "House 14 Unknown Town", label: "Home", use_count: 1 });
+  result = await send("outside-saved", "Use my saved address", u("use_saved_address"));
+  check("saved outside-area addresses also retain the destination for a staff quote", () => {
+    assert.equal(result.stage, "human"); assert.equal(result.escalate, true);
+    assert.equal(states.get("outside-saved").address, "House 14 Unknown Town");
+  });
+  fresh("outside-existing", { stage: "confirming", cart: [line()], order_type: "delivery", address: "House 14 Unknown Town" });
+  result = await send("outside-existing", "confirm:yes");
+  check("checkout cannot place an outside-area order before its distance fee is verified", () => {
+    assert.equal(result.stage, "human"); assert.equal(result.escalate, true);
+    assert.equal(placed.length, beforeOutside); assert.equal(states.get("outside-existing").delivery_fee_quote, null);
+  });
+  fresh("outside-fixed");
+  result = await send("outside-fixed", "2 naan delivery House 12 Gulberg", u("add_items", {
+    intents: ["add_items", "set_order_type", "provide_address"], items: [mention("Plain Naan", 2)],
+    order_type: "delivery", address: "House 12 Gulberg" }));
+  check("the per-km option does not replace a listed area's fixed charge", () => {
+    assert.equal(result.stage, "confirming"); assert.equal(result.escalate, false);
+    assert.equal(states.get("outside-fixed").delivery_fee_quote, 175); assert.match(result.replyText, /Total: Rs. 275/);
+  });
+  fresh("outside-ambiguous", { stage: "collecting_delivery", cart: [line()], order_type: "delivery" });
+  result = await send("outside-ambiguous", "House 12 Gulberg DHA Phase 6", u("provide_address", { address: "House 12 Gulberg DHA Phase 6" }));
+  check("ambiguous fixed areas still require clarification rather than a distance quote", () => {
+    assert.equal(result.stage, "collecting_delivery"); assert.equal(result.escalate, false);
+    assert.match(result.replyText, /more than one delivery area/);
+  });
+  check("the outside-area rate accepts 40 and rejects invalid prices", () => {
+    assert.equal(validateRestaurantSettingsInput({ delivery_outside_area_per_km: 40 }).delivery_outside_area_per_km, 40);
+    for (const rate of [-1, NaN, Infinity, 1.234, 100001]) {
+      assert.throws(() => validateRestaurantSettingsInput({ delivery_outside_area_per_km: rate }));
+    }
+  });
+  await seedCaches();
   // Foods Carnival incidents: use the actual catalog names, category and prices.
   Object.assign(settings, { delivery_pricing_mode: "flat", delivery_zones: [], delivery_areas: [], min_delivery_amount: 0 });
   menu.push(
     { id: "paratha", name: "Chicken Paratha", category: "Paratha Roll", price: 199, is_available: true },
+    { id: "afghani-wrap", name: "Afghani Wrap", category: "Wraps", price: 349, is_available: true },
     { id: "cheese-paratha", name: "Chicken Cheese Paratha", category: "Paratha Roll", price: 249, is_available: true },
     { id: "pizza-burger", name: "Pizza Burger", category: "Burger", price: 449, is_available: true },
     ...[["ks", "Small", 449], ["km", "Mid", 799], ["kl", "Large", 1199]].map(([id, size, price]) =>
       ({ id, name: `Kababish Pizza ${size}`, category: "Special Pizza", price, is_available: true })),
   );
   await seedCaches();
+  for (const text of ["ek afghani wrap or ek chicken paratha roll", "ایک افغانی ریپ اور ایک چکن پراٹھا رول۔", "ایک افغانی ریب اور ایک چکن پراتا رول"]) {
+    const id = `urdu-wrap-${text.length}`;
+    fresh(id, { preferred_language: "roman_urdu" });
+    const before = parserCalls;
+    result = await send(id, text);
+    check("Urdu wrap and roll voice request retains both portions and replies in Roman Urdu", () => {
+      assert.deepEqual(states.get(id).cart.map((item) => [item.menu_item_id, item.qty]), [["afghani-wrap", 1], ["paratha", 1]]);
+      assert.equal(parserCalls, before);
+      assert.match(result.replyText, /add ho gay/);
+      assert.doesNotMatch(result.replyText, /[\u0600-\u06ff\u0900-\u097f]|trouble understanding/u);
+    });
+  }
+  const { simpleCatalogOrder } = await import("../lib/agent/catalog-order.ts");
+  check("direct voice orders never discard Urdu negations or turn English alternatives into two orders", () => {
+    for (const text of ["ایک افغانی ریپ نہیں اور ایک چکن پراٹھا رول", "ایک افغانی ریپ کم مرچ اور ایک چکن پراٹھا رول", "one afghani wrap or one chicken paratha roll"]) {
+      assert.equal(simpleCatalogOrder(text, menu), null);
+    }
+  });
   fresh("luqman-salam");
   result = await send("luqman-salam", "aslamoalikum");
   check("Luqman's greeting gets Walaikum Assalam and establishes Roman Urdu", () => {
@@ -793,10 +885,11 @@ try {
   });
   const { voiceTranscriptionOptions } = await import("../lib/voice-transcription.ts");
   const { sharedLocationPin, locationPinUrl } = await import("../lib/location-pin.ts");
-  check("Pakistani voice hints preserve Urdu/Pashto and location parsing rejects invalid coordinates or edits", () => {
+  check("voice stays Urdu even after English or Pashto text, and location parsing rejects invalid coordinates or edits", () => {
     assert.equal(voiceTranscriptionOptions("roman_urdu", ["Chicken Paratha"]).language, "ur");
-    assert.equal(voiceTranscriptionOptions("pashto", []).language, "ps");
-    assert.match(voiceTranscriptionOptions("roman_urdu", ["Chicken Paratha"]).prompt, /Chicken Paratha/);
+    assert.equal(voiceTranscriptionOptions("pashto", []).language, "ur");
+    assert.equal(voiceTranscriptionOptions("english", []).language, "ur");
+    assert.match(voiceTranscriptionOptions("roman_urdu", ["Chicken Paratha"]).prompt, /Chicken, Paratha/);
     assert.equal(locationPinUrl(100, 73), null); assert.equal(locationPinUrl(undefined, 73), null);
     assert.equal(sharedLocationPin("change delivery instead\nhttps://maps.google.com/?q=33,73"), null);
   });

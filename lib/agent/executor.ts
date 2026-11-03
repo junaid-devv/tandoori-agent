@@ -31,13 +31,14 @@ import {
 } from "./interactive";
 import { invalidateSettingsContext, type TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
-import { resolveDeliveryQuote, deliveryFeeInfo } from "@/lib/delivery-pricing";
+import { resolveDeliveryQuote, deliveryFeeInfo, outsideAreaDeliveryInfo, outsideAreaDeliveryRate } from "@/lib/delivery-pricing";
 import { deliveryAreaNames, hasDeliveryRestrictions, findMatchingDeliveryArea, buildDeliveryAreaHint, isCompleteDeliveryAddress } from "./delivery";
 import { parseCustomerTimeToIso } from "@/lib/restaurant-time";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { isValidDeliveryAddress } from "@/lib/customer-crm";
 import { getMenuCatalog, invalidateMenuCache } from "@/lib/menu";
 import { isWithinOperatingHours } from "@/lib/settings";
+import { sharedLocationPin } from "@/lib/location-pin";
 
 
 export interface ExecutionResult {
@@ -97,6 +98,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
   const replies: string[] = [];
   let placeOrder = false;
+  let outsideAreaQuoteRequested = false;
   let usedSemantic = false;
   let hasDisambiguation = false;
   let interactive: InteractivePayload | null = null;
@@ -175,6 +177,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     if (ctx.settings.delivery_pricing_mode !== "area") return reply.deliveryAreaNotCovered(lang, deliveryAreaNames(ctx.settings));
     const areas = deliveryAreaNames(ctx.settings).join(", ");
     const status = resolveDeliveryQuote(address, ctx.settings).status;
+    if (status === "unserved" && outsideAreaDeliveryRate(ctx.settings)) {
+      return `📍 ${outsideAreaDeliveryInfo(ctx.settings, cur, lang)}`;
+    }
     const explanation = status === "unserved"
       ? (lang === "roman_urdu" ? "Is area mein delivery available nahi hai. " : lang === "pashto" ? "Da area ke delivery nishta. " : "That area is not served. ")
       : status === "ambiguous"
@@ -185,6 +190,28 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       : lang === "pashto"
       ? `📍 Da delivery fee dapara khpal exact area aw mukammal address rawalega. Areas: ${areas}. Ya Pickup select kra.`
       : `📍 Please confirm your exact area and full address so we can determine the delivery fee. Supported areas: ${areas}. You can also choose Pickup.`);
+  };
+
+  const requestOutsideAreaQuote = (address: string | null | undefined): boolean => {
+    if (!address || !ctx.settings.delivery_enabled || !outsideAreaDeliveryRate(ctx.settings)
+      || resolveDeliveryQuote(address, ctx.settings).status !== "unserved"
+      || !(sharedLocationPin(address) || isValidDeliveryAddress(address) && isCompleteDeliveryAddress(address))) return false;
+    patch.address = address;
+    patch.order_type = "delivery";
+    patch.summary_sent_at = null;
+    patch.delivery_fee_quote = null;
+    patch.stage = "human";
+    patch.is_bot_active = false;
+    patch.escalation_reason = "outside_area_delivery_quote";
+    patch.escalated_at = new Date().toISOString();
+    outsideAreaQuoteRequested = true;
+    interactive = null;
+    replies.push(outsideAreaDeliveryInfo(ctx.settings, cur, lang), lang === "roman_urdu"
+      ? "Aap ka address aur order request team ko de diya hai. Final delivery fee abhi confirm honi hai; order abhi place nahi hua."
+      : lang === "pashto"
+      ? "Staso address aw order request team ta warkar sho. Final delivery fee la na da confirm; order la na day place shway."
+      : "I've passed your destination and order request to our team. The final delivery fee is pending confirmation; your order has not been placed yet.");
+    return true;
   };
 
   /** Deterministic delivery info answer — never calls LLM. */
@@ -362,6 +389,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     }
     if (type === "delivery") {
       const address = value("address");
+      if (requestOutsideAreaQuote(address)) return false;
       if (!isValidDeliveryAddress(address) || !isCompleteDeliveryAddress(address) || hasDeliveryRestrictions(ctx.settings) && !findMatchingDeliveryArea(address!, ctx.settings)) {
         patch.stage = "collecting_delivery";
         patch.address = null;
@@ -894,6 +922,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               patch.stage = "collecting_delivery";
               patch.address = null;
             } else if (hasDeliveryRestrictions(ctx.settings) && !findMatchingDeliveryArea(savedRow.address, ctx.settings)) {
+              if (requestOutsideAreaQuote(savedRow.address)) break;
               replies.push(deliveryAddressPrompt(savedRow.address));
               patch.stage = "collecting_delivery";
               patch.address = null;
@@ -909,6 +938,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             patch.address = null;
           }
         } else if (address) {
+          if (sharedLocationPin(address) && requestOutsideAreaQuote(address)) break;
           if (!isValidDeliveryAddress(address)) {
             patch.address = null;
             patch.stage = "collecting_delivery";
@@ -916,6 +946,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             break;
           }
           if (hasDeliveryRestrictions(ctx.settings) && !findMatchingDeliveryArea(address, ctx.settings)) {
+            if (requestOutsideAreaQuote(address)) break;
             replies.push(deliveryAddressPrompt(address));
             patch.stage = "collecting_delivery";
             patch.address = null;
@@ -1426,11 +1457,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
         }
         break;
     }
+    if (outsideAreaQuoteRequested) break;
   }
 
   // An unrelated addition, address reply or menu question must not discard an
   // earlier requested portion that is still waiting for a size/flavor choice.
-  if (carriedPending && !hasDisambiguation && !transition.actions.some((a) => ["cancel_order", "restart_order", "reorder_previous"].includes(a.kind))
+  if (!outsideAreaQuoteRequested && carriedPending && !hasDisambiguation && !transition.actions.some((a) => ["cancel_order", "restart_order", "reorder_previous"].includes(a.kind))
     && (u.notes === "fast_path_resume" || transition.actions.some((a) => ["add_items", "remove_items", "show_menu", "show_summary", "place_order"].includes(a.kind)))) {
     await presentPending(carriedPending);
   }
@@ -1440,7 +1472,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
   // Filter replies: If size disambiguation is active (variantButtons), do not ask for delivery address or pickup time in the same message
   let finalReplies = replies.filter(Boolean);
-  if (hasDisambiguation) {
+  if (hasDisambiguation && !outsideAreaQuoteRequested) {
     finalReplies = finalReplies.filter((r) => {
       if (r.includes("Delivery address bhej") || r.includes("Please send your delivery address") || r.includes("Pichli dafa") || r.includes("Last time you used")) return false;
       if (r.includes("Pickup kis waqt") || r.includes("What time will you pick up")) return false;
@@ -1468,7 +1500,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     replyText: finalReplies.map((r) => r.trim()).filter(Boolean).join("\n\n") || reply.clarify(lang, "fallback"),
     statePatch: patch,
     placeOrder,
-    escalate: false,
+    escalate: outsideAreaQuoteRequested,
     usedSemanticSearch: usedSemantic,
     interactive,
     mediaUrls,

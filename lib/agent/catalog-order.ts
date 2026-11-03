@@ -12,10 +12,23 @@ export function catalogSpellingHints(text: string, menu: MenuCatalogItem[]): str
     .map(({ item }) => `${item.name} [${item.category ?? "Menu"}]`);
 }
 
-/** Only a complete simple food request can bypass NLU. Any leftover word,
- * question, negation, preparation or second item keeps the normal NLU path. */
+/** Only complete catalog requests bypass NLU; questions, changes and
+ * preparation instructions still use the normal interpretation path. */
 export function simpleCatalogOrder(text: string, menu: MenuCatalogItem[]): TurnUnderstanding["items"] | null {
-  let query = normalizeFoodScript(text).toLowerCase().replace(/^\s*\[voice note\]\s*/i, "").trim();
+  const normalized = normalizeFoodScript(text).toLowerCase().replace(/^\s*\[voice note\]\s*/i, "").trim();
+  if (/[?؟]|\b(?:no|not|nahi|nahin|remove|cancel|without|less|extra)\b/.test(normalized)) return null;
+  // Preserve unknown Urdu so negations/preparation cannot disappear into a match.
+  let query = normalized.replace(/ایک|اِک/gu, " ek ").replace(/دو/gu, " do ")
+    .replace(/تین/gu, " teen ").replace(/اور/gu, " aur ").replace(/۔/gu, ".")
+    .replace(/\s+/g, " ").trim();
+  const parts = query.split(/\s+(?:aur|and|or)\s+/);
+  if (parts.length > 1) {
+    // Roman Urdu "or" means aur; English "or" can be an alternative.
+    if (/\sor\s/.test(query) && !/\b(?:ek|aik|do|teen)\b/.test(query)) return null;
+    if (parts.length > 8 || parts.some((part) => !/^(?:\d{1,2}|ek|aik|one|do|two|teen|three)\s+/.test(part))) return null;
+    const orders = parts.map((part) => simpleCatalogOrder(part, menu));
+    return orders.every((order) => order !== null) ? orders.flatMap((order) => order ?? []) : null;
+  }
   if (/[\u0600-\u06ff\u0900-\u097f]/u.test(query)) return null;
   if (/[?؟]|\b(?:no|not|nahi|nahin|remove|cancel|without|less|extra|aur|and|or|bhi|rate|price|hai|hain)\b/.test(query)) return null;
   query = query.replace(/^(?:(?:main|mein|mujhe|i would like|i want|please|pls|add)\s+)+/, "")

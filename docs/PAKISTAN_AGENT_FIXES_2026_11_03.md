@@ -19,3 +19,16 @@ Reviewed Luqman's stored Foods Carnival conversation and the Kababish Pizza conv
 - `npm run build`, TypeScript and scoped ESLint.
 
 The app must be deployed or restarted with this source for live traffic to use the changes. These repairs use existing database columns and require no new migration. The original audio itself was not replayed; voice validation covers the stored transcript, language configuration and interpretation.
+
+## Follow-up: Urdu voice recovery
+
+The new customer voice note failed before a transcript was saved, so its original provider error is unknown. The previous typed `Hello` left the chat in English, which incorrectly controlled both voice auto-detection and the failure reply.
+
+- All voice requests explicitly use Urdu, independently of typed greetings. Voice replies and unavailable-audio fallbacks use Roman Urdu.
+- Groq uses full `whisper-large-v3`; short Urdu context replaces the long multilingual example-order prompt. Official limits: https://console.groq.com/docs/speech-to-text.
+- Empty or Devanagari transcripts and provider errors receive bounded recovery attempts. OpenAI is a secondary provider only when its key is configured; currently Groq is configured, so the same audio is retried there.
+- Successful and failed transcription attempts retain safe provider/model/status diagnostics.
+- Complete quantified requests such as `ek afghani wrap or ek chicken paratha roll` resolve both menu entries directly. Unknown words, Urdu negations, preparation requests and English alternatives still require normal interpretation. Known audio spellings `افغانی ریب` and `چکن پراتا رول` resolve the intended catalog names.
+- Known Urdu food names are normalized before model interpretation of complex messages.
+
+Verification: recovered the actual customer's 9,291-byte audio through its owning Evolution connection and ran the production transcription helper with the branch menu vocabulary, without placing an order or sending a customer message. It produced `ایک افغانی ریب اور ایک چکن پراتا رول۔`; direct catalog interpretation resolved exactly one Afghani Wrap and one Chicken Paratha Roll. The live complex-message interpreter also retained both separate portions after food-name normalization. Full guards, updated conversation checks, voice-recovery checks, scoped lint and production build passed. These follow-up source changes require deployment before live traffic uses them.

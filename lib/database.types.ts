@@ -280,6 +280,7 @@ export interface Database {
           delivery_fee: number;
           delivery_pricing_mode: "flat" | "area";
           delivery_zones: Json;
+          delivery_outside_area_per_km: number;
           delivery_areas: Json;
           estimated_prep_minutes: number;
           estimated_delivery_minutes: number;
@@ -300,6 +301,7 @@ export interface Database {
           delivery_fee?: number;
           delivery_pricing_mode?: "flat" | "area";
           delivery_zones?: Json;
+          delivery_outside_area_per_km?: number;
           delivery_areas?: Json;
           estimated_prep_minutes?: number;
           estimated_delivery_minutes?: number;

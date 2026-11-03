@@ -2,8 +2,10 @@
  * occasional Devanagari output. Never translate or guess an unknown dish. */
 export function normalizeFoodScript(text: string): string {
   const aliases: Array<[RegExp, string]> = [
+    [/افغانی|अफगानी|अफ़ग़ानी/gu, "afghani"],
+    [/ریپ|ریب|रैप|रैप्स/gu, "wrap"],
     [/चिकन|चिकेन|چکن|مرغی/gu, "chicken"],
-    [/पराठा|परांठा|پراٹھا|پراتھا/gu, "paratha"],
+    [/पराठा|परांठा|پراٹھا|پراتھا|پراتا/gu, "paratha"],
     [/रोल|رول/gu, "roll"],
     [/कबाबिश|کبابش|کبابیش/gu, "kababish"],
     [/पिज़्ज़ा|पिज्जा|पीज़ा|पिजा|پیزا|پزا/gu, "pizza"],
