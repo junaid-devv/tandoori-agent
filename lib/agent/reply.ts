@@ -262,11 +262,11 @@ export const reply = {
 
   askAddress(l: Lang): string {
     if (pa(l)) {
-      return "📍 Da delivery address rawalegay (kosa, area, city).";
+      return "📍 Khpal delivery address rawalegay.";
     }
     return ur(l)
-      ? "📍 Mukammal delivery address bhej dein (ghar/building, gali, area, city ya qareebi landmark)."
-      : "📍 Please send your full delivery address (house/building, street, area, city or a nearby landmark).";
+      ? "📍 Apna delivery address bhej dein."
+      : "📍 Please send your delivery address.";
   },
 
   askAddressWithSaved(l: Lang, savedLabel: string): string {

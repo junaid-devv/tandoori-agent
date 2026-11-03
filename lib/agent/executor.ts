@@ -32,7 +32,7 @@ import {
 import { invalidateSettingsContext, type TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
 import { resolveDeliveryQuote, deliveryFeeInfo, outsideAreaDeliveryInfo, outsideAreaDeliveryRate } from "@/lib/delivery-pricing";
-import { deliveryAreaNames, hasDeliveryRestrictions, findMatchingDeliveryArea, buildDeliveryAreaHint, isCompleteDeliveryAddress } from "./delivery";
+import { deliveryAreaNames, hasDeliveryRestrictions, findMatchingDeliveryArea, isCompleteDeliveryAddress } from "./delivery";
 import { parseCustomerTimeToIso } from "@/lib/restaurant-time";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { isValidDeliveryAddress } from "@/lib/customer-crm";
@@ -982,8 +982,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               },
             });
           } else {
-            const areaHint = buildDeliveryAreaHint(ctx.settings, lang);
-            replies.push(`${reply.askAddress(lang)}${areaHint}`);
+            replies.push(reply.askAddress(lang));
           }
         }
         break;
@@ -1474,7 +1473,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   let finalReplies = replies.filter(Boolean);
   if (hasDisambiguation && !outsideAreaQuoteRequested) {
     finalReplies = finalReplies.filter((r) => {
-      if (r.includes("Delivery address bhej") || r.includes("Please send your delivery address") || r.includes("Pichli dafa") || r.includes("Last time you used")) return false;
+      if (r.includes(reply.askAddress(lang)) || r.includes("Pichli dafa") || r.includes("Last time you used")) return false;
       if (r.includes("Pickup kis waqt") || r.includes("What time will you pick up")) return false;
       if (r.includes("Kitne log") || r.includes("How many guests")) return false;
       return true;

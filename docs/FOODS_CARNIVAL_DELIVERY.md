@@ -36,6 +36,13 @@ treated as a verified road distance, and the rate is never used as a flat fee.
 Deploy the updated application to activate this message and handoff flow.
 The rate is editable in Delivery settings; 0 disables the outside-area option.
 
+Choosing Delivery now asks only "Apna delivery address bhej dein." (or the short
+English/Pashto equivalent), without listing address components or delivery zones.
+Customers with a usable saved address can still choose that address or a new one.
+For a fixed-price area, the agent shows the order and delivery-inclusive total for
+confirmation, then places the order and asks for a rider location pin. For other
+destinations, staff confirm distance and charges before the order is placed.
+
 ## Repeatable commands
 
 Preview the update to current settings:
