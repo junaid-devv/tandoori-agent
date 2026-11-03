@@ -123,14 +123,12 @@ export function buildCategoryItemsReply(
 } {
   const target = normalizeText(category);
   const rows = menuItems.filter((item) => normalizeText(item.category ?? "General") === target);
-  const isPa = langOrRomanUrdu === "pashto";
+
   const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
 
   if (rows.length === 0) {
     return {
-      text: isPa
-        ? "De category ke items wane-munde shwa. Da balke category num rawalega."
-        : isUr
+      text: isUr
         ? "Is category mein items nahi mile. Kisi aur category ka naam bhej dein."
         : "No items found in that category. Please send another category name.",
       selectableItems: [],
@@ -151,16 +149,12 @@ export function buildCategoryItemsReply(
     "──────────────",
     ...(hasMore
       ? [
-          isPa
-            ? `List na select kra. Baaqi ${rows.length - selectableItems.length} items leedo dapara num type kra.`
-            : isUr
+          isUr
             ? `List se select karein. Baki ${rows.length - selectableItems.length} items dekhne ke liye naam type karein.`
             : `Select from the list, or type item name to search the remaining ${rows.length - selectableItems.length} items.`,
         ]
       : [
-          isPa
-            ? "Khpal khwakh item da list na select kra."
-            : isUr
+          isUr
             ? "Apni pasand ka item list se select karein."
             : "Please choose your item from the list.",
         ]),
@@ -177,28 +171,24 @@ export function buildCategoryItemsReply(
 }
 
 export function buildAmbiguousItemReply(query: string, options: MenuCatalogItemLike[], langOrRomanUrdu: boolean | LanguagePreference): string {
-  const isPa = langOrRomanUrdu === "pashto";
+
   const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
-  if (isPa) return `Da *${query}* mutaliq kam yaw pakaar day?`;
+
   return isUr
     ? `*${query}* se mutaliq kaunsa item chahiye?`
     : `Which item did you mean for *${query}*?`;
 }
 
 export function buildItemMatchesReply(query: string, options: MenuCatalogItemLike[], langOrRomanUrdu: boolean | LanguagePreference): string {
-  const isPa = langOrRomanUrdu === "pashto";
+
   const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
   const topResultsHint =
     options.length >= 10
-      ? isPa
-        ? "\n\nTop matches wakhayast shwa. Saheeh result dapara pūra item num rawalega."
-        : isUr
+      ? isUr
         ? "\n\nTop matches dikhaye gaye hain. Zyada exact result ke liye poora item name bhej dein."
         : "\n\nShowing top matches. Send a more specific item name for broader accuracy."
       : "";
-  const intro = isPa
-    ? `*${query}* sara matching items da di:`
-    : isUr
+  const intro = isUr
     ? `*${query}* ke related items ye hain:`
     : `Here are matching items for *${query}*:`;
   return intro + topResultsHint;

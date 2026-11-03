@@ -23,7 +23,6 @@ export type InteractivePayload =
   | { kind: "list"; payload: WhatsAppInteractiveListPayload };
 
 const ur = (l: LanguagePreference) => l === "roman_urdu";
-const pa = (l: LanguagePreference) => l === "pashto";
 
 /** Quick-reply buttons for 2-3 item variants (e.g. Half / Full). */
 /** Quick-reply buttons / pick-list for item variants (e.g. Half / Full / Reg / Med / Large / XL). */
@@ -46,7 +45,7 @@ export function variantButtons(
     return {
       kind: "buttons",
       payload: {
-        body: bodyText || (pa(l) ? "Kam size ghwaaray?" : ur(l) ? "Kaunsa size chahiye?" : "Which size would you like?"),
+        body: bodyText || (ur(l) ? "Kaunsa size chahiye?" : "Which size would you like?"),
         buttons,
       },
     };
@@ -55,7 +54,7 @@ export function variantButtons(
     l,
     variants,
     currency,
-    bodyText || (pa(l) ? "Kam size ghwaaray?" : ur(l) ? "Kaunsa size chahiye?" : "Which size would you like?"),
+    bodyText || (ur(l) ? "Kaunsa size chahiye?" : "Which size would you like?"),
   );
 }
 
@@ -71,9 +70,7 @@ export function orderTypeButtons(l: LanguagePreference, settings?: RestaurantSet
   return {
     kind: "buttons",
     payload: {
-      body: pa(l)
-        ? "Order tsanga ghwaaray?"
-        : ur(l)
+      body: ur(l)
         ? "Order kaise chahiye?"
         : "How would you like your order?",
       buttons,
@@ -86,7 +83,7 @@ export function confirmButtons(l: LanguagePreference): InteractivePayload {
   return {
     kind: "buttons",
     payload: {
-      body: pa(l) ? "Order confirm kaway?" : ur(l) ? "Order confirm karein?" : "Confirm your order?",
+      body: ur(l) ? "Order confirm karein?" : "Confirm your order?",
       buttons: [
         { id: "confirm:yes", title: "Confirm ✓" },
         { id: "action:add_more", title: "Add More" },
@@ -100,7 +97,7 @@ export function cartActionButtons(l: LanguagePreference, _opts?: { hideViewCart?
   return {
     kind: "buttons",
     payload: {
-      body: pa(l) ? "Tse kawal ghwaaray?" : ur(l) ? "Kya karna hai?" : "What would you like to do?",
+      body: ur(l) ? "Kya karna hai?" : "What would you like to do?",
       buttons: [
         { id: "action:add_more", title: "Add More" },
         { id: "action:checkout", title: "Checkout" },
@@ -125,8 +122,8 @@ export function itemPickList(
   return {
     kind: "list",
     payload: {
-      body: bodyText || (pa(l) ? "De khey yaw select kra:" : ur(l) ? "In me se select karein:" : "Pick one:"),
-      buttonText: pa(l) ? "Goraay" : ur(l) ? "Dekhein" : "View",
+      body: bodyText || (ur(l) ? "In me se select karein:" : "Pick one:"),
+      buttonText: ur(l) ? "Dekhein" : "View",
       sectionTitle: ur(l) ? "Items" : "Items",
       rows,
     },
@@ -147,8 +144,8 @@ export function categoryList(
   return {
     kind: "list",
     payload: {
-      body: bodyText || (pa(l) ? "Kuma cheez pakaar da?" : ur(l) ? "Kaunsi cheez chahiye?" : "What would you like?"),
-      buttonText: pa(l) ? "Menu Goraay" : ur(l) ? "Menu Dekhein" : "View Menu",
+      body: bodyText || (ur(l) ? "Kaunsi cheez chahiye?" : "What would you like?"),
+      buttonText: ur(l) ? "Menu Dekhein" : "View Menu",
       sectionTitle: "Menu",
       rows,
     },

@@ -11,7 +11,12 @@ import type { Json } from "./database.types";
 
 // ---- Enums (mirror db/schema.sql CHECK constraints) ----
 
-export type LanguagePreference = "english" | "roman_urdu" | "pashto";
+export type LanguagePreference = "english" | "roman_urdu";
+
+/** Normalize legacy stored language values without enabling unsupported replies. */
+export function supportedReplyLanguage(value: unknown): LanguagePreference {
+  return value === "english" ? "english" : "roman_urdu";
+}
 export type OrderType = "delivery" | "pickup" | "dine-in";
 export type OrderStatus =
   | "received"

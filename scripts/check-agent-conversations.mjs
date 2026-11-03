@@ -47,7 +47,7 @@ process.env.ORDER_AGENT_NLU_BASE_URL = `http://127.0.0.1:${server.address().port
 
 try {
   const { runTurn, fastUnderstanding } = await import("../lib/agent/pipeline.ts");
-  const { stateRepo, getDefaultState } = await import("../lib/data/state.repo.ts");
+  const { stateRepo, getDefaultState, parseState } = await import("../lib/data/state.repo.ts");
   const { messageRepo } = await import("../lib/data/message.repo.ts");
   const { orderRepo } = await import("../lib/data/order.repo.ts");
   const { getSupabaseAdmin } = await import("../lib/supabase-admin.ts");
@@ -89,6 +89,11 @@ try {
     const state = { ...getDefaultState(id), preferred_language: "english", ...patch };
     states.set(id, state); histories.set(id, []); return state;
   };
+  check("retired language values are normalized to Roman Urdu and cannot become reply languages", () => {
+    assert.equal(parseState({ conversation_id: "legacy", preferred_language: "pashto" }).preferred_language, "roman_urdu");
+    assert.equal(coerceUnderstanding({ primary_intent: "greeting", language: "pashto" }, "roman_urdu").language, "roman_urdu");
+    assert.equal(inferLanguagePreference("menu", "pashto"), "roman_urdu");
+  });
   const line = (id = "n", qty = 1, notes = null) => {
     const item = menu.find((m) => m.id === id);
     return { menu_item_id: item.id, name: item.name, unit_price: item.price, qty, size: null, addons: [], notes };
@@ -814,6 +819,8 @@ try {
   menu.push(
     { id: "paratha", name: "Chicken Paratha", category: "Paratha Roll", price: 199, is_available: true },
     { id: "afghani-wrap", name: "Afghani Wrap", category: "Wraps", price: 349, is_available: true },
+    { id: "masala-fries", name: "Masala Fries", category: "Fries", price: 230, is_available: true },
+    { id: "friend-fries", name: "Friend Fries", category: "Fries", price: 199, is_available: true },
     { id: "cheese-paratha", name: "Chicken Cheese Paratha", category: "Paratha Roll", price: 249, is_available: true },
     { id: "pizza-burger", name: "Pizza Burger", category: "Burger", price: 449, is_available: true },
     ...[["ks", "Small", 449], ["km", "Mid", 799], ["kl", "Large", 1199]].map(([id, size, price]) =>
@@ -833,6 +840,35 @@ try {
     });
   }
   const { simpleCatalogOrder } = await import("../lib/agent/catalog-order.ts");
+  const beforeFriesOrders = placed.length;
+  const { groundCurrentTurnFulfillment } = await import("../lib/agent/nlu.ts");
+  check("current-turn grounding preserves an explicit Urdu delivery destination", () => {
+    const grounded = groundCurrentTurnFulfillment(u("add_items", { items: [mention("Masala Fries")], address: "گلبرگ گھر نمبر بارہ", order_type: "delivery" }),
+      { messageText: "ایک مسالہ فرائز گلبرگ گھر نمبر بارہ ڈیلیوری کر دیں" });
+    assert.equal(grounded.address, "گلبرگ گھر نمبر بارہ"); assert.equal(grounded.order_type, "delivery");
+  });
+  fresh("incident-fries", { stage: "placed", preferred_language: "roman_urdu" });
+  const beforeFriesParser = parserCalls;
+  result = await send("incident-fries", "ایک مسالہ فرائز اور ایک فرینڈ فرائز۔", undefined, { replyLanguage: "roman_urdu" });
+  check("the actual fries voice note after confirmation creates a fresh two-item cart without staff handoff", () => {
+    assert.equal(parserCalls, beforeFriesParser);
+    assert.equal(result.escalate, false); assert.equal(result.stage, "building_cart");
+    assert.equal(placed.length, beforeFriesOrders);
+    assert.deepEqual(states.get("incident-fries").cart.map((i) => [i.menu_item_id, i.qty]), [["masala-fries", 1], ["friend-fries", 1]]);
+    assert.equal(states.get("incident-fries").address, null);
+    assert.match(result.replyText, /Masala Fries/); assert.match(result.replyText, /Friend Fries/);
+  });
+  fresh("incident-fries-history", { stage: "placed", preferred_language: "roman_urdu" });
+  histories.get("incident-fries-history").push({ role: "assistant", content: "Order confirmed. Delivery: Gudwal house 27." });
+  result = await send("incident-fries-history", "add one masala fries and one friend fries please", u("add_items", {
+    items: [mention("Masala Fries"), mention("Friend Fries")], address: "Gudwal house 27", order_type: "delivery" }));
+  check("a model cannot replay the old address and service into a new fries request", () => {
+    assert.equal(result.escalate, false); assert.equal(result.stage, "building_cart");
+    assert.equal(states.get("incident-fries-history").cart.length, 2);
+    assert.equal(states.get("incident-fries-history").address, null);
+    assert.equal(states.get("incident-fries-history").order_type, null);
+    assert.equal(placed.length, beforeFriesOrders);
+  });
   check("direct voice orders never discard Urdu negations or turn English alternatives into two orders", () => {
     for (const text of ["ایک افغانی ریپ نہیں اور ایک چکن پراٹھا رول", "ایک افغانی ریپ کم مرچ اور ایک چکن پراٹھا رول", "one afghani wrap or one chicken paratha roll"]) {
       assert.equal(simpleCatalogOrder(text, menu), null);

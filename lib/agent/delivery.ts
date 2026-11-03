@@ -85,26 +85,22 @@ export function buildEstimatedTimeReply(
   const prepMinutes = Math.round(Number(settings.estimated_prep_minutes) || 30);
   const deliveryMinutes = Math.round(Number(settings.estimated_delivery_minutes) || 45);
 
-  const isPa = langOrRomanUrdu === "pashto";
   const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
 
   if (orderType === "pickup") {
-    if (isPa) return `Pickup prep estimate confirmation baad takreeban ${prepMinutes} minutes day.`;
+
     return isUr
       ? `Pickup prep estimate confirmation ke baad takreeban ${prepMinutes} minutes hai.`
       : `Pickup prep estimate is about ${prepMinutes} minutes after confirmation.`;
   }
 
   if (orderType === "dine-in") {
-    if (isPa) return `Dine-in orders dapara prep estimate takreeban ${prepMinutes} minutes day.`;
+
     return isUr
       ? `Dine-in orders ke liye prep estimate takreeban ${prepMinutes} minutes hai.`
       : `Dine-in prep estimate is about ${prepMinutes} minutes.`;
   }
 
-  if (isPa) {
-    return `Delivery estimate confirmation baad takreeban ${deliveryMinutes} minutes day. Prep time ${prepMinutes} minutes day.`;
-  }
   return isUr
     ? `Delivery estimate confirmation ke baad takreeban ${deliveryMinutes} minutes hai. Prep time ${prepMinutes} minutes hai.`
     : `Delivery estimate is about ${deliveryMinutes} minutes after confirmation. Prep time is about ${prepMinutes} minutes.`;

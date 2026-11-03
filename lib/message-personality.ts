@@ -45,10 +45,7 @@ export function getGreetingReply(
       `Walaikum Assalam${nameStr}! 👋 Batayein kya order karna chahein ge?`,
       `Walaikum Assalam${nameStr}! 🙏 Aaj kya mangwana chahein ge?`,
     ],
-    salam_pa: [
-      `Walaikum Assalam${nameStr}! 👋 Khush raghlay! Tse order kawal ghwaaray?`,
-      `Walaikum Assalam${nameStr}! 🙏 Batayein tse pakaar di?`,
-    ],
+
     hello_en: [
       `Hello${nameStr}! 👋 What can I get for you today?`,
       `Hey there${nameStr}! 👋 What would you like to order?`,
@@ -57,18 +54,11 @@ export function getGreetingReply(
       `Hello${nameStr}! 👋 Batayein kya order karna chahein ge?`,
       `Hello${nameStr}! 🍽️ Aaj kya mangwana chahein ge?`,
     ],
-    hello_pa: [
-      `Stare mashay${nameStr}! 👋 Khush raghlay! Tse order kawal ghwaaray?`,
-      `Pa kher raghlay${nameStr}! 🍽️ Nan tse order kawal ghwaaray?`,
-    ],
+
   };
 
-  const isPa = langOrRomanUrdu === "pashto";
   const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
 
-  if (isPa) {
-    return isSalam ? pickRandom(greetings.salam_pa) : pickRandom(greetings.hello_pa);
-  }
   if (isUr) {
     return isSalam ? pickRandom(greetings.salam_ur) : pickRandom(greetings.hello_ur);
   }
@@ -77,11 +67,7 @@ export function getGreetingReply(
 
 export function getAcknowledgmentReply(langOrRomanUrdu: boolean | LanguagePreference): string {
   const acks = {
-    pa: [
-      "Kha masla nishta! 👍 Che tayar shway, da item num rawalega.",
-      "Zaroor! Hal warka tse order kawal ghwaaray 🍽️",
-      "Kha! 👍 Har kala che tayar shway order rawalega.",
-    ],
+
     ur: [
       "No worries! 👍 Jab ready hon, item ka naam bhej dein.",
       "Zaroor! Let me know kya order karna hai 🍽️",
@@ -94,10 +80,8 @@ export function getAcknowledgmentReply(langOrRomanUrdu: boolean | LanguagePrefer
     ],
   };
 
-  const isPa = langOrRomanUrdu === "pashto";
   const isUr = langOrRomanUrdu === "roman_urdu" || langOrRomanUrdu === true;
 
-  if (isPa) return pickRandom(acks.pa);
   if (isUr) return pickRandom(acks.ur);
   return pickRandom(acks.en);
 }

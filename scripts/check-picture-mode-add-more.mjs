@@ -12,8 +12,7 @@ console.log("\n== Testing Picture Mode 'Add More' Behavior ==");
 // 1) Test reply texts for askAddMore across languages
 assert.equal(reply.askAddMore("roman_urdu"), "Aur kya add karna hai? Batayein! 😊");
 assert.equal(reply.askAddMore("english"), "What would you like to add? 😊");
-assert.equal(reply.askAddMore("pashto"), "Nor tse add kawal ghwaaray?");
-pass("reply.askAddMore correctly handles Roman Urdu, English, and Pashto.");
+pass("reply.askAddMore correctly handles Roman Urdu and English.");
 
 // 2) Test nextTransition passes isAddMore in show_menu action payload
 const uAddMore = {

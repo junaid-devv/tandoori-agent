@@ -40,7 +40,6 @@ import { getMenuCatalog, invalidateMenuCache } from "@/lib/menu";
 import { isWithinOperatingHours } from "@/lib/settings";
 import { sharedLocationPin } from "@/lib/location-pin";
 
-
 export interface ExecutionResult {
   replyText: string;
   statePatch: Partial<ConversationStateRow>;
@@ -107,7 +106,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   let carriedPending = ctx.state.pending_clarification?.remaining_items?.length
     ? ctx.state.pending_clarification : null;
 
-
   const setInteractive = (p: InteractivePayload | null) => {
     if (p) {
       interactive = p;
@@ -154,11 +152,9 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   const hoursAnswer = (): string => {
     const s = ctx.settings;
     const status = ctx.isOpenNow
-      ? (lang === "pashto" ? "✅ Restaurant da wakht KHALAS day" : lang === "roman_urdu" ? "✅ Restaurant abhi KHULA hai" : "✅ We are currently OPEN")
-      : (lang === "pashto" ? "🔴 Restaurant da wakht BAND day" : lang === "roman_urdu" ? "🔴 Restaurant abhi BAND hai" : "🔴 We are currently CLOSED");
-    if (lang === "pashto") {
-      return `${status}\n🕐 Wakht: ${s.opening_time} – ${s.closing_time}${s.city ? `\n📍 Location: ${s.city}` : ""}`;
-    }
+      ? (lang === "roman_urdu" ? "✅ Restaurant abhi KHULA hai" : "✅ We are currently OPEN")
+      : (lang === "roman_urdu" ? "🔴 Restaurant abhi BAND hai" : "🔴 We are currently CLOSED");
+
     if (lang === "roman_urdu") {
       return `${status}\n🕐 Timings: ${s.opening_time} – ${s.closing_time}${s.city ? `\n📍 Location: ${s.city}` : ""}`;
     }
@@ -167,7 +163,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
   /** Deterministic payment answer — never calls LLM. */
   const paymentAnswer = (): string => {
-    if (lang === "pashto") return "💵 Sirf *Cash on Delivery (COD)* shta.";
+
     return lang === "roman_urdu"
       ? "💵 Filhaal sirf *Cash on Delivery (COD)* available hai."
       : "💵 We only accept *Cash on Delivery (COD)* at this time.";
@@ -181,14 +177,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       return `📍 ${outsideAreaDeliveryInfo(ctx.settings, cur, lang)}`;
     }
     const explanation = status === "unserved"
-      ? (lang === "roman_urdu" ? "Is area mein delivery available nahi hai. " : lang === "pashto" ? "Da area ke delivery nishta. " : "That area is not served. ")
+      ? (lang === "roman_urdu" ? "Is area mein delivery available nahi hai. " : "That area is not served. ")
       : status === "ambiguous"
-      ? (lang === "roman_urdu" ? "Is address se aik se zyada areas match ho rahe hain. " : lang === "pashto" ? "Da address sara yaw na zyat areas match keegi. " : "That address matches more than one delivery area. ")
+      ? (lang === "roman_urdu" ? "Is address se aik se zyada areas match ho rahe hain. " : "That address matches more than one delivery area. ")
       : "";
     return explanation + (lang === "roman_urdu"
       ? `📍 Delivery charges confirm karne ke liye apna exact area aur mukammal address bhejein. Supported areas: ${areas}. Ya Pickup choose karein.`
-      : lang === "pashto"
-      ? `📍 Da delivery fee dapara khpal exact area aw mukammal address rawalega. Areas: ${areas}. Ya Pickup select kra.`
       : `📍 Please confirm your exact area and full address so we can determine the delivery fee. Supported areas: ${areas}. You can also choose Pickup.`);
   };
 
@@ -206,8 +200,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     const rate = outsideAreaDeliveryRate(ctx.settings);
     replies.push(lang === "roman_urdu"
       ? `📍 Address mil gaya. Is area ki delivery ${cur} ${rate} per km hai. Team distance aur final delivery charges yahin confirm kar degi. Order abhi place nahi hua.`
-      : lang === "pashto"
-      ? `📍 Address milaw sho. Da area delivery ${cur} ${rate} per km da. Team ba distance aw final delivery fee dalta confirm kri. Order la na day place shway.`
       : `📍 Destination received. Delivery to this area is ${cur} ${rate} per km. Our team will confirm the distance and final delivery charge here. Your order has not been placed yet.`);
     return true;
   };
@@ -216,22 +208,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
   const deliveryInfoAnswer = (): string => {
     const s = ctx.settings;
     if (!s.delivery_enabled) {
-      if (lang === "pashto") {
-        return `Bakhana ghwaro, da wakht delivery service band day — sirf Pickup ya Dine-in shta.\n🕐 Restaurant Timings: ${s.opening_time} – ${s.closing_time}`;
-      }
+
       return lang === "roman_urdu"
         ? `Maafi chahte hain, is waqt delivery service band hai — sirf Pickup ya Dine-in available hai.\n🕐 Restaurant Timings: ${s.opening_time} – ${s.closing_time}`
         : `Sorry, delivery service is currently closed — Pickup or Dine-in only.\n🕐 Restaurant Hours: ${s.opening_time} – ${s.closing_time}`;
     }
     const parts: string[] = [];
-    if (lang === "pashto") {
-      parts.push("✅ Delivery shta");
-      parts.push(`🕐 Delivery Wakht: ${s.opening_time} – ${s.closing_time}`);
-      if (deliveryAreaNames(s).length) parts.push(`📍 Ilaqay: ${deliveryAreaNames(s).join(", ")}`);
-      parts.push(`💰 ${deliveryFeeInfo(s, cur, value("address"))}`);
-      if (s.min_delivery_amount) parts.push(`🛒 Kam az kam order: ${cur} ${s.min_delivery_amount}`);
-      if (s.estimated_delivery_minutes) parts.push(`⏱ Delivery Wakht: ~${s.estimated_delivery_minutes} min`);
-    } else if (lang === "roman_urdu") {
+    if (lang === "roman_urdu") {
       parts.push("✅ Delivery available hai");
       parts.push(`🕐 Delivery Timings: ${s.opening_time} – ${s.closing_time}`);
       if (deliveryAreaNames(s).length) parts.push(`📍 Areas: ${deliveryAreaNames(s).join(", ")}`);
@@ -441,7 +424,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             setInteractive({
               kind: "buttons",
               payload: {
-                body: lang === "pashto" ? "Menu katlo lapara button khekhey krai:" : lang === "roman_urdu" ? "Menu dekhne ke liye button dabayein:" : "Tap below to view our menu:",
+                body: lang === "roman_urdu" ? "Menu dekhne ke liye button dabayein:" : "Tap below to view our menu:",
                 buttons: [
                   { id: "action:view_menu", title: "📜 View Menu" },
                 ],
@@ -450,7 +433,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           } else {
             const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
             if (cats.length > 0) {
-              setInteractive(categoryList(lang, cats, lang === "pashto" ? "Taso sa ghwaray?" : lang === "roman_urdu" ? "Kya mangwana hai?" : "What would you like?"));
+              setInteractive(categoryList(lang, cats, lang === "roman_urdu" ? "Kya mangwana hai?" : "What would you like?"));
             }
           }
         }
@@ -556,7 +539,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             } else {
               replies.push(reply.notFound(lang, query, [], cats));
               if (cats.length > 0 && cart.length === 0 && input.menuDisplayMode !== "menu_pictures") {
-                setInteractive(categoryList(lang, cats, lang === "pashto" ? "Menu katal ghwaray?" : lang === "roman_urdu" ? "Menu dekhna chahenge?" : "What would you like?"));
+                setInteractive(categoryList(lang, cats, lang === "roman_urdu" ? "Menu dekhna chahenge?" : "What would you like?"));
               }
             }
           }
@@ -691,9 +674,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           answered = true;
           const estDelivery = Math.round(Number(ctx.settings?.estimated_delivery_minutes) || 45);
           replies.push(
-            lang === "pashto"
-              ? `⏱ Delivery ke takreeban ~${estDelivery} minute lagygi.`
-              : lang === "roman_urdu"
+            lang === "roman_urdu"
               ? `⏱ Delivery mein takreeban ~${estDelivery} minutes lagte hain.`
               : `⏱ Estimated delivery time is ~${estDelivery} mins.`
           );
@@ -972,10 +953,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             setInteractive({
               kind: "buttons",
               payload: {
-                body: lang === "pashto" ? "Da delivery pata (address)?" : "Delivery address?",
+                body: "Delivery address?",
                 buttons: [
-                  { id: `addr:saved:${saved.id}`, title: lang === "pashto" ? "Pakhwanay Address" : lang === "roman_urdu" ? "Pichla Address" : "Use Saved" },
-                  { id: "addr:new", title: lang === "pashto" ? "Naway Address" : lang === "roman_urdu" ? "Naya Address" : "New Address" },
+                  { id: `addr:saved:${saved.id}`, title: lang === "roman_urdu" ? "Pichla Address" : "Use Saved" },
+                  { id: "addr:new", title: lang === "roman_urdu" ? "Naya Address" : "New Address" },
                 ],
               },
             });
@@ -1006,9 +987,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           replies.push(reply.askDineInGuests(lang, u.reservation_time || rtime || ""));
         } else if (cart.length === 0) {
           replies.push(
-            lang === "pashto"
-              ? `Kha theek da, ${currentGuests} kasan, ${u.reservation_time || rtime || ""}. Menu na sa order kawal ghwaray?`
-              : lang === "roman_urdu"
+            lang === "roman_urdu"
               ? `Theek hai, ${currentGuests} log, ${u.reservation_time || rtime || ""}. Menu se kya order karein ge?`
               : `Got it, ${currentGuests} guests at ${u.reservation_time || rtime || ""}. What would you like to order from our menu?`,
           );
@@ -1030,9 +1009,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
           if (cart.length === 0) {
             replies.push(
-              lang === "pashto"
-                ? `Kha theek da, pickup wakht: ${ptime}. Menu na sa order kawal ghwaray?`
-                : lang === "roman_urdu"
+              lang === "roman_urdu"
                 ? `Theek hai, pickup time: ${ptime}. Menu se kya order karein ge?`
                 : `Got it, pickup time: ${ptime}. What would you like to order from our menu?`,
             );
@@ -1191,7 +1168,6 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             patch.stage = "building_cart";
             patch.summary_sent_at = null;
             replies.push(lang === "roman_urdu" ? "Menu ki qeemat ya availability badal gayi hai. Updated cart check karke checkout karein."
-              : lang === "pashto" ? "Da menu qeemat ya availability badal shaway. Cart bia ogoray ao checkout wokray."
               : "Menu prices or availability changed. Please review the updated cart and checkout again.");
             replies.push(reply.cartUpdated(lang, cart, cur));
             setInteractive(cartActionButtons(lang));
@@ -1232,9 +1208,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             patch.stage = "collecting_dinein";
           } else {
             replies.push(
-              lang === "pashto"
-                ? "Order place nasho. Laga shiba pas bia koshish wokray."
-                : lang === "roman_urdu"
+              lang === "roman_urdu"
                 ? "Order place nahi ho saka. Thori der baad try karein."
                 : "Couldn't place the order. Please try again shortly.",
             );
@@ -1290,17 +1264,13 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
           if (recent.status === "cancelled") {
             replies.push(
-              lang === "pashto"
-                ? `Order #${recent.order_number} mukhey na cancel shaway day.`
-                : lang === "roman_urdu"
+              lang === "roman_urdu"
                 ? `Order #${recent.order_number} pehle hi cancel ho chuka hai.`
                 : `Order #${recent.order_number} has already been cancelled.`,
             );
           } else if (recent.status === "out_for_delivery" || recent.status === "delivered") {
             replies.push(
-              lang === "pashto"
-                ? `Bakhana ghwaro, Order #${recent.order_number} delivery dapara rawana shaway day ya rasayedalay day ao os cancel keday nashi. Madad dapara amla sara rabita wokray.`
-                : lang === "roman_urdu"
+              lang === "roman_urdu"
                 ? `Maaf kijiyega, Order #${recent.order_number} deliver hone ke liye nikal chuka hai aur ab cancel nahi ho sakta. Madad ke liye hamare staff se rabta karein.`
                 : `Sorry, Order #${recent.order_number} is already on its way or delivered and cannot be cancelled. Please contact our support for help.`,
             );
@@ -1323,9 +1293,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               message: `Cancellation requested for Order #${recent.order_number} after prep window. Staff review required.`,
             }).catch((alertErr) => console.error("Failed to create cancellation staff alert:", alertErr));
             replies.push(
-              lang === "pashto"
-                ? `Staso da Order #${recent.order_number} cancellation darghwast branch staff ta walegala sho.`
-                : lang === "roman_urdu"
+              lang === "roman_urdu"
                 ? `Aap ke Order #${recent.order_number} ki cancellation request branch staff ko bhej di gayi hai.`
                 : `Cancellation request for Order #${recent.order_number} has been sent to our restaurant staff.`,
             );

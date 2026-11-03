@@ -21,7 +21,7 @@ export function outsideAreaDeliveryInfo(settings: DeliveryPricing, currency: str
   const rate = outsideAreaDeliveryRate(settings);
   if (!rate) return "";
   if (language === "roman_urdu") return `Listed fixed-price areas ke ilawa bhi delivery available hai: ${currency} ${rate} per km (kilometre). Apna mukammal address ya WhatsApp location pin bhejein; hamari team distance aur final delivery charges confirm karegi. Order final charges par aap ki tasdeeq ke baad place hoga.`;
-  if (language === "pashto") return `Da fixed-price areas na bahar hum delivery shta: ${currency} ${rate} per km (kilometre). Khpal poora address ya WhatsApp location pin rawalega; zmong team ba distance aw final delivery fee confirm kri. Order ba staso da final charges tasdeeq na pas place shi.`;
+
   return `Delivery outside the fixed-price areas is also available at ${currency} ${rate} per km (kilometre). Please share your full address or WhatsApp location pin; our team will confirm the distance and final delivery charge. Your order will be placed after you approve the final charges.`;
 }
 

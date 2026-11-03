@@ -48,7 +48,6 @@ export function buildInteractiveListForCities(
     return null;
   }
 
-  const isPa = langOrPrefersRomanUrdu === "pashto";
   const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
 
   const rows = uniqueCities.slice(0, 10).map((city, index) => ({
@@ -57,9 +56,7 @@ export function buildInteractiveListForCities(
   }));
 
   return {
-    body: isPa
-      ? "Khush raghlay! Awal khpal city select kra."
-      : isUr
+    body: isUr
       ? "Welcome! Sab se pehle apna city select karein."
       : "Welcome! First, please choose your city.",
     buttonText: "Select City",
@@ -70,24 +67,20 @@ export function buildInteractiveListForCities(
 
 export function getCitySelectionPrompt(cities: string[], langOrPrefersRomanUrdu: boolean | LanguagePreference): string {
   const uniqueCities = dedupeCities(cities);
-  const isPa = langOrPrefersRomanUrdu === "pashto";
+
   const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
 
   if (uniqueCities.length === 0) {
-    if (isPa) return "Bakhana ghwaarom, da wakht da city list nishta. Lagya baad koshish kra.";
+
     return isUr
       ? "Maazrat, abhi city list available nahi hai. Thori dair baad try karein."
       : "Sorry, city options are not available right now. Please try again shortly.";
   }
 
-  const intro = isPa
-    ? "Khush raghlay! Awal khpal city select kra:"
-    : isUr
+  const intro = isUr
     ? "Welcome! Sab se pehle apna city select karein:"
     : "Welcome! First, please choose your city:";
-  const closing = isPa
-    ? "Reply ke da city num rawalega."
-    : isUr
+  const closing = isUr
     ? "Reply mein city ka naam bhej dein."
     : "Reply with your city name.";
 
@@ -178,12 +171,9 @@ export function buildInteractiveCategoryUI(
   const categories = getUniqueMenuCategories(menuItems);
   if (categories.length < 2) return { interactiveList: null, replyButtons: null };
 
-  const isPa = langOrPrefersRomanUrdu === "pashto";
   const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
 
-  const body = isPa
-    ? "Da menu category select kra:"
-    : isUr
+  const body = isUr
     ? "Menu category select karein:"
     : "Choose a category:";
 

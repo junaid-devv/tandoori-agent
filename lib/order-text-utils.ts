@@ -98,27 +98,6 @@ const URDU_ORDER_TOKEN_REPLACEMENTS: Array<[RegExp, string]> = [
   [/(?:مصالحہ|مرچ|تیز)/g, " spicy "],
   [/(?:کم)/g, " less "],
   [/(?:زیادہ)/g, " extra "],
-  // ---- Pashto script food & action terms ----
-  [/(?:چرګ|مرغه)/g, " chicken "],
-  [/(?:غوښه|غوښ)/g, " meat "],
-  [/(?:وريژې|وريجې)/g, " rice "],
-  [/(?:ډوډۍ)/g, " roti "],
-  [/(?:کباب|کباب)/g, " kabab "],
-  [/(?:بريانی|بریاني)/g, " biryani "],
-  [/(?:برګر)/g, " burger "],
-  [/(?:پيزه|پیزه)/g, " pizza "],
-  [/(?:فرائز)/g, " fries "],
-  [/(?:کراهی|کڑاهی)/g, " karahi "],
-  [/(?:منیو|مینو)/g, " menu "],
-  [/(?:آرډر|آرڈر)/g, " order "],
-  [/(?:ډیلیوري|ډليوري)/g, " delivery "],
-  [/(?:غواړم|غوارم)/g, " ghwaarom "],
-  [/(?:راکړه|راکڑه)/g, " raka "],
-  [/(?:يو|یو)/g, " yaw "],
-  [/(?:دوه)/g, " dwa "],
-  [/(?:درې)/g, " dre "],
-  [/(?:لس)/g, " las "],
-  [/(?:کور\s*ته|کورته)/g, " kora ta "],
 ];
 
 function expandUrduOrderTokens(value: string): string {

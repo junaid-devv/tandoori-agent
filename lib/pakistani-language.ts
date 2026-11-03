@@ -2,6 +2,8 @@
  * occasional Devanagari output. Never translate or guess an unknown dish. */
 export function normalizeFoodScript(text: string): string {
   const aliases: Array<[RegExp, string]> = [
+    [/مسالہ|مسالا/gu, "masala"],
+    [/فرینڈ/gu, "friend"],
     [/افغانی|अफगानी|अफ़ग़ानी/gu, "afghani"],
     [/ریپ|ریب|रैप|रैप्स/gu, "wrap"],
     [/चिकन|चिकेन|چکن|مرغی/gu, "chicken"],
@@ -28,7 +30,8 @@ export function normalizeFoodScript(text: string): string {
 /** Customer copy uses Pakistani Urdu or English, never Hindi script/formulas. */
 export function isPakistaniReply(text: string): boolean {
   return !/[\u0900-\u097f]/u.test(text)
+    && !/\b(?:ghwaarom|ghwaram|kawom|darshi|rawalega|rawalegay|pakaar|khpala|staso|taso|manana)\b/i.test(text)
     && !/\b(?:namaste|dhanyavaad|dhanyavad|kripya|kripaya|kirpya|bhojan|swadisht|swaadisht)\b/i.test(text);
 }
 
-export const PAKISTANI_LANGUAGE_RULE = "Use Pakistani conversational vocabulary: ji, zaroor, batayein, bhej dein, shukriya, maaf kijiye. Roman Urdu and Roman Pashto use Latin script only. Never output Hindi/Devanagari script or words such as namaste, kripya, dhanyavaad, bhojan or swadisht, even when a voice transcript or history contains them. Keep menu names in their catalog spelling.";
+export const PAKISTANI_LANGUAGE_RULE = "Use Pakistani conversational vocabulary: ji, zaroor, batayein, bhej dein, shukriya, maaf kijiye. Roman Urdu uses Latin script only. Only English and Roman Urdu replies are supported. Never output Hindi/Devanagari script or words such as namaste, kripya, dhanyavaad, bhojan or swadisht, even when a voice transcript or history contains them. Keep menu names in their catalog spelling.";

@@ -13,6 +13,7 @@
  */
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import type { ConversationStateRow, ConversationStage } from "@/lib/schema.types";
+import { supportedReplyLanguage } from "@/lib/schema.types";
 import type { StoredAgentReply } from "@/lib/agent/reply-delivery";
 
 const TABLE = "conversation_states";
@@ -66,7 +67,7 @@ export function getDefaultState(conversationId: string): ConversationStateRow {
 
 /** Coerce a raw DB row into a fully-populated, type-safe state object. */
 export function parseState(raw: Partial<ConversationStateRow> & { conversation_id: string }): ConversationStateRow {
-  return { ...defaults(raw.conversation_id), ...raw };
+  return { ...defaults(raw.conversation_id), ...raw, preferred_language: supportedReplyLanguage(raw.preferred_language ?? "roman_urdu") };
 }
 
 export const stateRepo = {

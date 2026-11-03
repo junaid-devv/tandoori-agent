@@ -6,9 +6,7 @@ import { stateRepo } from "./data/state.repo";
 import type { LanguagePreference } from "./schema.types";
 
 function buildHandoffReply(langOrPrefersRomanUrdu: boolean | LanguagePreference): string {
-  if (langOrPrefersRomanUrdu === "pashto") {
-    return "Za manager ta message forward kawom. Lagya ba jawab darshi.";
-  }
+
   return (langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true)
     ? "Main manager ko message forward kar raha hoon. Thori dair mein reply aa jayega."
     : "I'm forwarding this to the manager. They'll reply shortly.";

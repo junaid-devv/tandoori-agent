@@ -83,24 +83,20 @@ export async function getBranchById(branchId: string): Promise<BranchRecord | nu
 }
 
 export function getBranchSelectionPrompt(branches: BranchSummary[], langOrPrefersRomanUrdu: boolean | LanguagePreference): string {
-  const isPa = langOrPrefersRomanUrdu === "pashto";
+
   const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
 
   if (branches.length === 0) {
-    if (isPa) return "Bakhana ghwaarom, da wakht da branch list nishta. Lagya baad koshish kra.";
+
     return isUr
       ? "Maazrat, is waqt koi branch available nahi hai. Thori dair baad dobara try karein."
       : "Sorry, there are no branches available right now. Please try again shortly.";
   }
 
-  const intro = isPa
-    ? "Order shuru kawalo na awal khpala branch select kra:"
-    : isUr
+  const intro = isUr
     ? "Order shuru karne se pehle apni branch select karein:"
     : "Before we start your order, please choose your branch:";
-  const closing = isPa
-    ? "Reply ke da branch number ya branch num rawalega."
-    : isUr
+  const closing = isUr
     ? "Reply mein branch number ya branch ka naam bhej dein."
     : "Reply with the branch number or the branch name.";
 

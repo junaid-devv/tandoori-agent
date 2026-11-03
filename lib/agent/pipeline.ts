@@ -215,7 +215,7 @@ export function fastUnderstanding(text: string, state: ConversationStateRow, sav
     }
   }
   const base = makeBase(lang);
-  if (/^(?:ass?alam(?:u?\s*(?:o|al)?\s*alaikum)?|aslamoalikum|assalamualaikum|assalamualikum|assalamoalaikum|aoa|salam|hi|hello|hey|stare?\s*mashay|pa\s*kher)[!.]*$/i.test(raw)) {
+  if (/^(?:ass?alam(?:u?\s*(?:o|al)?\s*alaikum)?|aslamoalikum|assalamualaikum|assalamualikum|assalamoalaikum|aoa|salam|hi|hello|hey)[!.]*$/i.test(raw)) {
     return { ...base, intents: ["greeting"], primary_intent: "greeting" };
   }
   if (/^(?:yes|haan|han|ji|jee|ok|okay|theek hai|done|confirm|confirm order|place order)[!.]*$/i.test(raw)) {
@@ -275,7 +275,6 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
     if (order && order.branch_id === input.branchId && await orderRepo.saveDeliveryPin(order, pin)) {
       const lang = ctx.state.preferred_language;
       const text = lang === "roman_urdu" ? `📍 Shukriya! Location order #${order.order_number} ke saath save ho gayi.`
-        : lang === "pashto" ? `📍 Manana! Location da order #${order.order_number} sara save sho.`
         : `📍 Thank you! Your location is saved with order #${order.order_number}.`;
       const patch = { last_intent: "delivery_location", last_user_whatsapp_msg_id: input.whatsappMessageId ?? undefined,
         last_processed_user_message_at: new Date().toISOString() };
@@ -348,7 +347,7 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   // Models must not switch to English/Hindi because of a transcription artifact.
   if (input.replyLanguage) {
     understanding.language = input.replyLanguage;
-  } else if (!/\b(?:reply|respond|speak|baat|jawab)\b.*\b(?:english|urdu|pashto)\b|\b(?:english|urdu|pashto)\b.*\b(?:please|mein|me|bolo|likho)\b/i.test(input.messageText)) {
+  } else if (!/\b(?:reply|respond|speak|baat|jawab)\b.*\b(?:english|urdu)\b|\b(?:english|urdu)\b.*\b(?:please|mein|me|bolo|likho)\b/i.test(input.messageText)) {
     understanding.language = inferLanguagePreference(input.messageText, ctx.state.preferred_language);
   }
 

@@ -20,7 +20,6 @@ export function buildInteractiveListForPresentedOptions(
     return null;
   }
 
-  const isPa = langOrPrefersRomanUrdu === "pashto";
   const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
 
   const rows = options.slice(0, 10).map((item) => ({
@@ -30,9 +29,7 @@ export function buildInteractiveListForPresentedOptions(
   }));
 
   return {
-    body: isPa
-      ? "Khpal khwakh item da list na select kra."
-      : isUr
+    body: isUr
       ? "Apni pasand ka item list se select karein."
       : "Please choose your item from the list.",
     buttonText: "Select Item",
@@ -50,7 +47,6 @@ export function buildInteractiveListForBranches(
     return null;
   }
 
-  const isPa = langOrPrefersRomanUrdu === "pashto";
   const isUr = langOrPrefersRomanUrdu === "roman_urdu" || langOrPrefersRomanUrdu === true;
 
   const rows = branches.slice(0, 10).map((branch) => ({
@@ -60,11 +56,7 @@ export function buildInteractiveListForBranches(
   }));
 
   return {
-    body: isPa
-      ? selectedCity
-        ? `*${selectedCity}* ke khpala branch select kra.`
-        : "Order shuru kawalo na awal khpala branch select kra."
-      : isUr
+    body: isUr
       ? selectedCity
         ? `*${selectedCity}* mein apni branch select karein.`
         : "Order shuru karne se pehle apni branch select karein."

@@ -25,7 +25,6 @@ import {
 import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import type { LanguagePreference } from "@/lib/schema.types";
 
-
 import { getWhatsAppTransport } from "./whatsapp-context";
 const ORDER_FRESH_START_AFTER_INACTIVITY_MS = 2 * 60 * 60 * 1000;
 export type IncomingWhatsAppMessage = {
@@ -48,7 +47,6 @@ export type IncomingWhatsAppMessage = {
     list_reply?: { id?: string; title?: string; description?: string };
   };
 };
-
 
 export async function processEchoMessage(
   message: IncomingWhatsAppMessage,
@@ -234,7 +232,6 @@ export async function processOneMessage(
     });
   }
 
-
     const result = await runTurn({
       conversationId: conversation.id,
       branchId: activeBranch.id,
@@ -282,7 +279,6 @@ export async function processOneMessage(
   }
 }
 
-
 // ---------------------------------------------------------------------------
 // Human mode / bot resume
 // ---------------------------------------------------------------------------
@@ -307,9 +303,7 @@ async function handleBotResume(
       ? "roman_urdu"
       : "english";
   const resumeReply =
-    resolvedLang === "pashto"
-      ? "Kha. Khpal order message rawalegay."
-      : resolvedLang === "roman_urdu"
+    resolvedLang === "roman_urdu"
       ? "Theek hai. Apna order message bhej dein."
       : "Done. Send your order when ready.";
   await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: message.from, content: resumeReply });
@@ -323,7 +317,7 @@ async function handleBotResume(
 // Language helper — uses stable conversation state, not single-message snap
 // ---------------------------------------------------------------------------
 function stateLang(state: { preferred_language: string }): import("@/lib/schema.types").LanguagePreference {
-  if (state.preferred_language === "pashto") return "pashto";
+
   return state.preferred_language === "roman_urdu" ? "roman_urdu" : "english";
 }
 
@@ -530,9 +524,7 @@ async function handleNonText(
   // Other unsupported media types
   const lang = stateLang(state);
   const fallback =
-    lang === "pashto"
-      ? "Meherbani warka text message rawalegay, za ba order ke madad kawa."
-      : lang === "roman_urdu"
+    lang === "roman_urdu"
       ? "Please text message bhej dein, main order mein help karta hoon."
       : "Please send a text message and I'll help with your order.";
   await sendAndPersistAssistantMessage({ conversationId: conversation.id, phone: conversation.phone, content: fallback, phoneNumberId });
