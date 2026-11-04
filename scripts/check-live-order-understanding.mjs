@@ -66,7 +66,7 @@ const cases = [
   { name: "a new typed destination cannot re-add historical food", text: "House 80 Street 12 Sector B", language: "roman_urdu", stage: "collecting_delivery", cart: [item("Lapeta Egg Burger"), item("1.5 Liter Drink")], history: deliveryHistory, fulfillment,
     test: (u) => u.intents.includes("provide_address") && !!u.address && !u.items.length && !u.removals.length },
   { name: "explicit extra portion remains an addition despite history", text: "Ek aur egg burger bhi add krdo", language: "roman_urdu", stage: "confirming", cart: [item("Lapeta Egg Burger"), item("1.5 Liter Drink")], history: deliveryHistory, fulfillment,
-    test: (u) => u.intents.includes("add_items") && u.items.length === 1 && /egg.*burger/i.test(u.items[0].query) && u.items[0].qty === 1 && !u.address && !u.order_type },
+    test: (u) => u.intents.includes("add_items") && u.items.length === 1 && /egg.*burger/i.test(u.items[0].query) && u.items[0].qty === 1 && !u.items[0].addons.length && !u.address && !u.order_type },
 ];
 let failures = 0;
 const times = [];

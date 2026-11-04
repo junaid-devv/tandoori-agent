@@ -1,3 +1,9 @@
+/** Urdu keyboards may emit Persian or Arabic digits for quantities and choices. */
+export function normalizePakistaniDigits(text: string): string {
+  return text.replace(/[۰-۹]/g, (digit) => String("۰۱۲۳۴۵۶۷۸۹".indexOf(digit)))
+    .replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit)));
+}
+
 /** Food spellings emitted by Pakistani voice notes, including Whisper's
  * occasional Devanagari output. Never translate or guess an unknown dish. */
 export function normalizeFoodScript(text: string): string {
@@ -22,7 +28,7 @@ export function normalizeFoodScript(text: string): string {
     [/नान|نان/gu, "naan"],
     [/फ्राइज़|फ्राइज|فرائز/gu, "fries"],
   ];
-  let result = text;
+  let result = normalizePakistaniDigits(text);
   for (const [pattern, word] of aliases) result = result.replace(pattern, ` ${word} `);
   return result.replace(/\s+/g, " ").trim();
 }

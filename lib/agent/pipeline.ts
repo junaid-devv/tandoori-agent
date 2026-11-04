@@ -21,10 +21,10 @@ import { simpleCatalogOrder, catalogSpellingHints } from "./catalog-order";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import { extractBaseItemName, extractSizeFromQuery, menuNameCoversQuery } from "@/lib/menu/search";
-import { normalizeFoodScript } from "@/lib/pakistani-language";
+import { normalizeFoodScript, normalizePakistaniDigits } from "@/lib/pakistani-language";
 import { sharedLocationPin } from "@/lib/location-pin";
 import { normalizeArea } from "@/lib/delivery-pricing";
-import { isCompactDeliveryAddress } from "./delivery";
+import { isDeliveryAddressFragment } from "./delivery";
 import { dealFlavorAnswer } from "./deal-flavors";
 import { currentOrderHistory } from "@/lib/order-session";
 import type { ConversationStateRow } from "@/lib/schema.types";
@@ -176,7 +176,7 @@ export function understandingFromInteractiveId(
 
 /** Exact choices only. Natural-language edits, questions and compound orders go to NLU. */
 export function fastUnderstanding(text: string, state: ConversationStateRow, savedAddressId?: string | null): TurnUnderstanding | null {
-  const raw = text.trim().replace(/^\[voice note\]\s*/i, "").trim();
+  const raw = normalizePakistaniDigits(text).trim().replace(/^\[voice note\]\s*/i, "").trim();
   const lang = inferLanguagePreference(raw, state.preferred_language);
   const options = state.pending_clarification?.options ?? [];
   const recent = state.last_shown_options_at && Date.now() - Date.parse(state.last_shown_options_at) < 5 * 60_000;
@@ -307,18 +307,19 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   let understanding = fastUnderstanding(input.messageText, ctx.state, ctx.savedAddress?.id);
   if (!understanding) {
     const options = ctx.state.pending_clarification?.options ?? [];
-    const numeric = input.messageText.trim().match(NUMERIC_RE);
+    const numeric = normalizePakistaniDigits(input.messageText).trim().match(NUMERIC_RE);
     const option = numeric ? options[Number(numeric[1]) - 1]?.id : input.messageText;
-    const flavor = dealFlavorAnswer(option ?? input.messageText, ctx.state.cart, ctx.menu, options.map((choice) => choice.id));
+    const flavor = dealFlavorAnswer(option ?? input.messageText, ctx.state.cart, ctx.menu, options.map((choice) => choice.id), ctx.state.preferred_language);
     if (flavor) understanding = { ...makeBase(ctx.state.preferred_language), intents: ["add_items"], primary_intent: "add_items",
       items: [flavor], notes: "fast_path_deal_flavor" };
   }
-  const collectingDestination = ctx.state.stage === "collecting_delivery";
+  const collectingDestination = ctx.state.stage === "collecting_delivery"
+    || ctx.state.stage === "confirming" && ctx.state.order_type === "delivery";
   const areaNames = ctx.settings.delivery_pricing_mode === "area"
     ? (ctx.settings.delivery_zones ?? []).flatMap((zone) => [zone.name, ...zone.aliases]) : ctx.settings.delivery_areas ?? [];
   const bareArea = areaNames.some((area) => normalizeArea(area) === normalizeArea(input.messageText));
   if (!understanding && ctx.settings.delivery_enabled
-    && (pin || collectingDestination && (bareArea || isCompactDeliveryAddress(input.messageText)))
+    && (pin || collectingDestination && (bareArea || isDeliveryAddressFragment(input.messageText)))
     && (ctx.state.stage === "collecting_delivery" || ctx.state.order_type === "delivery" && ctx.state.cart.length > 0)) {
     understanding = { ...makeBase(ctx.state.preferred_language),
       intents: ["provide_address"], primary_intent: "provide_address", address: input.messageText,

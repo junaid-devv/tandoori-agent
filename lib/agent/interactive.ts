@@ -112,12 +112,20 @@ export function itemPickList(
   items: Array<{ id: string; name: string; price: number; category?: string | null }>,
   currency: string,
   bodyText?: string,
+  browse?: { category: string; page: number },
 ): InteractivePayload | null {
-  const rows = items.slice(0, 10).map((it) => ({
+  const pageSize = browse && items.length > 10 ? 8 : 10;
+  const page = browse ? Math.max(0, Math.min(browse.page, Math.ceil(items.length / pageSize) - 1)) : 0;
+  const rows = items.slice(page * pageSize, (page + 1) * pageSize).map((it) => ({
     id: `item:${it.id}`,
     title: it.name.slice(0, 24),
     description: `${currency} ${it.price}${it.category ? ` · ${it.category}` : ""}`.slice(0, 72),
   }));
+  if (browse) {
+    const id = `category:__items:${encodeURIComponent(browse.category)}:`;
+    if (page > 0) rows.push({ id: `${id}${page - 1}`, title: ur(l) ? "Pichlay items" : "Previous items", description: "" });
+    if ((page + 1) * pageSize < items.length) rows.push({ id: `${id}${page + 1}`, title: ur(l) ? "Mazeed items" : "More items", description: "" });
+  }
   if (rows.length === 0) return null;
   return {
     kind: "list",

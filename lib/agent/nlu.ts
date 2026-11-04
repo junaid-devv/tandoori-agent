@@ -507,16 +507,27 @@ function providerFailure(error: unknown): string {
 
 /** Never reuse a context-dependent interpretation across conversations or drafts. */
 export function nluCacheKey(input: NluInput): string {
-  return `nlu:v8:${createHash("sha256").update(JSON.stringify(input)).digest("hex")}`;
+  return `nlu:v9:${createHash("sha256").update(JSON.stringify(input)).digest("hex")}`;
 }
 
 /** History helps resolve references; it cannot independently request food.
  * Reject obvious historical replays on address/service/information turns. */
 export function groundCurrentTurnItems(result: TurnUnderstanding, input: NluInput): TurnUnderstanding {
   const text = normalizeMenuQuery(normalizeText(normalizeFoodScript(input.messageText)));
+  const words = new Set(text.split(" "));
+  const historicWords = new Set(input.cart.flatMap((item) => normalizeMenuQuery(normalizeText(normalizeFoodScript(item.name))).split(" ")));
+  const explicitExtra = /\b(?:extra|addons?|add ons?|toppings?)\b|اضافی/u.test(text);
+  // Catalog branding and historical names are not customer-requested extras.
+  // Apply this before the reference shortcut: "ek aur" still cannot invent an addon.
+  result = { ...result, items: result.items.map((item) => ({ ...item, addons: item.addons.filter((addon) => {
+    const ingredients = normalizeMenuQuery(normalizeText(normalizeFoodScript(addon))).split(" ")
+      .filter((word) => word.length >= 3 && !/^(?:extra|addon|addons|add|with|without|please)$/.test(word));
+    // Unknown/translated extras still go to staff for verification; only a
+    // clear historical replay is discarded. Never silently drop a real request.
+    return explicitExtra || ingredients.some((word) => words.has(word)) || !ingredients.every((word) => historicWords.has(word));
+  }) })) };
   const hasReferenceContext = input.cart.length > 0 || Boolean(input.pendingItems?.length) || Boolean(input.lastShownOptions?.length);
   if (hasReferenceContext && /\b(?:it|them|same|another|more|aur|wala|wali|pehla|doosra|dusra|first|second|last|full|half|small|mid|medium|large|xl)\b/.test(text)) return result;
-  const words = new Set(text.split(" "));
   const items = result.items.filter((item) => normalizeMenuQuery(normalizeText(normalizeFoodScript(item.query))).split(" ")
     .some((word) => word.length >= 3 && !/^(?:item|items|order|full|half|small|mid|medium|large|the|last|please)$/.test(word) && words.has(word)));
   if (items.length === result.items.length) return result;

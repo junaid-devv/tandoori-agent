@@ -32,7 +32,7 @@ import {
 import { invalidateSettingsContext, type TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
 import { resolveDeliveryQuote, deliveryFeeInfo, outsideAreaDeliveryInfo, outsideAreaDeliveryRate } from "@/lib/delivery-pricing";
-import { deliveryAreaNames, hasDeliveryRestrictions, findMatchingDeliveryArea, isCompleteDeliveryAddress, mergeDeliveryAddress } from "./delivery";
+import { deliveryAreaNames, hasDeliveryRestrictions, findMatchingDeliveryArea, isCompleteDeliveryAddress, isDeliveryAddressFragment, mergeDeliveryAddress } from "./delivery";
 import { parseCustomerTimeToIso } from "@/lib/restaurant-time";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { isValidDeliveryAddress } from "@/lib/customer-crm";
@@ -527,15 +527,25 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               replies.push(reply.itemUnavailable(lang, resolved.name));
               continue;
             }
-            cart = addToCart(cart, {
-              menu_item_id: resolved.id,
-              name: resolved.name,
-              unit_price: resolved.price,
-              qty: m.qty ?? 1,
-              size: m.size ?? null,
-              addons: m.addons ?? [],
-              notes: m.notes ?? null,
-            });
+            try {
+              cart = addToCart(cart, {
+                menu_item_id: resolved.id,
+                name: resolved.name,
+                unit_price: resolved.price,
+                qty: m.qty ?? 1,
+                size: m.size ?? null,
+                addons: m.addons ?? [],
+                notes: m.notes ?? null,
+              });
+            } catch (error) {
+              if (!(error instanceof Error) || error.message !== "Maximum quantity per preparation is 50") throw error;
+              hasDisambiguation = true;
+              replies.push(lang === "roman_urdu"
+                ? `*${resolved.name}* ki aik preparation mein zyada se zyada 50 portions ho sakte hain. Cart ki quantity wahi hai; kam quantity bhejein.`
+                : `A single preparation of *${resolved.name}* can have at most 50 portions. Your existing quantity is unchanged; please request fewer portions.`);
+              setInteractive(cartActionButtons(lang));
+              continue;
+            }
             const cartItem = cart.find((ci) => ci.menu_item_id === resolved.id);
             added.push({ name: resolved.name, newCartQty: cartItem?.qty ?? (m.qty ?? 1), notes: m.notes ?? null });
           } else if (res.kind === "variants") {
@@ -840,7 +850,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           break;
         }
         if (categoryQuery) {
-          const normQuery = categoryQuery.toLowerCase().trim();
+          const itemPage = categoryQuery.match(/^__items:(.+):(\d+)$/);
+          let categoryName = categoryQuery;
+          try { if (itemPage) categoryName = decodeURIComponent(itemPage[1]); } catch { /* Invalid tap falls back to categories. */ }
+          const normQuery = categoryName.toLowerCase().trim();
           // First attempt exact category match
           let categoryItems = ctx.menu.filter(
             (m) => m.category && m.category.toLowerCase() === normQuery
@@ -863,11 +876,14 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             const collator = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
             categoryItems.sort((a, b) => collator.compare(a.name, b.name));
 
-            patch.last_shown_options = categoryItems.map((m) => ({ id: m.id, name: m.name, price: m.price }));
+            const list = itemPickList(lang, categoryItems, cur, undefined, { category: categoryName, page: Number(itemPage?.[2] ?? 0) });
+            const visibleIds = new Set(list?.kind === "list" ? list.payload.rows.map((row) => row.id) : []);
+            const visibleItems = categoryItems.filter((item) => visibleIds.has(`item:${item.id}`));
+            patch.last_shown_options = visibleItems.map((m) => ({ id: m.id, name: m.name, price: m.price }));
             patch.last_shown_options_at = new Date().toISOString();
-            patch.last_shown_category = categoryQuery;
-            replies.push(reply.itemList(lang, categoryItems, cur, categoryQuery));
-            setInteractive(itemPickList(lang, categoryItems, cur));
+            patch.last_shown_category = categoryName;
+            replies.push(reply.itemList(lang, visibleItems, cur, categoryName));
+            setInteractive(list);
             break;
           }
         }
@@ -933,7 +949,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           break;
         }
         const suppliedAddress = action.payload?.address as string | undefined;
-        const replacingDestination = ctx.state.stage !== "collecting_delivery"
+        const replacingDestination = ctx.state.stage !== "collecting_delivery" && !isDeliveryAddressFragment(suppliedAddress ?? "")
           || /\b(?:change|instead|new address|badal|tabdeel)\b/i.test(input.messageTextForFallback ?? "");
         const address = suppliedAddress ? mergeDeliveryAddress(value("address"), suppliedAddress, replacingDestination) : undefined;
         const savedAddrNote = u.notes?.match(/^use_saved_address:(.+)$/);
@@ -973,7 +989,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             if (requestOutsideAreaQuote(address)) break;
             replies.push(deliveryAddressPrompt(address));
             patch.stage = "collecting_delivery";
-            if (isCompleteDeliveryAddress(address) && !outsideAreaDeliveryRate(ctx.settings)) patch.address = null;
+            if (isCompleteDeliveryAddress(address) && !isDeliveryAddressFragment(address) && !outsideAreaDeliveryRate(ctx.settings)) patch.address = null;
           } else {
             if (!isCompleteDeliveryAddress(address)) {
               patch.stage = "collecting_delivery";
