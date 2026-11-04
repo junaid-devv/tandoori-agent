@@ -176,7 +176,7 @@ export const reply = {
       list = items.slice(0, 10).map((i) => {
         let breakdown = "";
         if (i.description) {
-          const parts = i.description.split(/,\s*|\s*\+\s*/).map((p) => p.trim()).filter(Boolean);
+          const parts = i.description.split(/\s*\+\s*/).map((p) => p.trim()).filter(Boolean);
           if (parts.length > 1) {
             breakdown = "\n" + parts.map((p) => `   ▫️ ${p}`).join("\n");
           } else {

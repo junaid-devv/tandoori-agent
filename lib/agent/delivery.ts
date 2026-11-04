@@ -9,6 +9,28 @@ import { resolveDeliveryQuote } from "../delivery-pricing.ts";
 import { normalizeText } from "../order-text-utils.ts";
 import type { RestaurantSettings } from "../settings.ts";
 import type { LanguagePreference, OrderType } from "../schema.types.ts";
+import { sharedLocationPin } from "../location-pin.ts";
+
+/** Common Pakistani block/house shorthand; it still needs an area or pin. */
+export function isCompactDeliveryAddress(address: string): boolean {
+  return /^\d{1,4}\s+[a-z]\s*[-/]?\s*\d{1,5}(?:$|[,\s])/i.test(address.trim());
+}
+
+/** Keep explicitly supplied pieces of the active draft, including its pin.
+ * A full replacement replaces text; a new-address action clears it upstream. */
+export function mergeDeliveryAddress(previous: string | null | undefined, incoming: string, replace = false): string {
+  const next = incoming.trim();
+  if (replace || !previous?.trim()) return next;
+  const old = previous.trim();
+  if (old.toLowerCase().includes(next.toLowerCase())) return old;
+  const oldPin = sharedLocationPin(old);
+  const nextPin = sharedLocationPin(next);
+  const oldText = oldPin ? old.replace(oldPin, "").trim() : old;
+  const nextText = nextPin ? next.replace(nextPin, "").trim() : next;
+  const text = !nextText ? oldText : !oldText || isCompleteDeliveryAddress(nextText) ? nextText
+    : isCompactDeliveryAddress(nextText) ? `${nextText}, ${oldText}` : `${oldText}, ${nextText}`;
+  return [text, nextPin || oldPin].filter(Boolean).join("\n");
+}
 
 // ---------------------------------------------------------------------------
 // Delivery area matching
@@ -17,6 +39,8 @@ import type { LanguagePreference, OrderType } from "../schema.types.ts";
 /** An area establishes coverage; a destination also needs a building/street or landmark. */
 export function isCompleteDeliveryAddress(address: string | null | undefined): boolean {
   if (!address || address.trim().length < 8) return false;
+  if (sharedLocationPin(address)) return true;
+  if (isCompactDeliveryAddress(address) && /^\d{1,4}\s+[a-z]\s*[-/]?\s*\d{1,5}[,\s]+[a-z\u0600-\u06ff]/i.test(address.trim())) return true;
   return /\b(?:house|h\s*#|flat|apartment|apt|shop|office|building|street|st\.?\s*\d+|gali|makan|makaan|ghar|plot|hostel|room|hotel|hospital|school|gate|near|opposite|samne|qareeb|nazdeek)\b/i.test(address)
     || /(?:گھر|مکان|گلی|فلیٹ|دکان|گیٹ|قریب|سامنے)/u.test(address);
 }

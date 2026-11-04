@@ -135,11 +135,16 @@ export function categoryList(
   l: LanguagePreference,
   categories: string[],
   bodyText?: string,
+  page = 0,
 ): InteractivePayload | null {
-  const rows = categories.slice(0, 10).map((c) => ({
+  const pageSize = categories.length > 10 ? 8 : 10;
+  const current = Math.max(0, Math.min(page, Math.ceil(categories.length / pageSize) - 1));
+  const rows = categories.slice(current * pageSize, (current + 1) * pageSize).map((c) => ({
     id: `category:${c}`,
     title: c.slice(0, 24),
   }));
+  if (current > 0) rows.push({ id: `category:__page:${current - 1}`, title: ur(l) ? "Pichli categories" : "Previous categories" });
+  if ((current + 1) * pageSize < categories.length) rows.push({ id: `category:__page:${current + 1}`, title: ur(l) ? "Mazeed categories" : "More categories" });
   if (rows.length === 0) return null;
   return {
     kind: "list",

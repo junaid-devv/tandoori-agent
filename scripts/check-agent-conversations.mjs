@@ -1004,6 +1004,128 @@ try {
   });
   previousOrder = null;
 
+  // Luqman's Nov 4 checkout: real catalog descriptions, shorthand and split destination.
+  menu.splice(0, menu.length,
+    { id: "shahana1", name: "Shahana Special Ultra Long Pizza Deal 1 (One Flavor)", price: 2350,
+      category: "Shahana Special Pizza Deals", is_available: true,
+      description: "Shahana Special ultra-long pizza with one flavour. Choose Tikka, Fajita or BBQ. Includes one 1.5 litre cold drink." },
+    { id: "shahana2", name: "Shahana Special Ultra Long Pizza Deal 2 (Two Flavors)", price: 2750,
+      category: "Shahana Special Pizza Deals", is_available: true,
+      description: "Shahana Special ultra-long pizza with two flavours. Choose two from Tikka, Fajita, BBQ, Kababish or Pepperoni. Includes one 1.5 litre cold drink." },
+    ...["Small", "Mid", "Large"].map((size, index) => ({ id: `tikka-${size}`, name: `Tikka Pizza ${size}`,
+      category: "Regular Pizza", price: [399, 699, 999][index], is_available: true })),
+  );
+  Object.assign(settings, { delivery_pricing_mode: "area", min_delivery_amount: 500, delivery_outside_area_per_km: 40,
+    delivery_zones: [{ name: "New City Phase 1", aliases: ["New City 1"], fee: 100 }], delivery_areas: ["New City Phase 1"] });
+  await seedCaches();
+  fresh("luqman-latest", { preferred_language: "roman_urdu" });
+  const beforeLuqmanParser = parserCalls;
+  result = await send("luqman-latest", "deal ki taser", undefined, { menuDisplayMode: "menu_pictures", menuCardImages: ["https://example.test/deals.jpg"] });
+  check("Luqman's deal-picture typo shows configured pictures", () => {
+    assert.deepEqual(result.mediaUrls, ["https://example.test/deals.jpg"]); assert.equal(parserCalls, beforeLuqmanParser);
+  });
+  result = await send("luqman-latest", "category:Shahana Special Pizza Deals");
+  check("deal descriptions keep the complete flavor sentence", () => {
+    assert.match(result.replyText, /Choose Tikka, Fajita or BBQ/);
+    assert.doesNotMatch(result.replyText, /Choose Tikka\n/);
+  });
+  result = await send("luqman-latest", "item:shahana1");
+  check("adding a configurable deal asks for its required flavor", () => {
+    assert.match(result.replyText, /1 flavor/); assert.equal(states.get("luqman-latest").cart[0].qty, 1);
+    assert.equal(result.interactive.payload.rows[0].id, "flavor:shahana1:Tikka");
+  });
+  result = await send("luqman-latest", "1");
+  check("a numbered flavor selection updates the existing deal without adding a pizza", () => {
+    assert.equal(states.get("luqman-latest").cart.length, 1);
+    assert.equal(states.get("luqman-latest").cart[0].notes, "Flavours: Tikka");
+    assert.equal(states.get("luqman-latest").cart[0].qty, 1);
+  });
+  result = await send("luqman-latest", "7");
+  check("an old category number explains the current choices without changing food", () => {
+    assert.match(result.replyText, /current options/); assert.equal(states.get("luqman-latest").cart.length, 1);
+  });
+  result = await send("luqman-latest", "Add More");
+  result = await send("luqman-latest", "1.5 ltr drink", u("add_items", { items: [{ ...mention("drink"), size: "1.5 litre" }] }));
+  check("a standalone drink never suggests a pizza deal and explains the included drink", () => {
+    assert.doesNotMatch(result.replyText, /Kya Shahana/); assert.match(result.replyText, /1\.5 litre cold drink.*shamil/);
+    assert.equal(states.get("luqman-latest").cart.length, 1);
+  });
+  result = await send("luqman-latest", "regular pizza");
+  check("regular pizza browses its actual category rather than resolving Regular as a size", () => {
+    assert.match(result.replyText, /Tikka Pizza Small/); assert.doesNotMatch(result.replyText, /match nahi/);
+    assert.equal(states.get("luqman-latest").cart.length, 1);
+  });
+  await send("luqman-latest", "Tikka pizza", u("add_items", { items: [mention("Tikka Pizza")] }));
+  await send("luqman-latest", "SMALL (Rs. 399)");
+  await send("luqman-latest", "Checkout");
+  await send("luqman-latest", "Delivery");
+  result = await send("luqman-latest", "18 G 606");
+  check("shorthand address survives while the missing area or pin is requested", () => {
+    assert.equal(states.get("luqman-latest").address, "18 G 606"); assert.equal(result.stage, "collecting_delivery");
+    assert.match(result.replyText, /pin/); assert.equal(result.placeOrder, false);
+  });
+  const luqmanPin = "https://maps.google.com/?q=33.7637065,72.754337";
+  await send("luqman-latest", luqmanPin);
+  result = await send("luqman-latest", "new city phase 1");
+  check("a named fixed-price area combines with shorthand and pin and quotes the configured fee", () => {
+    assert.equal(states.get("luqman-latest").address, `18 G 606, new city phase 1\n${luqmanPin}`);
+    assert.equal(result.stage, "confirming"); assert.equal(states.get("luqman-latest").delivery_fee_quote, 100);
+    assert.match(result.replyText, /Total: Rs\. 2849/); assert.equal(result.placeOrder, false);
+    assert.equal(states.get("luqman-latest").cart.length, 2);
+  });
+  const beforeLuqmanOrders = placed.length;
+  await send("luqman-latest", "confirm:yes");
+  check("only the separate reviewed confirmation places the complete incident order", () => {
+    assert.equal(placed.length, beforeLuqmanOrders + 1); assert.equal(placed.at(-1).items.length, 2);
+    assert.match(placed.at(-1).address, /18 G 606/); assert.match(placed.at(-1).items[0].item_instructions, /Tikka/);
+  });
+  fresh("luqman-area-only", { preferred_language: "roman_urdu", stage: "collecting_delivery", cart: [line("shahana1")], order_type: "delivery" });
+  // Already selected in this draft, so the destination test is independent of customization.
+  states.get("luqman-area-only").cart[0].notes = "Flavours: Tikka";
+  result = await send("luqman-area-only", "new city phase 1");
+  check("an area alone is retained but cannot place an order without a destination", () => {
+    assert.equal(states.get("luqman-area-only").address, "new city phase 1");
+    assert.equal(result.stage, "collecting_delivery"); assert.match(result.replyText, /house\/block/);
+  });
+  result = await send("luqman-area-only", luqmanPin);
+  check("a pin after the area also uses its fixed fee and preserves both fields", () => {
+    assert.equal(result.stage, "confirming"); assert.equal(states.get("luqman-area-only").delivery_fee_quote, 100);
+    assert.match(states.get("luqman-area-only").address, /new city phase 1/);
+  });
+  result = await send("luqman-area-only", "change address to House 20 New City Phase 1", u("provide_address", { address: "House 20 New City Phase 1" }));
+  check("an explicit replacement discards the old location pin and requires a fresh review", () => {
+    assert.equal(states.get("luqman-area-only").address, "House 20 New City Phase 1");
+    assert.equal(result.placeOrder, false); assert.equal(result.stage, "confirming");
+  });
+  fresh("two-flavors");
+  await send("two-flavors", "Shahana Special Ultra Long Pizza Deal 2 (Two Flavors)");
+  await send("two-flavors", "Tikka");
+  result = await send("two-flavors", "Checkout");
+  check("checkout cannot skip the remaining flavor on a two-flavor deal", () => {
+    assert.equal(result.placeOrder, false); assert.match(result.replyText, /1 flavor/);
+  });
+  result = await send("two-flavors", "BBQ");
+  check("successive flavor answers retain both choices on one deal", () => {
+    assert.equal(states.get("two-flavors").cart.length, 1); assert.equal(states.get("two-flavors").cart[0].notes, "Flavours: Tikka, BBQ");
+  });
+  fresh("separate-flavors");
+  await send("separate-flavors", "Shahana Special Ultra Long Pizza Deal 1 (One Flavor)");
+  await send("separate-flavors", "Tikka");
+  await send("separate-flavors", "Shahana Special Ultra Long Pizza Deal 1 (One Flavor)");
+  await send("separate-flavors", "BBQ");
+  check("a second copy of the same deal keeps its own flavor without overwriting the first", () => {
+    assert.deepEqual(states.get("separate-flavors").cart.map((item) => [item.qty, item.notes]), [[1, "Flavours: Tikka"], [1, "Flavours: BBQ"]]);
+  });
+  const { categoryList } = await import("../lib/agent/interactive.ts");
+  const categories = Array.from({ length: 23 }, (_, index) => `Category ${index}`);
+  const allCategories = new Set();
+  for (let page = 0; page < 3; page++) {
+    const payload = categoryList("english", categories, undefined, page);
+    assert.ok(payload.payload.rows.length <= 10);
+    payload.payload.rows.filter((row) => !row.id.startsWith("category:__page:")).forEach((row) => allCategories.add(row.id));
+  }
+  check("category pagination exposes every category while respecting WhatsApp's ten-row limit", () => assert.equal(allCategories.size, 23));
+
   console.log(`\nAGENT CONVERSATIONS: ${checks} checks passed; ${parserCalls} actual parser HTTP requests, ${placed.length} isolated test orders.`);
 } finally {
   await new Promise((resolve) => server.close(resolve));

@@ -22,6 +22,7 @@ const { getRestaurantProfile, updateRestaurantProfile } = await import("../lib/r
 const { scopeBranchQuery, scopeRestaurantQuery } = await import("../lib/tenant-scope.ts");
 const { requireOwnedAdminRecord } = await import("../lib/admin-access.ts");
 const { verifyProviderReady } = await import("../lib/whatsapp-connections.ts");
+const { sendAndPersistAssistantMessage } = await import("../lib/assistant-dispatcher.ts");
 const { POST: connectMeta } = await import("../app/api/dashboard/whatsapp/connect/route.ts");
 const { POST: connectionAction } = await import("../app/api/dashboard/whatsapp/action/route.ts");
 const { POST: retryWebhooks } = await import("../app/api/internal/webhook-retry/route.ts");
@@ -34,6 +35,8 @@ const requests = [];
 let evolutionStatus = "open";
 let instanceExists = true;
 let gatewayFailure = null;
+let rejectInteractiveOnly = false;
+let messageSequence = 0;
 let webhookRow = null;
 let interactiveMode = "native";
 let activeProvider = "evolution";
@@ -49,9 +52,10 @@ globalThis.fetch = async (input, init = {}) => {
   if (url.host === "tenant-tests.supabase.co") {
     const table = url.pathname.split("/").pop();
     if (url.pathname.includes("/rpc/")) {
-      assert.ok(["disconnect_whatsapp_provider", "connect_meta_whatsapp", "switch_whatsapp_provider"].includes(table));
+      assert.ok(["disconnect_whatsapp_provider", "connect_meta_whatsapp", "switch_whatsapp_provider", "accept_outbound_message"].includes(table));
       return json(null);
     }
+    if (table === "messages") return json(request.method === "POST" ? { id: `outbound-${++messageSequence}` } : null);
     if (table === "webhook_events") {
       if (request.method === "POST") {
         assert.ok(request.headers.get("prefer").includes("resolution=ignore-duplicates"));
@@ -84,7 +88,7 @@ globalThis.fetch = async (input, init = {}) => {
   assert.equal(url.host, "evolution.test");
   if (interruptGateway && url.pathname.includes("/message/")) throw new TypeError("fetch failed");
   assert.equal(request.headers.get("apikey"), "gateway-secret");
-  if (gatewayFailure && url.pathname.includes("/message/")) return new Response("rejected", { status: gatewayFailure });
+  if (gatewayFailure && url.pathname.includes("/message/") && (!rejectInteractiveOnly || !url.pathname.includes("/sendText/"))) return new Response("rejected", { status: gatewayFailure });
   if (url.pathname.includes("fetchInstances")) return json(instanceExists ? [{ name: url.searchParams.get("instanceName"), ownerJid: "923001234567@s.whatsapp.net", profileName: "A" }] : []);
   if (url.pathname.includes("connectionState")) return json({ instance: { state: evolutionStatus } });
   if (url.pathname.includes("/instance/connect/")) return json({ base64: "data:image/png;base64,cXI=", pairingCode: "12345678", apikey: "must-not-leak" });
@@ -128,6 +132,23 @@ try {
     gatewayFailure = null;
   });
   console.log("PASS: Native lists, reply buttons, and images use Evolution v2 payloads; rejected sends surface for text fallback.");
+
+  gatewayFailure = 400;
+  rejectInteractiveOnly = true;
+  for (const kind of ["buttons", "list"]) {
+    const content = "Aap kya mangwana chahenge?";
+    const start = requests.length;
+    await sendAndPersistAssistantMessage({ conversationId: "conversation-a", phone: "923001234567", content,
+      ...(kind === "buttons" ? { replyButtons: { body: "Pick one", buttons: [{ id: "action:add_more", title: "Add More" }] } }
+        : { interactiveList: { body: "Pick one", buttonText: "View", rows: [{ id: "category:Regular Pizza", title: "Regular Pizza" }] } }) });
+    const sent = requests.slice(start).filter((request) => request.url.pathname.includes("/sendText/"));
+    assert.equal(sent.length, 1);
+    assert.equal(sent[0].body.text.split(content).length - 1, 1, "Fallback must not repeat the assistant's reply");
+    assert.match(sent[0].body.text, kind === "buttons" ? /1\. Add More/ : /1\. Regular Pizza/);
+  }
+  gatewayFailure = null;
+  rejectInteractiveOnly = false;
+  console.log("PASS: Rejected interactive sends fall back once with one reply and correctly numbered options.");
 
   await withWhatsAppTransport(transport(B), async () => {
     const result = await sendWhatsAppReplyButtons("923001234567", { body: "Welcome", buttons: [{ id: "action:view_menu", title: "View Menu" }] });

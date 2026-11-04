@@ -32,13 +32,14 @@ import {
 import { invalidateSettingsContext, type TurnContext } from "./context";
 import type { CartItem, ConversationStateRow, LanguagePreference, OrderType } from "@/lib/schema.types";
 import { resolveDeliveryQuote, deliveryFeeInfo, outsideAreaDeliveryInfo, outsideAreaDeliveryRate } from "@/lib/delivery-pricing";
-import { deliveryAreaNames, hasDeliveryRestrictions, findMatchingDeliveryArea, isCompleteDeliveryAddress } from "./delivery";
+import { deliveryAreaNames, hasDeliveryRestrictions, findMatchingDeliveryArea, isCompleteDeliveryAddress, mergeDeliveryAddress } from "./delivery";
 import { parseCustomerTimeToIso } from "@/lib/restaurant-time";
 import { createStaffAlert } from "@/lib/staff-alerts";
 import { isValidDeliveryAddress } from "@/lib/customer-crm";
 import { getMenuCatalog, invalidateMenuCache } from "@/lib/menu";
 import { isWithinOperatingHours } from "@/lib/settings";
 import { sharedLocationPin } from "@/lib/location-pin";
+import { pendingDealFlavor } from "./deal-flavors";
 
 export interface ExecutionResult {
   replyText: string;
@@ -128,6 +129,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           kind: "item_disambiguation",
           options: p.payload.rows.map((r) => ({ id: r.id, label: r.title })),
         };
+        if (p.payload.rows.every((r) => /^(category|flavor):/.test(r.id))) {
+          patch.last_shown_options = [];
+          patch.last_shown_options_at = new Date().toISOString();
+          patch.last_shown_category = null;
+        }
       }
       if (carriedPending) patch.pending_clarification = { ...patch.pending_clarification!, remaining_items: carriedPending.remaining_items };
     }
@@ -185,6 +191,27 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       ? `📍 Delivery charges confirm karne ke liye apna exact area aur mukammal address bhejein. Supported areas: ${areas}. Ya Pickup choose karein.`
       : `📍 Please confirm your exact area and full address so we can determine the delivery fee. Supported areas: ${areas}. You can also choose Pickup.`);
   };
+
+  const promptDealFlavor = (): boolean => {
+    const pending = pendingDealFlavor(cart, ctx.menu);
+    if (!pending) return false;
+    const remaining = pending.required - pending.selected.length;
+    replies.push(lang === "roman_urdu"
+      ? `*${pending.line.name}* ke liye ${remaining} flavor${remaining > 1 ? "s" : ""} choose karein: ${pending.options.join(", ")}.`
+      : `Please choose ${remaining} ${remaining > 1 ? "flavors" : "flavor"} for *${pending.line.name}*: ${pending.options.join(", ")}.`);
+    setInteractive({ kind: "list", payload: { body: "Choose pizza flavor", buttonText: "Flavors", sectionTitle: "Flavors",
+      rows: pending.options.filter((option) => !pending.selected.includes(option))
+        .map((option) => ({ id: `flavor:${pending.line.menu_item_id}:${option}`, title: option.slice(0, 24) })) } });
+    patch.stage = "building_cart";
+    patch.summary_sent_at = null;
+    hasDisambiguation = true;
+    return true;
+  };
+
+  const missingDestinationPrompt = (address?: string | null): string => !address ? reply.askAddress(lang)
+    : lang === "roman_urdu"
+      ? `📍 Address "${address}" save hai. Ab house/block number aur area bhejein, ya WhatsApp location pin share karein.`
+      : `📍 I saved the address "${address}". Please send the house/block number and area, or share your WhatsApp location pin.`;
 
   const requestOutsideAreaQuote = (address: string | null | undefined): boolean => {
     if (!address || !ctx.settings.delivery_enabled || !outsideAreaDeliveryRate(ctx.settings)
@@ -361,6 +388,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       }
     }
     const type = value("order_type");
+    if (promptDealFlavor()) return false;
     if (!type || type === "delivery" && ctx.settings.delivery_enabled === false) {
       patch.order_type = null;
       patch.stage = "choosing_order_type";
@@ -373,9 +401,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       if (requestOutsideAreaQuote(address)) return false;
       if (!isValidDeliveryAddress(address) || !isCompleteDeliveryAddress(address) || hasDeliveryRestrictions(ctx.settings) && !findMatchingDeliveryArea(address!, ctx.settings)) {
         patch.stage = "collecting_delivery";
-        patch.address = null;
         patch.summary_sent_at = null;
-        const prompt = isCompleteDeliveryAddress(address) ? deliveryAddressPrompt(address) : reply.askAddress(lang);
+        const prompt = isCompleteDeliveryAddress(address) ? deliveryAddressPrompt(address) : missingDestinationPrompt(address);
         if (!replies.includes(prompt)) replies.push(prompt);
         return false;
       }
@@ -466,7 +493,8 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
           // Null quantity means an instruction edit, never an implicit extra portion.
           if (m.qty === null && m.notes) {
-            const matches = findCartMatches(cart, query);
+            const matches = findCartMatches(cart, query).filter((item) => u.notes !== "fast_path_deal_flavor"
+              || item === pendingDealFlavor(cart, ctx.menu)?.line);
             if (matches.length === 1) {
               matches[0].notes = m.notes;
               replies.push(reply.itemInstructionUpdated(lang, matches[0].name, m.notes));
@@ -538,6 +566,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               setInteractive(itemPickList(lang, res.suggestions.map((x) => ({ id: x.id, name: x.name, price: x.price, category: x.category })), cur));
             } else {
               replies.push(reply.notFound(lang, query, [], cats));
+              if (/\b(?:drink|cola|pepsi|coke|sprite|beverage)\b/i.test(query)) {
+                const included = cart.map((item) => ctx.menu.find((food) => food.id === item.menu_item_id)?.description?.match(/\bincludes\s+(.+?)(?:\.$|$)/i)?.[1])
+                  .find((description) => description && /\b(?:drink|cola|pepsi|coke|sprite|beverage)\b/i.test(description));
+                if (included) replies.push(lang === "roman_urdu" ? `Aap ki deal mein ${included} pehle se shamil hai. Alag drink menu mein listed nahi hai.`
+                  : `Your deal already includes ${included}. A separate drink is not listed on this menu.`);
+              }
               if (cats.length > 0 && cart.length === 0 && input.menuDisplayMode !== "menu_pictures") {
                 setInteractive(categoryList(lang, cats, lang === "roman_urdu" ? "Menu dekhna chahenge?" : "What would you like?"));
               }
@@ -799,6 +833,12 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
         const cats = [...new Set(ctx.menu.map((m) => m.category).filter(Boolean))] as string[];
 
+        const categoryPage = categoryQuery?.match(/^__page:(\d+)$/);
+        if (categoryPage) {
+          replies.push(lang === "roman_urdu" ? "Menu ki categories mein se choose karein:" : "Choose a menu category:");
+          setInteractive(categoryList(lang, cats, undefined, Number(categoryPage[1])));
+          break;
+        }
         if (categoryQuery) {
           const normQuery = categoryQuery.toLowerCase().trim();
           // First attempt exact category match
@@ -852,6 +892,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       // ── Order type ───────────────────────────────────────────────────────
       case "ask_order_type": {
         const chosen = action.payload?.chosen as OrderType | undefined;
+        if (!chosen && promptDealFlavor()) break;
         if (chosen) {
           if (chosen === "delivery" && ctx.settings.delivery_enabled === false) {
             if (!hasDisambiguation) {
@@ -891,7 +932,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           setInteractive(orderTypeButtons(lang, ctx.settings));
           break;
         }
-        const address = action.payload?.address as string | undefined;
+        const suppliedAddress = action.payload?.address as string | undefined;
+        const replacingDestination = ctx.state.stage !== "collecting_delivery"
+          || /\b(?:change|instead|new address|badal|tabdeel)\b/i.test(input.messageTextForFallback ?? "");
+        const address = suppliedAddress ? mergeDeliveryAddress(value("address"), suppliedAddress, replacingDestination) : undefined;
         const savedAddrNote = u.notes?.match(/^use_saved_address:(.+)$/);
         if (savedAddrNote || u.intents.includes("use_saved_address")) {
           const savedRow = !savedAddrNote || ctx.savedAddress?.id === savedAddrNote[1] ? ctx.savedAddress : null;
@@ -917,9 +961,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             patch.address = null;
           }
         } else if (address) {
+          patch.address = address;
+          patch.order_type = patch.order_type ?? "delivery";
           if (sharedLocationPin(address) && requestOutsideAreaQuote(address)) break;
           if (!isValidDeliveryAddress(address)) {
-            patch.address = null;
             patch.stage = "collecting_delivery";
             replies.push(reply.askAddress(lang));
             break;
@@ -928,12 +973,11 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             if (requestOutsideAreaQuote(address)) break;
             replies.push(deliveryAddressPrompt(address));
             patch.stage = "collecting_delivery";
-            patch.address = null;
+            if (isCompleteDeliveryAddress(address) && !outsideAreaDeliveryRate(ctx.settings)) patch.address = null;
           } else {
             if (!isCompleteDeliveryAddress(address)) {
-              patch.address = null;
               patch.stage = "collecting_delivery";
-              replies.push(reply.askAddress(lang));
+              replies.push(missingDestinationPrompt(address));
               break;
             }
             patch.address = address;
@@ -946,6 +990,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
             u.notes === "prompt_new_address" ||
             u.notes === "fast_path_new_address_request"
           );
+          if (isNewAddressRequest) patch.address = null;
           const saved = !isNewAddressRequest && ctx.savedAddress && isValidDeliveryAddress(ctx.savedAddress.address) && isCompleteDeliveryAddress(ctx.savedAddress.address)
             && (!hasDeliveryRestrictions(ctx.settings) || findMatchingDeliveryArea(ctx.savedAddress.address, ctx.settings)) ? ctx.savedAddress : null;
           if (saved) {
@@ -961,7 +1006,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
               },
             });
           } else {
-            replies.push(reply.askAddress(lang));
+            const destination = value("address");
+            if (requestOutsideAreaQuote(destination)) break;
+            if (isCompleteDeliveryAddress(destination) && findMatchingDeliveryArea(destination!, ctx.settings)) break;
+            replies.push(missingDestinationPrompt(destination));
           }
         }
         break;
@@ -1383,6 +1431,14 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
       // ── Fallback ─────────────────────────────────────────────────────────
       case "fallback":
       default:
+        if (u.notes === "fast_path_invalid_selection") {
+          const options = ctx.state.pending_clarification?.options ?? [];
+          replies.push(lang === "roman_urdu" ? "Pichli list ka number ab select nahi ho sakta. In current options mein se choose karein:"
+            : "That number does not match the current choices. Please choose from these options:");
+          if (options.length) setInteractive({ kind: "list", payload: { body: "Please choose", buttonText: "Options", sectionTitle: "Options",
+            rows: options.slice(0, 10).map((option) => ({ id: option.id, title: option.label.slice(0, 24) })) } });
+          else setInteractive(cart.length ? cartActionButtons(lang) : categoryList(lang, [...new Set(ctx.menu.map((item) => item.category).filter(Boolean))] as string[]));
+        }
         if (u.notes === "fast_path_resume") {
           const pending = ctx.state.pending_clarification;
           if (pending?.remaining_items?.length) {
@@ -1403,7 +1459,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
           // Help with the missing step instead of sending a generic fallback
           // while the customer is already answering a delivery/pickup question.
           if (ctx.state.stage === "collecting_delivery") {
-            replies.push(reply.askAddress(lang));
+            if (!requestOutsideAreaQuote(value("address"))) replies.push(missingDestinationPrompt(value("address")));
           } else if (ctx.state.stage === "collecting_pickup") {
             replies.push(reply.askPickupTime(lang));
           } else if (ctx.state.stage === "collecting_dinein") {
@@ -1434,6 +1490,7 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
 
   if (!cart.length && patch.stage !== "placed" && patch.stage !== "human" && !u.order_type && !u.address && !u.guests && !u.pickup_time && !u.reservation_time) patch.stage = "browsing";
   patch.cart = cart;
+  if (!hasDisambiguation && transition.actions.some((action) => action.kind === "add_items")) promptDealFlavor();
 
   // Filter replies: If size disambiguation is active (variantButtons), do not ask for delivery address or pickup time in the same message
   let finalReplies = replies.filter(Boolean);

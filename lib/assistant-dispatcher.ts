@@ -61,7 +61,7 @@ export async function sendAndPersistAssistantMessage({
         await sendAndPersistOutboundMessage({
           conversationId,
           phone,
-          content: `${content}\n\n${buildReplyButtonFallbackText(buttonPayload)}`,
+          content: buildReplyButtonFallbackText(buttonPayload),
           senderKind: "ai",
           phoneNumberId,
         });
@@ -93,7 +93,7 @@ export async function sendAndPersistAssistantMessage({
         await sendAndPersistOutboundMessage({
           conversationId,
           phone,
-          content: `${content}\n\n${buildInteractiveFallbackText(interactivePayload)}`,
+          content: buildInteractiveFallbackText(interactivePayload),
           senderKind: "ai",
           phoneNumberId,
         });

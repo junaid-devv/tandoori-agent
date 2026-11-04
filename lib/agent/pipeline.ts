@@ -23,7 +23,9 @@ import { inferLanguagePreference } from "@/lib/core/lang-detect";
 import { extractBaseItemName, extractSizeFromQuery, menuNameCoversQuery } from "@/lib/menu/search";
 import { normalizeFoodScript } from "@/lib/pakistani-language";
 import { sharedLocationPin } from "@/lib/location-pin";
-import { outsideAreaDeliveryRate } from "@/lib/delivery-pricing";
+import { normalizeArea } from "@/lib/delivery-pricing";
+import { isCompactDeliveryAddress } from "./delivery";
+import { dealFlavorAnswer } from "./deal-flavors";
 import { currentOrderHistory } from "@/lib/order-session";
 import type { ConversationStateRow } from "@/lib/schema.types";
 import type { ConversationStage } from "@/lib/schema.types";
@@ -196,7 +198,8 @@ export function fastUnderstanding(text: string, state: ConversationStateRow, sav
   const numeric = raw.match(NUMERIC_RE);
   if (numeric && options.length) {
     const option = options[Number(numeric[1]) - 1];
-    return option ? fromId(option.id) : { ...makeBase(lang), notes: "fast_path_invalid_selection" };
+    const currentItem = option && (!option.id.startsWith("item:") || shown.some((item) => `item:${item.id}` === option.id));
+    return currentItem ? fromId(option.id) : { ...makeBase(lang), notes: "fast_path_invalid_selection" };
   }
   // Exact label equivalence: "don't confirm" and "no delivery" must never match a button.
   const matches = options.filter((o) => normalize(o.label) === normalize(raw));
@@ -302,11 +305,32 @@ export async function runTurn(input: RunTurnInput): Promise<TurnResult> {
   }
 
   let understanding = fastUnderstanding(input.messageText, ctx.state, ctx.savedAddress?.id);
-  if (!understanding && pin && ctx.settings.delivery_enabled && outsideAreaDeliveryRate(ctx.settings)
+  if (!understanding) {
+    const options = ctx.state.pending_clarification?.options ?? [];
+    const numeric = input.messageText.trim().match(NUMERIC_RE);
+    const option = numeric ? options[Number(numeric[1]) - 1]?.id : input.messageText;
+    const flavor = dealFlavorAnswer(option ?? input.messageText, ctx.state.cart, ctx.menu, options.map((choice) => choice.id));
+    if (flavor) understanding = { ...makeBase(ctx.state.preferred_language), intents: ["add_items"], primary_intent: "add_items",
+      items: [flavor], notes: "fast_path_deal_flavor" };
+  }
+  const collectingDestination = ctx.state.stage === "collecting_delivery";
+  const areaNames = ctx.settings.delivery_pricing_mode === "area"
+    ? (ctx.settings.delivery_zones ?? []).flatMap((zone) => [zone.name, ...zone.aliases]) : ctx.settings.delivery_areas ?? [];
+  const bareArea = areaNames.some((area) => normalizeArea(area) === normalizeArea(input.messageText));
+  if (!understanding && ctx.settings.delivery_enabled
+    && (pin || collectingDestination && (bareArea || isCompactDeliveryAddress(input.messageText)))
     && (ctx.state.stage === "collecting_delivery" || ctx.state.order_type === "delivery" && ctx.state.cart.length > 0)) {
     understanding = { ...makeBase(ctx.state.preferred_language),
       intents: ["provide_address"], primary_intent: "provide_address", address: input.messageText,
       notes: "fast_path_delivery_quote_pin" };
+  }
+  // A category name is browsing, even when it contains a size word (Regular Pizza).
+  const category = ctx.menu.find((item) => item.category?.toLowerCase() === input.messageText.trim().toLowerCase())?.category;
+  if (!understanding && category) understanding = { ...makeBase(ctx.state.preferred_language),
+    intents: ["browse_menu"], primary_intent: "browse_menu", info_query: category, notes: "fast_path_category" };
+  if (!understanding && /\b(?:deal|menu)\b.*\b(?:ki\s+)?(?:tasveer|tasvir|taseer|taser|picture|photo|image)\b/i.test(input.messageText)) {
+    understanding = { ...makeBase(ctx.state.preferred_language), intents: ["browse_menu"], primary_intent: "browse_menu",
+      info_query: "view_menu", notes: "fast_path_view_menu" };
   }
   if (!understanding && isSimpleCatalogQuestion(input.messageText, ctx.menu)) {
     understanding = { ...makeBase(inferLanguagePreference(input.messageText, ctx.state.preferred_language)),

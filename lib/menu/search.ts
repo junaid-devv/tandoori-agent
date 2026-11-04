@@ -461,6 +461,10 @@ export type ItemResolutionResult =
   | { kind: "not_found"; query: string; suggestions: ResolvedMenuItem[] };
 
 function isCandidateRelevant(query: string, candidate: ResolvedMenuItem): boolean {
+  // A drink included in a meal does not make that meal a standalone drink SKU.
+  if (/\b(?:drink|drinks|beverage|beverages|cola|pepsi|coke|sprite|fanta|water|pani)\b/.test(normalize(query))
+    && !/\b(?:deal|combo|meal|box)\b/.test(normalize(query))
+    && !/\b(?:drink|drinks|beverage|beverages|cola|pepsi|coke|sprite|fanta|water|pani)\b/.test(normalize(`${candidate.name} ${candidate.category ?? ""}`))) return false;
   const sim = candidate.similarity ?? 0;
   if (sim >= 0.62) return true;
 

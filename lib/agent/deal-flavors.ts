@@ -1,0 +1,46 @@
+import type { MenuCatalogItem } from "@/lib/menu";
+import type { CartItem } from "@/lib/schema.types";
+
+const counts: Record<string, number> = { one: 1, two: 2, three: 3, four: 4 };
+
+/** Only collect choices explicitly required by the restaurant's description. */
+export function dealFlavorRequirement(item: MenuCatalogItem, notes?: string | null) {
+  const description = item.description ?? "";
+  const count = description.match(/\bwith\s+(one|two|three|four|[1-4])\s+flavou?rs?\b/i)?.[1];
+  const choices = description.match(/\bchoose\s+(?:(?:one|two|three|four|[1-4])\s+from\s+)?(.+?)(?:\.(?:\s|$)|$)/i)?.[1];
+  if (!count || !choices) return null;
+  const options = choices.split(/\s*,\s*|\s+or\s+|\s+and\s+/i).map((choice) => choice.trim()).filter(Boolean);
+  const required = counts[count.toLowerCase()] ?? Number(count);
+  if (options.length < required || options.some((choice) => choice.length > 40)) return null;
+  const saved = notes?.match(/\bflavou?rs?:\s*([^;]+)/i)?.[1] ?? notes ?? "";
+  const selected = options.filter((option) => saved.split(/\s*,\s*|\s+or\s+|\s+aur\s+|\s+and\s+/i)
+    .some((value) => value.trim().toLowerCase() === option.toLowerCase()));
+  return { options, required, selected };
+}
+
+export function pendingDealFlavor(cart: CartItem[], menu: MenuCatalogItem[]) {
+  for (const line of cart) {
+    const item = menu.find((food) => food.id === line.menu_item_id);
+    const requirement = item && dealFlavorRequirement(item, line.notes);
+    if (requirement && requirement.selected.length < requirement.required) return { line, ...requirement };
+  }
+  return null;
+}
+
+/** A standalone flavor answer updates the deal already in the cart. */
+export function dealFlavorAnswer(text: string, cart: CartItem[], menu: MenuCatalogItem[], optionIds: string[]) {
+  const pending = pendingDealFlavor(cart, menu);
+  if (!pending) return null;
+  const raw = text.trim();
+  const tapped = raw.startsWith("flavor:") && optionIds.includes(raw)
+    ? raw.slice(`flavor:${pending.line.menu_item_id}:`.length) : null;
+  if (raw.startsWith("flavor:") && (!tapped || !raw.startsWith(`flavor:${pending.line.menu_item_id}:`))) return null;
+  const answers = (tapped ?? raw).split(/\s*,\s*|\s+aur\s+|\s+and\s+/i);
+  const choices = answers.map((answer) => pending.options.find((option) => option.toLowerCase() === answer.toLowerCase()));
+  if (choices.some((choice) => !choice)) return null;
+  const selected = [...new Set([...pending.selected, ...choices as string[]])];
+  if (selected.length > pending.required) return null;
+  const previous = pending.line.notes?.replace(/\bflavou?rs?:\s*[^;]+;?\s*/i, "").trim();
+  return { query: pending.line.name, qty: null, size: null, addons: pending.line.addons,
+    notes: [previous, `Flavours: ${selected.join(", ")}`].filter(Boolean).join("; ") };
+}
