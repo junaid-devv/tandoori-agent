@@ -1,0 +1,143 @@
+- generic [ref=f41e1]:
+  - region "Notifications alt+T"
+  - generic [ref=f41e2]:
+    - button "Open navigation" [ref=f41e3] [cursor=pointer]
+    - main [ref=f41e5]:
+      - generic [ref=f41e6]:
+        - generic [ref=f41e7]: Dashboard
+        - generic [ref=f41e9]:
+          - button "Search pages" [ref=f41e10] [cursor=pointer]
+          - button "Tandoori Nights" [ref=f41e15] [cursor=pointer]
+      - generic [ref=f41e25]:
+        - generic [ref=f41e26]:
+          - generic [ref=f41e27]:
+            - heading "Menu catalog" [level=1] [ref=f41e29]
+            - paragraph [ref=f41e30]: A well-organized menu. Easy to browse, simple to keep up to date.
+          - generic [ref=f41e31]:
+            - button "Import menu" [ref=f41e32] [cursor=pointer]
+            - button "Add item" [ref=f41e36] [cursor=pointer]
+        - generic [ref=f41e38]:
+          - textbox "Search menu items" [ref=f41e43]:
+            - /placeholder: Search items or categories...
+          - combobox "Filter by category" [ref=f41e44] [cursor=pointer]:
+            - option "All categories" [selected]
+            - option "Barbecue (2)"
+            - option "Breads (1)"
+            - option "Burgers (1)"
+            - option "Desserts (1)"
+            - option "Drinks (1)"
+            - option "Main course (1)"
+            - option "Rice (1)"
+        - generic [ref=f41e45]:
+          - generic [ref=f41e46]:
+            - heading "All menu items8" [level=2] [ref=f41e68]
+            - generic [ref=f41e48]: 7 available
+          - generic [ref=f41e69]:
+            - article [ref=f41e70]:
+              - generic [ref=f41e71]:
+                - heading "Chicken Biryani" [level=3] [ref=f41e72]
+                - paragraph [ref=f41e73]: Rice
+              - generic [ref=f41e74]:
+                - generic [ref=f41e75]: Rs. 450
+                - switch "Mark Chicken Biryani as unavailable" [checked] [ref=f41e76] [cursor=pointer]
+                - button "Edit Chicken Biryani" [ref=f41e78] [cursor=pointer]
+            - article [ref=f41e82]:
+              - generic [ref=f41e83]:
+                - heading "Chicken Karahi" [level=3] [ref=f41e84]
+                - paragraph [ref=f41e85]: Main course
+              - generic [ref=f41e86]:
+                - generic [ref=f41e87]: Rs. 1,450
+                - switch "Mark Chicken Karahi as unavailable" [checked] [ref=f41e88] [cursor=pointer]
+                - button "Edit Chicken Karahi" [ref=f41e90] [cursor=pointer]
+            - article [ref=f41e94]:
+              - generic [ref=f41e95]:
+                - heading "Garlic Naan" [level=3] [ref=f41e96]
+                - paragraph [ref=f41e97]: Breads
+              - generic [ref=f41e98]:
+                - generic [ref=f41e99]: Rs. 120
+                - switch "Mark Garlic Naan as unavailable" [checked] [ref=f41e100] [cursor=pointer]
+                - button "Edit Garlic Naan" [ref=f41e102] [cursor=pointer]
+            - article [ref=f41e106]:
+              - generic [ref=f41e107]:
+                - heading "Seekh Kebab" [level=3] [ref=f41e108]
+                - paragraph [ref=f41e109]: Barbecue
+              - generic [ref=f41e110]:
+                - generic [ref=f41e111]: Rs. 650
+                - switch "Mark Seekh Kebab as unavailable" [checked] [ref=f41e112] [cursor=pointer]
+                - button "Edit Seekh Kebab" [ref=f41e114] [cursor=pointer]
+            - article [ref=f41e118]:
+              - generic [ref=f41e119]:
+                - heading "Chicken Malai Boti" [level=3] [ref=f41e120]
+                - paragraph [ref=f41e121]: Barbecue
+              - generic [ref=f41e122]:
+                - generic [ref=f41e123]: Rs. 850
+                - switch "Mark Chicken Malai Boti as unavailable" [checked] [ref=f41e124] [cursor=pointer]
+                - button "Edit Chicken Malai Boti" [ref=f41e126] [cursor=pointer]
+            - article [ref=f41e130]:
+              - generic [ref=f41e131]:
+                - heading "Zinger Burger" [level=3] [ref=f41e132]
+                - paragraph [ref=f41e133]: Burgers
+              - generic [ref=f41e134]:
+                - generic [ref=f41e135]: Rs. 550
+                - switch "Mark Zinger Burger as unavailable" [checked] [ref=f41e136] [cursor=pointer]
+                - button "Edit Zinger Burger" [ref=f41e138] [cursor=pointer]
+            - article [ref=f41e142]:
+              - generic [ref=f41e143]:
+                - heading "Gulab Jamun" [level=3] [ref=f41e144]
+                - paragraph [ref=f41e145]: Desserts
+              - generic [ref=f41e146]:
+                - generic [ref=f41e147]: Rs. 250
+                - switch "Mark Gulab Jamun as available" [ref=f41e148] [cursor=pointer]
+                - button "Edit Gulab Jamun" [ref=f41e150] [cursor=pointer]
+            - article [ref=f41e154]:
+              - generic [ref=f41e155]:
+                - heading "Fresh Lime" [level=3] [ref=f41e156]
+                - paragraph [ref=f41e157]: Drinks
+              - generic [ref=f41e158]:
+                - generic [ref=f41e159]: Rs. 180
+                - switch "Mark Fresh Lime as unavailable" [checked] [ref=f41e160] [cursor=pointer]
+                - button "Edit Fresh Lime" [ref=f41e162] [cursor=pointer]
+          - generic [ref=f41e54]:
+            - generic [ref=f41e55]: 8 items across 7 categories
+            - generic [ref=f41e56]: Available to order
+        - group [ref=f41e166]:
+          - generic "Advanced menu actions" [ref=f41e167] [cursor=pointer]
+        - dialog [ref=f41e168]:
+          - generic [ref=f41e169]:
+            - generic [ref=f41e170]:
+              - generic [ref=f41e171]:
+                - heading "Edit menu item" [level=2] [ref=f41e172]
+                - paragraph [ref=f41e173]: Keep the details clear and appetizing.
+              - button "Close item editor" [active] [ref=f41e174] [cursor=pointer]
+            - group [ref=f41e178]:
+              - generic [ref=f41e179]:
+                - generic [ref=f41e180]: Item name *
+                - textbox "Item name *" [ref=f41e181]:
+                  - /placeholder: e.g. Chicken Biryani
+                  - text: Chicken Biryani
+              - generic [ref=f41e182]:
+                - generic [ref=f41e183]:
+                  - generic [ref=f41e184]: Category
+                  - combobox "Category" [ref=f41e185]: Rice
+                - generic [ref=f41e186]:
+                  - generic [ref=f41e187]: Price (Rs.) *
+                  - spinbutton "Price (Rs.) *" [ref=f41e188]: "450"
+              - generic [ref=f41e189]:
+                - generic [ref=f41e190]: Description
+                - textbox "Description" [ref=f41e191]:
+                  - /placeholder: Ingredients, serving size, or what’s included in a deal
+                  - text: Fragrant basmati rice with tender chicken
+              - generic [ref=f41e192] [cursor=pointer]:
+                - generic [ref=f41e193]:
+                  - generic [ref=f41e194]: Available to order
+                  - generic [ref=f41e195]: Turn off when the item is sold out.
+                - checkbox "Available to order Turn off when the item is sold out." [checked] [ref=f41e196]
+              - group [ref=f41e197]:
+                - generic "Availability schedule (optional)" [ref=f41e198] [cursor=pointer]
+            - generic [ref=f41e199]:
+              - button "Delete" [ref=f41e201] [cursor=pointer]
+              - generic [ref=f41e205]:
+                - button "Cancel" [ref=f41e206] [cursor=pointer]
+                - button "Save item" [ref=f41e207] [cursor=pointer]
+  - button "Open Next.js Dev Tools" [ref=f41e63] [cursor=pointer]
+  - alert [ref=f41e67]

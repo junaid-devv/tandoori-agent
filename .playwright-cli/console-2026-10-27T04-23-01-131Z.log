@@ -1,0 +1,212 @@
+[    1431ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[    1531ms] [LOG] [HMR] connected @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[    2800ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[    3351ms] [LOG] [Fast Refresh] done in 635ms @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   30515ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   31337ms] [LOG] [Fast Refresh] done in 858ms @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   31365ms] [LOG] [Fast Refresh] done in 858ms @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   31436ms] [LOG] [Fast Refresh] done in 858ms @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   51084ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   52196ms] [LOG] [Fast Refresh] done in 1214ms @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   55586ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://localhost:3000/api/auth/login:0
+[  169855ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  170559ms] [LOG] [Fast Refresh] done in 340ms @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  255662ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  257791ms] [LOG] [Fast Refresh] done in 2234ms @ http://localhost:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  260664ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  260930ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  264014ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  264071ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  266775ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  266836ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  268804ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  268850ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  272114ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  272159ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  273983ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:3000/ui-review?screen=whatsapp:0
+[  274095ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  274139ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  276268ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  276307ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  278814ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  278849ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  280815ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  280868ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  283528ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  283573ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  285268ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  286967ms] [LOG] [Fast Refresh] done in 1802ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  370103ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  373025ms] [LOG] [Fast Refresh] done in 2688ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  397957ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  399052ms] [LOG] [Fast Refresh] done in 1149ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  407339ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  407652ms] [LOG] [Fast Refresh] done in 425ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  410609ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  410708ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  413925ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  413965ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  418649ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  418703ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  423581ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  423628ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  425995ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  426044ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  428813ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:3000/ui-review?screen=whatsapp:0
+[  428973ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  429034ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  431357ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  431394ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  433858ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  433914ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  436163ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  436212ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  438457ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  438498ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  544174ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  544685ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  545116ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  545936ms] [LOG] [Fast Refresh] done in 982ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  548045ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  548482ms] [LOG] [Fast Refresh] done in 547ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  550360ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  550436ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  553055ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  553254ms] [LOG] [Fast Refresh] done in 307ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  555431ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  555551ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  555865ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  555881ms] [LOG] [Fast Refresh] done in 123ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  562142ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  562702ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  564925ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:3000/ui-review?screen=admin#staff:0
+[  568251ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  570787ms] [LOG] [Fast Refresh] done in 2527ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  633109ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  633766ms] [LOG] [Fast Refresh] done in 770ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  633981ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  634610ms] [LOG] [Fast Refresh] done in 738ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  636779ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  637194ms] [LOG] [Fast Refresh] done in 472ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  639150ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  639404ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  641906ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  642293ms] [LOG] [Fast Refresh] done in 497ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  642776ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  642877ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  645566ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  645632ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  650882ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  651169ms] [LOG] [Fast Refresh] done in 439ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  651386ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  651840ms] [LOG] [Fast Refresh] done in 561ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  654343ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  654560ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  654821ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  654907ms] [LOG] [Fast Refresh] done in 194ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  657019ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:3000/ui-review?screen=admin#staff:0
+[  731262ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  731520ms] [LOG] [Fast Refresh] done in 379ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  731721ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  732273ms] [LOG] [Fast Refresh] done in 656ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  733979ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  734113ms] [LOG] [Fast Refresh] done in 145ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  736162ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  736398ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  736922ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  736923ms] [LOG] [Fast Refresh] done in 195ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  739332ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  739495ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  742179ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  742230ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  747476ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  747534ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  749412ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:3000/ui-review?screen=admin#staff:0
+[  752813ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  752854ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  753562ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:3000/api/auth/login:0
+[  754264ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  754296ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  754421ms] [ERROR] A tree hydrated but some attributes of the server rendered HTML didn't match the client properties. This won't be patched up. This can happen if a SSR-ed Client Component used:
+
+- A server/client branch `if (typeof window !== 'undefined')`.
+- Variable input such as `Date.now()` or `Math.random()` which changes each time it's called.
+- Date formatting in a user's locale which doesn't match the server.
+- External changing data without sending a snapshot of it along with the HTML.
+- Invalid HTML tag nesting.
+
+It can also happen if the client has a browser extension installed which messes with the HTML before React loaded.
+
+%s%s https://react.dev/link/hydration-mismatch 
+
+  ...
+    <ErrorBoundary errorComponent={undefined} errorStyles={undefined} errorScripts={undefined}>
+      <LoadingBoundary name="login/" loading={null}>
+        <HTTPAccessFallbackBoundary notFound={undefined} forbidden={undefined} unauthorized={undefined}>
+          <RedirectBoundary>
+            <RedirectErrorBoundary router={{...}}>
+              <InnerLayoutRouter url="/login" tree={[...]} params={{}} renderTree={{...}} segmentPath={[...]} ...>
+                <SegmentViewNode type="page" pagePath="login/page...">
+                  <SegmentTrieNode>
+                  <LoginPage>
+                    <main className="login-screen">
+                      <LoginForm>
+                        <div className="login-card...">
+                          <div>
+                          <h1>
+                          <p>
+                          <form className="mt-7 space..." onSubmit={function handleSubmit}>
+                            <label className="block">
+                              <span>
+                              <input
+                                required={true}
+                                type="text"
+                                autoComplete="username"
+                                value=""
+                                onChange={function onChange}
+                                className="ui-input h-11"
+                                placeholder="Enter your username or email"
+                                disabled={false}
+-                               style={{caret-color:"transparent"}}
+                              >
+                            <label className="block">
+                              <span>
+                              <div className="relative">
+                                <input
+                                  required={true}
+                                  type="password"
+                                  autoComplete="current-password"
+                                  value=""
+                                  onChange={function onChange}
+                                  className="ui-input ui-input-action h-11"
+                                  placeholder="Enter your password"
+                                  disabled={false}
+-                                 style={{caret-color:"transparent"}}
+                                >
+                                ...
+                            ...
+                          ...
+                ...
+              ...
+    ...
+ @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:995
+[  754717ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  754757ms] [LOG] [Fast Refresh] done in 142ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  768948ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  769591ms] [LOG] [Fast Refresh] done in 752ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  783457ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  783696ms] [LOG] [Fast Refresh] done in 346ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  790535ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  791042ms] [LOG] [Fast Refresh] done in 616ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  792972ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  793091ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  796474ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  796543ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  872185ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  874601ms] [LOG] [Fast Refresh] done in 1156ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  875455ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:3000/ui-review?screen=orders&_rsc=-QDPlARqTTMZX9cV:0
+[  877001ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:3000/ui-review?screen=orders:0
+[  878225ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  878637ms] [LOG] [HMR] connected @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  879341ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  879430ms] [LOG] [Fast Refresh] done in 362ms @ http://127.0.0.1:3000/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719

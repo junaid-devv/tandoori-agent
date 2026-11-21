@@ -1,0 +1,41 @@
+- generic [active] [ref=f1e1]:
+  - region "Notifications alt+T"
+  - main [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - generic [ref=f1e4]: Built for the way restaurants work.
+      - generic [ref=f1e10]:
+        - paragraph [ref=f1e11]: Less juggling. More serving.
+        - heading "Great service. One workspace." [level=2] [ref=f1e12]: Great service.One workspace.
+        - paragraph [ref=f1e13]: Bring your orders, customer conversations and daily operations together. Keep your attention where it belongs.
+        - generic [ref=f1e14]:
+          - generic [ref=f1e15]: Everything in its place
+          - generic [ref=f1e26]:
+            - paragraph [ref=f1e27]: Orders, from first tap to doorstep
+            - paragraph [ref=f1e28]: A clear view of every order.
+          - generic [ref=f1e36]:
+            - paragraph [ref=f1e37]: Conversations that feel personal
+            - paragraph [ref=f1e38]: Your team and AI, working together.
+          - generic [ref=f1e47]:
+            - paragraph [ref=f1e48]: Insights to grow your business
+            - paragraph [ref=f1e49]: Understand what your customers love.
+      - paragraph [ref=f1e53]: OrderIQ · A calmer way to run your restaurant.
+    - generic [ref=f1e55]:
+      - generic [ref=f1e56]: orderiq.
+      - paragraph [ref=f1e64]: Your restaurant workspace
+      - heading "Welcome back." [level=1] [ref=f1e65]
+      - paragraph [ref=f1e66]: Sign in to manage your orders, customers and team.
+      - generic [ref=f1e67]:
+        - generic [ref=f1e68]:
+          - generic [ref=f1e69]: Username or email
+          - textbox "Username or email" [ref=f1e70]:
+            - /placeholder: Enter your username or email
+        - generic [ref=f1e71]:
+          - generic [ref=f1e72]: Password
+          - generic [ref=f1e73]:
+            - textbox "Password Show password" [ref=f1e74]:
+              - /placeholder: Enter your password
+            - button "Show password" [ref=f1e75] [cursor=pointer]
+        - button "Sign in to workspace" [ref=f1e79] [cursor=pointer]
+      - paragraph [ref=f1e82]: Need access? Contact your restaurant administrator.
+      - paragraph [ref=f1e83]: ORDERiQ · Restaurant management, made simple.
+  - alert [ref=f1e84]

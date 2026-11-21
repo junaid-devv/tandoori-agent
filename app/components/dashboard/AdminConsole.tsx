@@ -496,8 +496,8 @@ export default function AdminConsole() {
                 {[
                   {
                     value: "interactive_list",
-                    title: "Interactive List",
-                    body: "Interactive category buttons & picker lists in WhatsApp.",
+                    title: "Interactive Lists & Buttons",
+                    body: "Send tappable category lists and reply buttons in WhatsApp.",
                   },
                   {
                     value: "menu_pictures",

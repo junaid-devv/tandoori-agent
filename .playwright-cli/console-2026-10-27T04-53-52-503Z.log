@@ -1,0 +1,131 @@
+[    7472ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[    7699ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[    8129ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[    8208ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[    8282ms] [LOG] [Fast Refresh] done in 174ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   22164ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   22791ms] [LOG] [Fast Refresh] done in 585ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   23007ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   24759ms] [LOG] [Fast Refresh] done in 1859ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   69872ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   70075ms] [LOG] [Fast Refresh] done in 311ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   75789ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   75983ms] [LOG] [Fast Refresh] done in 302ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   76413ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   76564ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   76655ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   76867ms] [LOG] [PWA] Service Worker registered: http://127.0.0.1:3100/ @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   76867ms] [LOG] [PWA] Service Worker registered: http://127.0.0.1:3100/ @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   77165ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:3100/api/auth/login:0
+[   77676ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   77679ms] [LOG] [Fast Refresh] done in 111ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   89082ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   89114ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   89194ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   89438ms] [LOG] [PWA] Service Worker registered: http://127.0.0.1:3100/ @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   89438ms] [LOG] [PWA] Service Worker registered: http://127.0.0.1:3100/ @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   89643ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:3100/api/auth/login:0
+[   89994ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   90365ms] [LOG] [Fast Refresh] done in 477ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   91799ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   91839ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   93566ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   93654ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   95245ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   95289ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   97323ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   97368ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   98839ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[   98957ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  101581ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  101624ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  103957ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  104053ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  104745ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:3100/ui-review?screen=whatsapp:0
+[  105420ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  105463ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  106323ms] [ERROR] A component is changing a controlled input to be uncontrolled. This is likely caused by the value changing from a defined to undefined, which should not happen. Decide between using a controlled or uncontrolled input element for the lifetime of the component. More info: https://react.dev/link/controlled-components @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:995
+[  106737ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  107018ms] [LOG] [Fast Refresh] done in 393ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  107683ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  107728ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  109450ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  109494ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  111608ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  111642ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  111753ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  111942ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:3100/api/auth/login:0
+[  113070ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  113112ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  113318ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  114606ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  114656ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  114823ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  116381ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  116479ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  116779ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  118100ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  118143ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  118397ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  119614ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  119673ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  119899ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  121127ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  121172ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  121334ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  122575ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  122624ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  122787ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  123161ms] [VERBOSE] [DOM] Password field is not contained in a form: (More info: https://goo.gl/9p2vKq) %o @ http://127.0.0.1:3100/ui-review?screen=whatsapp:0
+[  124059ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  124105ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  124345ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  124804ms] [ERROR] A component is changing a controlled input to be uncontrolled. This is likely caused by the value changing from a defined to undefined, which should not happen. Decide between using a controlled or uncontrolled input element for the lifetime of the component. More info: https://react.dev/link/controlled-components @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:995
+[  125498ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  125537ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  125813ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  127049ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  127096ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  127243ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  157272ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  159169ms] [LOG] [Fast Refresh] done in 1984ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  180463ms] [LOG] [Fast Refresh] done in 1984ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  187900ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  188373ms] [LOG] [Fast Refresh] done in 581ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  188601ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  189735ms] [LOG] [Fast Refresh] done in 1239ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  190439ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  190530ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  190633ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  191068ms] [ERROR] Failed to load resource: the server responded with a status of 401 (Unauthorized) @ http://127.0.0.1:3100/api/auth/login:0
+[  191487ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  191696ms] [LOG] [Fast Refresh] done in 314ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  192088ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  192188ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  193893ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  193959ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  194202ms] [WARNING] Image with src "/orderiq-wordmark.png" was detected as the Largest Contentful Paint (LCP). Please add the `loading="eager"` property if this image is above the fold.
+Read more: https://nextjs.org/docs/app/api-reference/components/image#loading @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  204444ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  204977ms] [LOG] [Fast Refresh] done in 539ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  223413ms] [LOG] [Fast Refresh] rebuilding @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  223581ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:3100/ui-review?screen=overview&_rsc=H7R-FHk-R-2wBYQ-:0
+[  223591ms] [LOG] [Fast Refresh] done in 278ms @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  223801ms] [ERROR] Failed to load resource: the server responded with a status of 404 (Not Found) @ http://127.0.0.1:3100/ui-review?screen=overview:0
+[  224050ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719
+[  224088ms] [LOG] [HMR] connected @ http://127.0.0.1:3100/_next/static/chunks/node_modules_next_dist_05y3oi5z9mc_3._.js:719

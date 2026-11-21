@@ -1,0 +1,20 @@
+- generic [active] [ref=e1]:
+  - region "Notifications alt+T"
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]: orderiq.
+      - heading "Welcome back" [level=1] [ref=e12]
+      - paragraph [ref=e13]: Sign in to your restaurant workspace.
+      - generic [ref=e14]:
+        - generic [ref=e15]:
+          - generic [ref=e16]: Username or email
+          - textbox "Username or email" [ref=e17]:
+            - /placeholder: Enter your username or email
+        - generic [ref=e18]:
+          - generic [ref=e19]: Password
+          - generic [ref=e20]:
+            - textbox "Password Show password" [ref=e21]:
+              - /placeholder: Enter your password
+            - button "Show password" [ref=e22] [cursor=pointer]
+        - button "Sign in to workspace" [ref=e26] [cursor=pointer]
+      - paragraph [ref=e29]: Need access? Contact your administrator.

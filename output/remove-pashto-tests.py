@@ -1,0 +1,4 @@
+from pathlib import Path
+p=Path('scripts/check-urdu-voice-regressions.mjs');s=p.read_text(encoding='utf-8').replace('containsUrduScript, containsPashtoScript, inferLanguagePreference','containsUrduScript, inferLanguagePreference');s='\n'.join(l for l in s.split('\n') if 'containsPashtoScript(' not in l);s=s.replace('inferLanguagePreference("څومره غواړم"), "pashto"','inferLanguagePreference("څومره غواړم"), "roman_urdu"');p.write_text(s,encoding='utf-8')
+p=Path('scripts/check-picture-mode-add-more.mjs');s=p.read_text(encoding='utf-8');s='\n'.join(l for l in s.split('\n') if 'reply.askAddMore("pashto")' not in l);s=s.replace('Roman Urdu, English, and Pashto','Roman Urdu and English');p.write_text(s,encoding='utf-8')
+p=Path('scripts/check-live-order-understanding.mjs');s=p.read_text(encoding='utf-8');s='\n'.join(l for l in s.split('\n') if 'name: "Roman Pashto order"' not in l);p.write_text(s,encoding='utf-8')

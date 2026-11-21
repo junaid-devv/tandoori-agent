@@ -1,0 +1,103 @@
+- generic [active] [ref=f43e1]:
+  - region "Notifications alt+T"
+  - generic [ref=f43e2]:
+    - button "Open navigation" [ref=f43e3] [cursor=pointer]
+    - main [ref=f43e5]:
+      - generic [ref=f43e6]:
+        - generic [ref=f43e7]: Dashboard
+        - generic [ref=f43e9]:
+          - button "Search pages" [ref=f43e10] [cursor=pointer]
+          - button "Tandoori Nights" [ref=f43e15] [cursor=pointer]
+      - generic [ref=f43e25]:
+        - generic [ref=f43e26]:
+          - generic [ref=f43e27]:
+            - heading "Administration" [level=1] [ref=f43e29]
+            - paragraph [ref=f43e30]: Business identity, locations, team access and system tools.
+          - link "Business settings" [ref=f43e32] [cursor=pointer]:
+            - /url: /dashboard/settings
+        - navigation "Administration sections" [ref=f43e35]:
+          - button "Business profile" [ref=f43e36] [cursor=pointer]
+          - button "Branches" [ref=f43e44] [cursor=pointer]
+          - button "Team & access" [ref=f43e50] [cursor=pointer]
+          - button "Menu presentation" [ref=f43e57] [cursor=pointer]
+          - button "Diagnostics" [ref=f43e63] [cursor=pointer]
+          - button "Data controls" [ref=f43e67] [cursor=pointer]
+        - generic [ref=f43e71]:
+          - generic [ref=f43e72]:
+            - generic [ref=f43e73]:
+              - generic [ref=f43e74]:
+                - heading "Restaurant Profile" [level=2] [ref=f43e75]
+                - paragraph [ref=f43e76]: Controls the dashboard brand, WhatsApp identity, and whether customers see branch selection.
+              - button "Save Profile" [ref=f43e77] [cursor=pointer]
+            - generic [ref=f43e82]:
+              - generic [ref=f43e83]:
+                - generic [ref=f43e84]: Restaurant Name
+                - textbox "Restaurant Name" [ref=f43e85]:
+                  - /placeholder: Restaurant name
+                  - text: Tandoori Nights
+              - generic [ref=f43e86]:
+                - generic [ref=f43e87]: Dashboard Title
+                - textbox "Dashboard Title" [ref=f43e88]:
+                  - /placeholder: Management Dashboard
+                  - text: Restaurant workspace
+              - generic [ref=f43e89]:
+                - generic [ref=f43e90]: Logo URL
+                - textbox "Logo URL" [ref=f43e91]:
+                  - /placeholder: https://...
+              - generic [ref=f43e92]:
+                - generic [ref=f43e93]: Default City
+                - textbox "Default City" [ref=f43e94]:
+                  - /placeholder: City
+                  - text: Islamabad
+              - generic [ref=f43e95]:
+                - generic [ref=f43e96]: Brand Color
+                - generic [ref=f43e97]:
+                  - 'textbox "Brand Color #ea580c" [ref=f43e98]': "#ea580c"
+                  - textbox [ref=f43e99]: "#ea580c"
+              - generic [ref=f43e100]:
+                - generic [ref=f43e101]: Hover Color
+                - generic [ref=f43e102]:
+                  - 'textbox "Hover Color #c2410c" [ref=f43e103]': "#c2410c"
+                  - textbox [ref=f43e104]: "#c2410c"
+              - generic [ref=f43e105]:
+                - generic [ref=f43e106]: Currency Label
+                - textbox "Currency Label" [ref=f43e107]:
+                  - /placeholder: Rs.
+                  - text: Rs.
+              - generic [ref=f43e108]:
+                - generic [ref=f43e109]: Timezone
+                - textbox "Timezone" [ref=f43e110]:
+                  - /placeholder: Asia/Karachi
+                  - text: Asia/Karachi
+          - generic [ref=f43e111]:
+            - generic [ref=f43e112]:
+              - generic [ref=f43e119]:
+                - heading "Location Mode" [level=2] [ref=f43e120]
+                - paragraph [ref=f43e121]: Customers order directly from your main location. Choose multiple branches to let them pick a location.
+              - generic [ref=f43e122]:
+                - button "Single location Use this for restaurants with no branches or one main outlet." [ref=f43e123] [cursor=pointer]:
+                  - generic [ref=f43e124]: Single location
+                  - generic [ref=f43e125]: Use this for restaurants with no branches or one main outlet.
+                - button "Multiple branches Customers choose city and branch before ordering." [ref=f43e126] [cursor=pointer]:
+                  - generic [ref=f43e127]: Multiple branches
+                  - generic [ref=f43e128]: Customers choose city and branch before ordering.
+              - generic [ref=f43e130]:
+                - generic [ref=f43e131]: Primary Branch
+                - combobox "Primary Branch" [ref=f43e132] [cursor=pointer]:
+                  - option "First active branch" [selected]
+            - generic [ref=f43e133]:
+              - generic [ref=f43e141]:
+                - heading "Fallback contact details" [level=2] [ref=f43e142]
+                - paragraph [ref=f43e143]: Optional defaults used when a location has no contact details. Manage daily preferences in Settings.
+              - generic [ref=f43e144]:
+                - generic [ref=f43e145]:
+                  - generic [ref=f43e146]: Support Phone
+                  - textbox "Support Phone" [ref=f43e147]
+                - generic [ref=f43e148]:
+                  - generic [ref=f43e149]: Delivery Phone
+                  - textbox "Delivery Phone" [ref=f43e150]
+                - generic [ref=f43e151]:
+                  - generic [ref=f43e152]: Dine-in Phone
+                  - textbox "Dine-in Phone" [ref=f43e153]
+  - button "Open Next.js Dev Tools" [ref=f43e159] [cursor=pointer]
+  - alert [ref=f43e163]

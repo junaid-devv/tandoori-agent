@@ -1,0 +1,124 @@
+- generic [ref=f24e1]:
+  - region "Notifications alt+T"
+  - generic [ref=f24e2]:
+    - complementary [ref=f24e3]:
+      - generic [ref=f24e4]:
+        - link "OrderIQ home" [ref=f24e6] [cursor=pointer]:
+          - /url: /dashboard
+          - generic [ref=f24e13]: orderiq.
+        - generic [ref=f24e14]:
+          - generic [ref=f24e15]: T
+          - generic [ref=f24e16]:
+            - paragraph [ref=f24e17]: Tandoori Nights
+            - paragraph [ref=f24e18]: Restaurant workspace
+        - navigation "Main navigation" [ref=f24e19]:
+          - generic [ref=f24e20]:
+            - paragraph [ref=f24e21]: Workspace
+            - generic [ref=f24e22]:
+              - link "Overview" [ref=f24e23] [cursor=pointer]:
+                - /url: /dashboard
+              - link "Orders" [ref=f24e30] [cursor=pointer]:
+                - /url: /dashboard/orders
+              - link "Inbox 2" [ref=f24e210] [cursor=pointer]:
+                - /url: /dashboard/conversations
+                - generic [ref=f24e38]: Inbox
+                - generic [ref=f24e211]: "2"
+              - link "Analytics" [ref=f24e39] [cursor=pointer]:
+                - /url: /dashboard/analytics
+          - generic [ref=f24e43]:
+            - paragraph [ref=f24e44]: Manage
+            - generic [ref=f24e45]:
+              - link "Menu catalog" [ref=f24e46] [cursor=pointer]:
+                - /url: /dashboard/menu
+              - link "WhatsApp" [ref=f24e53] [cursor=pointer]:
+                - /url: /dashboard/whatsapp
+              - link "Settings" [ref=f24e57] [cursor=pointer]:
+                - /url: /dashboard/settings
+          - generic [ref=f24e62]:
+            - paragraph [ref=f24e63]: Platform
+            - generic [ref=f24e64]:
+              - link "Clients" [ref=f24e65] [cursor=pointer]:
+                - /url: /dashboard/clients
+              - link "Administration" [ref=f24e71] [cursor=pointer]:
+                - /url: /dashboard/admin
+        - link "Add a new client" [ref=f24e76] [cursor=pointer]:
+          - /url: /dashboard/clients/new
+        - generic [ref=f24e80]:
+          - generic [ref=f24e81]:
+            - generic [ref=f24e82]: AL
+            - generic [ref=f24e83]:
+              - paragraph [ref=f24e84]: Alex Morgan
+              - paragraph [ref=f24e85]: Platform administrator
+            - button "Sign out" [ref=f24e86] [cursor=pointer]
+          - button "Collapse sidebar" [ref=f24e90] [cursor=pointer]: Collapse navigation
+    - main [ref=f24e94]:
+      - generic [ref=f24e95]:
+        - generic [ref=f24e96]:
+          - generic [ref=f24e97]: Workspace
+          - generic [ref=f24e100]: Dashboard
+        - generic [ref=f24e101]:
+          - button "Search pages" [ref=f24e102] [cursor=pointer]:
+            - generic [ref=f24e106]: Go to a page...
+            - generic [ref=f24e107]: Ctrl K
+          - button "Tandoori Nights" [ref=f24e110] [cursor=pointer]
+          - button "Mute notification sounds" [pressed] [ref=f24e118] [cursor=pointer]
+      - generic [ref=f24e125]:
+        - link "Back to clients" [ref=f24e126] [cursor=pointer]:
+          - /url: /dashboard/clients
+        - generic [ref=f24e130]:
+          - paragraph [ref=f24e131]: Client onboarding
+          - heading "A new client starts here." [level=1] [ref=f24e133]
+          - paragraph [ref=f24e134]: A few details now. A fully organized restaurant workspace next.
+        - generic [ref=f24e135]:
+          - complementary [ref=f24e136]:
+            - paragraph [ref=f24e137]: Set up a client
+            - list [ref=f24e138]:
+              - listitem [ref=f24e139]:
+                - generic [ref=f24e141]:
+                  - paragraph [ref=f24e142]: Business profile
+                  - paragraph [ref=f24e143]: Name, contact and branding
+              - listitem [ref=f24e144]:
+                - generic [ref=f24e146]:
+                  - paragraph [ref=f24e147]: First location
+                  - paragraph [ref=f24e148]: Set up the primary branch
+              - listitem [ref=f24e149]:
+                - generic [ref=f24e150]: "3"
+                - generic [ref=f24e151]:
+                  - paragraph [ref=f24e152]: Owner access
+                  - paragraph [ref=f24e153]: Create the administrator account
+              - listitem [ref=f24e154]:
+                - generic [ref=f24e155]: "4"
+                - generic [ref=f24e156]:
+                  - paragraph [ref=f24e157]: Review & create
+                  - paragraph [ref=f24e158]: Make sure everything looks right
+            - paragraph [ref=f24e163]: Each client gets a separate workspace with access limited to their own restaurant.
+          - generic [ref=f24e164]:
+            - paragraph [ref=f24e166]: Step 3 of 4
+            - group [ref=f24e167]:
+              - generic [ref=f24e217]:
+                - generic [ref=f24e218]:
+                  - heading "Give the owner their own access" [level=2] [ref=f24e219]
+                  - paragraph [ref=f24e220]: Create the administrator account they’ll use to manage their restaurant.
+                - generic [ref=f24e222]:
+                  - generic [ref=f24e223]:
+                    - generic [ref=f24e224]: Full name *
+                    - textbox "Full name *" [active] [ref=f24e225]:
+                      - /placeholder: e.g. Ahmed Khan
+                  - generic [ref=f24e226]:
+                    - generic [ref=f24e227]: Email address *
+                    - textbox "Email address *" [ref=f24e228]:
+                      - /placeholder: owner@restaurant.com
+                  - generic [ref=f24e229]:
+                    - generic [ref=f24e230]: Password *
+                    - generic [ref=f24e231]:
+                      - textbox "Password * Show password At least 8 characters. Share these login details directly with the owner." [ref=f24e232]:
+                        - /placeholder: Choose a secure password
+                      - button "Show password" [ref=f24e233] [cursor=pointer]
+                    - generic [ref=f24e237]: At least 8 characters. Share these login details directly with the owner.
+                  - paragraph [ref=f24e238]: The owner can manage their restaurant, team and orders. Other client workspaces stay private.
+            - generic [ref=f24e194]:
+              - button "Back" [ref=f24e242] [cursor=pointer]
+              - button "Continue" [ref=f24e197] [cursor=pointer]
+            - paragraph [ref=f24e200]: Nothing is created until you review and confirm.
+  - button "Open Next.js Dev Tools" [ref=f24e206] [cursor=pointer]
+  - alert [ref=f24e212]

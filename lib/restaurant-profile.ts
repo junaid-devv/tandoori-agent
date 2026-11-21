@@ -242,6 +242,19 @@ export async function updateRestaurantProfile(restaurantId: string, input: Parti
     throw error ?? new Error("Failed to update restaurant profile.");
   }
 
+  // Interactive List is a product-level presentation choice. Evolution
+  // connections created before this setting existed defaulted to the legacy
+  // compatible mode, which converted the selected interactive payload into
+  // numbered plain text. Keep the transport mode in sync when this option is
+  // saved so the choice is reflected immediately on WhatsApp.
+  if (validated.menu_display_mode === "interactive_list" && existing.data.whatsapp_provider === "evolution") {
+    const { error: evolutionError } = await supabaseAdmin
+      .from("evolution_configs")
+      .update({ interactive_mode: "native", updated_at: new Date().toISOString() })
+      .eq("restaurant_id", restaurantId);
+    if (evolutionError) throw evolutionError;
+  }
+
   const profile = normalizeProfileRow(data);
   invalidateCache(cacheKey);
   setCached(cacheKey, profile, PROFILE_CACHE_TTL_MS);

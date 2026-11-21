@@ -88,6 +88,11 @@ globalThis.fetch = async (input, init = {}) => {
   assert.equal(url.host, "evolution.test");
   if (interruptGateway && url.pathname.includes("/message/")) throw new TypeError("fetch failed");
   assert.equal(request.headers.get("apikey"), "gateway-secret");
+  if (url.pathname.includes("/message/sendList/")) {
+    for (const section of body.sections) for (const row of section.rows) {
+      assert.ok(row.description?.trim(), 'Evolution rejects empty row descriptions');
+    }
+  }
   if (gatewayFailure && url.pathname.includes("/message/") && (!rejectInteractiveOnly || !url.pathname.includes("/sendText/"))) return new Response("rejected", { status: gatewayFailure });
   if (url.pathname.includes("fetchInstances")) return json(instanceExists ? [{ name: url.searchParams.get("instanceName"), ownerJid: "923001234567@s.whatsapp.net", profileName: "A" }] : []);
   if (url.pathname.includes("connectionState")) return json({ instance: { state: evolutionStatus } });
@@ -122,6 +127,12 @@ try {
     assert.ok(list.url.pathname.includes("/message/sendList/"));
     assert.equal(list.body.sections[0].rows[0].rowId, "menu_item_123");
     assert.equal(list.body.footerText, "Select an option", "Evolution requires footerText for native lists");
+    await sendWhatsAppInteractiveList("923001234567", { body: "Menu", buttonText: "Choose", rows: [
+      { id: "category:Burger", title: "Burger" },
+      { id: "category:__page:1", title: "More categories", description: "" },
+      { id: "category:__items:Burger:1", title: "More items", description: "   " },
+    ] });
+    assert.deepEqual(requests.at(-1).body.sections[0].rows.map(row => row.description), ["Burger", "More categories", "More items"]);
     await sendWhatsAppReplyButtons("923001234567", { body: "Confirm?", buttons: [{ id: "confirm_order", title: "Confirm" }] });
     assert.equal(requests.at(-1).body.buttons[0].id, "confirm_order");
     assert.equal(requests.at(-1).body.buttons[0].type, "reply");

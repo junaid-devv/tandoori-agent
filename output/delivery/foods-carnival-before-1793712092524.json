@@ -1,0 +1,315 @@
+{
+  "branch_id": "457cbcc8-5158-4859-9c55-066403461bf7",
+  "updated_at": "2026-11-03T13:11:15.291057+00:00",
+  "delivery_enabled": true,
+  "delivery_pricing_mode": "area",
+  "delivery_zones": [
+    {
+      "fee": 0,
+      "name": "Laiq Ali Chowk",
+      "aliases": [
+        "Laiq Ali Chok",
+        "Laik Ali Chowk",
+        "لائق علی چوک"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "Lala Rukh",
+      "aliases": [
+        "Lalarukh",
+        "Lala Rukh Colony",
+        "لالہ رخ"
+      ]
+    },
+    {
+      "fee": 150,
+      "name": "Aslam Market",
+      "aliases": [
+        "Aslam Mkt",
+        "اسلم مارکیٹ"
+      ]
+    },
+    {
+      "fee": 200,
+      "name": "Anwar Chowk",
+      "aliases": [
+        "انوار چوک"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "18 Area",
+      "aliases": [
+        "Area 18",
+        "18 ilaqa",
+        "اٹھارہ ایریا",
+        "18 ایریا"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "15 Area",
+      "aliases": [
+        "Area 15",
+        "15 ilaqa",
+        "پندرہ ایریا",
+        "15 ایریا"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "14 Area",
+      "aliases": [
+        "Area 14",
+        "14 ilaqa",
+        "چودہ ایریا",
+        "14 ایریا"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "20 Area",
+      "aliases": [
+        "Area 20",
+        "20 ilaqa",
+        "بیس ایریا",
+        "20 ایریا"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "19 Area",
+      "aliases": [
+        "Area 19",
+        "19 ilaqa",
+        "انیس ایریا",
+        "19 ایریا"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "Barrier No. 2",
+      "aliases": [
+        "Barrier 2",
+        "Barrier Number 2",
+        "Barier 2",
+        "Bareer 2",
+        "بیرئیر نمبر 2",
+        "بیرئیر 2",
+        "بیریئر نمبر 2",
+        "بیریئر 2",
+        "بیریر 2"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "Losar",
+      "aliases": [
+        "Loser",
+        "Losaar",
+        "لوسر",
+        "لوسڑ"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "GT Road",
+      "aliases": [
+        "G T Road",
+        "GT Rd",
+        "Grand Trunk Road",
+        "جی ٹی روڈ"
+      ]
+    },
+    {
+      "fee": 100,
+      "name": "New City Phase 1",
+      "aliases": [
+        "New City 1",
+        "New City Phase One",
+        "New Citi Phase 1",
+        "نیو سٹی فیز 1",
+        "نیو سٹی فیز ون"
+      ]
+    },
+    {
+      "fee": 150,
+      "name": "Chhachhi Mohalla",
+      "aliases": [
+        "Chachi Mohalla",
+        "Chhachhi Muhalla",
+        "Chachi Muhalla",
+        "Chachi Mahalla",
+        "Chachi Mohala",
+        "Chhachi Mohalla",
+        "چھاچھی محلہ",
+        "چاچی محلہ"
+      ]
+    },
+    {
+      "fee": 150,
+      "name": "Gulshan Anwar",
+      "aliases": [
+        "Gulshan e Anwar",
+        "Gulshan E Anwer",
+        "Gulshan Anwer",
+        "گلشن انوار",
+        "گلشن انور"
+      ]
+    },
+    {
+      "fee": 150,
+      "name": "Nawababad",
+      "aliases": [
+        "Nawab Abad",
+        "Nawaab Abad",
+        "نواب آباد",
+        "نواب اباد"
+      ]
+    },
+    {
+      "fee": 150,
+      "name": "Malka Abad",
+      "aliases": [
+        "Malkaabad",
+        "Malkah Abad",
+        "Malka Abbad",
+        "ملکہ آباد",
+        "ملکا آباد",
+        "ملکہ اباد"
+      ]
+    },
+    {
+      "fee": 150,
+      "name": "Wah Model Town",
+      "aliases": [
+        "Wah Modal Town",
+        "Wah Modle Town",
+        "واہ ماڈل ٹاؤن",
+        "واہ ماڈل ٹاون"
+      ]
+    },
+    {
+      "fee": 150,
+      "name": "Basti Chowk",
+      "aliases": [
+        "Basti Chok",
+        "Basti Chawk",
+        "بستی چوک"
+      ]
+    },
+    {
+      "fee": 150,
+      "name": "Jameelabad",
+      "aliases": [
+        "Jameel Abad",
+        "Jamilabad",
+        "Jamil Abad",
+        "جمیل آباد",
+        "جمیل اباد"
+      ]
+    },
+    {
+      "fee": 150,
+      "name": "Taxila Chowk",
+      "aliases": [
+        "Taxila Chok",
+        "Texila Chowk",
+        "Texila Chok",
+        "Taksila Chowk",
+        "ٹیکسلا چوک",
+        "ٹیکسیلا چوک"
+      ]
+    },
+    {
+      "fee": 200,
+      "name": "Gudwal",
+      "aliases": [
+        "Gadwal",
+        "Gudwaal",
+        "Gud Wal",
+        "گدوال",
+        "گڈوال"
+      ]
+    },
+    {
+      "fee": 200,
+      "name": "Barrier No. 3",
+      "aliases": [
+        "Barrier 3",
+        "Barrier Number 3",
+        "Barier 3",
+        "Bareer 3",
+        "بیرئیر نمبر 3",
+        "بیرئیر 3",
+        "بیریئر نمبر 3",
+        "بیریئر 3",
+        "بیریر 3"
+      ]
+    },
+    {
+      "fee": 200,
+      "name": "Wah General Hospital",
+      "aliases": [
+        "Wah Gen Hospital",
+        "Wah General Hosp",
+        "Wah General Hospatal",
+        "واہ جنرل ہسپتال",
+        "واہ جنرل اسپتال"
+      ]
+    },
+    {
+      "fee": 200,
+      "name": "New City Phase 2",
+      "aliases": [
+        "New City 2",
+        "New City Phase Two",
+        "New Citi Phase 2",
+        "نیو سٹی فیز 2",
+        "نیو سٹی فیز ٹو"
+      ]
+    },
+    {
+      "fee": 180,
+      "name": "Basti Qabristan Road",
+      "aliases": [
+        "Basti Qabristan Rd",
+        "Basti Qabristaan Road",
+        "Basti Kabristan Road",
+        "Basti Kabrastan Road",
+        "Basti Qabrustan Road",
+        "بستی قبرستان روڈ"
+      ]
+    }
+  ],
+  "delivery_areas": [
+    "Laiq Ali Chowk",
+    "Lala Rukh",
+    "Aslam Market",
+    "Anwar Chowk",
+    "18 Area",
+    "15 Area",
+    "14 Area",
+    "20 Area",
+    "19 Area",
+    "Barrier No. 2",
+    "Losar",
+    "GT Road",
+    "New City Phase 1",
+    "Chhachhi Mohalla",
+    "Gulshan Anwar",
+    "Nawababad",
+    "Malka Abad",
+    "Wah Model Town",
+    "Basti Chowk",
+    "Jameelabad",
+    "Taxila Chowk",
+    "Gudwal",
+    "Barrier No. 3",
+    "Wah General Hospital",
+    "New City Phase 2",
+    "Basti Qabristan Road"
+  ],
+  "delivery_outside_area_per_km": 0
+}

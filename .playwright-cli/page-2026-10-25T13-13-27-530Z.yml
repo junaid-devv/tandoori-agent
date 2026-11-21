@@ -1,0 +1,32 @@
+- generic [active] [ref=f41e1]:
+  - region "Notifications alt+T"
+  - generic [ref=f41e2]:
+    - button "Open navigation" [ref=f41e3] [cursor=pointer]
+    - main [ref=f41e5]:
+      - generic [ref=f41e6]:
+        - generic [ref=f41e7]: Dashboard
+        - generic [ref=f41e9]:
+          - button "Search pages" [ref=f41e10] [cursor=pointer]
+          - button "Tandoori Nights" [ref=f41e15] [cursor=pointer]
+      - generic [ref=f41e25]:
+        - generic [ref=f41e26]:
+          - generic [ref=f41e27]:
+            - heading "Menu catalog" [level=1] [ref=f41e29]
+            - paragraph [ref=f41e30]: A well-organized menu. Easy to browse, simple to keep up to date.
+          - generic [ref=f41e31]:
+            - button "Import menu" [ref=f41e32] [cursor=pointer]
+            - button "Add item" [disabled] [ref=f41e36]
+        - generic [ref=f41e38]:
+          - textbox "Search menu items" [ref=f41e43]:
+            - /placeholder: Search items or categories...
+          - combobox "Filter by category" [ref=f41e44] [cursor=pointer]:
+            - option "All categories" [selected]
+        - generic [ref=f41e45]:
+          - generic [ref=f41e46]:
+            - heading "All menu items0" [level=2] [ref=f41e47]
+            - generic [ref=f41e48]: 0 available
+          - generic [ref=f41e54]:
+            - generic [ref=f41e55]: 0 items across 0 categories
+            - generic [ref=f41e56]: Available to order
+  - button "Open Next.js Dev Tools" [ref=f41e63] [cursor=pointer]
+  - alert [ref=f41e67]

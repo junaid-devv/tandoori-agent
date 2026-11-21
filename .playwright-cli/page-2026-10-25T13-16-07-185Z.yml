@@ -1,0 +1,98 @@
+- generic [ref=f42e1]:
+  - region "Notifications alt+T"
+  - generic [ref=f42e2]:
+    - button "Open navigation" [ref=f42e3] [cursor=pointer]
+    - main [ref=f42e5]:
+      - generic [ref=f42e6]:
+        - generic [ref=f42e7]: Dashboard
+        - generic [ref=f42e9]:
+          - button "Search pages" [ref=f42e10] [cursor=pointer]
+          - button "Tandoori Nights" [ref=f42e15] [cursor=pointer]
+      - generic [ref=f42e25]:
+        - region "Conversation" [ref=f42e131]:
+          - generic [ref=f42e133]:
+            - generic [ref=f42e134]:
+              - button "Back to inbox" [ref=f42e135] [cursor=pointer]
+              - generic [ref=f42e138]:
+                - generic [ref=f42e139]: AK
+                - generic "AI Agent Live" [ref=f42e140]
+              - generic [ref=f42e141]:
+                - heading "Ahmed Khan" [level=2] [ref=f42e143]
+                - generic [ref=f42e144]:
+                  - button "+923000000000" [ref=f42e145] [cursor=pointer]
+                  - generic [ref=f42e152]: •
+                  - generic [ref=f42e153]: idle
+            - generic [ref=f42e156]:
+              - generic [ref=f42e157]:
+                - button [ref=f42e158] [cursor=pointer]
+                - button [ref=f42e162] [cursor=pointer]
+              - button "Close order drawer" [ref=f42e241] [cursor=pointer]
+              - button "More actions" [ref=f42e172] [cursor=pointer]
+          - generic [ref=f42e178]:
+            - generic [ref=f42e179]:
+              - generic [ref=f42e180]: Sunday, 25 Oct 2026
+              - generic [ref=f42e183]:
+                - generic [ref=f42e184]:
+                  - generic [ref=f42e185]: AI Agent
+                  - generic [ref=f42e190]: 5:51 PM
+                - generic [ref=f42e191]: Salam! Welcome to Tandoori Nights. How can I help you today?
+                - generic [ref=f42e192]: delivered
+            - generic [ref=f42e199]:
+              - generic [ref=f42e200]:
+                - generic [ref=f42e201]: Ahmed Khan
+                - generic [ref=f42e206]: 5:53 PM
+              - generic [ref=f42e207]: Can I order two chicken biryanis for delivery to F-7?
+            - generic [ref=f42e210]:
+              - generic [ref=f42e211]:
+                - generic [ref=f42e212]: AI Agent
+                - generic [ref=f42e217]: 5:54 PM
+              - generic [ref=f42e218]: Jee zaroor! Two Chicken Biryani for Rs. 900. Delivery is Rs. 150. Could you share your street address?
+              - generic [ref=f42e219]: delivered
+          - generic [ref=f42e227]:
+            - generic [ref=f42e228]: AI Agent Active
+            - button "Take Over" [ref=f42e235] [cursor=pointer]
+        - dialog "Customer and order details" [ref=f42e242]:
+          - generic [ref=f42e243]:
+            - heading "Customer & order" [level=3] [ref=f42e249]
+            - button "Minimize panel" [active] [ref=f42e250] [cursor=pointer]
+          - generic [ref=f42e254]:
+            - generic [ref=f42e255]:
+              - generic [ref=f42e256]:
+                - generic [ref=f42e257]:
+                  - paragraph [ref=f42e258]: Customer Profile
+                  - paragraph [ref=f42e259]: Ahmed Khan
+                - generic [ref=f42e260]: 3 orders
+              - generic [ref=f42e262]:
+                - generic [ref=f42e263]: "Language:"
+                - generic [ref=f42e264]: en
+              - generic [ref=f42e265]:
+                - generic [ref=f42e266]: Tags
+                - textbox "e.g. VIP, frequent, spicy" [ref=f42e267]
+              - generic [ref=f42e268]:
+                - generic [ref=f42e269]: Staff Notes
+                - textbox "Preferences, allergy, delivery instructions..." [ref=f42e270]
+              - button "Save Profile Details" [ref=f42e271] [cursor=pointer]
+            - generic [ref=f42e272]:
+              - generic [ref=f42e273]:
+                - paragraph [ref=f42e274]: Live Order Draft
+                - generic [ref=f42e275]: idle
+              - generic [ref=f42e276]:
+                - generic [ref=f42e277]:
+                  - generic [ref=f42e278]: "Order Type:"
+                  - generic [ref=f42e279]: delivery
+                - generic [ref=f42e280]:
+                  - generic [ref=f42e281]: "Address:"
+                  - generic [ref=f42e282]: F-7 Islamabad
+              - generic [ref=f42e283]:
+                - paragraph [ref=f42e284]: Cart Items (0)
+                - paragraph [ref=f42e290]: Cart is currently empty
+            - generic [ref=f42e291]:
+              - paragraph [ref=f42e292]: Agent Observability
+              - generic [ref=f42e293]:
+                - generic [ref=f42e294]: "Bot Active:"
+                - generic [ref=f42e295]: Yes (Running)
+              - generic [ref=f42e296]:
+                - generic [ref=f42e297]: "Last Intent:"
+                - generic [ref=f42e298]: add_item
+  - button "Open Next.js Dev Tools" [ref=f42e126] [cursor=pointer]
+  - alert [ref=f42e130]

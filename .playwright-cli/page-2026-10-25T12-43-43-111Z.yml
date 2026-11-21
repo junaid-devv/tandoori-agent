@@ -1,0 +1,21 @@
+- generic [active] [ref=e1]:
+  - region "Notifications alt+T"
+  - main [ref=e2]:
+    - generic [ref=e3]:
+      - generic [ref=e4]:
+        - generic [ref=e5]: O
+        - generic [ref=e7]:
+          - paragraph [ref=e8]: ORDERiQ
+          - paragraph
+      - heading "Dashboard Login" [level=1] [ref=e9]
+      - paragraph [ref=e10]: Sign in with your staff account to access the restaurant dashboard.
+      - generic [ref=e11]:
+        - generic [ref=e12]:
+          - generic [ref=e13]: Username or Email
+          - textbox "Username or Email" [ref=e14]:
+            - /placeholder: admin or email
+        - generic [ref=e15]:
+          - generic [ref=e16]: Password
+          - textbox "Password" [ref=e17]:
+            - /placeholder: Enter your password
+        - button "Sign In" [ref=e18] [cursor=pointer]

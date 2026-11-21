@@ -352,7 +352,9 @@ export async function sendWhatsAppInteractiveList(
       buttonText: payload.buttonText.slice(0, 20),
       footerText: "Select an option",
       sections: [{ title: (payload.sectionTitle || "Options").slice(0, 24), rows: payload.rows.slice(0, 10).map(row => ({
-        rowId: String(row.id).slice(0, 200), title: row.title.slice(0, 24), description: (row.description || "").slice(0, 72),
+        // Evolution validates every row description as non-empty, including
+        // category and pagination rows which have no description in Meta.
+        rowId: String(row.id).slice(0, 200), title: row.title.slice(0, 24), description: (row.description?.trim() || row.title).slice(0, 72),
       })) }],
     });
   }

@@ -108,6 +108,10 @@ export async function executeTurn(input: ExecInput): Promise<ExecutionResult> {
     ? ctx.state.pending_clarification : null;
 
   const setInteractive = (p: InteractivePayload | null) => {
+    // `text_only` is a presentation choice, so do not attach an interactive
+    // payload even when a transition normally offers one (categories,
+    // confirmations, saved addresses, etc.).
+    if (input.menuDisplayMode === "text_only") return;
     if (p) {
       interactive = p;
       if (p.kind === "buttons") {
